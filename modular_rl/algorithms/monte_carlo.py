@@ -25,22 +25,29 @@ class MonteCarlo:
             for i in range(len(acs)):
                 self.n_visits[obs[i], acs[i]] += 1
                 self.total_return[obs[i], acs[i]] += ep_return
-                self.q_table = self.total_return / self.n_visits
+                self.q_table[obs[i], acs[i]] = self.total_return[obs[i], acs[i]] / self.n_visits[obs[i], acs[i]]
 
     def collect_episode_rollout(self):
         """
         Runs one full episode and returns the observations, actions and rewards.
         """
 
-        observation = self.env.reset()
+        observation = self.env.reset()[0]
         observations = [observation]
         actions = []
         rewards = []
+
+        # print(self.q_table.shape)
+        # print(observation)
 
         while True:
             if np.random.random_sample() < self.epsilon:
                 action = self.env.action_space.sample()
             else:
+                # print(self.n_visits)
+                # print(self.total_return)
+                # print(self.q_table)
+                # print(np.flatnonzero(self.q_table[observation] == self.q_table[observation].max()))
                 action = np.random.choice(np.flatnonzero(self.q_table[observation] == self.q_table[observation].max()))
 
             next_observation, reward, terminated, truncated, info = self.env.step(action)
