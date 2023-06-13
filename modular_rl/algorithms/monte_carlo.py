@@ -5,12 +5,15 @@ from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
 
 class MonteCarlo:
     """
-    Implements Every-Visit On-Policy Monte Carlo Learning using Q-Values.
+    Implements Every-Visit ann First-Visit On-Policy Monte Carlo Learning using Q-Values.
     """
 
-    def __init__(self, env, epsilon):
+    def __init__(self, env, epsilon, update_mode="every_visit"):
         self.epsilon = epsilon
         self.env = env
+
+        assert update_mode in ["every_visit", "first_visit"], f"unknown update mode '{update_mode}'"
+        self.update_mode = update_mode
 
         self.exploration_policy = UniformRandomPolicy(env.observation_space, env.action_space)
         self.target_policy = GreedyQPolicy(env.observation_space, env.action_space, 0.0)
@@ -26,7 +29,13 @@ class MonteCarlo:
 
             ep_return = sum(rews)
 
-            for idx in zip(obs, acs):
+            # get the visited state action pairs
+            state_action_pairs = zip(obs, acs)
+
+            if self.update_mode == "first_visit":
+                state_action_pairs = list(set(state_action_pairs))
+
+            for idx in state_action_pairs:
                 self.n_visits[idx] += 1
                 self.total_return[idx] += ep_return
                 new_q_val = self.total_return[idx] / self.n_visits[idx]
