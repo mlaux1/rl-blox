@@ -1,18 +1,22 @@
 import numpy as np
 
+from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
+
 
 class MonteCarlo:
     """
-    Implements Monte Carlo Learning.
+    Implements Every-Visit On-Policy Monte Carlo Learning using Q-Values.
     """
 
     def __init__(self, env, epsilon):
         self.epsilon = epsilon
         self.env = env
 
+        self.exploration_policy = UniformRandomPolicy(env.observation_space, env.action_space)
+        self.target_policy = GreedyQPolicy(env.observation_space, env.action_space, 0.0)
+
         self.n_visits = np.full(shape=(env.observation_space.n, env.action_space.n), fill_value=0.0)
         self.total_return = np.full(shape=(env.observation_space.n, env.action_space.n), fill_value=0.0)
-        self.q_table = np.full(shape=(env.observation_space.n, env.action_space.n), fill_value=0.0)
 
     def train(self, max_episodes: int) -> None:
 
@@ -22,10 +26,10 @@ class MonteCarlo:
 
             ep_return = sum(rews)
 
-            for i in range(len(acs)):
-                self.n_visits[obs[i], acs[i]] += 1
-                self.total_return[obs[i], acs[i]] += ep_return
-                self.q_table[obs[i], acs[i]] = self.total_return[obs[i], acs[i]] / self.n_visits[obs[i], acs[i]]
+            for idx in zip(obs, acs):
+                self.n_visits[idx] += 1
+                self.total_return[idx] += ep_return
+                self.target_policy.update(idx, self.total_return[idx] / self.n_visits[idx])
 
     def collect_episode_rollout(self):
         """
@@ -42,13 +46,9 @@ class MonteCarlo:
 
         while True:
             if np.random.random_sample() < self.epsilon:
-                action = self.env.action_space.sample()
+                action = self.exploration_policy.get_action(observation)
             else:
-                # print(self.n_visits)
-                # print(self.total_return)
-                # print(self.q_table)
-                # print(np.flatnonzero(self.q_table[observation] == self.q_table[observation].max()))
-                action = np.random.choice(np.flatnonzero(self.q_table[observation] == self.q_table[observation].max()))
+                action = self.target_policy.get_action(observation)
 
             next_observation, reward, terminated, truncated, info = self.env.step(action)
 
