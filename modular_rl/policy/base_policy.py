@@ -13,10 +13,16 @@ class BasePolicy(abc.ABC):
     def update(self, data) -> None:
         pass
 
-class ValueBasedPolicy(BasePolicy):
-    """Simple Value Based Policy."""
 
-    def __init__(self, value):
-        self.value_function = value_function
+class UniformRandomPolicy(BasePolicy):
+    """Simple Random Policy."""
+
+    def __init__(self, observation_space, action_space):
+        self.observation_space = observation_space
+        self.action_space = action_space
 
     def get_action(self, observation: npt.ArrayLike) -> npt.ArrayLike:
+        return self.action_space.sample()
+
+    def update(self, data) -> None:
+        pass
