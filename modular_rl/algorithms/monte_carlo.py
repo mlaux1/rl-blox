@@ -60,9 +60,9 @@ class MonteCarlo:
             else:
                 action = self.target_policy.get_action(observation)
 
-            next_observation, reward, terminated, truncated, info = self.env.step(action)
+            observation, reward, terminated, truncated, info = self.env.step(action)
 
-            observations.append(next_observation)
+            observations.append(observation)
             actions.append(action)
             rewards.append(reward)
 
