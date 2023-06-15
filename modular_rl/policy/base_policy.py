@@ -27,7 +27,7 @@ class GreedyQPolicy(BasePolicy):
     Greedy policy that selects the action that maximises the Q-function.
     """
 
-    def __init__(self, observation_space, action_space, initial_value):
+    def __init__(self, observation_space, action_space, initial_value=0.0):
         super().__init__(observation_space, action_space)
 
         self.q_table = np.full(shape=(observation_space.n, action_space.n), fill_value=initial_value)
@@ -37,4 +37,3 @@ class GreedyQPolicy(BasePolicy):
 
     def update(self, idx, value) -> None:
         self.q_table[idx] = value
-
