@@ -2,9 +2,9 @@ import numpy as np
 from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
 
 
-class QLearning:
+class Sarsa:
     """
-    Basic Q-Learning using temporal differences and tabular q-values.
+    Basic Sarsa using temporal differences and tabular q-values.
     """
 
     def __init__(self, env, alpha, epsilon):
@@ -29,7 +29,11 @@ class QLearning:
 
                 next_observation, reward, terminated, truncated, info = self.env.step(action)
 
-                next_action = self.target_policy.get_action(next_observation)
+                if np.random.random_sample() < self.epsilon:
+                    next_action = self.exploration_policy.get_action(next_observation)
+                else:
+                    next_action = self.target_policy.get_action(next_observation)
+
                 td_error = gamma * self.q_table[next_observation, next_action] - self.q_table[observation, action]
 
                 self.q_table[observation, action] += self.alpha * (reward + td_error)
