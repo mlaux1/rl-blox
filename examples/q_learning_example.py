@@ -1,7 +1,7 @@
 import gymnasium as gym
 import numpy as np
 
-from modular_rl.algorithms.q_learning import QLearning
+from modular_rl.algorithms.model_free.q_learning import QLearning
 
 train_env = gym.make("FrozenLake-v1", render_mode="human", desc=["SFFH", "FFFF", "FFFF", "FFFG"])
 
