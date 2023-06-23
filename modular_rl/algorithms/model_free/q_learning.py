@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.typing as npt
 from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
 
 
@@ -17,9 +18,11 @@ class QLearning:
 
         self.q_table = np.full(shape=(env.observation_space.n, env.action_space.n), fill_value=0.0)
 
-    def train(self, max_episodes: int, gamma=0.99) -> None:
+    def train(self, max_episodes: int, gamma=0.99) -> npt.ArrayLike:
 
-        for _ in range(max_episodes):
+        ep_rewards = np.zeros(max_episodes)
+
+        for i in range(max_episodes):
             observation, _ = self.env.reset()
             while True:
                 if np.random.random_sample() < self.epsilon:
@@ -36,9 +39,14 @@ class QLearning:
 
                 observation = next_observation
 
+                ep_rewards[i] += reward
+
                 if terminated or truncated:
-                    print(self.q_table)
+                    # print(self.q_table)
+
                     break
+
+        return ep_rewards
 
     def collect_episode_rollout(self):
         """
