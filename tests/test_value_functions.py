@@ -23,9 +23,10 @@ class TestValueFunction:
 
         assert test_instance.values[0] == 42
 
-        test_instance.update([3, 4], [666, 666])
+        test_instance.update([3, 4], [666, -123])
         assert test_instance.values[3] == 666
-        assert test_instance.values[4] == 666
+        assert test_instance.values[4] == -123
+
 
 class TestQFunction:
     def test_creation(self):
@@ -46,6 +47,6 @@ class TestQFunction:
 
         assert test_instance.values[0, 1] == 42
 
-        test_instance.update([3, 3], [2, 4], [666, 666])
+        test_instance.update([3, 3], [2, 4], [666, -123])
         assert test_instance.values[3, 2] == 666
-        assert test_instance.values[3, 4] == 666
+        assert test_instance.values[3, 4] == -123

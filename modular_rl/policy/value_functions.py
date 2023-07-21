@@ -26,8 +26,9 @@ class TabularValueFunction(ValueFunction):
     def get_state_value(self, observation: npt.ArrayLike) -> npt.ArrayLike:
         return self.values[observation]
 
-    def update(self, observations, values) -> None:
-        self.values[observations] = values
+    def update(self, observations, step) -> None:
+        self.values[observations] += step
+
 
 class QFunction(abc.ABC):
     """Base Q function class."""
@@ -37,7 +38,7 @@ class QFunction(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def update(self, observations, actions, values) -> None:
+    def update(self, observations, actions, step) -> None:
         pass
 
 
@@ -50,7 +51,7 @@ class TabularQFunction(QFunction):
     def get_action_value(self, observation: npt.ArrayLike, action: npt.ArrayLike) -> npt.ArrayLike:
         return self.values[observation, action]
 
-    def update(self, observations, actions, values) -> None:
-        self.values[observations, actions] = values
+    def update(self, observations, actions, step) -> None:
+        self.values[observations, actions] += step
 
 
