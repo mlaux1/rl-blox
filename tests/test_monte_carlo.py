@@ -1,4 +1,4 @@
-from modular_rl.algorithms.monte_carlo import MonteCarlo
+from modular_rl.algorithms.model_free.monte_carlo import MonteCarlo
 
 
 class TestMonteCarlo:
