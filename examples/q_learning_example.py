@@ -1,4 +1,5 @@
 import gymnasium as gym
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -20,10 +21,7 @@ def generate_rollout(env, policy):
     obs.append(observation)
 
     while not terminated and not truncated:
-        # action = policy.get_action(observation)
-
         action = policy.get_action(observation)
-        #action = env.action_space.sample()
         observation, reward, terminated, truncated, info = env.step(action)
 
         obs.append(observation)
@@ -33,11 +31,13 @@ def generate_rollout(env, policy):
     return np.array(obs), np.array(acts), np.array(rews)
 
 
+# logging.basicConfig(level=logging.DEBUG)
+
 # train policy
 train_env = gym.make("FrozenLake-v1", desc=["SFFH", "FFFF", "FFFF", "FFFG"])
 
-q_learning = QLearning(train_env, 0.1, 0.01)
-rewards = q_learning.train(10)
+q_learning = QLearning(train_env, 0.1, 0.05)
+train_returns = q_learning.train(1000)
 
 train_env.close()
 
@@ -48,7 +48,7 @@ generate_rollout(test_env, q_learning.target_policy)
 
 test_env.close()
 
-#sns.scatterplot(x=range(len(rewards)), y=rewards)
-#plt.show()
+sns.scatterplot(x=range(len(train_returns)), y=train_returns)
+plt.show()
 
 
