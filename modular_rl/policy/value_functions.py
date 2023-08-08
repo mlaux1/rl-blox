@@ -1,5 +1,5 @@
 import abc
-
+import logging
 import numpy as np
 import numpy.typing as npt
 from gymnasium.spaces.discrete import Discrete
@@ -53,5 +53,8 @@ class TabularQFunction(QFunction):
 
     def update(self, observations, actions, step) -> None:
         self.values[observations, actions] += step
+
+        logging.debug(f"Updating Q Table: {observations=}, {actions=}, {step=}")
+        logging.debug(f"New Q table: {self.values}")
 
 

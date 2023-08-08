@@ -13,6 +13,8 @@ class BasePolicy(abc.ABC):
         self.observation_space = observation_space
         self.action_space = action_space
 
+        self.rng = default_rng(42)
+
     @abc.abstractmethod
     def get_action(self, observation: npt.ArrayLike) -> npt.ArrayLike:
         pass
@@ -34,10 +36,10 @@ class StateValueBasedPolicy(BasePolicy):
 class QValueBasedPolicy(BasePolicy):
     """Base policy class for q-value-based policies."""
 
-    def __init__(self, observation_space, action_space):
+    def __init__(self, observation_space, action_space, initial_value=0.0):
         super().__init__(observation_space, action_space)
 
-        self.value_function = TabularQFunction(observation_space, action_space)
+        self.value_function = TabularQFunction(observation_space, action_space, initial_value)
 
     @abc.abstractmethod
     def get_action(self, observation: npt.ArrayLike) -> npt.ArrayLike:
@@ -67,7 +69,7 @@ class GreedyQPolicy(QValueBasedPolicy):
     """
 
     def get_action(self, observation: npt.ArrayLike) -> npt.ArrayLike:
-        return default_rng(42).choice(np.flatnonzero(self.value_function.values[observation] == self.value_function.values[observation].max()))
+        return self.rng.choice(np.flatnonzero(self.value_function.values[observation] == self.value_function.values[observation].max()))
 
     def get_action_probability(self, action: npt.ArrayLike, observation: npt.ArrayLike) -> float:
         return 1.0 / np.count_nonzero(self.value_function.values[observation] == self.value_function.values[observation].max())
@@ -75,7 +77,7 @@ class GreedyQPolicy(QValueBasedPolicy):
 
 class EpsilonGreedyPolicy(QValueBasedPolicy):
     """
-    Epsilon-Greedy policy that selects the action that mximises the Q-function in 1-epsilon probability and
+    Epsilon-Greedy policy that selects the action that maximises the Q-function in 1-epsilon probability and
     performs a random action otherwise.
     """
 
