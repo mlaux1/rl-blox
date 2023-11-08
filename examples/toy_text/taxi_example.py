@@ -6,29 +6,7 @@ from gymnasium.wrappers import FlattenObservation, RecordEpisodeStatistics
 from modular_rl.algorithms.model_free.sarsa import Sarsa
 from modular_rl.algorithms.model_free.q_learning import QLearning
 from modular_rl.policy.base_policy import EpsilonGreedyPolicy
-
-
-def generate_rollout(env, policy):
-
-    observation, _ = env.reset()
-    terminated = False
-    truncated = False
-
-    obs = []
-    acts = []
-    rews = []
-
-    obs.append(observation)
-
-    while not terminated and not truncated:
-        action = policy.get_action(observation)
-        observation, reward, terminated, truncated, info = env.step(action)
-
-        obs.append(observation)
-        acts.append(action)
-        rews.append(reward)
-
-    return np.array(obs), np.array(acts), np.array(rews)
+from modular_rl.helper.experiment_helper import generate_rollout, moving_average
 
 
 num_episodes = 2000
@@ -56,16 +34,9 @@ test_env = gym.make("Taxi-v3", render_mode="human")
 generate_rollout(test_env, q_learning.target_policy)
 test_env.close()
 
-# train_env.close()
-
 
 rolling_length = 100
 fig, axs = plt.subplots(ncols=2, figsize=(12, 5))
-
-
-def moving_average(array, rolling_length):
-    return np.convolve(array.flatten(), np.ones(rolling_length), mode="valid") / rolling_length
-
 
 axs[0].set_title("Episode rewards")
 # compute and assign a rolling average of the data to provide a smoother graph
