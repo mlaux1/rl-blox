@@ -4,6 +4,8 @@ import numpy as np
 import numpy.typing as npt
 import torch
 from gymnasium.spaces.discrete import Discrete
+from gymnasium.spaces.utils import flatdim
+
 from modular_rl.policy.base_model import (NeuralNetwork, Transition,
                                           ReplayBuffer)
 
@@ -23,8 +25,12 @@ class ValueFunction(abc.ABC):
 class TabularValueFunction(ValueFunction):
     """Tabular state value function."""
 
-    def __init__(self, observation_space: Discrete, initial_value: float = 0.0):
-        self.values = np.full(shape=observation_space.n, fill_value=initial_value)
+    def __init__(self,
+                 observation_space: Discrete,
+                 initial_value: float = 0.0):
+
+        self.values = np.full(shape=flatdim(observation_space),
+                              fill_value=initial_value)
 
     def get_state_value(self, observation: npt.ArrayLike) -> npt.ArrayLike:
         return self.values[observation]
@@ -48,10 +54,17 @@ class QFunction(abc.ABC):
 class TabularQFunction(QFunction):
     """Tabular action value function."""
 
-    def __init__(self, observation_space: Discrete, action_space: Discrete, initial_value: float = 0.0):
-        self.values = np.full(shape=(observation_space.n, action_space.n), fill_value=initial_value)
+    def __init__(self,
+                 observation_space: Discrete,
+                 action_space: Discrete,
+                 initial_value: float = 0.0):
+        self.values = np.full(shape=(flatdim(observation_space),
+                                     flatdim(action_space)),
+                              fill_value=initial_value)
 
-    def get_action_value(self, observation: npt.ArrayLike, action: npt.ArrayLike) -> npt.ArrayLike:
+    def get_action_value(self,
+                         observation: npt.ArrayLike,
+                         action: npt.ArrayLike) -> npt.ArrayLike:
         return self.values[observation, action]
 
     def update(self, observations, actions, step) -> None:
