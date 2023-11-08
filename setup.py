@@ -16,6 +16,6 @@ if __name__ == "__main__":
           packages=["modular_rl"],
           install_requires=["numpy",
                             "pytest",
-                            "torch"
+                            "torch",
                             "gymnasium"
                             ])
