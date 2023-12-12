@@ -12,17 +12,25 @@ class MonteCarlo:
         self.epsilon = epsilon
         self.env = env
 
-        assert update_mode in ["every_visit", "first_visit"], f"unknown update mode '{update_mode}'"
+        assert update_mode in [
+            "every_visit",
+            "first_visit",
+        ], f"unknown update mode '{update_mode}'"
         self.update_mode = update_mode
 
-        self.exploration_policy = UniformRandomPolicy(env.observation_space, env.action_space)
+        self.exploration_policy = UniformRandomPolicy(
+            env.observation_space, env.action_space
+        )
         self.target_policy = GreedyQPolicy(env.observation_space, env.action_space, 0.0)
 
-        self.n_visits = np.full(shape=(env.observation_space.n, env.action_space.n), fill_value=0.0)
-        self.total_return = np.full(shape=(env.observation_space.n, env.action_space.n), fill_value=0.0)
+        self.n_visits = np.full(
+            shape=(env.observation_space.n, env.action_space.n), fill_value=0.0
+        )
+        self.total_return = np.full(
+            shape=(env.observation_space.n, env.action_space.n), fill_value=0.0
+        )
 
     def train(self, max_episodes: int) -> None:
-
         for _ in range(max_episodes):
             # collect episode
             obs, acs, rews = self.collect_episode_rollout()
@@ -71,4 +79,3 @@ class MonteCarlo:
                 break
 
         return observations, actions, rewards
-

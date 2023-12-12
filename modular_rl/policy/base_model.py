@@ -22,11 +22,12 @@ class BaseModel(abc.ABC):
         pass
 
 
-Transition = namedtuple("Transition", ("observation", "action", "reward", "next_observation"))
+Transition = namedtuple(
+    "Transition", ("observation", "action", "reward", "next_observation")
+)
 
 
 class ReplayBuffer(object):
-
     def __init__(self, size: int):
         self.buffer = deque([], maxlen=size)
 
@@ -42,7 +43,6 @@ class ReplayBuffer(object):
 
 
 class NeuralNetwork(nn.Module):
-
     def __init__(self, input_shape: int, output_shape: int):
         super(NeuralNetwork, self).__init__()
         self.layer1 = nn.Linear(input_shape, 64)

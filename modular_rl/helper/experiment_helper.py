@@ -7,10 +7,8 @@ from numpy.typing import ArrayLike
 
 
 def generate_rollout(
-        env: gym.Env,
-        policy: BasePolicy
+    env: gym.Env, policy: BasePolicy
 ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
-
     observation, _ = env.reset()
     terminated = False
     truncated = False
@@ -33,6 +31,7 @@ def generate_rollout(
 
 
 def moving_average(array, rolling_length):
-    return np.convolve(array.flatten(),
-                       np.ones(rolling_length),
-                       mode="valid") / rolling_length
+    return (
+        np.convolve(array.flatten(), np.ones(rolling_length), mode="valid")
+        / rolling_length
+    )

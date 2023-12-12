@@ -12,7 +12,9 @@ train_env = gym.make("FrozenLake-v1")
 train_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=100000)
 
 
-policy = EpsilonGreedyPolicy(train_env.observation_space, train_env.action_space, epsilon=0.01)
+policy = EpsilonGreedyPolicy(
+    train_env.observation_space, train_env.action_space, epsilon=0.01
+)
 alg = Sarsa(train_env, policy, alpha=0.2)
 
 train_returns = alg.train(100000)
@@ -31,14 +33,23 @@ fig, axs = plt.subplots(ncols=2, figsize=(12, 5))
 
 axs[0].set_title("Episode rewards")
 # compute and assign a rolling average of the data to provide a smoother graph
-reward_moving_average = (np.convolve(np.array(train_env.return_queue).flatten(), np.ones(rolling_length), mode="valid") /
-                         rolling_length)
+reward_moving_average = (
+    np.convolve(
+        np.array(train_env.return_queue).flatten(),
+        np.ones(rolling_length),
+        mode="valid",
+    )
+    / rolling_length
+)
 axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
 
 axs[1].set_title("Episode lengths")
-length_moving_average = (np.convolve(np.array(train_env.length_queue).flatten(), np.ones(rolling_length), mode="same") /
-                         rolling_length)
+length_moving_average = (
+    np.convolve(
+        np.array(train_env.length_queue).flatten(), np.ones(rolling_length), mode="same"
+    )
+    / rolling_length
+)
 axs[1].plot(range(len(length_moving_average)), length_moving_average)
 plt.tight_layout()
 plt.show()
-

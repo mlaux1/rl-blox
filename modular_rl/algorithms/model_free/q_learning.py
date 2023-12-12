@@ -14,11 +14,12 @@ class QLearning:
         self.epsilon = epsilon
         self.env = env
 
-        self.exploration_policy = UniformRandomPolicy(env.observation_space, env.action_space)
+        self.exploration_policy = UniformRandomPolicy(
+            env.observation_space, env.action_space
+        )
         self.target_policy = GreedyQPolicy(env.observation_space, env.action_space)
 
     def train(self, max_episodes: int, gamma=0.99) -> npt.ArrayLike:
-
         ep_rewards = np.zeros(max_episodes)
 
         for i in tqdm(range(max_episodes)):
@@ -29,12 +30,21 @@ class QLearning:
                 else:
                     action = self.target_policy.get_action(observation)
 
-                next_observation, reward, terminated, truncated, info = self.env.step(action)
+                next_observation, reward, terminated, truncated, info = self.env.step(
+                    action
+                )
 
                 next_action = self.target_policy.get_action(next_observation)
-                td_error = (reward +
-                            gamma * self.target_policy.value_function.get_action_value(next_observation, next_action) -
-                            self.target_policy.value_function.get_action_value(observation, action))
+                td_error = (
+                    reward
+                    + gamma
+                    * self.target_policy.value_function.get_action_value(
+                        next_observation, next_action
+                    )
+                    - self.target_policy.value_function.get_action_value(
+                        observation, action
+                    )
+                )
 
                 self.target_policy.update(observation, action, self.alpha * td_error)
 
@@ -63,7 +73,9 @@ class QLearning:
             else:
                 action = self.target_policy.get_action(observation)
 
-            next_observation, reward, terminated, truncated, info = self.env.step(action)
+            next_observation, reward, terminated, truncated, info = self.env.step(
+                action
+            )
 
             observations.append(next_observation)
             actions.append(action)
@@ -74,5 +86,3 @@ class QLearning:
                 break
 
         return observations, actions, rewards
-
-

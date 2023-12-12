@@ -6,8 +6,7 @@ import torch
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 
-from modular_rl.policy.base_model import (NeuralNetwork, Transition,
-                                          ReplayBuffer)
+from modular_rl.policy.base_model import NeuralNetwork, Transition, ReplayBuffer
 
 
 class ValueFunction(abc.ABC):
@@ -25,12 +24,10 @@ class ValueFunction(abc.ABC):
 class TabularValueFunction(ValueFunction):
     """Tabular state value function."""
 
-    def __init__(self,
-                 observation_space: Discrete,
-                 initial_value: float = 0.0):
-
-        self.values = np.full(shape=flatdim(observation_space),
-                              fill_value=initial_value)
+    def __init__(self, observation_space: Discrete, initial_value: float = 0.0):
+        self.values = np.full(
+            shape=flatdim(observation_space), fill_value=initial_value
+        )
 
     def get_state_value(self, observation: npt.ArrayLike) -> npt.ArrayLike:
         return self.values[observation]
@@ -43,7 +40,9 @@ class QFunction(abc.ABC):
     """Base Q function class."""
 
     @abc.abstractmethod
-    def get_action_value(self, observation: npt.ArrayLike, action: npt.ArrayLike) -> npt.ArrayLike:
+    def get_action_value(
+        self, observation: npt.ArrayLike, action: npt.ArrayLike
+    ) -> npt.ArrayLike:
         pass
 
     @abc.abstractmethod
@@ -54,17 +53,20 @@ class QFunction(abc.ABC):
 class TabularQFunction(QFunction):
     """Tabular action value function."""
 
-    def __init__(self,
-                 observation_space: Discrete,
-                 action_space: Discrete,
-                 initial_value: float = 0.0):
-        self.values = np.full(shape=(flatdim(observation_space),
-                                     flatdim(action_space)),
-                              fill_value=initial_value)
+    def __init__(
+        self,
+        observation_space: Discrete,
+        action_space: Discrete,
+        initial_value: float = 0.0,
+    ):
+        self.values = np.full(
+            shape=(flatdim(observation_space), flatdim(action_space)),
+            fill_value=initial_value,
+        )
 
-    def get_action_value(self,
-                         observation: npt.ArrayLike,
-                         action: npt.ArrayLike) -> npt.ArrayLike:
+    def get_action_value(
+        self, observation: npt.ArrayLike, action: npt.ArrayLike
+    ) -> npt.ArrayLike:
         return self.values[observation, action]
 
     def update(self, observations, actions, step) -> None:
@@ -79,17 +81,22 @@ class NNQFunction(QFunction):
 
     def __init__(self, observation_space, action_space):
         self.device = "cpu"
-        self.q_network = NeuralNetwork(observation_space.n, action_space.n).to(self.device)
-        self.target_network = NeuralNetwork(observation_space.n, action_space.n).to(self.device)
+        self.q_network = NeuralNetwork(observation_space.n, action_space.n).to(
+            self.device
+        )
+        self.target_network = NeuralNetwork(observation_space.n, action_space.n).to(
+            self.device
+        )
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.replay_buffer = ReplayBuffer(size=10_000)
         self.batch_size = 64
         self.gamma = 0.99
         self.learning_rate = 1e-4
-        self.optimizer = torch.optim.AdamW(self.q_network.parameters(), lr=self.learning_rate, amsgrad=True)
+        self.optimizer = torch.optim.AdamW(
+            self.q_network.parameters(), lr=self.learning_rate, amsgrad=True
+        )
 
     def update(self) -> None:
-
         if len(self.replay_buffer) < self.batch_size:
             return
 
@@ -101,9 +108,14 @@ class NNQFunction(QFunction):
 
         # Compute a mask of non-final states and concatenate the batch elements
         # (a final state would've been the one after which simulation ended)
-        non_final_mask = torch.tensor(tuple(map(lambda o: o is not None, batch.next_observation)),
-                                      device=self.device, dtype=torch.bool)
-        non_final_next_states = torch.cat([o for o in batch.next_observation if o is not None])
+        non_final_mask = torch.tensor(
+            tuple(map(lambda o: o is not None, batch.next_observation)),
+            device=self.device,
+            dtype=torch.bool,
+        )
+        non_final_next_states = torch.cat(
+            [o for o in batch.next_observation if o is not None]
+        )
 
         obs_batch = torch.cat(batch.observation)
         action_batch = torch.cat(batch.action)
@@ -121,7 +133,9 @@ class NNQFunction(QFunction):
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.batch_size, device=self.device)
         with torch.no_grad():
-            next_state_values[non_final_mask] = self.target_network(non_final_next_states).max(1)[0]
+            next_state_values[non_final_mask] = self.target_network(
+                non_final_next_states
+            ).max(1)[0]
 
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 

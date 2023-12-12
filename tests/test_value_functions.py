@@ -5,9 +5,7 @@ from gymnasium.spaces.discrete import Discrete
 
 
 class TestValueFunction:
-
     def test_creation(self):
-
         test_discrete = Discrete(3)
         test_instance = TabularValueFunction(test_discrete, 0.1)
 
@@ -15,7 +13,6 @@ class TestValueFunction:
         assert np.all(test_instance.values == 0.1)
 
     def test_update(self):
-
         test_discrete = Discrete(5)
         test_instance = TabularValueFunction(test_discrete)
 
@@ -30,7 +27,6 @@ class TestValueFunction:
 
 class TestQFunction:
     def test_creation(self):
-
         test_discrete_obs = Discrete(2)
         test_discrete_acs = Discrete(3)
         test_instance = TabularQFunction(test_discrete_obs, test_discrete_acs, 0.1)
