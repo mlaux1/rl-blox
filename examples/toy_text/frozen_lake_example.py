@@ -15,7 +15,7 @@ train_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=100000)
 policy = EpsilonGreedyPolicy(
     train_env.observation_space, train_env.action_space, epsilon=0.01
 )
-alg = Sarsa(train_env, policy, alpha=0.2)
+alg = Sarsa(train_env, policy, alpha=0.2, key=0)
 
 train_returns = alg.train(100000)
 
@@ -46,7 +46,9 @@ axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
 axs[1].set_title("Episode lengths")
 length_moving_average = (
     np.convolve(
-        np.array(train_env.length_queue).flatten(), np.ones(rolling_length), mode="same"
+        np.array(train_env.length_queue).flatten(),
+        np.ones(rolling_length),
+        mode="same"
     )
     / rolling_length
 )

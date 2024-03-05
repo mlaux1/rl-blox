@@ -13,11 +13,12 @@ epsilon = 0.1
 
 train_env = gym.make("CliffWalking-v0")
 
-sarsa_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=num_episodes)
+sarsa_env = gym.wrappers.RecordEpisodeStatistics(
+    train_env, deque_size=num_episodes)
 policy = EpsilonGreedyPolicy(
     train_env.observation_space, train_env.action_space, epsilon=epsilon
 )
-sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate)
+sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate, key=0)
 sarsa.train(num_episodes)
 
 test_env = gym.make("CliffWalking-v0", render_mode="human")

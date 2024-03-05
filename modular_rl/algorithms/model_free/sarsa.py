@@ -1,55 +1,24 @@
-import numpy as np
-import numpy.typing as npt
-from modular_rl.policy.base_policy import QValueBasedPolicy
+import jax.numpy as jnp
+from jax import Array
 from tqdm import tqdm
 
+from modular_rl.algorithms.base_algorithm import BaseAlgorithm
 
-class Sarsa:
+
+class Sarsa(BaseAlgorithm):
     """
-    Basic Sarsa using temporal differences and tabular q-values.
+    Basic SARSA implementation in JAX.
     """
 
-    def __init__(self, env, policy: QValueBasedPolicy, alpha):
-        self.alpha = alpha
-        self.env = env
-
-        self.target_policy = policy
-
-    def train(self, max_episodes: int, gamma=0.99) -> npt.ArrayLike:
-        ep_rewards = np.zeros(max_episodes)
+    def train(
+            self,
+            max_episodes: int,
+            gamma: float = 0.99
+    ) -> Array:
+        ep_rewards = jnp.zeros(max_episodes)
 
         for i in tqdm(range(max_episodes)):
-            observation, _ = self.env.reset()
-            action = self.target_policy.get_action(observation)
-
-            while True:
-                next_observation, reward, terminated, truncated, info = self.env.step(
-                    action
-                )
-
-                next_action = self.target_policy.get_action(next_observation)
-
-                td_error = (
-                    reward
-                    + gamma
-                    * self.target_policy.value_function.get_action_value(
-                        next_observation, next_action
-                    )
-                    - self.target_policy.value_function.get_action_value(
-                        observation, action
-                    )
-                )
-
-                self.target_policy.value_function.update(
-                    observation, action, self.alpha * td_error
-                )
-
-                observation = next_observation
-                action = next_action
-
-                ep_rewards[i] += reward
-
-                if terminated or truncated:
-                    break
+            ep_reward = self.episode_rollout(gamma)
+            ep_rewards = ep_rewards.at[i].add(ep_reward)
 
         return ep_rewards
