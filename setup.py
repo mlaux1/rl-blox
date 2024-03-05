@@ -9,11 +9,11 @@ if __name__ == "__main__":
         name="modular_rl",
         version="0.1.0",
         maintainer="Melvin Laux",
-        maintainer_email="melvin.laux@dfki.de",
+        maintainer_email="melvin.laux@uni-bremen.de",
         description="Modular RL implementations",
         long_description=long_description,
         long_description_content_type="text/markdown",
         license="Not public",
         packages=["modular_rl"],
-        install_requires=["numpy", "pytest", "torch", "gymnasium"],
+        install_requires=["numpy", "pytest", "torch", "gymnasium", "jax"],
     )
