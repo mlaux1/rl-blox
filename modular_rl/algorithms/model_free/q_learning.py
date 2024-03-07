@@ -1,5 +1,5 @@
-import numpy as np
-import numpy.typing as npt
+import jax.numpy as jnp
+from jax.typing import ArrayLike
 from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
 from tqdm import tqdm
 
@@ -17,10 +17,15 @@ class QLearning:
         self.exploration_policy = UniformRandomPolicy(
             env.observation_space, env.action_space
         )
-        self.target_policy = GreedyQPolicy(env.observation_space, env.action_space)
+        self.target_policy = GreedyQPolicy(
+            env.observation_space, env.action_space)
 
-    def train(self, max_episodes: int, gamma=0.99) -> npt.ArrayLike:
-        ep_rewards = np.zeros(max_episodes)
+    def train(
+            self,
+            max_episodes: int,
+            gamma=0.99
+    ) -> ArrayLike:
+        ep_rewards = jnp.zeros(max_episodes)
 
         for i in tqdm(range(max_episodes)):
             observation, _ = self.env.reset()
@@ -56,33 +61,3 @@ class QLearning:
                     break
 
         return ep_rewards
-
-    def collect_episode_rollout(self):
-        """
-        Runs one full episode and returns the observations, actions and rewards.
-        """
-
-        observation = self.env.reset()[0]
-        observations = [observation]
-        actions = []
-        rewards = []
-
-        while True:
-            if np.random.random_sample() < self.epsilon:
-                action = self.exploration_policy.get_action(observation)
-            else:
-                action = self.target_policy.get_action(observation)
-
-            next_observation, reward, terminated, truncated, info = self.env.step(
-                action
-            )
-
-            observations.append(next_observation)
-            actions.append(action)
-            rewards.append(reward)
-
-            if terminated or truncated:
-                print("Terminated episode")
-                break
-
-        return observations, actions, rewards

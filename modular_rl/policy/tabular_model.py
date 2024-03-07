@@ -7,7 +7,8 @@ from modular_rl.policy.base_model import BaseModel
 class TabularModel(BaseModel):
     def __init__(self, env, init_value: float = 0.0):
         self.table = np.full(
-            shape=(env.observation_space.n, env.action_space.n), fill_value=init_value
+            shape=(env.observation_space.n, env.action_space.n),
+            fill_value=init_value
         )
 
     def get_output(self, inputs: npt.ArrayLike) -> npt.ArrayLike:
