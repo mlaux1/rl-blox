@@ -41,7 +41,15 @@ class Policy:  # I think this must be a stochastic policy
         raise NotImplementedError()
 
 
-def reinforce(policy: Policy, dataset: EpisodeDataset):  # TODO can we use a pseudo-objective trick?
+def reinforce(policy: Policy, dataset: EpisodeDataset):  # TODO can we use a pseudo-objective for autodiff?
+    """REINFORCE policy gradient.
+
+    References
+
+    https://www.deisenroth.cc/pdf/fnt_corrected_2014-08-26.pdf, page 29
+    http://incompleteideas.net/book/RLbook2020.pdf, page 326
+    https://media.suub.uni-bremen.de/handle/elib/4585, page 52
+    """
     episode_returns = []
     for episode in dataset.samples:
         rewards = [r for _, _, r in episode]
