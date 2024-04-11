@@ -17,6 +17,7 @@ class BaseAlgorithm:
         self.key = random.PRNGKey(key)
         self.alpha = alpha
         self.target_policy = policy
+        self.exploration_policy = policy
 
     @abc.abstractmethod
     def train(

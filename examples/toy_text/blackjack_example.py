@@ -12,6 +12,7 @@ from modular_rl.helper.experiment_helper import generate_rollout, moving_average
 num_episodes = 1000
 learning_rate = 0.1
 epsilon = 0.1
+KEY = 0
 
 train_env = gym.make("Blackjack-v1")
 
@@ -19,7 +20,7 @@ sarsa_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
 policy = EpsilonGreedyPolicy(
     train_env.observation_space, train_env.action_space, epsilon=epsilon
 )
-sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate, key=0)
+sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate, key=KEY)
 sarsa.train(num_episodes)
 
 test_env = gym.make("Blackjack-v0", render_mode="human")

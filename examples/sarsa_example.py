@@ -30,7 +30,7 @@ def generate_rollout(env, policy):
 
 
 train_env = gym.make("FrozenLake-v1")
-train_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=100000)
+train_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=100_000)
 
 
 policy = EpsilonGreedyPolicy(

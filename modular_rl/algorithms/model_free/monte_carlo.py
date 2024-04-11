@@ -19,9 +19,14 @@ class MonteCarlo:
         self.update_mode = update_mode
 
         self.exploration_policy = UniformRandomPolicy(
-            env.observation_space, env.action_space
+            env.observation_space,
+            env.action_space
         )
-        self.target_policy = GreedyQPolicy(env.observation_space, env.action_space, 0.0)
+        self.target_policy = GreedyQPolicy(
+            env.observation_space,
+            env.action_space,
+            0.0
+        )
 
         self.n_visits = np.full(
             shape=(env.observation_space.n, env.action_space.n), fill_value=0.0

@@ -27,14 +27,14 @@ test_env = gym.make("Taxi-v3", render_mode="human")
 generate_rollout(test_env, sarsa.target_policy)
 test_env.close()
 
-q_learning_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
-q_learning = QLearning(q_learning_env, alpha=learning_rate, epsilon=epsilon)
-q_learning.train(num_episodes)
-q_learning_env.close()
+#q_learning_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
+#q_learning = QLearning(q_learning_env, alpha=learning_rate, epsilon=epsilon)
+#q_learning.train(num_episodes)
+#q_learning_env.close()
 
-test_env = gym.make("Taxi-v3", render_mode="human")
-generate_rollout(test_env, q_learning.target_policy)
-test_env.close()
+#test_env = gym.make("Taxi-v3", render_mode="human")
+#generate_rollout(test_env, q_learning.target_policy)
+#test_env.close()
 
 
 rolling_length = 100
@@ -45,33 +45,33 @@ axs[0].set_title("Episode rewards")
 sarsa_reward_moving_average = moving_average(
     np.array(sarsa_env.return_queue), rolling_length
 )
-q_learning_reward_moving_average = moving_average(
-    np.array(q_learning_env.return_queue), rolling_length
-)
+#q_learning_reward_moving_average = moving_average(
+#    np.array(q_learning_env.return_queue), rolling_length
+#)
 axs[0].plot(
     range(len(sarsa_reward_moving_average)), sarsa_reward_moving_average, label="SARSA"
 )
-axs[0].plot(
-    range(len(q_learning_reward_moving_average)),
-    q_learning_reward_moving_average,
-    label="Q-Learning",
-)
+#axs[0].plot(
+#    range(len(q_learning_reward_moving_average)),
+#    q_learning_reward_moving_average,
+#    label="Q-Learning",
+#)
 
 axs[1].set_title("Episode lengths")
 sarsa_length_moving_average = moving_average(
     np.array(sarsa_env.length_queue), rolling_length
 )
-q_learning_length_moving_average = moving_average(
-    np.array(q_learning_env.length_queue), rolling_length
-)
+#q_learning_length_moving_average = moving_average(
+#    np.array(q_learning_env.length_queue), rolling_length
+#)
 axs[1].plot(
     range(len(sarsa_length_moving_average)), sarsa_length_moving_average, label="SARSA"
 )
-axs[1].plot(
-    range(len(q_learning_length_moving_average)),
-    q_learning_length_moving_average,
-    label="Q-Learning",
-)
+#axs[1].plot(
+#    range(len(q_learning_length_moving_average)),
+#    q_learning_length_moving_average,
+#    label="Q-Learning",
+#)
 plt.tight_layout()
 plt.legend()
 plt.show()
