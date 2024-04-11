@@ -6,7 +6,9 @@ from gymnasium.wrappers import FlattenObservation, RecordEpisodeStatistics
 from modular_rl.algorithms.model_free.sarsa import Sarsa
 from modular_rl.algorithms.model_free.q_learning import QLearning
 from modular_rl.policy.base_policy import EpsilonGreedyPolicy
-from modular_rl.helper.experiment_helper import generate_rollout, moving_average
+from modular_rl.helper.experiment_helper import generate_rollout
+
+from rl_experiments.evaluation.plotting import plot_training_stats
 
 
 num_episodes = 2000
@@ -36,42 +38,10 @@ test_env.close()
 #generate_rollout(test_env, q_learning.target_policy)
 #test_env.close()
 
+plot_training_stats(
+    np.array(sarsa_env.return_queue),
+    np.array(sarsa_env.length_queue),
+    rolling_length=100,
+    label="SARSA",
+)
 
-rolling_length = 100
-fig, axs = plt.subplots(ncols=2, figsize=(12, 5))
-
-axs[0].set_title("Episode rewards")
-# compute and assign a rolling average of the data to provide a smoother graph
-sarsa_reward_moving_average = moving_average(
-    np.array(sarsa_env.return_queue), rolling_length
-)
-#q_learning_reward_moving_average = moving_average(
-#    np.array(q_learning_env.return_queue), rolling_length
-#)
-axs[0].plot(
-    range(len(sarsa_reward_moving_average)), sarsa_reward_moving_average, label="SARSA"
-)
-#axs[0].plot(
-#    range(len(q_learning_reward_moving_average)),
-#    q_learning_reward_moving_average,
-#    label="Q-Learning",
-#)
-
-axs[1].set_title("Episode lengths")
-sarsa_length_moving_average = moving_average(
-    np.array(sarsa_env.length_queue), rolling_length
-)
-#q_learning_length_moving_average = moving_average(
-#    np.array(q_learning_env.length_queue), rolling_length
-#)
-axs[1].plot(
-    range(len(sarsa_length_moving_average)), sarsa_length_moving_average, label="SARSA"
-)
-#axs[1].plot(
-#    range(len(q_learning_length_moving_average)),
-#    q_learning_length_moving_average,
-#    label="Q-Learning",
-#)
-plt.tight_layout()
-plt.legend()
-plt.show()

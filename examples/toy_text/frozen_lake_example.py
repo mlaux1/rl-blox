@@ -7,6 +7,8 @@ from modular_rl.algorithms.model_free.sarsa import Sarsa
 from modular_rl.policy.base_policy import EpsilonGreedyPolicy
 from modular_rl.helper.experiment_helper import generate_rollout
 
+from rl_experiments.evaluation.plotting import plot_training_stats
+
 
 train_env = gym.make("FrozenLake-v1")
 train_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=100000)
@@ -27,7 +29,12 @@ generate_rollout(test_env, alg.target_policy)
 
 train_env.close()
 
-
+plot_training_stats(
+    np.array(sarsa_env.return_queue),
+    np.array(sarsa_env.length_queue),
+    rolling_length=100,
+    title="SARSA",
+)
 rolling_length = 100
 fig, axs = plt.subplots(ncols=2, figsize=(12, 5))
 
