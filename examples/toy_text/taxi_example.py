@@ -29,19 +29,26 @@ test_env = gym.make("Taxi-v3", render_mode="human")
 generate_rollout(test_env, sarsa.target_policy)
 test_env.close()
 
-#q_learning_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
-#q_learning = QLearning(q_learning_env, alpha=learning_rate, epsilon=epsilon)
-#q_learning.train(num_episodes)
-#q_learning_env.close()
+q_learning_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
+q_learning = QLearning(q_learning_env, alpha=learning_rate, epsilon=epsilon)
+q_learning.train(num_episodes)
+q_learning_env.close()
 
-#test_env = gym.make("Taxi-v3", render_mode="human")
-#generate_rollout(test_env, q_learning.target_policy)
-#test_env.close()
+test_env = gym.make("Taxi-v3", render_mode="human")
+generate_rollout(test_env, q_learning.target_policy)
+test_env.close()
 
 plot_training_stats(
     np.array(sarsa_env.return_queue),
     np.array(sarsa_env.length_queue),
     rolling_length=100,
     label="SARSA",
+)
+
+plot_training_stats(
+    np.array(q_learning_env.return_queue),
+    np.array(q_learning_env.length_queue),
+    rolling_length=100,
+    label="Q_Learning",
 )
 

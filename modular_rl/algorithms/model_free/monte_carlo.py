@@ -8,7 +8,10 @@ class MonteCarlo:
     Implements Every-Visit ann First-Visit On-Policy Monte Carlo Learning using Q-Values.
     """
 
-    def __init__(self, env, epsilon, update_mode="every_visit"):
+    def __init__(
+            self,
+            env,
+            epsilon, update_mode="every_visit"):
         self.epsilon = epsilon
         self.env = env
 

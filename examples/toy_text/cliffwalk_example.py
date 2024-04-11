@@ -11,6 +11,8 @@ from rl_experiments.evaluation.plotting import plot_training_stats
 num_episodes = 1000
 learning_rate = 0.1
 epsilon = 0.1
+WINDOW_SIZE = 100
+KEY = 42
 
 train_env = gym.make("CliffWalking-v0")
 
@@ -19,18 +21,33 @@ sarsa_env = gym.wrappers.RecordEpisodeStatistics(
 policy = EpsilonGreedyPolicy(
     train_env.observation_space, train_env.action_space, epsilon=epsilon
 )
-sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate, key=0)
+sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate, key=KEY)
 sarsa.train(num_episodes)
 
 test_env = gym.make("CliffWalking-v0", render_mode="human")
 generate_rollout(test_env, sarsa.target_policy)
 
-#q_learning_env = gym.wrappers.RecordEpisodeStatistics(
-#    train_env, deque_size=num_episodes
-#)
-#q_learning = QLearning(q_learning_env, alpha=learning_rate, epsilon=epsilon)
-#q_learning.train(num_episodes)
+q_learning_env = gym.wrappers.RecordEpisodeStatistics(
+    train_env, deque_size=num_episodes
+)
+q_learning = QLearning(
+    q_learning_env, alpha=learning_rate, epsilon=epsilon, key=KEY)
+q_learning.train(num_episodes)
 
-# generate_rollout(test_env, q_learning.target_policy)
+generate_rollout(test_env, q_learning.target_policy)
 
-# train_env.close()
+train_env.close()
+
+plot_training_stats(
+    np.array(sarsa_env.return_queue),
+    np.array(sarsa_env.length_queue),
+    rolling_length=WINDOW_SIZE,
+    label="SARSA",
+)
+
+plot_training_stats(
+    np.array(q_learning_env.return_queue),
+    np.array(q_learning_env.length_queue),
+    rolling_length=WINDOW_SIZE,
+    label="Q_Learning",
+)

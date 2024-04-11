@@ -1,6 +1,8 @@
 import jax.numpy as jnp
+import numpy as np
 from jax.typing import ArrayLike
 from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
+from modular_rl.tools.error_functions import td_error
 from tqdm import tqdm
 
 
@@ -9,7 +11,14 @@ class QLearning:
     Basic Q-Learning using temporal differences and tabular q-values.
     """
 
-    def __init__(self, env, alpha, epsilon):
+    def __init__(
+            self,
+            env,
+            alpha,
+            epsilon: float,
+            key: int,
+    ) -> None:
+
         self.alpha = alpha
         self.epsilon = epsilon
         self.env = env
@@ -30,32 +39,28 @@ class QLearning:
         for i in tqdm(range(max_episodes)):
             observation, _ = self.env.reset()
             while True:
-                if np.random.random_sample() < self.epsilon:
-                    action = self.exploration_policy.get_action(observation)
-                else:
-                    action = self.target_policy.get_action(observation)
+
+                action = self.exploration_policy.get_action(observation)
 
                 next_observation, reward, terminated, truncated, info = self.env.step(
                     action
                 )
 
                 next_action = self.target_policy.get_action(next_observation)
-                td_error = (
-                    reward
-                    + gamma
-                    * self.target_policy.value_function.get_action_value(
-                        next_observation, next_action
-                    )
-                    - self.target_policy.value_function.get_action_value(
-                        observation, action
-                    )
-                )
+
+                val = self.target_policy.value_function.get_action_value(
+                    observation, action)
+                next_val = self.target_policy.value_function.get_action_value(
+                    next_observation, next_action)
+
+                error = td_error(reward, gamma, val, next_val)
+
 
                 self.target_policy.update(observation, action, self.alpha * td_error)
 
                 observation = next_observation
 
-                ep_rewards[i] += reward
+                ep_rewards = ep_rewards.at[i].add(reward)
 
                 if terminated or truncated:
                     break
