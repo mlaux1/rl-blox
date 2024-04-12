@@ -1,4 +1,5 @@
 from typing import List, Tuple
+from functools import partial
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -18,16 +19,20 @@ class EpisodeDataset:
         assert len(self.samples) > 0
         self.samples[-1].append((state, action, reward))
 
-    def episode_returns(self):
-        episode_returns = []
+    def dataset(self):
+        states = []
+        actions = []
+        returns = []
         for episode in self.samples:
+            states.extend([s for s, _, _ in episode])
+            actions.extend([a for _, a, _ in episode])
             rewards = [r for _, _, r in episode]
-            episode_return = jnp.sum(jnp.array(rewards))
-            episode_returns.append(episode_return)
-        return episode_returns
+            R = jnp.sum(jnp.array(rewards))  # TODO for other versions
+            returns.extend([R] * len(episode))
+        return states, actions, returns
 
 
-class SoftmaxLinearPolicy:
+class SoftmaxPolicy:
     state_space: gym.spaces.Space
     action_space: gym.spaces.Space
     theta = jax.Array
@@ -40,38 +45,57 @@ class SoftmaxLinearPolicy:
         self.state_space = state_space
         self.action_space = action_space
 
-        self.actions = jnp.arange(self.action_space.start, self.action_space.start + self.action_space.n)
+        self.actions = jnp.arange(
+            self.action_space.start, self.action_space.start + self.action_space.n)
 
-        self.theta = jax.random.normal(
-            key, (self.action_space.n + self.state_space.shape[0] + 1,))
-        key, self.sampling_key = jax.random.split(key)  # TODO necessary?
+        self.sampling_key, key = jax.random.split(key)
 
-    def _feature_projection(self, state, action):
-        one_hot_action = jnp.zeros(self.action_space.n)
-        one_hot_action.at[action - self.action_space.start].set(1.0)
-        return jnp.hstack((state, one_hot_action, jnp.array([1.0])))
+        sizes = [self.state_space.shape[0], 10, self.action_space.n]  # TODO parameter
+        keys = jax.random.split(key, len(sizes))
+        self.theta = [self._random_layer_params(m, n, k)
+                      for m, n, k in zip(sizes[:-1], sizes[1:], keys)]
 
-    def _h(self, state, action, theta):
-        return theta @ self._feature_projection(state, action)
+    def _random_layer_params(self, m, n, key, scale=1e-1):
+        w_key, b_key = jax.random.split(key)
+        return (
+            scale * jax.random.normal(w_key, (n, m)),
+            scale * jax.random.normal(b_key, (n,))
+        )
 
-    def action_probability(self, state, action, theta):
-        H = jnp.exp(jnp.array([self._h(state, b, theta) for b in self.actions]))
-        return jnp.exp(self._h(state, action, theta)) / jnp.sum(H)  # TODO numerically robust, logsumexp?
+    def zeros_like_theta(self):
+        return [
+            (jnp.zeros_like(W), jnp.zeros_like(b))
+            for W, b in self.theta
+        ]
+
+    def _h(self, state, theta):
+        x = state
+        for W, b in theta[:-1]:
+            a = jnp.dot(W, x) + b
+            x = jnp.tanh(a)
+        W, b = theta[-1]
+        y = jnp.dot(W, x) + b
+        return y
+
+    def action_probabilities(self, state, theta):
+        return jax.nn.softmax(self._h(state, theta))
+
+    def log_action_probabilities(self, state, theta):
+        H = self._h(state, theta)
+        return H - jax.scipy.special.logsumexp(H)  # TODO check
 
     def log_action_probability(self, state, action, theta):
-        H = jnp.array([self._h(state, b, theta) for b in self.actions])
-        h = self._h(state, action, theta)
-        return h - jax.scipy.special.logsumexp(H)  # TODO check
+        H = self._h(state, theta)
+        action_index = action - self.action_space.start
+        return H[action_index] - jax.scipy.special.logsumexp(H)  # TODO check
 
     def sample(self, state):
-        probs = []
-        for a in self.actions:  # TODO vectorize
-            probs.append(self.action_probability(state, a, self.theta))
+        probs = self.action_probabilities(state, self.theta)
         self.sampling_key, key = jax.random.split(self.sampling_key)
-        return jax.random.choice(key, self.actions, p=jnp.array(probs))
+        return jax.random.choice(key, self.actions, p=probs)
 
 
-def reinforce(policy: SoftmaxLinearPolicy, dataset: EpisodeDataset):  # TODO can we use a pseudo-objective for autodiff?
+def reinforce(policy: SoftmaxPolicy, dataset: EpisodeDataset):  # TODO can we use a pseudo-objective for autodiff?
     """REINFORCE policy gradient.
 
     References
@@ -79,36 +103,18 @@ def reinforce(policy: SoftmaxLinearPolicy, dataset: EpisodeDataset):  # TODO can
     https://www.deisenroth.cc/pdf/fnt_corrected_2014-08-26.pdf, page 29
     http://incompleteideas.net/book/RLbook2020.pdf, page 326
     https://media.suub.uni-bremen.de/handle/elib/4585, page 52
+    https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
+    https://github.com/openai/spinningup/tree/master/spinup/examples/pytorch/pg_math
     """
-    n_episodes = len(dataset.samples)
-    n_params = policy.theta.shape[0]
+    def pseudo_loss(states, actions, returns, log_action_probability, theta):
+        loss = jnp.array(0.0)
+        for s, a, R in zip(states, actions, returns):  # TODO parallelize
+            logp = log_action_probability(s, a, theta)
+            loss = loss + logp * R
+        return loss
 
-    episode_returns = dataset.episode_returns()
-
-    # sum i=1 to n_episodes
-    #     (sum t=0 to T-1 grad theta log pi(a_t | s_t)) ** 2
-    #     * R[i]
-    # /
-    # sum i=1 to len(dataset.samples)
-    #     (sum t=0 to T-1 grad theta log pi(a_t | s_t)) ** 2
-    denoms = jnp.array([jnp.sum(jnp.array([jax.grad(lambda theta: policy.log_action_probability(st, at, theta))(policy.theta)
-                                           for st, at, _ in dataset.samples[i]])) ** 2
-                        for i in range(n_episodes)])
-    noms = denoms * jnp.hstack(episode_returns)
-    baseline = jnp.sum(noms / denoms, axis=0)
-
-    # grad =
-    # 1/n_episodes
-    # sum i=1 to N
-    #     sum t=0 to T-1 grad theta log pi (a_t | s_t) (R[i] - b)
-    # return grad
-    grad = jnp.zeros(n_params)
-    for i in range(n_episodes):
-        grad = grad + jnp.sum(jnp.array([
-            jax.grad(lambda theta: policy.log_action_probability(st, at, theta))(policy.theta) * (episode_returns[i] - baseline)
-            for st, at, _ in dataset.samples[i]]))
-    grad = grad / n_episodes
-    return grad
+    states, actions, returns = dataset.dataset()
+    return jax.grad(partial(pseudo_loss, states, actions, returns, policy.log_action_probability))(policy.theta)
 
 
 if __name__ == "__main__":
@@ -116,37 +122,43 @@ if __name__ == "__main__":
     action_space = gym.spaces.Discrete(2)
     key = jax.random.PRNGKey(42)
     key, subkey = jax.random.split(key)
-    policy = SoftmaxLinearPolicy(state_space, action_space, subkey)
-
+    policy = SoftmaxPolicy(state_space, action_space, subkey)
 
     n_episodes = 100
     n_steps = 100
-    learning_rate = 0.0005
+    learning_rate = 0.0001
     random_state = np.random.RandomState(42)
 
     dataset = EpisodeDataset()
     for i in range(n_episodes):
         dataset.start_episode()
         state = jnp.array(np.array([10.0]) * np.sign(random_state.randn()))
+        R = jnp.array(0.0)
+        #print("")
         for t in range(n_steps):
             action = policy.sample(state)
 
             # environment
             if action == 0:  # transition dynamics
-                next_state = state - 1.0
+                next_state = state - 0.1
             else:
-                next_state = state + 1.0
-            reward = -next_state ** 2  # reward function
+                next_state = state + 0.1
+            next_state = jnp.clip(next_state, -10, 10.0)  # TODO hard coded
+            #print(f"\r{next_state[0]:2.3f}")
+            reward = -jnp.abs(next_state[0])  # reward function
+            R += reward
 
             dataset.add_sample(state, action, reward)
 
             state = next_state
+        print(f"Return {R}")
 
         # RL algorithm
         if (i + 1) % 5 == 0:
-            print(dataset.episode_returns())
-
             theta_grad = reinforce(policy, dataset)
-            policy.theta += learning_rate * theta_grad
+            print(theta_grad)
+            # gradient ascent
+            policy.theta = [(w + learning_rate * dw, b + learning_rate * db)
+                            for (w, b), (dw, db) in zip(policy.theta, theta_grad)]
 
             dataset = EpisodeDataset()
