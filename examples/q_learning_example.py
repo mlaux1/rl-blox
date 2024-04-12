@@ -1,9 +1,10 @@
-import gymnasium as gym
 import logging
-import numpy as np
+
+import gymnasium as gym
 import matplotlib.pyplot as plt
-import seaborn as sns
+import numpy as np
 import pandas as pd
+import seaborn as sns
 
 from modular_rl.algorithms.model_free.q_learning import QLearning
 

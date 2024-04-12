@@ -1,9 +1,10 @@
+from typing import Tuple
+
 import gymnasium as gym
 import numpy as np
+from numpy.typing import ArrayLike
 
 from modular_rl.policy.base_policy import BasePolicy
-from typing import Tuple
-from numpy.typing import ArrayLike
 
 
 def generate_rollout(

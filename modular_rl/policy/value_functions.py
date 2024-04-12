@@ -1,12 +1,14 @@
 import abc
 import logging
+
 import numpy as np
 import numpy.typing as npt
 import torch
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 
-from modular_rl.policy.base_model import NeuralNetwork, Transition, ReplayBuffer
+from modular_rl.policy.base_model import (NeuralNetwork, ReplayBuffer,
+                                          Transition)
 
 
 class ValueFunction(abc.ABC):

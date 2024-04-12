@@ -1,13 +1,12 @@
 import abc
-import numpy.typing as npt
 import random
+from collections import deque, namedtuple
+
+import numpy.typing as npt
 import torch
-
-from torch import nn
-import torch.optim as optim
 import torch.nn.functional as F
-
-from collections import namedtuple, deque
+import torch.optim as optim
+from torch import nn
 
 
 class BaseModel(abc.ABC):

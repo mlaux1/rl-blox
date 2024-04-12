@@ -1,14 +1,12 @@
 import gymnasium as gym
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
-
-from modular_rl.algorithms.model_free.sarsa import Sarsa
-from modular_rl.policy.base_policy import EpsilonGreedyPolicy
-from modular_rl.helper.experiment_helper import generate_rollout
-
 from rl_experiments.evaluation.plotting import plot_training_stats
 
+from modular_rl.algorithms.model_free.sarsa import Sarsa
+from modular_rl.helper.experiment_helper import generate_rollout
+from modular_rl.policy.base_policy import EpsilonGreedyPolicy
 
 train_env = gym.make("FrozenLake-v1")
 train_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=100000)
@@ -25,13 +23,13 @@ train_env.close()
 
 test_env = gym.make("FrozenLake-v1", render_mode="human")
 
-generate_rollout(test_env, alg.target_policy)
+generate_rollout(test_env, alg.policy)
 
 train_env.close()
 
 plot_training_stats(
-    np.array(sarsa_env.return_queue),
-    np.array(sarsa_env.length_queue),
+    np.array(train_env.return_queue),
+    np.array(train_env.length_queue),
     rolling_length=100,
     title="SARSA",
 )

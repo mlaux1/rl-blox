@@ -1,14 +1,15 @@
 import gymnasium as gym
-import numpy as np
 import matplotlib.pyplot as plt
-
+import numpy as np
 from gymnasium.spaces.utils import flatdim
 from gymnasium.wrappers import RecordEpisodeStatistics
-from modular_rl.algorithms.model_free.sarsa import Sarsa
-from modular_rl.algorithms.model_free.q_learning import QLearning
-from modular_rl.policy.base_policy import EpsilonGreedyPolicy
-from modular_rl.helper.experiment_helper import generate_rollout, moving_average
 from rl_experiments.evaluation.plotting import plot_training_stats
+
+from modular_rl.algorithms.model_free.q_learning import QLearning
+from modular_rl.algorithms.model_free.sarsa import Sarsa
+from modular_rl.helper.experiment_helper import (generate_rollout,
+                                                 moving_average)
+from modular_rl.policy.base_policy import EpsilonGreedyPolicy
 
 num_episodes = 1000
 learning_rate = 0.1
