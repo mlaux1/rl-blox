@@ -40,19 +40,19 @@ class SoftmaxLinearPolicy:
         one_hot_action[action - self.action_space.start] = 1.0
         return jnp.hstack((state, one_hot_action, jnp.array([1.0])))
 
-    def _h(self, state, action):
-        return self.theta @ self._feature_projection(state, action)
+    def _h(self, state, action, theta):
+        return theta @ self._feature_projection(state, action)
 
-    def action_probability(self, state, action):
-        H = jnp.exp([self._h(state, b)
-                     for b in range(self.action_space.start,
-                                    self.action_space.start + self.action_space.n)])
-        return jnp.exp(self._h(state, action)) / jnp.sum(H)  # TODO numerically robust, logsumexp?
+    def action_probability(self, state, action, theta):
+        H = jnp.exp(jnp.array([self._h(state, b, theta)
+                               for b in range(self.action_space.start,
+                                              self.action_space.start + self.action_space.n)]))
+        return jnp.exp(self._h(state, action, theta)) / jnp.sum(H)  # TODO numerically robust, logsumexp?
 
-    def log_action_probability(self, state, action):
-        H = [self._h(state, b) for b in range(self.action_space.start,
-                                              self.action_space.start + self.action_space.n)]
-        h = self._h(state, action)
+    def log_action_probability(self, state, action, theta):
+        H = [self._h(state, b, theta)
+             for b in range(self.action_space.start, self.action_space.start + self.action_space.n)]
+        h = self._h(state, action, theta)
         return h - jax.special.logsumexp(H)  # TODO check
 
 
@@ -65,38 +65,45 @@ def reinforce(policy: SoftmaxLinearPolicy, dataset: EpisodeDataset):  # TODO can
     http://incompleteideas.net/book/RLbook2020.pdf, page 326
     https://media.suub.uni-bremen.de/handle/elib/4585, page 52
     """
+    n_episodes = len(dataset.samples)
+    n_params = policy.theta.shape[0]
+
     episode_returns = []
     for episode in dataset.samples:
         rewards = [r for _, _, r in episode]
         episode_return = jnp.sum(jnp.array(rewards))
         episode_returns.append(episode_return)
-    episode_returns = jnp.hstack(episode_returns)
-    n_episodes = len(dataset.samples)
 
     baseline = jnp.zeros(len(policy.theta))
-    for h in range(len(policy.theta)):  # can we vectorize this?
-        # sum i=1 to len(dataset.samples)
-        #     (sum t=0 to T-1 grad log pi(a_t | s_t)) ** 2
-        #     * R[i]
-        # /
-        # sum i=1 to len(dataset.samples)
-        #     (sum t=0 to T-1 grad log pi(a_t | s_t)) ** 2
-        denoms = [jnp.sum(jnp.array([policy.log_action_probability(st, at)  # TODO gradient with respect to theta[h]
-                                     for st, at, _ in range(len(dataset.samples[i]))])) ** 2
-                  for i in range(n_episodes)]
-        noms = [denoms[i] * episode_returns[i] for i in range(n_episodes)]
-        baseline[h] = 0
+    # sum i=1 to n_episodes
+    #     (sum t=0 to T-1 grad theta log pi(a_t | s_t)) ** 2
+    #     * R[i]
+    # /
+    # sum i=1 to len(dataset.samples)
+    #     (sum t=0 to T-1 grad theta log pi(a_t | s_t)) ** 2
+    denoms = jnp.array([jnp.sum(jnp.array([jax.grad(lambda theta: policy.log_action_probability(st, at, theta))(policy.theta)
+                                           for st, at, _ in range(len(dataset.samples[i]))])) ** 2
+                        for i in range(n_episodes)])
+    noms = denoms * jnp.hstack(episode_returns)
+    baseline = jnp.sum(noms / denoms, axis=0)
 
     # grad =
-    # 1/len(dataset.samples)
+    # 1/n_episodes
     # sum i=1 to N
-    #     sum t=0 to T-1 grad log pi (a_t | s_t) (R[i] * b)
+    #     sum t=0 to T-1 grad theta log pi (a_t | s_t) (R[i] - b)
     # return grad
+    grad = jnp.zeros(n_params)
+    for i in range(n_episodes):
+        grad = grad + jnp.sum(jnp.array([
+            jax.grad(lambda theta: policy.log_action_probability(st, at, theta))(policy.theta) * (episode_returns[i] - baseline)
+            for st, at, _ in range(len(dataset.samples[i]))]))
+    grad = grad / n_episodes
+    return grad
 
 
 if __name__ == "__main__":
     state_space = gym.spaces.Box(low=np.array([-10.0]), high=np.array([10.0]))
     action_space = gym.spaces.Discrete(2)
-    key = jax.random.key(42)
+    key = jax.random.PRNGKey(42)
     key, subkey = jax.random.split(key)
     policy = SoftmaxLinearPolicy(state_space, action_space, subkey)
