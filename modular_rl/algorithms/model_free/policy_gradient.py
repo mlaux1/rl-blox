@@ -41,6 +41,7 @@ class SoftmaxPolicy:
             self,
             state_space: gym.spaces.Space,
             action_space: gym.spaces.Space,
+            hidden_nodes: List[int],
             key: jax.random.PRNGKey):
         self.state_space = state_space
         self.action_space = action_space
@@ -50,7 +51,7 @@ class SoftmaxPolicy:
 
         self.sampling_key, key = jax.random.split(key)
 
-        sizes = [self.state_space.shape[0], 10, self.action_space.n]  # TODO parameter
+        sizes = [self.state_space.shape[0]] + hidden_nodes + [self.action_space.n]
         keys = jax.random.split(key, len(sizes))
         self.theta = [self._random_layer_params(m, n, k)
                       for m, n, k in zip(sizes[:-1], sizes[1:], keys)]
@@ -122,7 +123,7 @@ if __name__ == "__main__":
     action_space = gym.spaces.Discrete(2)
     key = jax.random.PRNGKey(42)
     key, subkey = jax.random.split(key)
-    policy = SoftmaxPolicy(state_space, action_space, subkey)
+    policy = SoftmaxPolicy(state_space, action_space, [50], subkey)
 
     n_episodes = 100
     n_steps = 100
@@ -151,12 +152,13 @@ if __name__ == "__main__":
             dataset.add_sample(state, action, reward)
 
             state = next_state
+        print(f"State {state}")
         print(f"Return {R}")
 
         # RL algorithm
         if (i + 1) % 5 == 0:
             theta_grad = reinforce(policy, dataset)
-            print(theta_grad)
+            #print(theta_grad)
             # gradient ascent
             policy.theta = [(w + learning_rate * dw, b + learning_rate * db)
                             for (w, b), (dw, db) in zip(policy.theta, theta_grad)]
