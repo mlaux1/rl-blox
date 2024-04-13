@@ -118,16 +118,22 @@ def reinforce(policy: SoftmaxPolicy, dataset: EpisodeDataset):  # TODO can we us
     return jax.grad(partial(pseudo_loss, states, actions, returns, policy.log_action_probability))(policy.theta)
 
 
+class OptimalPolicy:
+    def sample(self, state):
+        return 1 if state[0] < 0 else 0
+
+
 if __name__ == "__main__":
     state_space = gym.spaces.Box(low=np.array([-10.0]), high=np.array([10.0]))
     action_space = gym.spaces.Discrete(2)
     key = jax.random.PRNGKey(42)
     key, subkey = jax.random.split(key)
-    policy = SoftmaxPolicy(state_space, action_space, [50], subkey)
+    policy = SoftmaxPolicy(state_space, action_space, [100], subkey)
+    #policy = OptimalPolicy()
 
     n_episodes = 100
     n_steps = 100
-    learning_rate = 0.0001
+    learning_rate = 0.0001  # TODO use Adam
     random_state = np.random.RandomState(42)
 
     dataset = EpisodeDataset()
