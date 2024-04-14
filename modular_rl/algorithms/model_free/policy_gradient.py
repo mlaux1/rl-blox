@@ -127,6 +127,7 @@ def policy_gradient_update(policy: SoftmaxNNPolicy, dataset: EpisodeDataset):
     https://media.suub.uni-bremen.de/handle/elib/4585, page 52
     https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
     https://github.com/openai/spinningup/tree/master/spinup/examples/pytorch/pg_math
+    https://gymnasium.farama.org/tutorials/training_agents/reinforce_invpend_gym_v26/
     """
     states, actions, returns = dataset.dataset()
     states = jnp.vstack(states)
