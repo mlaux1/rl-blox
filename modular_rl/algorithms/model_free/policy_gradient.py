@@ -35,7 +35,7 @@ class EpisodeDataset:
 class SoftmaxNNPolicy:
     r"""A stochastic softmax policy for discrete action spaces with a neural network.
 
-    :param state_space: State space
+    :param observation_space: Observation space
     :param action_space: Action space
     :param hidden_nodes: Numbers of hidden nodes per hidden layer
     :param key: Jax random key for sampling network parameters and actions
@@ -50,11 +50,11 @@ class SoftmaxNNPolicy:
 
     def __init__(
             self,
-            state_space: gym.spaces.Space,
+            observation_space: gym.spaces.Space,
             action_space: gym.spaces.Space,
             hidden_nodes: List[int],
             key: jax.random.PRNGKey):
-        self.state_space = state_space
+        self.observation_space = observation_space
         self.action_space = action_space
 
         self.actions = jnp.arange(
@@ -62,7 +62,7 @@ class SoftmaxNNPolicy:
 
         self.sampling_key, key = jax.random.split(key)
 
-        sizes = [self.state_space.shape[0]] + hidden_nodes + [self.action_space.n]
+        sizes = [self.observation_space.shape[0]] + hidden_nodes + [self.action_space.n]
         keys = jax.random.split(key, len(sizes))
         self.theta = [self._random_layer_params(m, n, k)
                       for m, n, k in zip(sizes[:-1], sizes[1:], keys)]
@@ -138,51 +138,39 @@ def policy_gradient_update(policy: SoftmaxNNPolicy, dataset: EpisodeDataset):
         policy.action_space.start))(policy.theta)
 
 
-class OptimalPolicy:
-    def sample(self, state):
-        return 1 if state[0] < 0 else 0
-
-
 if __name__ == "__main__":
-    state_space = gym.spaces.Box(low=np.array([-10.0]), high=np.array([10.0]))
-    action_space = gym.spaces.Discrete(2)
-    key = jax.random.PRNGKey(42)
-    key, subkey = jax.random.split(key)
-    policy = SoftmaxNNPolicy(state_space, action_space, [100], subkey)
-    #policy = OptimalPolicy()
+    # note on MountainCar-v0: never reaches the goal -> never learns
+    env = gym.make("CartPole-v1", render_mode="human")
 
-    n_episodes = 100
-    n_steps = 100
+    observation_space = env.observation_space
+    action_space = env.action_space
+    policy = SoftmaxNNPolicy(observation_space, action_space, [30], jax.random.PRNGKey(42))
+
+    n_episodes = 1000
     learning_rate = 0.0001  # TODO use Adam
     random_state = np.random.RandomState(42)
 
     dataset = EpisodeDataset()
     for i in range(n_episodes):
+        print(f"{i=}")
         dataset.start_episode()
-        state = jnp.array(np.array([10.0]) * np.sign(random_state.randn()))
+        state, _ = env.reset()
+        done = False
         R = jnp.array(0.0)
-        #print("")
-        for t in range(n_steps):
-            action = policy.sample(state)
+        t = 0
+        while not done:
+            action = policy.sample(jnp.array(state))
+            state, reward, terminated, truncated, _ = env.step(np.asarray(action))
 
-            # environment
-            if action == 0:  # transition dynamics
-                next_state = state - 0.1
-            else:
-                next_state = state + 0.1
-            next_state = jnp.clip(next_state, -10, 10.0)  # TODO hard coded
-            #print(f"\r{next_state[0]:2.3f}")
-            reward = -jnp.abs(next_state[0])  # reward function
             R += reward
+            t += 1
 
+            done = terminated or truncated
             dataset.add_sample(state, action, reward)
-
-            state = next_state
-        print(f"State {state}")
         print(f"Return {R}")
 
         # RL algorithm
-        if (i + 1) % 5 == 0:
+        if (i + 1) % 10 == 0:
             theta_grad = policy_gradient_update(policy, dataset)
             #print(theta_grad)
             # gradient ascent
