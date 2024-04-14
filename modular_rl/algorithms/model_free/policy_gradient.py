@@ -70,25 +70,10 @@ class SoftmaxPolicy:
         ]
 
     def _h(self, state, theta):
-        x = state
-        for W, b in theta[:-1]:
-            a = jnp.dot(W, x) + b
-            x = jnp.tanh(a)
-        W, b = theta[-1]
-        y = jnp.dot(W, x) + b
-        return y
+        return nn_logits(state, theta)
 
     def action_probabilities(self, state, theta):
         return jax.nn.softmax(self._h(state, theta))
-
-    def log_action_probabilities(self, state, theta):
-        H = self._h(state, theta)
-        return H - jax.scipy.special.logsumexp(H)  # TODO check
-
-    def log_action_probability(self, state, action, theta):
-        H = self._h(state, theta)
-        action_index = action - self.action_space.start
-        return H[action_index] - jax.scipy.special.logsumexp(H)  # TODO check
 
     def sample(self, state):
         probs = self.action_probabilities(state, self.theta)
@@ -96,7 +81,30 @@ class SoftmaxPolicy:
         return jax.random.choice(key, self.actions, p=probs)
 
 
-def reinforce(policy: SoftmaxPolicy, dataset: EpisodeDataset):  # TODO can we use a pseudo-objective for autodiff?
+def nn_logits(x, theta):
+    for W, b in theta[:-1]:
+        a = jnp.dot(W, x) + b
+        x = jnp.tanh(a)
+    W, b = theta[-1]
+    y = jnp.dot(W, x) + b
+    return y
+
+
+def log_probability(state, action, theta, action_start_index):
+    y = nn_logits(state, theta)
+    action_index = action - action_start_index
+    return y[action_index] - jax.scipy.special.logsumexp(y)
+
+
+def policy_gradient_pseudo_loss(states, actions, returns, log_action_probability, action_start_index, theta):
+    loss = jnp.array(0.0)
+    for s, a, R in zip(states, actions, returns):  # TODO parallelize
+        logp = log_action_probability(s, a, theta, action_start_index)
+        loss = loss + logp * R
+    return loss
+
+
+def policy_gradient_update(policy: SoftmaxPolicy, dataset: EpisodeDataset):  # TODO can we use a pseudo-objective for autodiff?
     """REINFORCE policy gradient.
 
     References
@@ -107,15 +115,8 @@ def reinforce(policy: SoftmaxPolicy, dataset: EpisodeDataset):  # TODO can we us
     https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
     https://github.com/openai/spinningup/tree/master/spinup/examples/pytorch/pg_math
     """
-    def pseudo_loss(states, actions, returns, log_action_probability, theta):
-        loss = jnp.array(0.0)
-        for s, a, R in zip(states, actions, returns):  # TODO parallelize
-            logp = log_action_probability(s, a, theta)
-            loss = loss + logp * R
-        return loss
-
     states, actions, returns = dataset.dataset()
-    return jax.grad(partial(pseudo_loss, states, actions, returns, policy.log_action_probability))(policy.theta)
+    return jax.grad(partial(policy_gradient_pseudo_loss, states, actions, returns, log_probability, policy.action_space.start))(policy.theta)
 
 
 class OptimalPolicy:
@@ -163,7 +164,7 @@ if __name__ == "__main__":
 
         # RL algorithm
         if (i + 1) % 5 == 0:
-            theta_grad = reinforce(policy, dataset)
+            theta_grad = policy_gradient_update(policy, dataset)
             #print(theta_grad)
             # gradient ascent
             policy.theta = [(w + learning_rate * dw, b + learning_rate * db)
