@@ -7,7 +7,7 @@ import gymnasium as gym
 
 
 class EpisodeDataset:
-    samples : List[List[Tuple[jax.Array, jax.Array, float]]]
+    samples: List[List[Tuple[jax.Array, jax.Array, float]]]
 
     def __init__(self):
         self.samples = []
@@ -19,7 +19,7 @@ class EpisodeDataset:
         assert len(self.samples) > 0
         self.samples[-1].append((state, action, reward))
 
-    def dataset(self):
+    def dataset(self):  # TODO return to go, discount factor
         states = []
         actions = []
         returns = []
@@ -32,7 +32,18 @@ class EpisodeDataset:
         return states, actions, returns
 
 
-class SoftmaxPolicy:
+class SoftmaxNNPolicy:
+    r"""A stochastic softmax policy for discrete action spaces with a neural network.
+
+    :param state_space: State space
+    :param action_space: Action space
+    :param hidden_nodes: Numbers of hidden nodes per hidden layer
+    :param key: Jax random key for sampling network parameters and actions
+
+    The neural network representing the policy :math:`\pi_{\theta}(a|s)` has
+    :math:`|\mathcal{A}|` outputs, of which each represents the probability
+    that the corresponding action is selected.
+    """
     state_space: gym.spaces.Space
     action_space: gym.spaces.Space
     theta = jax.Array
@@ -56,27 +67,26 @@ class SoftmaxPolicy:
         self.theta = [self._random_layer_params(m, n, k)
                       for m, n, k in zip(sizes[:-1], sizes[1:], keys)]
 
-    def _random_layer_params(self, m, n, key, scale=1e-1):
+    def _random_layer_params(
+            self, m: int, n: int, key: jax.random.PRNGKey,
+            scale: float = 1e-1):
         w_key, b_key = jax.random.split(key)
         return (
             scale * jax.random.normal(w_key, (n, m)),
             scale * jax.random.normal(b_key, (n,))
         )
 
-    def zeros_like_theta(self):
+    def zeros_like_theta(self):  # TODO?
         return [
             (jnp.zeros_like(W), jnp.zeros_like(b))
             for W, b in self.theta
         ]
 
-    def _h(self, state, theta):
-        return nn_logits(state, theta)
+    def _action_probabilities(self, state: jax.Array):
+        return jax.nn.softmax(nn_logits(state, self.theta))
 
-    def action_probabilities(self, state, theta):
-        return jax.nn.softmax(self._h(state, theta))
-
-    def sample(self, state):
-        probs = self.action_probabilities(state, self.theta)
+    def sample(self, state: jax.Array):
+        probs = self._action_probabilities(state)
         self.sampling_key, key = jax.random.split(self.sampling_key)
         return jax.random.choice(key, self.actions, p=probs)
 
@@ -107,7 +117,7 @@ def policy_gradient_pseudo_loss(states, actions, returns, action_start_index, th
     return jnp.dot(logp, returns)
 
 
-def policy_gradient_update(policy: SoftmaxPolicy, dataset: EpisodeDataset):
+def policy_gradient_update(policy: SoftmaxNNPolicy, dataset: EpisodeDataset):
     """REINFORCE policy gradient.
 
     References
@@ -122,7 +132,9 @@ def policy_gradient_update(policy: SoftmaxPolicy, dataset: EpisodeDataset):
     states = jnp.vstack(states)
     actions = jnp.hstack(actions)
     returns = jnp.hstack(returns)
-    return jax.grad(partial(policy_gradient_pseudo_loss, states, actions, returns, policy.action_space.start))(policy.theta)
+    return jax.grad(partial(
+        policy_gradient_pseudo_loss, states, actions, returns,
+        policy.action_space.start))(policy.theta)
 
 
 class OptimalPolicy:
@@ -135,7 +147,7 @@ if __name__ == "__main__":
     action_space = gym.spaces.Discrete(2)
     key = jax.random.PRNGKey(42)
     key, subkey = jax.random.split(key)
-    policy = SoftmaxPolicy(state_space, action_space, [100], subkey)
+    policy = SoftmaxNNPolicy(state_space, action_space, [100], subkey)
     #policy = OptimalPolicy()
 
     n_episodes = 100
