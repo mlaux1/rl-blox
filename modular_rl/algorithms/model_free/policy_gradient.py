@@ -81,6 +81,7 @@ class SoftmaxPolicy:
         return jax.random.choice(key, self.actions, p=probs)
 
 
+@jax.jit
 def nn_logits(x, theta):
     for W, b in theta[:-1]:
         a = jnp.dot(W, x) + b
@@ -90,6 +91,7 @@ def nn_logits(x, theta):
     return y
 
 
+@jax.jit
 def log_probability(state, action, theta, action_start_index):
     y = nn_logits(state, theta)
     action_index = action - action_start_index
