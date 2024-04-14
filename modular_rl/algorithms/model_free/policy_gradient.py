@@ -107,7 +107,7 @@ def policy_gradient_pseudo_loss(states, actions, returns, action_start_index, th
     return jnp.dot(logp, returns)
 
 
-def policy_gradient_update(policy: SoftmaxPolicy, dataset: EpisodeDataset):  # TODO can we use a pseudo-objective for autodiff?
+def policy_gradient_update(policy: SoftmaxPolicy, dataset: EpisodeDataset):
     """REINFORCE policy gradient.
 
     References
