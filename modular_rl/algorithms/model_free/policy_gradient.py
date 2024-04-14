@@ -98,12 +98,12 @@ def log_probability(state, action, theta, action_start_index):
     return y[action_index] - jax.scipy.special.logsumexp(y)
 
 
-def policy_gradient_pseudo_loss(states, actions, returns, log_action_probability, action_start_index, theta):
-    loss = jnp.array(0.0)
-    for s, a, R in zip(states, actions, returns):  # TODO parallelize
-        logp = log_action_probability(s, a, theta, action_start_index)
-        loss = loss + logp * R
-    return loss
+batched_log_probability = jax.vmap(log_probability, in_axes=(0, 0, None, None))
+
+
+def policy_gradient_pseudo_loss(states, actions, returns, action_start_index, theta):
+    logp = batched_log_probability(states, actions, theta, action_start_index)
+    return jnp.dot(logp, returns)
 
 
 def policy_gradient_update(policy: SoftmaxPolicy, dataset: EpisodeDataset):  # TODO can we use a pseudo-objective for autodiff?
@@ -118,7 +118,10 @@ def policy_gradient_update(policy: SoftmaxPolicy, dataset: EpisodeDataset):  # T
     https://github.com/openai/spinningup/tree/master/spinup/examples/pytorch/pg_math
     """
     states, actions, returns = dataset.dataset()
-    return jax.grad(partial(policy_gradient_pseudo_loss, states, actions, returns, log_probability, policy.action_space.start))(policy.theta)
+    states = jnp.vstack(states)
+    actions = jnp.hstack(actions)
+    returns = jnp.hstack(returns)
+    return jax.grad(partial(policy_gradient_pseudo_loss, states, actions, returns, policy.action_space.start))(policy.theta)
 
 
 class OptimalPolicy:
