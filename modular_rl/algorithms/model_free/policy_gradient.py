@@ -101,6 +101,7 @@ def log_probability(state, action, theta, action_start_index):
 batched_log_probability = jax.vmap(log_probability, in_axes=(0, 0, None, None))
 
 
+@jax.jit
 def policy_gradient_pseudo_loss(states, actions, returns, action_start_index, theta):
     logp = batched_log_probability(states, actions, theta, action_start_index)
     return jnp.dot(logp, returns)
