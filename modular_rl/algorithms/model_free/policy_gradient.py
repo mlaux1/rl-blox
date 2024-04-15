@@ -183,6 +183,22 @@ def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
     where :math:`v_{\pi_{\theta}}` is the true value function for
     :math:`\pi_{\theta}`, the policy determined by :math:`\theta`.
 
+    TODO derive log derivative trick
+
+    For any function b which only depends on the state,
+
+    .. math::
+
+        \mathbb{E}_{a_t \sim \pi_{\theta}} \left[\nabla_{\theta} \log \pi_{\theta} (a_t | s_t) b(s_t) \right] = 0
+
+    This allows us to add or subtract any number of terms from the policy
+    gradient without changing it in expectation. Any function b used in this
+    way is called a baseline. The most common choice of baseline is the
+    on-policy value function. This will reduce the variance of the estimate of
+    the policy gradient, which makes learning faster and more stable. This
+    encodes the intuition that if an agent gets what it expects, it should not
+    change the parameters of the policy.
+
     References
 
     [1] Williams, R.J. (1992). Simple statistical gradient-following algorithms
@@ -217,7 +233,7 @@ def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
     returns = [discounted_reward_to_go(R, gamma) for R in rewards]
     returns = jnp.hstack(returns)
 
-    # TODO baseline
+    # TODO include baseline
 
     if isinstance(policy, GaussianNNPolicy):
         return jax.grad(
