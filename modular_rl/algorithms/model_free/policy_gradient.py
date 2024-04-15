@@ -185,6 +185,9 @@ def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
 
     TODO derive log derivative trick
 
+    REINFORCE With Baseline
+    -----------------------
+
     For any function b which only depends on the state,
 
     .. math::
