@@ -75,9 +75,8 @@ class GaussianNNPolicy(NNPolicy):
     def sample(self, state: jax.Array):
         y = nn_forward(state, self.theta)
         mu, sigma = jnp.split(y, [self.action_space.shape[0]])
-        cov = jnp.diag(sigma ** 2)
         self.sampling_key, key = jax.random.split(self.sampling_key)
-        return jax.random.multivariate_normal(key, mu, cov)
+        return jax.random.normal(key, shape=mu.shape) * sigma + mu
 
 
 class SoftmaxNNPolicy(NNPolicy):
@@ -138,7 +137,7 @@ def gaussian_log_probability(state, action, theta):
     # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     y = nn_forward(state, theta)
     mu, sigma = jnp.split(y, [action.shape[0]])
-    return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * ((action - mu) / sigma) ** 2
+    return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * np.square((action - mu) / sigma)
 
 
 batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0, 0, None, None))
