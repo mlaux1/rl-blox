@@ -137,16 +137,17 @@ def gaussian_log_probability(state, action, theta):
     # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     y = nn_forward(state, theta)
     mu, sigma = jnp.split(y, [action.shape[0]])
-    return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * np.square((action - mu) / sigma)
+    return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
 
 
-batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0, 0, None, None))
+batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0, 0, None))
 
 
 @jax.jit
 def gaussian_policy_gradient_pseudo_loss(states, actions, returns, theta):
     logp = batched_gaussian_log_probability(states, actions, theta)
-    return jnp.dot(logp, returns)
+    return jnp.dot(returns, logp)[0]
+    # TODO why? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
 
 
 @jax.jit
@@ -155,13 +156,13 @@ def softmax_log_probability(state, action, theta):
     return logits[action] - jax.scipy.special.logsumexp(logits)
 
 
-batched_softmax_log_probability = jax.vmap(softmax_log_probability, in_axes=(0, 0, None, None))
+batched_softmax_log_probability = jax.vmap(softmax_log_probability, in_axes=(0, 0, None))
 
 
 @jax.jit
 def softmax_policy_gradient_pseudo_loss(states, actions, returns, theta):
     logp = batched_softmax_log_probability(states, actions, theta)
-    return jnp.dot(logp, returns)
+    return jnp.dot(returns, logp)
 
 
 def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
@@ -210,7 +211,7 @@ def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
     states, actions, rewards = dataset.dataset()
 
     states = jnp.vstack(states)
-    actions = jnp.stack(actions) - policy.action_space.start
+    actions = jnp.stack(actions)
 
     # reward to go
     returns = [discounted_reward_to_go(R, gamma) for R in rewards]
@@ -223,6 +224,7 @@ def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
             partial(gaussian_policy_gradient_pseudo_loss, states, actions, returns)
         )(policy.theta)
     else:
+        actions -= policy.action_space.start
         return jax.grad(
             partial(softmax_policy_gradient_pseudo_loss, states, actions, returns)
         )(policy.theta)
@@ -247,6 +249,7 @@ if __name__ == "__main__":
     #env = gym.make("CartPole-v1", render_mode="human")
     #env = gym.make("MountainCar-v0", render_mode="human")
     env = gym.make("Pendulum-v1", render_mode="human")
+    #env = gym.make("HalfCheetah-v4", render_mode="human")
 
     observation_space = env.observation_space
     action_space = env.action_space
@@ -255,10 +258,10 @@ if __name__ == "__main__":
 
     n_episodes = 1000
     gamma = 1.0
-    learning_rate = 0.0001  # TODO use Adam
+    learning_rate = 1e-4  # TODO use Adam
     random_state = np.random.RandomState(42)
 
-    dataset = EpisodeDataset(episode_buffer_size=3)
+    dataset = EpisodeDataset(episode_buffer_size=1)
     for i in range(n_episodes):
         print(f"{i=}")
         dataset.start_episode()
@@ -278,9 +281,8 @@ if __name__ == "__main__":
         print(f"Return {R}")
 
         # RL algorithm
-        if (i + 1) % 1 == 0 and len(dataset.samples) > 5:
+        if (i + 1) % 1 == 0 and len(dataset.samples) >= dataset.episode_buffer_size:
             # gradient ascent
             theta_grad = reinforce_update(policy, dataset, gamma)
             policy.theta = [(w + learning_rate * dw, b + learning_rate * db)
                             for (w, b), (dw, db) in zip(policy.theta, theta_grad)]
-            #print(theta_grad)
