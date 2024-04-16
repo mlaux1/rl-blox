@@ -41,7 +41,7 @@ class EpisodeDataset:
                     for episode in self.episodes]) / len(self.episodes)
 
 
-class NNPolicy:
+class NeuralNetwork:
     """Base class of neural network policies.
 
     :param sizes: Numbers of neurons per layer, including input neurons and
@@ -84,7 +84,15 @@ def nn_forward(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jax.Ar
     return y
 
 
-class GaussianNNPolicy(NNPolicy):
+class ValueFunctionApproximation(NeuralNetwork):
+    def __init__(
+            self, observation_state: gym.spaces.Space, hidden_nodes: List[int],
+            key: jax.random.PRNGKey):
+        sizes = [observation_state.shape[0]] + hidden_nodes + [1]
+        super(ValueFunctionApproximation, self).__init__(sizes, key)
+
+
+class GaussianNNPolicy(NeuralNetwork):
     """Stochastic Gaussian policy for continuous action spaces with a neural network.
 
     :param observation_space: Observation space.
@@ -146,7 +154,7 @@ def gaussian_policy_gradient_pseudo_loss(
     # TODO why [0]? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
 
 
-class SoftmaxNNPolicy(NNPolicy):
+class SoftmaxNNPolicy(NeuralNetwork):
     r"""Stochastic softmax policy for discrete action spaces with a neural network.
 
     The neural network representing the policy :math:`\pi_{\theta}(a|s)` has
@@ -211,7 +219,7 @@ def softmax_policy_gradient_pseudo_loss(
     return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
 
 
-def reinforce_gradient(policy: NNPolicy, dataset: EpisodeDataset, gamma: float) -> jax.Array:
+def reinforce_gradient(policy: NeuralNetwork, dataset: EpisodeDataset, gamma: float) -> jax.Array:
     r"""REINFORCE policy gradient update.
 
     REINFORCE is an abbreviation for *Reward Increment = Non-negative Factor x
@@ -363,10 +371,13 @@ if __name__ == "__main__":
     #policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
     policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
 
-    solver = optax.sgd(learning_rate=1e-2, momentum=0.9)
-    opt_state = solver.init(policy.theta)
+    value_function = ValueFunctionApproximation(observation_space, [32], jax.random.PRNGKey(43))
+    # TODO create optimizer for value function, compute TD error loss
+
+    policy_solver = optax.adam(learning_rate=1e-2)
+    policy_opt_state = policy_solver.init(policy.theta)
 
     n_epochs = 50
     for _ in range(n_epochs):
-        opt_state = train_reinforce_epoch(
-            train_env, policy, solver, opt_state, render_env, batch_size=5000, gamma=0.9)
+        policy_opt_state = train_reinforce_epoch(
+            train_env, policy, policy_solver, policy_opt_state, render_env, batch_size=5000, gamma=0.9)
