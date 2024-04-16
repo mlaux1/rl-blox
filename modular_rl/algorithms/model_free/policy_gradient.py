@@ -3,35 +3,40 @@ from functools import partial
 import numpy as np
 import jax
 import jax.numpy as jnp
+import optax
 import gymnasium as gym
 
 
 class EpisodeDataset:
-    samples: List[List[Tuple[jax.Array, jax.Array, float]]]
+    episodes: List[List[Tuple[jax.Array, jax.Array, float]]]
 
-    def __init__(self, episode_buffer_size=5):
-        self.episode_buffer_size = episode_buffer_size
-        self.samples = []
+    def __init__(self):
+        self.episodes = []
 
     def start_episode(self):
-        if len(self.samples) >= self.episode_buffer_size:
-            self.samples = self.samples[1:]
-        self.samples.append([])
+        self.episodes.append([])
 
     def add_sample(self, state: jax.Array, action: jax.Array, reward: float):
-        assert len(self.samples) > 0
-        self.samples[-1].append((state, action, reward))
+        assert len(self.episodes) > 0
+        self.episodes[-1].append((state, action, reward))
 
     def dataset(self):  # TODO return to go, discount factor
         states = []
         actions = []
         returns = []
-        for episode in self.samples:
+        for episode in self.episodes:
             states.extend([s for s, _, _ in episode])
             actions.extend([a for _, a, _ in episode])
             rewards = [r for _, _, r in episode]
             returns.append(rewards)
         return states, actions, returns
+
+    def __len__(self):
+        return sum(map(len, self.episodes))
+
+    def average_return(self):
+        return sum([sum([r for _, _, r in episode])
+                    for episode in self.episodes]) / len(self.episodes)
 
 
 class NNPolicy:
@@ -113,13 +118,10 @@ class SoftmaxNNPolicy(NNPolicy):
         sizes = [self.observation_space.shape[0]] + hidden_nodes + [self.action_space.n]
         super(SoftmaxNNPolicy, self).__init__(sizes, key)
 
-    def _action_probabilities(self, state: jax.Array):
-        return jax.nn.softmax(nn_forward(state, self.theta))
-
     def sample(self, state: jax.Array):
-        probs = self._action_probabilities(state)
+        logits = nn_forward(state, self.theta)
         self.sampling_key, key = jax.random.split(self.sampling_key)
-        return jax.random.choice(key, self.actions, p=probs)
+        return jax.random.categorical(key, logits) + self.action_space.start
 
 
 @jax.jit
@@ -146,7 +148,7 @@ batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0
 @jax.jit
 def gaussian_policy_gradient_pseudo_loss(states, actions, returns, theta):
     logp = batched_gaussian_log_probability(states, actions, theta)
-    return jnp.dot(returns, logp)[0]
+    return -jnp.dot(returns, logp)[0] / len(returns)  # - to perform gradient ascent with a minimizer
     # TODO why? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
 
 
@@ -162,7 +164,7 @@ batched_softmax_log_probability = jax.vmap(softmax_log_probability, in_axes=(0, 
 @jax.jit
 def softmax_policy_gradient_pseudo_loss(states, actions, returns, theta):
     logp = batched_softmax_log_probability(states, actions, theta)
-    return jnp.dot(returns, logp)
+    return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
 
 
 def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
@@ -233,7 +235,8 @@ def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
     actions = jnp.stack(actions)
 
     # reward to go
-    returns = [discounted_reward_to_go(R, gamma) for R in rewards]
+    #returns = [discounted_reward_to_go(R, gamma) for R in rewards]
+    returns = [reward_to_go(R) for R in rewards]
     returns = jnp.hstack(returns)
 
     # TODO include baseline
@@ -249,8 +252,16 @@ def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
         )(policy.theta)
 
 
-def reward_to_go(rewards):
-    return np.flip(np.cumsum(np.flip(rewards)))
+#def reward_to_go(rewards):
+#    return np.flip(np.cumsum(np.flip(rewards)))
+
+
+def reward_to_go(rews):
+    n = len(rews)
+    rtgs = np.zeros_like(rews)
+    for i in reversed(range(n)):
+        rtgs[i] = rews[i] + (rtgs[i+1] if i+1 < n else 0)
+    return rtgs
 
 
 def discounted_reward_to_go(rewards, gamma):
@@ -263,45 +274,64 @@ def discounted_reward_to_go(rewards, gamma):
     return np.array(list(reversed(discounted_returns)))
 
 
+def train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size, gamma):
+    dataset = EpisodeDataset()
+    env = render_env
+
+    dataset.start_episode()
+    state, _ = env.reset()
+    R = 0.0
+    t = 0
+    i = 1
+    while True:
+        action = policy.sample(jnp.array(state))
+        state, reward, terminated, truncated, _ = env.step(np.asarray(action))
+
+        done = terminated or truncated
+        R += reward
+        t += 1
+
+        dataset.add_sample(state, action, reward)
+
+        if done:
+            n_samples = len(dataset)
+            #print(f"{i=}, {t=}, {R=}, {n_samples=}")
+            dataset.start_episode()
+            env = train_env
+            state, _ = env.reset()
+            R = 0.0
+            t = 0
+            i += 1
+
+            if n_samples >= batch_size:
+                break
+
+    print(f"{dataset.average_return()=}")
+
+    # gradient ascent
+    theta_grad = reinforce_update(policy, dataset, gamma)
+    updates, opt_state = solver.update(theta_grad, opt_state)
+    policy.theta = optax.apply_updates(policy.theta, updates)
+    return opt_state
+
+
 if __name__ == "__main__":
     # note on MountainCar-v0: never reaches the goal -> never learns
-    #env = gym.make("CartPole-v1", render_mode="human")
-    #env = gym.make("MountainCar-v0", render_mode="human")
-    env = gym.make("Pendulum-v1", render_mode="human")
-    #env = gym.make("HalfCheetah-v4", render_mode="human")
+    env_name = "CartPole-v1"
+    #env_name = "MountainCar-v0"
+    #env_name = "Pendulum-v1"
+    #env_name = "HalfCheetah-v4"
+    train_env = gym.make(env_name)
+    render_env = gym.make(env_name, render_mode="human")
 
-    observation_space = env.observation_space
-    action_space = env.action_space
-    #policy = SoftmaxNNPolicy(observation_space, action_space, [50], jax.random.PRNGKey(42))
-    policy = GaussianNNPolicy(observation_space, action_space, [50], jax.random.PRNGKey(42))
+    observation_space = render_env.observation_space
+    action_space = render_env.action_space
+    policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    #policy = GaussianNNPolicy(observation_space, action_space, [50], jax.random.PRNGKey(42))
 
-    n_episodes = 1000
-    gamma = 1.0
-    learning_rate = 1e-4  # TODO use Adam
-    random_state = np.random.RandomState(42)
+    solver = optax.adam(learning_rate=0.02)
+    opt_state = solver.init(policy.theta)
 
-    dataset = EpisodeDataset(episode_buffer_size=1)
-    for i in range(n_episodes):
-        print(f"{i=}")
-        dataset.start_episode()
-        state, _ = env.reset()
-        done = False
-        R = jnp.array(0.0)
-        t = 0
-        while not done:
-            action = policy.sample(jnp.array(state))
-            state, reward, terminated, truncated, _ = env.step(np.asarray(action))
-
-            R += reward
-            t += 1
-
-            done = terminated or truncated
-            dataset.add_sample(state, action, reward)
-        print(f"Return {R}")
-
-        # RL algorithm
-        if (i + 1) % 1 == 0 and len(dataset.samples) >= dataset.episode_buffer_size:
-            # gradient ascent
-            theta_grad = reinforce_update(policy, dataset, gamma)
-            policy.theta = [(w + learning_rate * dw, b + learning_rate * db)
-                            for (w, b), (dw, db) in zip(policy.theta, theta_grad)]
+    n_epochs = 50
+    for _ in range(n_epochs):
+        opt_state = train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size=5000, gamma=1.0)
