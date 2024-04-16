@@ -57,6 +57,15 @@ class NNPolicy:
         )
 
 
+def nn_forward(x, theta):
+    for W, b in theta[:-1]:
+        a = jnp.dot(W, x) + b
+        x = jnp.tanh(a)
+    W, b = theta[-1]
+    y = jnp.dot(W, x) + b
+    return y
+
+
 class GaussianNNPolicy(NNPolicy):
     observation_space: gym.spaces.Space
     action_space: gym.spaces.Space
@@ -76,12 +85,35 @@ class GaussianNNPolicy(NNPolicy):
 
         sizes = [self.observation_space.shape[0]] + hidden_nodes + [2 * self.action_space.shape[0]]
         super(GaussianNNPolicy, self).__init__(sizes, key)
+        self.sample_gaussian_nn = jax.jit(
+            partial(sample_gaussian_nn, n_action_dims=self.action_space.shape[0]))
 
     def sample(self, state: jax.Array):
-        y = nn_forward(state, self.theta)
-        mu, sigma = jnp.split(y, [self.action_space.shape[0]])
         self.sampling_key, key = jax.random.split(self.sampling_key)
-        return jax.random.normal(key, shape=mu.shape) * sigma + mu
+        return self.sample_gaussian_nn(state, self.theta, key)
+
+
+def sample_gaussian_nn(x, theta, key, n_action_dims):
+    y = nn_forward(x, theta)
+    mu, sigma = jnp.split(y, [n_action_dims])
+    return jax.random.normal(key, shape=mu.shape) * sigma + mu
+
+
+def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
+    # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
+    y = nn_forward(state, theta)
+    mu, sigma = jnp.split(y, [action.shape[0]])
+    return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
+
+
+batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0, 0, None))
+
+
+@jax.jit
+def gaussian_policy_gradient_pseudo_loss(states: jax.Array, actions: jax.Array, returns: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
+    logp = batched_gaussian_log_probability(states, actions, theta)
+    return -jnp.dot(returns, logp)[0] / len(returns)  # - to perform gradient ascent with a minimizer
+    # TODO why [0]? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
 
 
 class SoftmaxNNPolicy(NNPolicy):
@@ -124,35 +156,9 @@ class SoftmaxNNPolicy(NNPolicy):
         return self.sample_softmax_nn(state, self.theta, key) + self.action_space.start
 
 
-def nn_forward(x, theta):
-    for W, b in theta[:-1]:
-        a = jnp.dot(W, x) + b
-        x = jnp.tanh(a)
-    W, b = theta[-1]
-    y = jnp.dot(W, x) + b
-    return y
-
-
 def sample_softmax_nn(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]], key: jax.random.PRNGKey) -> jax.Array:
     logits = nn_forward(x, theta)
     return jax.random.categorical(key, logits)
-
-
-def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
-    # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
-    y = nn_forward(state, theta)
-    mu, sigma = jnp.split(y, [action.shape[0]])
-    return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
-
-
-batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0, 0, None))
-
-
-@jax.jit
-def gaussian_policy_gradient_pseudo_loss(states: jax.Array, actions: jax.Array, returns: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
-    logp = batched_gaussian_log_probability(states, actions, theta)
-    return -jnp.dot(returns, logp)[0] / len(returns)  # - to perform gradient ascent with a minimizer
-    # TODO why? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
 
 
 def softmax_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
@@ -306,7 +312,6 @@ def train_one_epoch(train_env, policy, solver, opt_state, render_env, batch_size
 
     print(f"{dataset.average_return()=}")
 
-    # gradient ascent
     theta_grad = reinforce_gradient(policy, dataset, gamma)
     updates, opt_state = solver.update(theta_grad, opt_state)
     policy.theta = optax.apply_updates(policy.theta, updates)
@@ -314,9 +319,9 @@ def train_one_epoch(train_env, policy, solver, opt_state, render_env, batch_size
 
 
 if __name__ == "__main__":
-    env_name = "CartPole-v1"
+    #env_name = "CartPole-v1"
     #env_name = "MountainCar-v0"  # never reaches the goal -> never learns
-    #env_name = "Pendulum-v1"
+    env_name = "Pendulum-v1"
     #env_name = "HalfCheetah-v4"
     train_env = gym.make(env_name)
     train_env.reset(seed=42)
@@ -325,8 +330,8 @@ if __name__ == "__main__":
 
     observation_space = train_env.observation_space
     action_space = train_env.action_space
-    policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
-    #policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    #policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
 
     solver = optax.sgd(learning_rate=1e-2, momentum=0.9)
     opt_state = solver.init(policy.theta)
