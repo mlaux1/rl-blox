@@ -5,8 +5,7 @@ import optax
 import jax
 import jax.numpy as jnp
 import numpy as np
-import gym
-from gym.spaces import Discrete, Box
+import gymnasium as gym
 
 
 class NNPolicy:
@@ -142,10 +141,6 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
 
     # make environment, check spaces, get obs / act dims
     env = gym.make(env_name)
-    assert isinstance(env.observation_space, Box), \
-        "This example only works for envs with continuous state spaces."
-    assert isinstance(env.action_space, Discrete), \
-        "This example only works for envs with discrete action spaces."
 
     # make core of policy network
     policy = SoftmaxNNPolicy(env.observation_space, env.action_space, hidden_sizes, jax.random.PRNGKey(42))
@@ -164,7 +159,7 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
         batch_lens = []         # for measuring episode lengths
 
         # reset episode-specific variables
-        obs = env.reset()       # first obs comes from starting distribution
+        obs, _ = env.reset()       # first obs comes from starting distribution
         done = False            # signal from environment that episode is over
         ep_rews = []            # list for rewards accrued throughout ep
 
@@ -179,11 +174,13 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
                 env.render()
 
             # save obs
-            batch_obs.append(obs.copy())
+            batch_obs.append(np.copy(obs))
 
             # act in the environment
             act = np.asarray(policy.sample(jnp.array(obs)))
-            obs, rew, done, _ = env.step(act)
+            obs, rew, terminated, truncated, _ = env.step(act)
+
+            done = terminated or truncated
 
             # save action, reward
             batch_acts.append(act)
@@ -199,7 +196,7 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
                 batch_weights += list(reward_to_go(ep_rews))
 
                 # reset episode-specific variables
-                obs, done, ep_rews = env.reset(), False, []
+                obs, done, ep_rews = env.reset()[0], False, []
 
                 # won't render again this epoch
                 finished_rendering_this_epoch = True
