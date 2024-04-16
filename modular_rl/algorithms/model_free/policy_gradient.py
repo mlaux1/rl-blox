@@ -9,6 +9,7 @@ import gymnasium as gym
 
 
 class EpisodeDataset:
+    """Collects state-action-reward samples batched in episodes."""
     episodes: List[List[Tuple[jax.Array, jax.Array, float]]]
 
     def __init__(self):
