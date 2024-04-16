@@ -1,7 +1,8 @@
-from typing import List, Tuple
+from typing import List, Tuple, Any
 import math
 from functools import partial
 import numpy as np
+import numpy.typing as npt
 import jax
 import jax.numpy as jnp
 import optax
@@ -22,7 +23,7 @@ class EpisodeDataset:
         assert len(self.episodes) > 0
         self.episodes[-1].append((state, action, reward))
 
-    def dataset(self):
+    def dataset(self) -> Tuple[List[npt.ArrayLike], List[npt.ArrayLike], List[List[float]]]:
         states = []
         actions = []
         rewards = []
@@ -32,10 +33,10 @@ class EpisodeDataset:
             rewards.append([r for _, _, r in episode])
         return states, actions, rewards
 
-    def __len__(self):
+    def __len__(self) -> int:
         return sum(map(len, self.episodes))
 
-    def average_return(self):
+    def average_return(self) -> float:
         return sum([sum([r for _, _, r in episode])
                     for episode in self.episodes]) / len(self.episodes)
 
