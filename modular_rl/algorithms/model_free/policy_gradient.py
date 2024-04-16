@@ -258,13 +258,13 @@ def reinforce_gradient(policy: NNPolicy, dataset: EpisodeDataset, gamma: float) 
         https://papers.nips.cc/paper_files/paper/1999/hash/464d828b85b0bed98e80ade0a5c43b0f-Abstract.html
 
     Further resources:
+    * https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
+    * https://github.com/openai/spinningup/tree/master/spinup/examples/pytorch/pg_math
+    * https://gymnasium.farama.org/tutorials/training_agents/reinforce_invpend_gym_v26/
     * https://www.deisenroth.cc/pdf/fnt_corrected_2014-08-26.pdf, page 29
     * http://incompleteideas.net/book/RLbook2020.pdf, page 326
     * https://media.suub.uni-bremen.de/handle/elib/4585, page 52
     * https://link.springer.com/chapter/10.1007/978-3-642-27645-3_7, page 26
-    * https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
-    * https://github.com/openai/spinningup/tree/master/spinup/examples/pytorch/pg_math
-    * https://gymnasium.farama.org/tutorials/training_agents/reinforce_invpend_gym_v26/
     * https://www.quora.com/What-is-log-probability-in-policy-gradient-reinforcement-learning
     * https://avandekleut.github.io/reinforce/
 
@@ -351,6 +351,7 @@ if __name__ == "__main__":
     #env_name = "MountainCar-v0"  # never reaches the goal -> never learns
     env_name = "Pendulum-v1"
     #env_name = "HalfCheetah-v4"
+    #env_name = "InvertedPendulum-v4"
     train_env = gym.make(env_name)
     train_env.reset(seed=42)
     #render_env = gym.make(env_name, render_mode="human")
