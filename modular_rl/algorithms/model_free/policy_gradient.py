@@ -333,9 +333,9 @@ if __name__ == "__main__":
     policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
     #policy = GaussianNNPolicy(observation_space, action_space, [50], jax.random.PRNGKey(42))
 
-    solver = optax.adam(learning_rate=1e-2)
+    solver = optax.sgd(learning_rate=1e-2, momentum=0.9)
     opt_state = solver.init(policy.theta)
 
     n_epochs = 50
     for _ in range(n_epochs):
-        opt_state = train_one_epoch(train_env, train_env, policy, solver, opt_state, batch_size=5000, gamma=1.0)
+        opt_state = train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size=5000, gamma=1.0)
