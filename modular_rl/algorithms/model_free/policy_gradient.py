@@ -274,7 +274,7 @@ def discounted_reward_to_go(rewards, gamma):
     return np.array(list(reversed(discounted_returns)))
 
 
-def train_one_epoch(train_env, policy, solver, opt_state, render_env, batch_size, gamma):
+def train_reinforce_epoch(train_env, policy, solver, opt_state, render_env, batch_size, gamma):
     dataset = EpisodeDataset()
     if render_env is not None:
         env = render_env
@@ -282,30 +282,22 @@ def train_one_epoch(train_env, policy, solver, opt_state, render_env, batch_size
         env = train_env
 
     dataset.start_episode()
-    state, _ = env.reset()
-    R = 0.0
-    t = 0
-    i = 1
+    observation, _ = env.reset()
     while True:
-        action = policy.sample(jnp.array(state))
-        next_state, reward, terminated, truncated, _ = env.step(np.asarray(action))
+        action = policy.sample(jnp.array(observation))
+        next_observation, reward, terminated, truncated, _ = env.step(np.asarray(action))
 
         done = terminated or truncated
-        R += reward
-        t += 1
 
-        dataset.add_sample(state, action, reward)
+        dataset.add_sample(observation, action, reward)
 
-        state = next_state
+        observation = next_observation
 
         if done:
             n_samples = len(dataset)
             dataset.start_episode()
             env = train_env
-            state, _ = env.reset()
-            R = 0.0
-            t = 0
-            i += 1
+            observation, _ = env.reset()
 
             if n_samples >= batch_size:
                 break
@@ -315,6 +307,7 @@ def train_one_epoch(train_env, policy, solver, opt_state, render_env, batch_size
     theta_grad = reinforce_gradient(policy, dataset, gamma)
     updates, opt_state = solver.update(theta_grad, opt_state)
     policy.theta = optax.apply_updates(policy.theta, updates)
+
     return opt_state
 
 
@@ -338,4 +331,5 @@ if __name__ == "__main__":
 
     n_epochs = 50
     for _ in range(n_epochs):
-        opt_state = train_one_epoch(train_env, policy, solver, opt_state, render_env, batch_size=5000, gamma=0.9)
+        opt_state = train_reinforce_epoch(
+            train_env, policy, solver, opt_state, render_env, batch_size=5000, gamma=0.9)
