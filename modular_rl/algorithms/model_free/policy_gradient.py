@@ -40,7 +40,7 @@ class EpisodeDataset:
 
 
 class NNPolicy:
-    theta = jax.Array
+    theta: List[Tuple[jax.Array, jax.Array]]
 
     def __init__(self, sizes: List[int], key: jax.random.PRNGKey):
         keys = jax.random.split(key, len(sizes))
@@ -57,7 +57,17 @@ class NNPolicy:
         )
 
 
-def nn_forward(x, theta):
+def nn_forward(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jax.Array:
+    """Neural network forward pass.
+
+    The neural network consists of fully connected layers with tanh activation
+    functions in the hidden layers and no activation function in the last
+    layer.
+
+    :param x: 1D input vector.
+    :param theta: Parameters (weights and biases) of the neural network.
+    :returns: 1D output vector.
+    """
     for W, b in theta[:-1]:
         a = jnp.dot(W, x) + b
         x = jnp.tanh(a)
