@@ -1,58 +1,70 @@
 import jax.numpy as jnp
+import gymnasium
 from jax import Array
-from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from modular_rl.algorithms.base_algorithm import BaseAlgorithm
-from modular_rl.policy.base_policy import GreedyQPolicy, UniformRandomPolicy
 from modular_rl.tools.error_functions import td_error
 
 
-class QLearning(BaseAlgorithm):
+def q_learning(
+        env: gymnasium.Env,
+        policy,
+        alpha: float,
+        key: int,
+        num_episodes: int,
+        gamma: float = 0.9999
+) -> Array:
+    ep_rewards = jnp.zeros(num_episodes)
+
+    for i in tqdm(range(num_episodes)):
+        ep_reward = _q_learning_episode(env, policy, key, alpha, gamma)
+        ep_rewards = ep_rewards.at[i].add(ep_reward)
+
+    return ep_rewards
+
+
+def _q_learning_episode(
+        env,
+        policy,
+        key,
+        alpha: float = 0.01,
+        gamma: float = 0.9999
+) -> float:
     """
-    Basic Q-Learning implementation in JAX.
+    Performs a single episode rollout.
+
+    :param gamma: Discount factor.
+    :return: Episode reward.
     """
+    ep_reward = 0
+    truncated = False
+    terminated = False
+    observation, _ = env.reset()
+    action = policy.get_action(observation)
 
-    def episode_rollout(
-            self,
-            gamma: float = 0.99
-    ) -> float:
-        """
-        Performs a single episode rollout.
+    while not terminated and not truncated:
+        # get action from policy and perform environment step
+        next_observation, reward, terminated, truncated, info = (
+            env.step(action))
 
-        :param gamma: Discount factor.
-        :return: Episode reward.
-        """
-        ep_reward = 0
-        truncated = False
-        terminated = False
-        observation, _ = self.env.reset()
-        action = self.policy.get_action(observation)
+        # get next action
+        next_action = policy.get_greedy_action(next_observation)
 
-        while not terminated and not truncated:
-            # get action from policy and perform environment step
-            next_observation, reward, terminated, truncated, info = (
-                self.env.step(action))
+        # update target policy
+        val = policy.value_function.get_action_value(
+            observation, action)
+        next_val = policy.value_function.get_action_value(
+            next_observation, next_action)
 
-            # get next action
-            next_action = self.policy.get_greedy_action(next_observation)
+        error = td_error(reward, gamma, val, next_val)
 
-            # update target policy
-            val = self.policy.value_function.get_action_value(
-                observation, action)
-            next_val = self.policy.value_function.get_action_value(
-                next_observation, next_action)
+        policy.value_function.update(observation, action, alpha * error)
 
-            error = td_error(reward, gamma, val, next_val)
+        action = policy.get_action(next_observation)
+        observation = next_observation
+        ep_reward += reward
 
-            self.policy.value_function.update(
-                observation, action, self.alpha * error)
-
-            action = self.policy.get_action(next_observation)
-            observation = next_observation
-            ep_reward += reward
-
-        return ep_reward
+    return ep_reward
 
 
 
