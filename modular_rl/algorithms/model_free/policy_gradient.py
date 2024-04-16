@@ -24,13 +24,12 @@ class EpisodeDataset:
     def dataset(self):  # TODO return to go, discount factor
         states = []
         actions = []
-        returns = []
+        rewards = []
         for episode in self.episodes:
             states.extend([s for s, _, _ in episode])
             actions.extend([a for _, a, _ in episode])
-            rewards = [r for _, _, r in episode]
-            returns.append(rewards)
-        return states, actions, returns
+            rewards.append([r for _, _, r in episode])
+        return states, actions, rewards
 
     def __len__(self):
         return sum(map(len, self.episodes))
@@ -64,8 +63,8 @@ class NNPolicy:
         weight_initializer = jax.nn.initializers.he_uniform()
         bound = 1.0 / math.sqrt(m)
         return (
-            weight_initializer(w_key, (n, m), jnp.float64),
-            jax.random.uniform(b_key, (n,), jnp.float64, -bound, bound)
+            weight_initializer(w_key, (n, m), jnp.float32),
+            jax.random.uniform(b_key, (n,), jnp.float32, -bound, bound)
         )
 
 
