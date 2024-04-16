@@ -21,7 +21,7 @@ class EpisodeDataset:
         assert len(self.episodes) > 0
         self.episodes[-1].append((state, action, reward))
 
-    def dataset(self):  # TODO return to go, discount factor
+    def dataset(self):
         states = []
         actions = []
         rewards = []
@@ -296,13 +296,15 @@ def train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size
     i = 1
     while True:
         action = policy.sample(jnp.array(state))
-        state, reward, terminated, truncated, _ = env.step(np.asarray(action))
+        next_state, reward, terminated, truncated, _ = env.step(np.asarray(action))
 
         done = terminated or truncated
         R += reward
         t += 1
 
         dataset.add_sample(state, action, reward)
+
+        state = next_state
 
         if done:
             n_samples = len(dataset)
@@ -333,7 +335,9 @@ if __name__ == "__main__":
     #env_name = "Pendulum-v1"
     #env_name = "HalfCheetah-v4"
     train_env = gym.make(env_name)
+    train_env.reset(seed=42)
     render_env = gym.make(env_name, render_mode="human")
+    render_env.reset(seed=42)
 
     observation_space = render_env.observation_space
     action_space = render_env.action_space
@@ -345,4 +349,4 @@ if __name__ == "__main__":
 
     n_epochs = 50
     for _ in range(n_epochs):
-        opt_state = train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size=5000, gamma=1.0)
+        opt_state = train_one_epoch(train_env, train_env, policy, solver, opt_state, batch_size=5000, gamma=1.0)

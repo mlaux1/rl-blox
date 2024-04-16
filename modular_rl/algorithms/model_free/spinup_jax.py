@@ -141,6 +141,7 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
 
     # make environment, check spaces, get obs / act dims
     env = gym.make(env_name)
+    env.reset(seed=42)
 
     # make core of policy network
     policy = SoftmaxNNPolicy(env.observation_space, env.action_space, hidden_sizes, jax.random.PRNGKey(42))
@@ -168,7 +169,6 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2,
 
         # collect experience by acting in the environment with current policy
         while True:
-
             # rendering
             if (not finished_rendering_this_epoch) and render:
                 env.render()
