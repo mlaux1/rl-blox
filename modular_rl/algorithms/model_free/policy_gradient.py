@@ -47,17 +47,6 @@ class NNPolicy:
         self.theta = [self._random_layer_params(m, n, k)
                       for m, n, k in zip(sizes[:-1], sizes[1:], keys)]
 
-    """
-    def _random_layer_params(
-            self, m: int, n: int, key: jax.random.PRNGKey,
-            scale: float = 1e-1):
-        w_key, b_key = jax.random.split(key)
-        return (
-            scale * jax.random.normal(w_key, (n, m)),
-            scale * jax.random.normal(b_key, (n,))
-        )
-    """
-
     def _random_layer_params(self, m: int, n: int, key: jax.random.PRNGKey):
         w_key, b_key = jax.random.split(key)
         weight_initializer = jax.nn.initializers.he_uniform()
