@@ -123,6 +123,7 @@ def sample_gaussian_nn(
         key: jax.random.PRNGKey, n_action_dims: int) -> jax.Array:
     y = nn_forward(x, theta)
     mu, sigma = jnp.split(y, [n_action_dims])
+    # TODO try distrax: https://github.com/google-deepmind/distrax
     return jax.random.normal(key, shape=mu.shape) * sigma + mu
 
 
