@@ -208,7 +208,7 @@ def softmax_policy_gradient_pseudo_loss(
     return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
 
 
-def reinforce_gradient(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
+def reinforce_gradient(policy: NNPolicy, dataset: EpisodeDataset, gamma: float) -> jax.Array:
     r"""REINFORCE policy gradient update.
 
     REINFORCE is an abbreviation for *Reward Increment = Non-negative Factor x
@@ -269,6 +269,7 @@ def reinforce_gradient(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
     :param policy: Policy that we want to update and has been used for exploration.
     :param dataset: Samples that were collected with the policy.
     :param gamma: Reward discount factor.
+    :returns: REINFORCE policy gradient.
     """
     states, actions, rewards = dataset.dataset()
 
