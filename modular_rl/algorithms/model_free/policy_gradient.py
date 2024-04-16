@@ -117,14 +117,13 @@ class SoftmaxNNPolicy(NNPolicy):
 
         sizes = [self.observation_space.shape[0]] + hidden_nodes + [self.action_space.n]
         super(SoftmaxNNPolicy, self).__init__(sizes, key)
+        self.sample_softmax_nn = jax.jit(sample_softmax_nn)
 
     def sample(self, state: jax.Array):
-        logits = nn_forward(state, self.theta)
         self.sampling_key, key = jax.random.split(self.sampling_key)
-        return jax.random.categorical(key, logits) + self.action_space.start
+        return self.sample_softmax_nn(state, self.theta, key) + self.action_space.start
 
 
-@jax.jit
 def nn_forward(x, theta):
     for W, b in theta[:-1]:
         a = jnp.dot(W, x) + b
@@ -134,8 +133,12 @@ def nn_forward(x, theta):
     return y
 
 
-@jax.jit
-def gaussian_log_probability(state, action, theta):
+def sample_softmax_nn(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]], key: jax.random.PRNGKey) -> jax.Array:
+    logits = nn_forward(x, theta)
+    return jax.random.categorical(key, logits)
+
+
+def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
     # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     y = nn_forward(state, theta)
     mu, sigma = jnp.split(y, [action.shape[0]])
@@ -146,14 +149,13 @@ batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0
 
 
 @jax.jit
-def gaussian_policy_gradient_pseudo_loss(states, actions, returns, theta):
+def gaussian_policy_gradient_pseudo_loss(states: jax.Array, actions: jax.Array, returns: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
     logp = batched_gaussian_log_probability(states, actions, theta)
     return -jnp.dot(returns, logp)[0] / len(returns)  # - to perform gradient ascent with a minimizer
     # TODO why? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
 
 
-@jax.jit
-def softmax_log_probability(state, action, theta):
+def softmax_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
     logits = nn_forward(state, theta)
     return logits[action] - jax.scipy.special.logsumexp(logits)
 
@@ -162,12 +164,12 @@ batched_softmax_log_probability = jax.vmap(softmax_log_probability, in_axes=(0, 
 
 
 @jax.jit
-def softmax_policy_gradient_pseudo_loss(states, actions, returns, theta):
+def softmax_policy_gradient_pseudo_loss(states: jax.Array, actions: jax.Array, returns: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
     logp = batched_softmax_log_probability(states, actions, theta)
     return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
 
 
-def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
+def reinforce_gradient(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
     r"""REINFORCE policy gradient update.
 
     REINFORCE is an abbreviation for *Reward Increment = Non-negative Factor x
@@ -252,16 +254,8 @@ def reinforce_update(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
         )(policy.theta)
 
 
-#def reward_to_go(rewards):
-#    return np.flip(np.cumsum(np.flip(rewards)))
-
-
-def reward_to_go(rews):
-    n = len(rews)
-    rtgs = np.zeros_like(rews)
-    for i in reversed(range(n)):
-        rtgs[i] = rews[i] + (rtgs[i+1] if i+1 < n else 0)
-    return rtgs
+def reward_to_go(rewards):
+    return np.flip(np.cumsum(np.flip(rewards)))
 
 
 def discounted_reward_to_go(rewards, gamma):
@@ -274,9 +268,12 @@ def discounted_reward_to_go(rewards, gamma):
     return np.array(list(reversed(discounted_returns)))
 
 
-def train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size, gamma):
+def train_one_epoch(train_env, policy, solver, opt_state, render_env, batch_size, gamma):
     dataset = EpisodeDataset()
-    env = render_env
+    if render_env is not None:
+        env = render_env
+    else:
+        env = train_env
 
     dataset.start_episode()
     state, _ = env.reset()
@@ -297,7 +294,6 @@ def train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size
 
         if done:
             n_samples = len(dataset)
-            #print(f"{i=}, {t=}, {R=}, {n_samples=}")
             dataset.start_episode()
             env = train_env
             state, _ = env.reset()
@@ -311,31 +307,30 @@ def train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size
     print(f"{dataset.average_return()=}")
 
     # gradient ascent
-    theta_grad = reinforce_update(policy, dataset, gamma)
+    theta_grad = reinforce_gradient(policy, dataset, gamma)
     updates, opt_state = solver.update(theta_grad, opt_state)
     policy.theta = optax.apply_updates(policy.theta, updates)
     return opt_state
 
 
 if __name__ == "__main__":
-    # note on MountainCar-v0: never reaches the goal -> never learns
     env_name = "CartPole-v1"
-    #env_name = "MountainCar-v0"
+    #env_name = "MountainCar-v0"  # never reaches the goal -> never learns
     #env_name = "Pendulum-v1"
     #env_name = "HalfCheetah-v4"
     train_env = gym.make(env_name)
     train_env.reset(seed=42)
-    render_env = gym.make(env_name, render_mode="human")
-    render_env.reset(seed=42)
+    #render_env = gym.make(env_name, render_mode="human")
+    render_env = None
 
-    observation_space = render_env.observation_space
-    action_space = render_env.action_space
+    observation_space = train_env.observation_space
+    action_space = train_env.action_space
     policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
-    #policy = GaussianNNPolicy(observation_space, action_space, [50], jax.random.PRNGKey(42))
+    #policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
 
     solver = optax.sgd(learning_rate=1e-2, momentum=0.9)
     opt_state = solver.init(policy.theta)
 
     n_epochs = 50
     for _ in range(n_epochs):
-        opt_state = train_one_epoch(train_env, render_env, policy, solver, opt_state, batch_size=5000, gamma=1.0)
+        opt_state = train_one_epoch(train_env, policy, solver, opt_state, render_env, batch_size=5000, gamma=0.9)
