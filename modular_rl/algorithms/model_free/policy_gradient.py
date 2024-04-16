@@ -344,7 +344,7 @@ if __name__ == "__main__":
     policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
     #policy = GaussianNNPolicy(observation_space, action_space, [50], jax.random.PRNGKey(42))
 
-    solver = optax.adam(learning_rate=0.02)
+    solver = optax.adam(learning_rate=1e-2)
     opt_state = solver.init(policy.theta)
 
     n_epochs = 50
