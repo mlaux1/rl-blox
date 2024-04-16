@@ -40,6 +40,12 @@ class EpisodeDataset:
 
 
 class NNPolicy:
+    """Base class of neural network policies.
+
+    :param sizes: Numbers of neurons per layer, including input neurons and
+                  output neurons.
+    :param key: Jax pseudo random number generator key.
+    """
     theta: List[Tuple[jax.Array, jax.Array]]
 
     def __init__(self, sizes: List[int], key: jax.random.PRNGKey):
@@ -77,6 +83,13 @@ def nn_forward(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jax.Ar
 
 
 class GaussianNNPolicy(NNPolicy):
+    """Stochastic Gaussian policy for continuous action spaces with a neural network.
+
+    :param observation_space: Observation space.
+    :param action_space: Action space.
+    :param hidden_nodes: Numbers of hidden nodes per hidden layer.
+    :param key: Jax pseudo random number generator key for sampling network parameters and actions.
+    """
     observation_space: gym.spaces.Space
     action_space: gym.spaces.Space
     theta = jax.Array
@@ -98,18 +111,20 @@ class GaussianNNPolicy(NNPolicy):
         self.sample_gaussian_nn = jax.jit(
             partial(sample_gaussian_nn, n_action_dims=self.action_space.shape[0]))
 
-    def sample(self, state: jax.Array):
+    def sample(self, state: jax.Array) -> jax.Array:
         self.sampling_key, key = jax.random.split(self.sampling_key)
         return self.sample_gaussian_nn(state, self.theta, key)
 
 
-def sample_gaussian_nn(x, theta, key, n_action_dims):
+def sample_gaussian_nn(
+        x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]],
+        key: jax.random.PRNGKey, n_action_dims: int) -> jax.Array:
     y = nn_forward(x, theta)
     mu, sigma = jnp.split(y, [n_action_dims])
     return jax.random.normal(key, shape=mu.shape) * sigma + mu
 
 
-def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
+def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     y = nn_forward(state, theta)
     mu, sigma = jnp.split(y, [action.shape[0]])
@@ -120,7 +135,9 @@ batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0
 
 
 @jax.jit
-def gaussian_policy_gradient_pseudo_loss(states: jax.Array, actions: jax.Array, returns: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
+def gaussian_policy_gradient_pseudo_loss(
+        states: jax.Array, actions: jax.Array, returns: jax.Array,
+        theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logp = batched_gaussian_log_probability(states, actions, theta)
     return -jnp.dot(returns, logp)[0] / len(returns)  # - to perform gradient ascent with a minimizer
     # TODO why [0]? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
@@ -133,10 +150,10 @@ class SoftmaxNNPolicy(NNPolicy):
     :math:`|\mathcal{A}|` outputs, of which each represents the probability
     that the corresponding action is selected.
 
-    :param observation_space: Observation space
-    :param action_space: Action space
-    :param hidden_nodes: Numbers of hidden nodes per hidden layer
-    :param key: Jax random key for sampling network parameters and actions
+    :param observation_space: Observation space.
+    :param action_space: Action space.
+    :param hidden_nodes: Numbers of hidden nodes per hidden layer.
+    :param key: Jax pseudo random number generator key for sampling network parameters and actions.
     """
     observation_space: gym.spaces.Space
     action_space: gym.spaces.Discrete
@@ -166,12 +183,16 @@ class SoftmaxNNPolicy(NNPolicy):
         return self.sample_softmax_nn(state, self.theta, key) + self.action_space.start
 
 
-def sample_softmax_nn(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]], key: jax.random.PRNGKey) -> jax.Array:
+def sample_softmax_nn(
+        x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]],
+        key: jax.random.PRNGKey) -> jax.Array:
     logits = nn_forward(x, theta)
     return jax.random.categorical(key, logits)
 
 
-def softmax_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
+def softmax_log_probability(
+        state: jax.Array, action: jax.Array,
+        theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logits = nn_forward(state, theta)
     return logits[action] - jax.scipy.special.logsumexp(logits)
 
@@ -180,7 +201,9 @@ batched_softmax_log_probability = jax.vmap(softmax_log_probability, in_axes=(0, 
 
 
 @jax.jit
-def softmax_policy_gradient_pseudo_loss(states: jax.Array, actions: jax.Array, returns: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]):
+def softmax_policy_gradient_pseudo_loss(
+        states: jax.Array, actions: jax.Array, returns: jax.Array,
+        theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logp = batched_softmax_log_probability(states, actions, theta)
     return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
 
@@ -243,8 +266,8 @@ def reinforce_gradient(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
     * https://www.quora.com/What-is-log-probability-in-policy-gradient-reinforcement-learning
     * https://avandekleut.github.io/reinforce/
 
-    :param policy: TODO
-    :param dataset: TODO
+    :param policy: Policy that we want to update and has been used for exploration.
+    :param dataset: Samples that were collected with the policy.
     :param gamma: Reward discount factor.
     """
     states, actions, rewards = dataset.dataset()
@@ -252,14 +275,13 @@ def reinforce_gradient(policy: NNPolicy, dataset: EpisodeDataset, gamma: float):
     states = jnp.vstack(states)
     actions = jnp.stack(actions)
 
-    # reward to go
     #returns = [discounted_reward_to_go(R, gamma) for R in rewards]
     returns = [reward_to_go(R) for R in rewards]
     returns = jnp.hstack(returns)
 
     # TODO include baseline
 
-    if isinstance(policy, GaussianNNPolicy):
+    if isinstance(policy, GaussianNNPolicy):  # TODO find another way without if-else
         return jax.grad(
             partial(gaussian_policy_gradient_pseudo_loss, states, actions, returns)
         )(policy.theta)
