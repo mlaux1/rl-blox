@@ -1,4 +1,4 @@
-from typing import List, Tuple, Any
+from typing import List, Tuple
 import math
 from functools import partial
 import numpy as np
@@ -6,6 +6,7 @@ import numpy.typing as npt
 import jax
 import jax.numpy as jnp
 import optax
+import distrax
 import gymnasium as gym
 
 
@@ -132,6 +133,7 @@ def sample_gaussian_nn(
     y = nn_forward(x, theta)
     mu, sigma = jnp.split(y, [n_action_dims])
     # TODO try distrax: https://github.com/google-deepmind/distrax
+    #distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma)
     return jax.random.normal(key, shape=mu.shape) * sigma + mu
 
 
@@ -198,14 +200,16 @@ def sample_softmax_nn(
         x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]],
         key: jax.random.PRNGKey) -> jax.Array:
     logits = nn_forward(x, theta)
-    return jax.random.categorical(key, logits)
+    #return jax.random.categorical(key, logits)
+    return distrax.Categorical(logits=logits).sample(seed=key, sample_shape=())
 
 
 def softmax_log_probability(
         state: jax.Array, action: jax.Array,
         theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logits = nn_forward(state, theta)
-    return logits[action] - jax.scipy.special.logsumexp(logits)
+    return distrax.Categorical(logits=logits).log_prob(action)
+    #return logits[action] - jax.scipy.special.logsumexp(logits)
 
 
 batched_softmax_log_probability = jax.vmap(softmax_log_probability, in_axes=(0, 0, None))
@@ -356,9 +360,9 @@ def train_reinforce_epoch(train_env, policy, solver, opt_state, render_env, batc
 
 
 if __name__ == "__main__":
-    #env_name = "CartPole-v1"
+    env_name = "CartPole-v1"
     #env_name = "MountainCar-v0"  # never reaches the goal -> never learns
-    env_name = "Pendulum-v1"
+    #env_name = "Pendulum-v1"
     #env_name = "HalfCheetah-v4"
     #env_name = "InvertedPendulum-v4"
     train_env = gym.make(env_name)
@@ -368,8 +372,8 @@ if __name__ == "__main__":
 
     observation_space = train_env.observation_space
     action_space = train_env.action_space
-    #policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
-    policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    #policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
 
     value_function = ValueFunctionApproximation(observation_space, [32], jax.random.PRNGKey(43))
     # TODO create optimizer for value function, compute TD error loss
