@@ -132,16 +132,17 @@ def sample_gaussian_nn(
         key: jax.random.PRNGKey, n_action_dims: int) -> jax.Array:
     y = nn_forward(x, theta)
     mu, sigma = jnp.split(y, [n_action_dims])
-    # TODO try distrax: https://github.com/google-deepmind/distrax
-    #distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma)
-    return jax.random.normal(key, shape=mu.shape) * sigma + mu
+    return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).sample(seed=key, sample_shape=())
+    #return jax.random.normal(key, shape=mu.shape) * sigma + mu
 
 
 def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     y = nn_forward(state, theta)
     mu, sigma = jnp.split(y, [action.shape[0]])
-    return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
+    return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).log_prob(action)
+    #return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
+    # TODO why [0]? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
 
 
 batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0, 0, None))
@@ -152,8 +153,7 @@ def gaussian_policy_gradient_pseudo_loss(
         states: jax.Array, actions: jax.Array, returns: jax.Array,
         theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logp = batched_gaussian_log_probability(states, actions, theta)
-    return -jnp.dot(returns, logp)[0] / len(returns)  # - to perform gradient ascent with a minimizer
-    # TODO why [0]? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
+    return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
 
 
 class SoftmaxNNPolicy(NeuralNetwork):
@@ -360,9 +360,9 @@ def train_reinforce_epoch(train_env, policy, solver, opt_state, render_env, batc
 
 
 if __name__ == "__main__":
-    env_name = "CartPole-v1"
+    #env_name = "CartPole-v1"
     #env_name = "MountainCar-v0"  # never reaches the goal -> never learns
-    #env_name = "Pendulum-v1"
+    env_name = "Pendulum-v1"
     #env_name = "HalfCheetah-v4"
     #env_name = "InvertedPendulum-v4"
     train_env = gym.make(env_name)
@@ -372,8 +372,8 @@ if __name__ == "__main__":
 
     observation_space = train_env.observation_space
     action_space = train_env.action_space
-    policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
-    #policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    #policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
 
     value_function = ValueFunctionApproximation(observation_space, [32], jax.random.PRNGKey(43))
     # TODO create optimizer for value function, compute TD error loss
