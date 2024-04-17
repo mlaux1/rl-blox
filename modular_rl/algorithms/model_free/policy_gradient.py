@@ -131,7 +131,8 @@ def sample_gaussian_nn(
         x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]],
         key: jax.random.PRNGKey, n_action_dims: int) -> jax.Array:
     y = nn_forward(x, theta)
-    mu, sigma = jnp.split(y, [n_action_dims])
+    mu, log_sigma = jnp.split(y, [n_action_dims])
+    sigma = jnp.exp(log_sigma)
     return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).sample(seed=key, sample_shape=())
     #return jax.random.normal(key, shape=mu.shape) * sigma + mu
 
@@ -139,7 +140,8 @@ def sample_gaussian_nn(
 def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     y = nn_forward(state, theta)
-    mu, sigma = jnp.split(y, [action.shape[0]])
+    mu, log_sigma = jnp.split(y, [action.shape[0]])
+    sigma = jnp.exp(log_sigma)
     return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).log_prob(action)
     #return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
     # TODO why [0]? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
