@@ -391,13 +391,12 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
         observation = next_observation
 
         if done:
-            n_samples = len(dataset)
-            dataset.start_episode()
+            if len(dataset) >= batch_size:
+                break
+
             env = train_env
             observation, _ = env.reset()
-
-            if n_samples >= batch_size:
-                break
+            dataset.start_episode()
 
     print(f"{dataset.average_return()=}")
 
