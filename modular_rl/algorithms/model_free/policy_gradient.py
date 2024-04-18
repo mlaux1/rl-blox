@@ -99,12 +99,16 @@ class ValueFunctionApproximation(NeuralNetwork):
         self.n_train_iters_per_update = n_train_iters_per_update
         self.solver = optax.adam(learning_rate=learning_rate)
         self.opt_state = self.solver.init(self.theta)
+        self.forward = jax.jit(batched_nn_forward)
 
     def update(self, states: jax.Array, returns: jax.Array):
         for _ in range(self.n_train_iters_per_update):
             theta_grad = jax.grad(partial(value_loss, states, returns))(self.theta)
             updates, self.opt_state = self.solver.update(theta_grad, self.opt_state)
             self.theta = optax.apply_updates(self.theta, updates)
+
+    def predict(self, states: jax.Array) -> jax.Array:
+        return self.forward(states, self.theta).squeeze()
 
 
 @jax.jit
@@ -177,11 +181,11 @@ batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0
 
 @jax.jit
 def gaussian_policy_gradient_pseudo_loss(
-        states: jax.Array, actions: jax.Array, returns: jax.Array,
+        states: jax.Array, actions: jax.Array, weights: jax.Array,
         theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logp = batched_gaussian_log_probability(states, actions, theta)
     # TODO check loss:
-    return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
+    return -jnp.dot(weights, logp) / len(weights)  # - to perform gradient ascent with a minimizer
 
 
 class SoftmaxNNPolicy(NeuralNetwork):
@@ -245,10 +249,10 @@ batched_softmax_log_probability = jax.vmap(softmax_log_probability, in_axes=(0, 
 
 @jax.jit
 def softmax_policy_gradient_pseudo_loss(
-        states: jax.Array, actions: jax.Array, returns: jax.Array,
+        states: jax.Array, actions: jax.Array, weights: jax.Array,
         theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logp = batched_softmax_log_probability(states, actions, theta)
-    return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
+    return -jnp.dot(weights, logp) / len(weights)  # - to perform gradient ascent with a minimizer
 
 
 def reinforce_gradient(
@@ -319,16 +323,18 @@ def reinforce_gradient(
     :param gamma: Reward discount factor.
     :returns: REINFORCE policy gradient.
     """
-
-    # TODO use baseline to compute advantage
+    if value_function is not None:
+        weights = returns - value_function.predict(states)  # advantage
+    else:
+        weights = returns
 
     if isinstance(policy, GaussianNNPolicy):  # TODO find another way without if-else
         return jax.grad(
-            partial(gaussian_policy_gradient_pseudo_loss, states, actions, returns)
+            partial(gaussian_policy_gradient_pseudo_loss, states, actions, weights)
         )(policy.theta)
     else:
         return jax.grad(
-            partial(softmax_policy_gradient_pseudo_loss, states, actions, returns)
+            partial(softmax_policy_gradient_pseudo_loss, states, actions, weights)
         )(policy.theta)
 
 
