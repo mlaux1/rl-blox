@@ -371,7 +371,7 @@ def discounted_reward_to_go(rewards, gamma):
     return np.array(list(reversed(discounted_returns)))
 
 
-def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_function, batch_size, gamma, n_train_iters_per_update=1):
+def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_function, batch_size, gamma):
     dataset = EpisodeDataset()
     if render_env is not None:
         env = render_env
@@ -446,4 +446,4 @@ if __name__ == "__main__":
     for _ in range(n_epochs):
         train_reinforce_epoch(
             train_env, policy, policy_trainer, render_env, value_function,
-            batch_size=5000, gamma=1.0, n_train_iters_per_update=1)
+            batch_size=5000, gamma=1.0)
