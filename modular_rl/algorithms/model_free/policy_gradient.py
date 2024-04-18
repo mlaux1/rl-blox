@@ -324,9 +324,12 @@ def reinforce_gradient(
     :returns: REINFORCE policy gradient.
     """
     if value_function is not None:
-        weights = returns - value_function.predict(states)  # advantage
+        # state-value function as baseline, weights are advantages
+        baseline = value_function.predict(states)
     else:
-        weights = returns
+        # no baseline, weights are MC returns
+        baseline = jnp.zeros_like(returns)
+    weights = returns - baseline
 
     if isinstance(policy, GaussianNNPolicy):  # TODO find another way without if-else
         return jax.grad(
@@ -423,8 +426,7 @@ if __name__ == "__main__":
 
     value_function = ValueFunctionApproximation(
         observation_space, [32], jax.random.PRNGKey(43),
-        n_train_iters_per_update=5)
-    # TODO create optimizer for value function, compute TD error loss; slide 29!!!
+        n_train_iters_per_update=1)
 
     policy_solver = optax.adam(learning_rate=1e-2)
     policy_opt_state = policy_solver.init(policy.theta)
