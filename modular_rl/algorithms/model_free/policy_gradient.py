@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import math
 from functools import partial
 import numpy as np
@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import optax
 import distrax
+import chex
 import gymnasium as gym
 
 
@@ -85,12 +86,34 @@ def nn_forward(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jax.Ar
     return y
 
 
+batched_nn_forward = jax.vmap(nn_forward, in_axes=(0, None))
+
+
 class ValueFunctionApproximation(NeuralNetwork):
     def __init__(
             self, observation_state: gym.spaces.Space, hidden_nodes: List[int],
-            key: jax.random.PRNGKey):
+            key: jax.random.PRNGKey, learning_rate: float = 1e-2,
+            n_train_iters_per_update: int = 1):
         sizes = [observation_state.shape[0]] + hidden_nodes + [1]
         super(ValueFunctionApproximation, self).__init__(sizes, key)
+        self.n_train_iters_per_update = n_train_iters_per_update
+        self.solver = optax.adam(learning_rate=learning_rate)
+        self.opt_state = self.solver.init(self.theta)
+
+    def update(self, states: jax.Array, returns: jax.Array):
+        for _ in range(self.n_train_iters_per_update):
+            theta_grad = jax.grad(partial(value_loss, states, returns))(self.theta)
+            updates, self.opt_state = self.solver.update(theta_grad, self.opt_state)
+            self.theta = optax.apply_updates(self.theta, updates)
+
+
+@jax.jit
+def value_loss(states: jax.Array, returns: jax.Array,
+               theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
+    """Value error as loss for the value function network."""
+    values = batched_nn_forward(states, theta).squeeze()  # squeeze Nx1-D -> N-D
+    chex.assert_equal_shape((values, returns))
+    return optax.l2_loss(predictions=values, targets=returns).mean()
 
 
 class GaussianNNPolicy(NeuralNetwork):
@@ -141,7 +164,7 @@ def sample_gaussian_nn(
 def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     y = nn_forward(state, theta)
-    mu, log_sigma = jnp.split(y, [action.shape[0]])
+    mu, log_sigma = jnp.split(y, [action.shape[0]])  # TODO check dimensions
     log_sigma = jnp.clip(log_sigma, -20.0, 2.0)
     sigma = jnp.exp(log_sigma)
     return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).log_prob(action)
@@ -157,6 +180,7 @@ def gaussian_policy_gradient_pseudo_loss(
         states: jax.Array, actions: jax.Array, returns: jax.Array,
         theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logp = batched_gaussian_log_probability(states, actions, theta)
+    # TODO check loss:
     return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
 
 
@@ -227,7 +251,11 @@ def softmax_policy_gradient_pseudo_loss(
     return -jnp.dot(returns, logp) / len(returns)  # - to perform gradient ascent with a minimizer
 
 
-def reinforce_gradient(policy: NeuralNetwork, dataset: EpisodeDataset, gamma: float) -> jax.Array:
+def reinforce_gradient(
+        policy: NeuralNetwork,
+        value_function: Union[ValueFunctionApproximation, None],
+        states: jax.Array, actions: jax.Array, returns: jax.Array
+) -> jax.Array:
     r"""REINFORCE policy gradient update.
 
     REINFORCE is an abbreviation for *Reward Increment = Non-negative Factor x
@@ -278,6 +306,7 @@ def reinforce_gradient(policy: NeuralNetwork, dataset: EpisodeDataset, gamma: fl
     * https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
     * https://github.com/openai/spinningup/tree/master/spinup/examples/pytorch/pg_math
     * https://gymnasium.farama.org/tutorials/training_agents/reinforce_invpend_gym_v26/
+    * https://github.com/NadeemWard/pytorch_simple_policy_gradients/blob/master/reinforce/REINFORCE_discrete.py
     * https://www.deisenroth.cc/pdf/fnt_corrected_2014-08-26.pdf, page 29
     * http://incompleteideas.net/book/RLbook2020.pdf, page 326
     * https://media.suub.uni-bremen.de/handle/elib/4585, page 52
@@ -290,25 +319,14 @@ def reinforce_gradient(policy: NeuralNetwork, dataset: EpisodeDataset, gamma: fl
     :param gamma: Reward discount factor.
     :returns: REINFORCE policy gradient.
     """
-    states, actions, rewards = dataset.dataset()
 
-    states = jnp.vstack(states)
-    actions = jnp.stack(actions)
-
-    #returns = [discounted_reward_to_go(R, gamma) for R in rewards]
-    returns = [reward_to_go(R) for R in rewards]
-    returns = jnp.hstack(returns)
-
-    # TODO train baseline (before or after using it?)
-
-    # TODO include baseline
+    # TODO use baseline to compute advantage
 
     if isinstance(policy, GaussianNNPolicy):  # TODO find another way without if-else
         return jax.grad(
             partial(gaussian_policy_gradient_pseudo_loss, states, actions, returns)
         )(policy.theta)
     else:
-        actions -= policy.action_space.start
         return jax.grad(
             partial(softmax_policy_gradient_pseudo_loss, states, actions, returns)
         )(policy.theta)
@@ -328,7 +346,7 @@ def discounted_reward_to_go(rewards, gamma):
     return np.array(list(reversed(discounted_returns)))
 
 
-def train_reinforce_epoch(train_env, policy, solver, opt_state, render_env, batch_size, gamma):
+def train_reinforce_epoch(train_env, policy, solver, opt_state, render_env, value_function, batch_size, gamma):
     dataset = EpisodeDataset()
     if render_env is not None:
         env = render_env
@@ -358,7 +376,23 @@ def train_reinforce_epoch(train_env, policy, solver, opt_state, render_env, batc
 
     print(f"{dataset.average_return()=}")
 
-    theta_grad = reinforce_gradient(policy, dataset, gamma)
+    # TODO refactor
+    states, actions, rewards = dataset.dataset()
+
+    states = jnp.vstack(states)
+    actions = jnp.stack(actions)
+    if isinstance(env.action_space, gym.spaces.Discrete):
+        actions -= policy.action_space.start
+
+    #returns = [discounted_reward_to_go(R, gamma) for R in rewards]
+    returns = [reward_to_go(R) for R in rewards]
+    returns = jnp.hstack(returns)
+    # TODO refactor
+
+    if value_function is not None:
+        value_function.update(states, returns)
+
+    theta_grad = reinforce_gradient(policy, value_function, states, actions, returns)
     updates, opt_state = solver.update(theta_grad, opt_state)
     policy.theta = optax.apply_updates(policy.theta, updates)
 
@@ -366,9 +400,9 @@ def train_reinforce_epoch(train_env, policy, solver, opt_state, render_env, batc
 
 
 if __name__ == "__main__":
-    #env_name = "CartPole-v1"
+    env_name = "CartPole-v1"
     #env_name = "MountainCar-v0"  # never reaches the goal -> never learns
-    env_name = "Pendulum-v1"
+    #env_name = "Pendulum-v1"
     #env_name = "HalfCheetah-v4"
     #env_name = "InvertedPendulum-v4"
     train_env = gym.make(env_name)
@@ -378,10 +412,12 @@ if __name__ == "__main__":
 
     observation_space = train_env.observation_space
     action_space = train_env.action_space
-    #policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
-    policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    #policy = GaussianNNPolicy(observation_space, action_space, [16, 32], jax.random.PRNGKey(42))
 
-    value_function = ValueFunctionApproximation(observation_space, [32], jax.random.PRNGKey(43))
+    value_function = ValueFunctionApproximation(
+        observation_space, [32], jax.random.PRNGKey(43),
+        n_train_iters_per_update=5)
     # TODO create optimizer for value function, compute TD error loss; slide 29!!!
 
     policy_solver = optax.adam(learning_rate=1e-2)
@@ -390,4 +426,4 @@ if __name__ == "__main__":
     n_epochs = 50
     for _ in range(n_epochs):
         policy_opt_state = train_reinforce_epoch(
-            train_env, policy, policy_solver, policy_opt_state, render_env, batch_size=5000, gamma=0.9)
+            train_env, policy, policy_solver, policy_opt_state, render_env, value_function, batch_size=5000, gamma=1.0)
