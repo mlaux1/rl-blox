@@ -157,7 +157,7 @@ class GaussianNNPolicy(NeuralNetwork):
 def sample_gaussian_nn(
         x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]],
         key: jax.random.PRNGKey, n_action_dims: int) -> jax.Array:
-    y = nn_forward(x, theta)
+    y = nn_forward(x, theta).squeeze()
     mu, log_sigma = jnp.split(y, [n_action_dims])
     log_sigma = jnp.clip(log_sigma, -20.0, 2.0)
     sigma = jnp.exp(log_sigma)
@@ -166,14 +166,13 @@ def sample_gaussian_nn(
 
 
 def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
-    # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
-    y = nn_forward(state, theta)
+    y = nn_forward(state, theta).squeeze()
     mu, log_sigma = jnp.split(y, [action.shape[0]])  # TODO check dimensions
     log_sigma = jnp.clip(log_sigma, -20.0, 2.0)
     sigma = jnp.exp(log_sigma)
     return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).log_prob(action)
+    # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     #return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
-    # TODO why [0]? TypeError: Gradient only defined for scalar-output functions. Output had shape: (1,).
 
 
 batched_gaussian_log_probability = jax.vmap(gaussian_log_probability, in_axes=(0, 0, None))
@@ -184,8 +183,7 @@ def gaussian_policy_gradient_pseudo_loss(
         states: jax.Array, actions: jax.Array, weights: jax.Array,
         theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logp = batched_gaussian_log_probability(states, actions, theta)
-    # TODO check loss:
-    return -jnp.dot(weights, logp) / len(weights)  # - to perform gradient ascent with a minimizer
+    return -jnp.mean(weights * logp)  # - to perform gradient ascent with a minimizer
 
 
 class SoftmaxNNPolicy(NeuralNetwork):
@@ -231,7 +229,7 @@ class SoftmaxNNPolicy(NeuralNetwork):
 def sample_softmax_nn(
         x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]],
         key: jax.random.PRNGKey) -> jax.Array:
-    logits = nn_forward(x, theta)
+    logits = nn_forward(x, theta).squeeze()
     #return jax.random.categorical(key, logits)
     return distrax.Categorical(logits=logits).sample(seed=key, sample_shape=())
 
@@ -239,7 +237,7 @@ def sample_softmax_nn(
 def softmax_log_probability(
         state: jax.Array, action: jax.Array,
         theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
-    logits = nn_forward(state, theta)
+    logits = nn_forward(state, theta).squeeze()
     return distrax.Categorical(logits=logits).log_prob(action)
     #return logits[action] - jax.scipy.special.logsumexp(logits)
 
@@ -252,7 +250,7 @@ def softmax_policy_gradient_pseudo_loss(
         states: jax.Array, actions: jax.Array, weights: jax.Array,
         theta: List[Tuple[jax.Array, jax.Array]]) -> jnp.float32:
     logp = batched_softmax_log_probability(states, actions, theta)
-    return -jnp.dot(weights, logp) / len(weights)  # - to perform gradient ascent with a minimizer
+    return -jnp.mean(weights * logp)  # - to perform gradient ascent with a minimizer
 
 
 def reinforce_gradient(
@@ -409,9 +407,9 @@ def train_reinforce_epoch(train_env, policy, solver, opt_state, render_env, valu
 
 
 if __name__ == "__main__":
-    env_name = "CartPole-v1"
+    #env_name = "CartPole-v1"
     #env_name = "MountainCar-v0"  # never reaches the goal -> never learns
-    #env_name = "Pendulum-v1"
+    env_name = "Pendulum-v1"
     #env_name = "HalfCheetah-v4"
     #env_name = "InvertedPendulum-v4"
     train_env = gym.make(env_name)
@@ -421,11 +419,11 @@ if __name__ == "__main__":
 
     observation_space = train_env.observation_space
     action_space = train_env.action_space
-    policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
-    #policy = GaussianNNPolicy(observation_space, action_space, [16, 32], jax.random.PRNGKey(42))
+    #policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
+    policy = GaussianNNPolicy(observation_space, action_space, [32, 32], jax.random.PRNGKey(42))
 
     value_function = ValueFunctionApproximation(
-        observation_space, [32], jax.random.PRNGKey(43),
+        observation_space, [32, 32], jax.random.PRNGKey(43),
         n_train_iters_per_update=1)
 
     policy_solver = optax.adam(learning_rate=1e-2)
