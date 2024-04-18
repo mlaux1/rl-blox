@@ -16,7 +16,9 @@ observation_space = train_env.observation_space
 action_space = train_env.action_space
 policy = GaussianNNPolicy(observation_space, action_space, [16, 32], jax.random.PRNGKey(42))
 
-value_function = None
+value_function = ValueFunctionApproximation(
+    observation_space, [50, 50], jax.random.PRNGKey(43),
+    n_train_iters_per_update=1)
 
 policy_trainer = PolicyTrainer(policy, optimizer=optax.adamw, learning_rate=1e-4)
 
