@@ -254,11 +254,13 @@ def softmax_policy_gradient_pseudo_loss(
 
 
 class PolicyTrainer:
-    def __init__(self, policy: NeuralNetwork, learning_rate: float = 1e-2,
+    def __init__(self, policy: NeuralNetwork,
+                 optimizer = optax.adam,
+                 learning_rate: float = 1e-2,
                  n_train_iters_per_update: int = 1):
         self.policy = policy
         self.n_train_iters_per_update = n_train_iters_per_update
-        self.solver = optax.adam(learning_rate=learning_rate)
+        self.solver = optimizer(learning_rate=learning_rate)
         self.opt_state = self.solver.init(self.policy.theta)
 
     def update(
@@ -266,8 +268,9 @@ class PolicyTrainer:
             states: jax.Array, actions: jax.Array, returns: jax.Array):
         for _ in range(self.n_train_iters_per_update):
             theta_grad = policy_gradient_func(
-                policy, value_function, states, actions, returns)
-            updates, self.opt_state = self.solver.update(theta_grad, self.opt_state)
+                self.policy, value_function, states, actions, returns)
+            updates, self.opt_state = self.solver.update(
+                theta_grad, self.opt_state, self.policy.theta)
             self.policy.theta = optax.apply_updates(self.policy.theta, updates)
 
 
@@ -371,7 +374,7 @@ def discounted_reward_to_go(rewards, gamma):
     return np.array(list(reversed(discounted_returns)))
 
 
-def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_function, batch_size, gamma):
+def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_function, batch_size, gamma, train_after_episode=False):
     dataset = EpisodeDataset()
     if render_env is not None:
         env = render_env
@@ -391,7 +394,7 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
         observation = next_observation
 
         if done:
-            if len(dataset) >= batch_size:
+            if train_after_episode or len(dataset) >= batch_size:
                 break
 
             env = train_env
@@ -408,8 +411,8 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
     if isinstance(env.action_space, gym.spaces.Discrete):
         actions -= policy.action_space.start
 
-    #returns = [discounted_reward_to_go(R, gamma) for R in rewards]
-    returns = [reward_to_go(R) for R in rewards]
+    returns = [discounted_reward_to_go(R, gamma) for R in rewards]
+    #returns = [reward_to_go(R) for R in rewards]
     returns = jnp.hstack(returns)
     # TODO refactor
 
@@ -417,32 +420,3 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
         value_function.update(states, returns)
 
     policy_trainer.update(reinforce_gradient, value_function, states, actions, returns)
-
-
-if __name__ == "__main__":
-    env_name = "CartPole-v1"
-    #env_name = "MountainCar-v0"  # never reaches the goal -> never learns
-    #env_name = "Pendulum-v1"
-    #env_name = "HalfCheetah-v4"
-    #env_name = "InvertedPendulum-v4"
-    train_env = gym.make(env_name)
-    train_env.reset(seed=42)
-    #render_env = gym.make(env_name, render_mode="human")
-    render_env = None
-
-    observation_space = train_env.observation_space
-    action_space = train_env.action_space
-    policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
-    #policy = GaussianNNPolicy(observation_space, action_space, [50, 50], jax.random.PRNGKey(42))
-
-    value_function = ValueFunctionApproximation(
-        observation_space, [50, 50], jax.random.PRNGKey(43),
-        n_train_iters_per_update=5)
-
-    policy_trainer = PolicyTrainer(policy)
-
-    n_epochs = 50
-    for _ in range(n_epochs):
-        train_reinforce_epoch(
-            train_env, policy, policy_trainer, render_env, value_function,
-            batch_size=5000, gamma=1.0)
