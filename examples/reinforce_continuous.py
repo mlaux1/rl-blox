@@ -3,6 +3,11 @@ from modular_rl.algorithms.model_free.policy_gradient import GaussianNNPolicy, V
 import jax
 import optax
 
+# TODO try action scaling
+# https://github.com/NadeemWard/pytorch_simple_policy_gradients/blob/master/reinforce/REINFORCE_continuous.py#L50
+# https://gymnasium.farama.org/environments/mujoco/inverted_pendulum/
+# https://gymnasium.farama.org/environments/classic_control/pendulum/
+
 
 #env_name = "Pendulum-v1"
 #env_name = "HalfCheetah-v4"
