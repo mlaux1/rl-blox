@@ -132,6 +132,7 @@ def sample_gaussian_nn(
         key: jax.random.PRNGKey, n_action_dims: int) -> jax.Array:
     y = nn_forward(x, theta)
     mu, log_sigma = jnp.split(y, [n_action_dims])
+    log_sigma = jnp.clip(log_sigma, -20.0, 2.0)
     sigma = jnp.exp(log_sigma)
     return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).sample(seed=key, sample_shape=())
     #return jax.random.normal(key, shape=mu.shape) * sigma + mu
@@ -141,6 +142,7 @@ def gaussian_log_probability(state: jax.Array, action: jax.Array, theta: List[Tu
     # https://stats.stackexchange.com/questions/404191/what-is-the-log-of-the-pdf-for-a-normal-distribution
     y = nn_forward(state, theta)
     mu, log_sigma = jnp.split(y, [action.shape[0]])
+    log_sigma = jnp.clip(log_sigma, -20.0, 2.0)
     sigma = jnp.exp(log_sigma)
     return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).log_prob(action)
     #return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
@@ -297,6 +299,8 @@ def reinforce_gradient(policy: NeuralNetwork, dataset: EpisodeDataset, gamma: fl
     returns = [reward_to_go(R) for R in rewards]
     returns = jnp.hstack(returns)
 
+    # TODO train baseline (before or after using it?)
+
     # TODO include baseline
 
     if isinstance(policy, GaussianNNPolicy):  # TODO find another way without if-else
@@ -378,7 +382,7 @@ if __name__ == "__main__":
     policy = GaussianNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
 
     value_function = ValueFunctionApproximation(observation_space, [32], jax.random.PRNGKey(43))
-    # TODO create optimizer for value function, compute TD error loss
+    # TODO create optimizer for value function, compute TD error loss; slide 29!!!
 
     policy_solver = optax.adam(learning_rate=1e-2)
     policy_opt_state = policy_solver.init(policy.theta)
