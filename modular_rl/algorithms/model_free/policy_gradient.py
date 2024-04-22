@@ -437,6 +437,10 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
     actions, states, returns, gamma_discount = prepare_policy_gradient_dataset(
         dataset, env.action_space, gamma)
 
+    # If the update of the value function comes before the update of the
+    # policy depends on the implementation. In Sutton & Barto the old value
+    # function estimate is used as baseline for REINFORCE. Here we use the
+    # updated value function as a baseline.
     if value_function is not None:
         value_function.update(states, returns)
 

@@ -3,11 +3,6 @@ from modular_rl.algorithms.model_free.policy_gradient import GaussianNNPolicy, V
 import jax
 import optax
 
-# TODO try action scaling
-# https://github.com/NadeemWard/pytorch_simple_policy_gradients/blob/master/reinforce/REINFORCE_continuous.py#L50
-# https://gymnasium.farama.org/environments/mujoco/inverted_pendulum/
-# https://gymnasium.farama.org/environments/classic_control/pendulum/
-
 
 #env_name = "Pendulum-v1"
 #env_name = "HalfCheetah-v4"
@@ -32,4 +27,4 @@ for i in range(n_epochs):
     print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
         train_env, policy, policy_trainer, render_env, value_function,
-        batch_size=5000, gamma=0.99, train_after_episode=True)
+        batch_size=1000, gamma=0.99, train_after_episode=False)
