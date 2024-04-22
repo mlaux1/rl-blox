@@ -265,10 +265,11 @@ class PolicyTrainer:
 
     def update(
             self, policy_gradient_func, value_function: Union[ValueFunctionApproximation, None],
-            states: jax.Array, actions: jax.Array, returns: jax.Array):
+            states: jax.Array, actions: jax.Array, returns: jax.Array,
+            gamma_discount: Union[jax.Array, None] = None):
         for _ in range(self.n_train_iters_per_update):
             theta_grad = policy_gradient_func(
-                self.policy, value_function, states, actions, returns)
+                self.policy, value_function, states, actions, returns, gamma_discount)
             updates, self.opt_state = self.solver.update(
                 theta_grad, self.opt_state, self.policy.theta)
             self.policy.theta = optax.apply_updates(self.policy.theta, updates)
@@ -277,7 +278,8 @@ class PolicyTrainer:
 def reinforce_gradient(
         policy: NeuralNetwork,
         value_function: Union[ValueFunctionApproximation, None],
-        states: jax.Array, actions: jax.Array, returns: jax.Array
+        states: jax.Array, actions: jax.Array, returns: jax.Array,
+        gamma_discount: Union[jax.Array, None] = None
 ) -> jax.Array:
     r"""REINFORCE policy gradient update.
 
@@ -341,6 +343,7 @@ def reinforce_gradient(
     :param states: Samples that were collected with the policy.
     :param actions: Samples that were collected with the policy.
     :param returns: Samples that were collected with the policy.
+    :param gamma_discount: Discounting for individual steps of the episode.
     :returns: REINFORCE policy gradient.
     """
     if value_function is not None:
@@ -350,6 +353,8 @@ def reinforce_gradient(
         # no baseline, weights are MC returns
         baseline = jnp.zeros_like(returns)
     weights = returns - baseline
+    if gamma_discount is not None:
+        weights *= gamma_discount
 
     if isinstance(policy, GaussianNNPolicy):  # TODO find another way without if-else
         return jax.grad(
@@ -417,7 +422,9 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
     returns = jnp.hstack(returns)
     # TODO refactor
 
+    gamma_discount = jnp.hstack([gamma ** jnp.arange(len(R)) for R in rewards])
+
     if value_function is not None:
         value_function.update(states, returns)
 
-    policy_trainer.update(reinforce_gradient, value_function, states, actions, returns)
+    policy_trainer.update(reinforce_gradient, value_function, states, actions, returns, gamma_discount)
