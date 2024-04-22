@@ -13,7 +13,7 @@ import gymnasium as gym
 
 class EpisodeDataset:
     """Collects state-action-reward samples batched in episodes."""
-    episodes: List[List[Tuple[jax.Array, jax.Array, float]]]
+    episodes: List[List[Tuple[jax.Array, jax.Array, jax.Array, float]]]
 
     def __init__(self):
         self.episodes = []
@@ -21,25 +21,28 @@ class EpisodeDataset:
     def start_episode(self):
         self.episodes.append([])
 
-    def add_sample(self, state: jax.Array, action: jax.Array, reward: float):
+    def add_sample(self, state: jax.Array, action: jax.Array,
+                   next_state: jax.Array, reward: float):
         assert len(self.episodes) > 0
-        self.episodes[-1].append((state, action, reward))
+        self.episodes[-1].append((state, action, next_state, reward))
 
-    def dataset(self) -> Tuple[List[npt.ArrayLike], List[npt.ArrayLike], List[List[float]]]:
+    def dataset(self) -> Tuple[List[npt.ArrayLike], List[npt.ArrayLike], List[npt.ArrayLike], List[List[float]]]:
         states = []
         actions = []
+        next_states = []
         rewards = []
         for episode in self.episodes:
-            states.extend([s for s, _, _ in episode])
-            actions.extend([a for _, a, _ in episode])
-            rewards.append([r for _, _, r in episode])
-        return states, actions, rewards
+            states.extend([s for s, _, _, _ in episode])
+            actions.extend([a for _, a, _, _ in episode])
+            rewards.append([r for _, _, _, r in episode])
+            next_states.append([s for _, _, s, _ in episode])
+        return states, actions, next_states, rewards
 
     def __len__(self) -> int:
         return sum(map(len, self.episodes))
 
     def average_return(self) -> float:
-        return sum([sum([r for _, _, r in episode])
+        return sum([sum([r for _, _, _, r in episode])
                     for episode in self.episodes]) / len(self.episodes)
 
 
@@ -420,7 +423,7 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
 
         done = terminated or truncated
 
-        dataset.add_sample(observation, action, reward)
+        dataset.add_sample(observation, action, next_observation, reward)
 
         observation = next_observation
 
@@ -434,7 +437,7 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
 
     print(f"{dataset.average_return()=}")
 
-    actions, states, returns, gamma_discount = prepare_policy_gradient_dataset(
+    states, actions, _, returns, gamma_discount = prepare_policy_gradient_dataset(
         dataset, env.action_space, gamma)
 
     policy_trainer.update(
@@ -445,12 +448,15 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
         value_function.update(states, returns)
 
 
-def prepare_policy_gradient_dataset(dataset, action_space, gamma):
-    states, actions, rewards = dataset.dataset()
+def prepare_policy_gradient_dataset(
+        dataset: EpisodeDataset, action_space: gym.spaces.Space, gamma: float
+) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+    states, actions, next_states, rewards = dataset.dataset()
     states = jnp.vstack(states)
     actions = jnp.stack(actions)
+    next_states = jnp.vstack(next_states)
     if isinstance(action_space, gym.spaces.Discrete):
         actions -= action_space.start
     returns = jnp.hstack([discounted_reward_to_go(R, gamma) for R in rewards])
     gamma_discount = jnp.hstack([gamma ** jnp.arange(len(R)) for R in rewards])
-    return actions, states, returns, gamma_discount
+    return states, actions, next_states, returns, gamma_discount
