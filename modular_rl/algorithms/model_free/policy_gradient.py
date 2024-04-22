@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union
+from typing import List, Tuple, Optional
 import math
 from functools import partial
 import numpy as np
@@ -264,9 +264,9 @@ class PolicyTrainer:
         self.opt_state = self.solver.init(self.policy.theta)
 
     def update(
-            self, policy_gradient_func, value_function: Union[ValueFunctionApproximation, None],
+            self, policy_gradient_func, value_function: Optional[ValueFunctionApproximation],
             states: jax.Array, actions: jax.Array, returns: jax.Array,
-            gamma_discount: Union[jax.Array, None] = None):
+            gamma_discount: Optional[jax.Array] = None):
         for _ in range(self.n_train_iters_per_update):
             theta_grad = policy_gradient_func(
                 self.policy, value_function, states, actions, returns, gamma_discount)
@@ -277,16 +277,15 @@ class PolicyTrainer:
 
 def reinforce_gradient(
         policy: NeuralNetwork,
-        value_function: Union[ValueFunctionApproximation, None],
+        value_function: Optional[ValueFunctionApproximation],
         states: jax.Array, actions: jax.Array, returns: jax.Array,
-        gamma_discount: Union[jax.Array, None] = None
+        gamma_discount: Optional[jax.Array] = None
 ) -> jax.Array:
     r"""REINFORCE policy gradient update.
 
     REINFORCE is an abbreviation for *Reward Increment = Non-negative Factor x
     Offset Reinforcement x Characteristic Eligibility*. It is a policy gradient
-    algorithm that directly optimizes parameters of a stochastic policy. It
-    uses a Monte Carlo estimate of :math:`Q^{\pi}`.
+    algorithm that directly optimizes parameters of a stochastic policy.
 
     We treat the episodic case, in which we define the performance measure as
     the value of the start state of the episode
@@ -298,11 +297,40 @@ def reinforce_gradient(
     where :math:`v_{\pi_{\theta}}` is the true value function for
     :math:`\pi_{\theta}`, the policy determined by :math:`\theta`.
 
-    TODO derive log derivative trick
+    We use the policy gradient theorem to compute the policy gradient, which
+    is the derivative of J with respect to the parameters of the policy.
+
+    Policy Gradient Theorem
+    -----------------------
+    .. math::
+
+        \nabla_{\theta}J(\theta)
+        \propto \sum_s \mu(s) \sum_a Q_{\pi_{\theta}} (s, a) \nabla_{\theta} \pi_{\theta}(a|s)
+        = \mathbb{E}_{s \sim \mu(s)}\left[ \sum_a Q_{\pi_{\theta}}(s, a) \nabla_{\theta} \pi_{\theta} (a|s) \right],
+
+    where
+
+    * :math:`\mu(s)` is the state distribution under policy :math:`\pi_{\theta}`
+    * :math:`Q_{\pi_{\theta}}` is the state-action value function
+
+    In practice, we have to estimate the policy gradient from samples
+    accumulated by using the policy :math:`\pi_{\theta}`.
+
+    .. math::
+
+        \nabla_{\theta}J(\theta)
+        \propto \mathbb{E}_{s \sim \mu(s)}\left[ \sum_a q_{\pi_{\theta}}(s, a) \nabla_{\theta} \pi_{\theta} (a|s) \right]
+        = \mathbb{E}_{s \sim \mu(s)}\left[ \sum_a \textcolor{darkgreen}{\pi_{\theta} (a|s)} q_{\pi_{\theta}}(s, a) \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\textcolor{darkgreen}{\pi_{\theta} (a|s)}} \right]
+        = \mathbb{E}_{s \sim \mu(s), \textcolor{darkgreen}{a \sim \pi_{\theta}}}\left[ q_{\pi_{\theta}}(s, a) \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\pi_{\theta} (a|s)} \right]
+        = \mathbb{E}_{s \sim \mu(s), a \sim \pi_{\theta}}\left[ \textcolor{darkgreen}{R} \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\pi_{\theta} (a|s)} \right]
+        = \mathbb{E}_{s \sim \mu(s), a \sim \pi_{\theta}}\left[ \underline{R} \textcolor{darkgreen}{\nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})} \right]
+        \approx \textcolor{darkgreen}{\frac{1}{N}\sum_{(s, a, R)}}\underline{R} \nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})
+
+    So we can estimate the policy gradient with N sampled states, actions, and
+    returns.
 
     REINFORCE With Baseline
     -----------------------
-
     For any function b which only depends on the state,
 
     .. math::
@@ -318,7 +346,7 @@ def reinforce_gradient(
     change the parameters of the policy.
 
     References
-
+    ----------
     [1] Williams, R.J. (1992). Simple statistical gradient-following algorithms
         for connectionist reinforcement learning. Mach Learn 8, 229–256.
         https://doi.org/10.1007/BF00992696
@@ -328,6 +356,7 @@ def reinforce_gradient(
         https://papers.nips.cc/paper_files/paper/1999/hash/464d828b85b0bed98e80ade0a5c43b0f-Abstract.html
 
     Further resources:
+
     * https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
     * https://github.com/openai/spinningup/tree/master/spinup/examples/pytorch/pg_math
     * https://gymnasium.farama.org/tutorials/training_agents/reinforce_invpend_gym_v26/
