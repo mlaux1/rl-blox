@@ -366,10 +366,6 @@ def reinforce_gradient(
         )(policy.theta)
 
 
-def reward_to_go(rewards):
-    return np.flip(np.cumsum(np.flip(rewards)))
-
-
 def discounted_reward_to_go(rewards, gamma):
     discounted_returns = []
     accumulated_return = 0.0
@@ -409,22 +405,23 @@ def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_f
 
     print(f"{dataset.average_return()=}")
 
-    # TODO refactor
-    states, actions, rewards = dataset.dataset()
-
-    states = jnp.vstack(states)
-    actions = jnp.stack(actions)
-    if isinstance(env.action_space, gym.spaces.Discrete):
-        actions -= policy.action_space.start
-
-    returns = [discounted_reward_to_go(R, gamma) for R in rewards]
-    #returns = [reward_to_go(R) for R in rewards]
-    returns = jnp.hstack(returns)
-    # TODO refactor
-
-    gamma_discount = jnp.hstack([gamma ** jnp.arange(len(R)) for R in rewards])
+    actions, states, returns, gamma_discount = prepare_policy_gradient_dataset(
+        dataset, env.action_space, gamma)
 
     if value_function is not None:
         value_function.update(states, returns)
 
-    policy_trainer.update(reinforce_gradient, value_function, states, actions, returns, gamma_discount)
+    policy_trainer.update(
+        reinforce_gradient, value_function, states, actions, returns,
+        gamma_discount)
+
+
+def prepare_policy_gradient_dataset(dataset, action_space, gamma):
+    states, actions, rewards = dataset.dataset()
+    states = jnp.vstack(states)
+    actions = jnp.stack(actions)
+    if isinstance(action_space, gym.spaces.Discrete):
+        actions -= action_space.start
+    returns = jnp.hstack([discounted_reward_to_go(R, gamma) for R in rewards])
+    gamma_discount = jnp.hstack([gamma ** jnp.arange(len(R)) for R in rewards])
+    return actions, states, returns, gamma_discount
