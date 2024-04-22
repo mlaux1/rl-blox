@@ -372,6 +372,7 @@ def reinforce_gradient(
     * https://avandekleut.github.io/reinforce/
 
     :param policy: Policy that we want to update and has been used for exploration.
+    :param value_function: Estimated value function.
     :param states: Samples that were collected with the policy.
     :param actions: Samples that were collected with the policy.
     :param returns: Samples that were collected with the policy.
