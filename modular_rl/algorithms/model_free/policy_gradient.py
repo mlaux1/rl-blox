@@ -372,6 +372,7 @@ def reinforce_gradient(
     * https://link.springer.com/chapter/10.1007/978-3-642-27645-3_7, page 26
     * https://www.quora.com/What-is-log-probability-in-policy-gradient-reinforcement-learning
     * https://avandekleut.github.io/reinforce/
+    * https://lilianweng.github.io/posts/2018-04-08-policy-gradient/
 
     :param policy: Policy that we want to update and has been used for exploration.
     :param value_function: Estimated value function.
