@@ -1,5 +1,6 @@
 import gymnasium as gym
-from modular_rl.algorithms.model_free.reinforce import GaussianNNPolicy, ValueFunctionApproximation, PolicyTrainer, train_reinforce_epoch
+from modular_rl.algorithms.model_free.reinforce import ValueFunctionApproximation, PolicyTrainer, train_reinforce_epoch
+from modular_rl.policy.differentiable import GaussianNNPolicy
 import jax
 import optax
 

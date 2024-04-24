@@ -3,8 +3,9 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from .reinforce import (
-    EpisodeDataset, NeuralNetwork, ValueFunctionApproximation, GaussianNNPolicy,
+    EpisodeDataset, ValueFunctionApproximation,
     gaussian_policy_gradient_pseudo_loss, softmax_policy_gradient_pseudo_loss)
+from ...policy.differentiable import NeuralNetwork, GaussianNNPolicy
 
 
 def ac_policy_gradient(
