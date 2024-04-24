@@ -26,17 +26,22 @@ class EpisodeDataset:
         assert len(self.episodes) > 0
         self.episodes[-1].append((state, action, next_state, reward))
 
-    def dataset(self) -> Tuple[List[npt.ArrayLike], List[npt.ArrayLike], List[npt.ArrayLike], List[List[float]]]:
+    def dataset(
+            self
+    ) -> Tuple[List[int], List[npt.ArrayLike], List[npt.ArrayLike],
+               List[npt.ArrayLike], List[List[float]]]:
+        indices = []
         states = []
         actions = []
         next_states = []
         rewards = []
         for episode in self.episodes:
+            indices.extend([t for t in range(len(episode))])
             states.extend([s for s, _, _, _ in episode])
             actions.extend([a for _, a, _, _ in episode])
+            next_states.extend([s for _, _, s, _ in episode])
             rewards.append([r for _, _, _, r in episode])
-            next_states.append([s for _, _, s, _ in episode])
-        return states, actions, next_states, rewards
+        return indices, states, actions, next_states, rewards
 
     def __len__(self) -> int:
         return sum(map(len, self.episodes))
@@ -518,12 +523,12 @@ def train_ac_epoch(train_env, policy, policy_trainer, render_env, value_function
 def prepare_policy_gradient_dataset(
         dataset: EpisodeDataset, action_space: gym.spaces.Space, gamma: float
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
-    states, actions, next_states, rewards = dataset.dataset()
+    t, states, actions, next_states, rewards = dataset.dataset()
     states = jnp.vstack(states)
     actions = jnp.stack(actions)
     next_states = jnp.vstack(next_states)
     if isinstance(action_space, gym.spaces.Discrete):
         actions -= action_space.start
     returns = jnp.hstack([discounted_reward_to_go(R, gamma) for R in rewards])
-    gamma_discount = jnp.hstack([gamma ** jnp.arange(len(R)) for R in rewards])
+    gamma_discount = gamma ** jnp.hstack(t)
     return states, actions, next_states, returns, gamma_discount
