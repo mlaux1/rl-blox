@@ -2,7 +2,6 @@ from typing import List, Tuple, Optional
 import math
 from functools import partial
 import numpy as np
-import numpy.typing as npt
 import jax
 import jax.numpy as jnp
 import optax
@@ -74,6 +73,16 @@ class EpisodeDataset:
         returns = jnp.hstack([discounted_reward_to_go(R, gamma) for R in self._rewards()])
         gamma_discount = gamma ** jnp.hstack(self._indices())
         return states, actions, next_states, returns, gamma_discount
+
+
+def discounted_reward_to_go(rewards, gamma):
+    discounted_returns = []
+    accumulated_return = 0.0
+    for r in reversed(rewards):
+        accumulated_return *= gamma
+        accumulated_return += r
+        discounted_returns.append(accumulated_return)
+    return np.array(list(reversed(discounted_returns)))
 
 
 class NeuralNetwork:
@@ -301,8 +310,9 @@ def softmax_policy_gradient_pseudo_loss(
 
 
 class PolicyTrainer:
+    """Contains the state of the policy optimizer."""
     def __init__(self, policy: NeuralNetwork,
-                 optimizer = optax.adam,
+                 optimizer=optax.adam,
                  learning_rate: float = 1e-2,
                  n_train_iters_per_update: int = 1):
         self.policy = policy
@@ -444,16 +454,6 @@ def reinforce_gradient(
         return jax.grad(
             partial(softmax_policy_gradient_pseudo_loss, states, actions, weights)
         )(policy.theta)
-
-
-def discounted_reward_to_go(rewards, gamma):
-    discounted_returns = []
-    accumulated_return = 0.0
-    for r in reversed(rewards):
-        accumulated_return *= gamma
-        accumulated_return += r
-        discounted_returns.append(accumulated_return)
-    return np.array(list(reversed(discounted_returns)))
 
 
 def train_reinforce_epoch(train_env, policy, policy_trainer, render_env, value_function, batch_size, gamma, train_after_episode=False):
