@@ -1,5 +1,6 @@
 import gymnasium as gym
-from modular_rl.algorithms.model_free.reinforce import ValueFunctionApproximation, PolicyTrainer, train_reinforce_epoch
+from modular_rl.algorithms.model_free.reinforce import ValueFunctionApproximation, PolicyTrainer
+from modular_rl.algorithms.model_free.actor_critic import train_ac_epoch
 from modular_rl.policy.differentiable import SoftmaxNNPolicy
 import jax
 import optax
@@ -18,13 +19,13 @@ action_space = train_env.action_space
 policy = SoftmaxNNPolicy(observation_space, action_space, [32], jax.random.PRNGKey(42))
 
 value_function = ValueFunctionApproximation(
-    observation_space, [50, 50], jax.random.PRNGKey(43),
-    n_train_iters_per_update=5)
+    observation_space, [100, 100], jax.random.PRNGKey(43),
+    n_train_iters_per_update=1)
 
 policy_trainer = PolicyTrainer(policy, optimizer=optax.adam, learning_rate=1e-2)
 
 n_epochs = 50
 for i in range(n_epochs):
-    train_reinforce_epoch(
+    train_ac_epoch(
         train_env, policy, policy_trainer, render_env, value_function,
         batch_size=5000, gamma=1.0)
