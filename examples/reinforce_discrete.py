@@ -9,6 +9,7 @@ env_name = "CartPole-v1"
 train_env = gym.make(env_name)
 train_env.reset(seed=42)
 render_env = gym.make(env_name, render_mode="human")
+render_env.reset(seed=42)
 #render_env = None
 
 observation_space = train_env.observation_space
