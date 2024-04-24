@@ -123,11 +123,25 @@ batched_nn_forward = jax.vmap(nn_forward, in_axes=(0, None))
 
 
 class ValueFunctionApproximation(NeuralNetwork):
+    """Approximation of the state-value function V(s).
+
+    Note that a value function is usually specific for a policy because the
+    policy influences action selection. Hence, reusing an old estimation of
+    the value function for a new policy is an approximation. In addition,
+    we use a function approximator that is trained on a finite number of
+    samples, which also is an approximation.
+
+    :param observation_space: observation space
+    :param hidden_nodes: number of hidden nodes per hidden layer
+    :param key: jax pseudo random number generator key
+    :param learning_rate: learning rate for gradient descent
+    :param n_train_iters_per_update: number of optimizer iterations per update
+    """
     def __init__(
-            self, observation_state: gym.spaces.Space, hidden_nodes: List[int],
+            self, observation_space: gym.spaces.Space, hidden_nodes: List[int],
             key: jax.random.PRNGKey, learning_rate: float = 1e-2,
             n_train_iters_per_update: int = 1):
-        sizes = [observation_state.shape[0]] + hidden_nodes + [1]
+        sizes = [observation_space.shape[0]] + hidden_nodes + [1]
         super(ValueFunctionApproximation, self).__init__(sizes, key)
         self.n_train_iters_per_update = n_train_iters_per_update
         self.solver = optax.adam(learning_rate=learning_rate)
