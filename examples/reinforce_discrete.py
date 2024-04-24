@@ -1,5 +1,5 @@
 import gymnasium as gym
-from modular_rl.algorithms.model_free.policy_gradient import SoftmaxNNPolicy, ValueFunctionApproximation, PolicyTrainer, train_reinforce_epoch
+from modular_rl.algorithms.model_free.reinforce import SoftmaxNNPolicy, ValueFunctionApproximation, PolicyTrainer, train_reinforce_epoch
 import jax
 import optax
 
