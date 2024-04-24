@@ -26,22 +26,35 @@ class EpisodeDataset:
         assert len(self.episodes) > 0
         self.episodes[-1].append((state, action, next_state, reward))
 
-    def _dataset(
-            self
-    ) -> Tuple[List[int], List[npt.ArrayLike], List[npt.ArrayLike],
-               List[npt.ArrayLike], List[List[float]]]:
+    def _indices(self) -> List[int]:
         indices = []
-        states = []
-        actions = []
-        next_states = []
-        rewards = []
         for episode in self.episodes:
             indices.extend([t for t in range(len(episode))])
+        return indices
+
+    def _states(self) -> np.ndarray:
+        states = []
+        for episode in self.episodes:
             states.extend([s for s, _, _, _ in episode])
+        return np.vstack(states)
+
+    def _actions(self) -> np.ndarray:
+        actions = []
+        for episode in self.episodes:
             actions.extend([a for _, a, _, _ in episode])
+        return np.stack(actions)
+
+    def _next_states(self) -> np.ndarray:
+        next_states = []
+        for episode in self.episodes:
             next_states.extend([s for _, _, s, _ in episode])
+        return np.vstack(next_states)
+
+    def _rewards(self) -> List[List[float]]:
+        rewards = []
+        for episode in self.episodes:
             rewards.append([r for _, _, _, r in episode])
-        return indices, states, actions, next_states, rewards
+        return rewards
 
     def __len__(self) -> int:
         return sum(map(len, self.episodes))
@@ -53,14 +66,13 @@ class EpisodeDataset:
     def prepare_policy_gradient_dataset(
             self, action_space: gym.spaces.Space, gamma: float
     ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
-        t, states, actions, next_states, rewards = self._dataset()
-        states = jnp.vstack(states)
-        actions = jnp.stack(actions)
-        next_states = jnp.vstack(next_states)
+        states = jnp.array(self._states())
+        actions = jnp.array(self._actions())
+        next_states = jnp.array(self._next_states())
         if isinstance(action_space, gym.spaces.Discrete):
             actions -= action_space.start
-        returns = jnp.hstack([discounted_reward_to_go(R, gamma) for R in rewards])
-        gamma_discount = gamma ** jnp.hstack(t)
+        returns = jnp.hstack([discounted_reward_to_go(R, gamma) for R in self._rewards()])
+        gamma_discount = gamma ** jnp.hstack(self._indices())
         return states, actions, next_states, returns, gamma_discount
 
 
