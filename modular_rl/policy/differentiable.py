@@ -169,3 +169,33 @@ def softmax_log_probability(
 
 
 batched_softmax_log_probability = jax.vmap(softmax_log_probability, in_axes=(0, 0, None))
+
+
+class DeterministicNNPolicy(NeuralNetwork):
+    """Deterministic policy for continuous action spaces with a neural network.
+
+    :param observation_space: Observation space.
+    :param action_space: Action space.
+    :param hidden_nodes: Numbers of hidden nodes per hidden layer.
+    :param key: Jax pseudo random number generator key for sampling network parameters and actions.
+    """
+    observation_space: gym.spaces.Space
+    action_space: gym.spaces.Space
+    theta = jax.Array
+    sampling_key: jax.random.PRNGKey
+
+    def __init__(
+            self,
+            observation_space: gym.spaces.Space,
+            action_space: gym.spaces.Space,
+            hidden_nodes: List[int],
+            key: jax.random.PRNGKey):
+        self.observation_space = observation_space
+        self.action_space = action_space
+
+        self.sampling_key, key = jax.random.split(key)
+
+        sizes = [self.observation_space.shape[0]] + hidden_nodes + [self.action_space.shape[0]]
+        super(DeterministicNNPolicy, self).__init__(sizes, key)
+
+    # TODO
