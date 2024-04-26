@@ -2,5 +2,8 @@ gymnasium
 numpy
 torch
 jax
+chex
+distrax
+optax
 tqdm
 matplotlib
