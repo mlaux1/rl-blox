@@ -29,10 +29,3 @@ def generate_rollout(
         rewards.append(reward)
 
     return np.array(obs), np.array(actions), np.array(rewards)
-
-
-def moving_average(array, rolling_length):
-    return (
-        np.convolve(array.flatten(), np.ones(rolling_length), mode="valid")
-        / rolling_length
-    )
