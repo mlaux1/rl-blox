@@ -1,54 +1,37 @@
-import logging
-
 import gymnasium as gym
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import seaborn as sns
+from gymnasium.wrappers import RecordEpisodeStatistics
 
-from modular_rl.algorithms.model_free.q_learning import QLearning
+from modular_rl.algorithms.model_free.q_learning import q_learning
+from modular_rl.helper.experiment_helper import generate_rollout
+from modular_rl.policy.base_policy import EpsilonGreedyPolicy
 
+NUM_EPISODES = 2000
+LEARNING_RATE = 0.1
+EPSILON = 0.1
+KEY = 42
+WINDOW_SIZE = 10
+ENV_NAME = "Taxi-v3"
 
-def generate_rollout(env, policy):
-    observation, _ = env.reset()
-    terminated = False
-    truncated = False
+train_env = gym.make(ENV_NAME)
 
-    obs = []
-    acts = []
-    rews = []
+q_learning_env = RecordEpisodeStatistics(train_env, deque_size=NUM_EPISODES)
 
-    obs.append(observation)
-
-    while not terminated and not truncated:
-        action = policy.get_action(observation)
-        observation, reward, terminated, truncated, info = env.step(action)
-
-        obs.append(observation)
-        acts.append(action)
-        rews.append(reward)
-
-    return np.array(obs), np.array(acts), np.array(rews)
-
-
-# logging.basicConfig(level=logging.DEBUG)
-
-# train policy
-train_env = gym.make("FrozenLake-v1", desc=["SFFH", "FFFF", "FFFF", "FFFG"])
-
-q_learning = QLearning(train_env, 0.1, 0.05)
-train_returns = q_learning.train(1000)
-
-train_env.close()
-
-# evaluate the policy
-test_env = gym.make(
-    "FrozenLake-v1", render_mode="human", desc=["SFFH", "FFFF", "FFFF", "FFFG"]
+q_policy = EpsilonGreedyPolicy(
+    train_env.observation_space,
+    train_env.action_space,
+    epsilon=EPSILON
 )
 
-generate_rollout(test_env, q_learning.target_policy)
+q_learning(
+    q_learning_env,
+    q_policy,
+    alpha=LEARNING_RATE,
+    key=KEY,
+    num_episodes=NUM_EPISODES
+)
+q_learning_env.close()
 
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, q_policy)
 test_env.close()
 
-sns.scatterplot(x=range(len(train_returns)), y=train_returns)
-plt.show()
