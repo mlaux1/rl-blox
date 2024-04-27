@@ -1,7 +1,7 @@
 import gymnasium
 import jax.numpy as jnp
-import numpy as onp
 from jax import Array, random, jit
+from jax.typing import ArrayLike
 from jax.random import PRNGKey
 
 from tqdm import tqdm
@@ -9,37 +9,24 @@ from tqdm import tqdm
 from modular_rl.tools.error_functions import td_error
 
 
-@jit
-def _get_greedy_action(q_table, observation):
-    return q_table[observation].argmax()
-
-
-@jit
-def _get_greedy_action2(key, q_table, observation):
-    true_indices = q_table == q_table[observation].max()
-    return random.choice(key, true_indices)
+def _get_greedy_action(key, q_table, observation):
+    true_indices = q_table[observation] == q_table[observation].max()
+    return random.choice(key, jnp.flatnonzero(true_indices))
 
 
 def _get_epsilon_greedy_action(key, q_table, observation, epsilon):
-    roll = random.uniform(key)
+    key, subkey = random.split(key)
+    roll = random.uniform(subkey)
     if roll < epsilon:
         return random.choice(key, jnp.arange(len(q_table[observation])))
     else:
-        return _get_greedy_action(q_table, observation)
-
-
-def _get_epsilon_greedy_action2(key, q_table, observation, epsilon):
-    roll = random.uniform(key)
-    if roll < epsilon:
-        return random.choice(key, jnp.arange(len(q_table[observation])))
-    else:
-        return _get_greedy_action2(key, q_table, observation)
+        return _get_greedy_action(key, q_table, observation)
 
 
 def sarsa(
         key: PRNGKey,
         env: gymnasium.Env,
-        q_table,
+        q_table: ArrayLike,
         alpha: float,
         epsilon,
         num_episodes: int,
@@ -82,18 +69,14 @@ def _sarsa_episode(
 
     while not terminated and not truncated:
         # get action from policy and perform environment step
-        # print(f"{action=}")
         next_observation, reward, terminated, truncated, _ = env.step(int(action))
         # get next action
         key, subkey = random.split(key)
         next_action = _get_epsilon_greedy_action(subkey, q_table, observation, epsilon)
 
         # update target policy
-        val = q_table[observation, action]
-        next_val = q_table[next_observation, next_action]
-        error = td_error(reward, gamma, val, next_val)
-        q_table = q_table.at[observation, action].add(alpha*error)
-        #policy.value_function.update(observation, action, alpha * error)
+
+        q_table = _update_policy(q_table, observation, action, reward, next_observation, next_action, gamma, alpha)
 
         # housekeeping
         action = next_action
@@ -101,4 +84,14 @@ def _sarsa_episode(
         ep_reward += reward
 
     return ep_reward
+
+
+@jit
+def _update_policy(q_table, observation, action, reward, next_observation, next_action, gamma, alpha):
+    val = q_table[observation, action]
+    next_val = q_table[next_observation, next_action]
+    error = td_error(reward, gamma, val, next_val)
+    q_table = q_table.at[observation, action].add(alpha * error)
+
+    return q_table
 

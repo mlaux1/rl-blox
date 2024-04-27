@@ -4,17 +4,18 @@ from gymnasium.wrappers import RecordEpisodeStatistics
 from gymnasium.spaces.utils import flatdim
 
 from modular_rl.algorithms.model_free.sarsa_jax import sarsa
+from jax import device_put
 from jax.random import PRNGKey
 from modular_rl.helper.experiment_helper import generate_rollout
 
 NUM_EPISODES = 10000
 LEARNING_RATE = 0.1
-EPSILON = 0.1
+EPSILON = 0.05
 KEY = PRNGKey(42)
 WINDOW_SIZE = 10
 ENV_NAME = "CliffWalking-v0"
 
-train_env = gym.make(ENV_NAME)
+train_env = gym.make(ENV_NAME) #, render_mode="human")
 
 sarsa_env = RecordEpisodeStatistics(train_env, deque_size=NUM_EPISODES)
 
@@ -22,6 +23,8 @@ q_table = jnp.zeros(
             shape=(flatdim(train_env.observation_space), flatdim(train_env.action_space)),
             dtype=jnp.float32,
         )
+
+q_table = device_put(q_table)
 
 sarsa = sarsa(
     KEY,
