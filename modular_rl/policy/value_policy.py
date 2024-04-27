@@ -3,6 +3,7 @@ import abc
 import jax.numpy as jnp
 import jax.random
 from jax import Array, random
+from jax.typing import ArrayLike
 
 from modular_rl.policy.value_functions import (TabularQFunction,
                                                TabularValueFunction)

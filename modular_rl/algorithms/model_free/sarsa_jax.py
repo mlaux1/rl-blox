@@ -9,12 +9,21 @@ from tqdm import tqdm
 from modular_rl.tools.error_functions import td_error
 
 
-def _get_greedy_action(key, q_table, observation):
+def _get_greedy_action(
+        key: PRNGKey,
+        q_table: ArrayLike,
+        observation: ArrayLike
+) -> Array:
     true_indices = q_table[observation] == q_table[observation].max()
     return random.choice(key, jnp.flatnonzero(true_indices))
 
 
-def _get_epsilon_greedy_action(key, q_table, observation, epsilon):
+def _get_epsilon_greedy_action(
+        key: PRNGKey,
+        q_table: ArrayLike,
+        observation: ArrayLike,
+        epsilon: float
+) -> Array:
     key, subkey = random.split(key)
     roll = random.uniform(subkey)
     if roll < epsilon:
@@ -28,7 +37,7 @@ def sarsa(
         env: gymnasium.Env,
         q_table: ArrayLike,
         alpha: float,
-        epsilon,
+        epsilon: float,
         num_episodes: int,
         gamma: float = 0.9999,
 
@@ -46,8 +55,8 @@ def sarsa(
 
 def _sarsa_episode(
         key: PRNGKey,
-        env,
-        q_table,
+        env: gymnasium.Env,
+        q_table: ArrayLike,
         alpha: float,
         epsilon: float,
         gamma: float = 0.9999,
@@ -75,7 +84,6 @@ def _sarsa_episode(
         next_action = _get_epsilon_greedy_action(subkey, q_table, observation, epsilon)
 
         # update target policy
-
         q_table = _update_policy(q_table, observation, action, reward, next_observation, next_action, gamma, alpha)
 
         # housekeeping
