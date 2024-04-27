@@ -1,47 +1,49 @@
 import gymnasium as gym
-import matplotlib.pyplot as plt
-import numpy as np
-from gymnasium.spaces.utils import flatdim
 from gymnasium.wrappers import RecordEpisodeStatistics
-from rl_experiments.evaluation.plotting import plot_training_stats
 
-from modular_rl.algorithms.model_free.q_learning import QLearning
-from modular_rl.algorithms.model_free.sarsa import Sarsa
-from modular_rl.helper.experiment_helper import (generate_rollout,
-                                                 moving_average)
+from modular_rl.algorithms.model_free.q_learning import q_learning
+from modular_rl.algorithms.model_free.sarsa import sarsa
+from modular_rl.helper.experiment_helper import generate_rollout
 from modular_rl.policy.base_policy import EpsilonGreedyPolicy
 
-num_episodes = 1000
-learning_rate = 0.1
-epsilon = 0.1
-KEY = 0
+NUM_EPISODES = 2000
+LEARNING_RATE = 0.1
+EPSILON = 0.1
+KEY = 42
+WINDOW_SIZE = 10
 
 train_env = gym.make("Blackjack-v1")
 
-sarsa_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
+sarsa_env = RecordEpisodeStatistics(train_env, deque_size=NUM_EPISODES)
 policy = EpsilonGreedyPolicy(
-    train_env.observation_space, train_env.action_space, epsilon=epsilon
+    train_env.observation_space,
+    train_env.action_space,
+    epsilon=EPSILON
 )
-sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate, key=KEY)
-sarsa.train(num_episodes)
+sarsa = sarsa(
+    sarsa_env, policy, alpha=LEARNING_RATE, key=KEY, num_episodes=NUM_EPISODES)
+sarsa_env.close()
 
-test_env = gym.make("Blackjack-v0", render_mode="human")
-generate_rollout(test_env, sarsa.target_policy)
+test_env = gym.make("Blackjack-v1", render_mode="human")
+generate_rollout(test_env, policy)
+test_env.close()
 
-q_learning_env = gym.wrappers.RecordEpisodeStatistics(
-    train_env, deque_size=num_episodes
+q_learning_env = RecordEpisodeStatistics(train_env, deque_size=NUM_EPISODES)
+q_policy = EpsilonGreedyPolicy(
+    train_env.observation_space,
+    train_env.action_space,
+    epsilon=EPSILON
 )
-q_learning = QLearning(q_learning_env, alpha=learning_rate, epsilon=epsilon)
-q_learning.train(num_episodes)
-
-generate_rollout(test_env, q_learning.target_policy)
-
-# train_env.close()
-
-
-plot_training_stats(
-    np.array(sarsa_env.return_queue),
-    np.array(sarsa_env.length_queue),
-    rolling_length=100,
-    title="SARSA",
+q_learning(
+    q_learning_env,
+    q_policy,
+    alpha=LEARNING_RATE,
+    key=KEY,
+    num_episodes=NUM_EPISODES
 )
+q_learning_env.close()
+
+test_env = gym.make("Blackjack-v1", render_mode="human")
+generate_rollout(test_env, q_policy)
+test_env.close()
+

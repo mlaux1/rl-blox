@@ -1,62 +1,49 @@
 import gymnasium as gym
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
+from gymnasium.wrappers import FlattenObservation, RecordEpisodeStatistics
 from rl_experiments.evaluation.plotting import plot_training_stats
 
-from modular_rl.algorithms.model_free.sarsa import Sarsa
+from modular_rl.algorithms.model_free.q_learning import q_learning
+from modular_rl.algorithms.model_free.sarsa import sarsa
 from modular_rl.helper.experiment_helper import generate_rollout
 from modular_rl.policy.base_policy import EpsilonGreedyPolicy
 
+NUM_EPISODES = 2000
+LEARNING_RATE = 0.1
+EPSILON = 0.1
+KEY = 42
+WINDOW_SIZE = 10
+
 train_env = gym.make("FrozenLake-v1")
-train_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=100000)
 
-
+sarsa_env = RecordEpisodeStatistics(train_env, deque_size=NUM_EPISODES)
 policy = EpsilonGreedyPolicy(
-    train_env.observation_space, train_env.action_space, epsilon=0.01
+    train_env.observation_space,
+    train_env.action_space,
+    epsilon=EPSILON
 )
-alg = Sarsa(train_env, policy, alpha=0.2, key=0)
-
-train_returns = alg.train(100000)
-
-train_env.close()
+sarsa = sarsa(
+    sarsa_env, policy, alpha=LEARNING_RATE, key=KEY, num_episodes=NUM_EPISODES)
+sarsa_env.close()
 
 test_env = gym.make("FrozenLake-v1", render_mode="human")
+generate_rollout(test_env, policy)
+test_env.close()
 
-generate_rollout(test_env, alg.policy)
-
-train_env.close()
-
-plot_training_stats(
-    np.array(train_env.return_queue),
-    np.array(train_env.length_queue),
-    rolling_length=100,
-    title="SARSA",
+q_learning_env = RecordEpisodeStatistics(train_env, deque_size=NUM_EPISODES)
+q_policy = EpsilonGreedyPolicy(
+    train_env.observation_space,
+    train_env.action_space,
+    epsilon=EPSILON
 )
-rolling_length = 100
-fig, axs = plt.subplots(ncols=2, figsize=(12, 5))
-
-axs[0].set_title("Episode rewards")
-# compute and assign a rolling average of the data to provide a smoother graph
-reward_moving_average = (
-    np.convolve(
-        np.array(train_env.return_queue).flatten(),
-        np.ones(rolling_length),
-        mode="valid",
-    )
-    / rolling_length
+q_learning(
+    q_learning_env,
+    q_policy,
+    alpha=LEARNING_RATE,
+    key=KEY,
+    num_episodes=NUM_EPISODES
 )
-axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+q_learning_env.close()
 
-axs[1].set_title("Episode lengths")
-length_moving_average = (
-    np.convolve(
-        np.array(train_env.length_queue).flatten(),
-        np.ones(rolling_length),
-        mode="same"
-    )
-    / rolling_length
-)
-axs[1].plot(range(len(length_moving_average)), length_moving_average)
-plt.tight_layout()
-plt.show()
+test_env = gym.make("FrozenLake-v1", render_mode="human")
+generate_rollout(test_env, q_policy)
+test_env.close()
