@@ -8,7 +8,7 @@ from modular_rl.policy.base_policy import BasePolicy
 
 
 def generate_rollout(
-    env: gym.Env, policy: BasePolicy
+    env: gym.Env, policy
 ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
     observation, _ = env.reset()
     terminated = False
@@ -21,7 +21,7 @@ def generate_rollout(
     obs.append(observation)
 
     while not terminated or truncated:
-        action = policy.get_action(observation)
+        action = policy(observation)
         observation, reward, terminated, truncated, info = env.step(action)
 
         obs.append(observation)

@@ -1,8 +1,6 @@
 import gymnasium
-import jax.numpy as jnp
-import numpy as onp
+import numpy as np
 from jax import Array, random
-
 from tqdm import tqdm
 
 from modular_rl.tools.error_functions import td_error
@@ -16,7 +14,7 @@ def sarsa(
         num_episodes: int,
         gamma: float = 0.9999
 ) -> Array:
-    ep_rewards = jnp.zeros(num_episodes)
+    ep_rewards = np.zeros(num_episodes)
 
     for i in tqdm(range(num_episodes)):
         ep_reward = _sarsa_episode(env, policy, alpha, gamma, key)

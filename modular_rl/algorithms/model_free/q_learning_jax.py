@@ -1,34 +1,42 @@
-import jax.numpy as jnp
 import gymnasium
-from jax import Array
+import jax.numpy as jnp
+from jax import Array, random
+from jax.random import PRNGKey
+from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from modular_rl.tools.error_functions import td_error
+from ...policy.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ...tools.error_functions import td_error
 
 
 def q_learning(
+        key: PRNGKey,
         env: gymnasium.Env,
-        policy,
+        q_table: ArrayLike,
         alpha: float,
-        key: int,
+        epsilon: float,
         num_episodes: int,
-        gamma: float = 0.9999
+        gamma: float = 0.9999,
+
 ) -> Array:
+
     ep_rewards = jnp.zeros(num_episodes)
 
     for i in tqdm(range(num_episodes)):
-        ep_reward = _q_learning_episode(env, policy, key, alpha, gamma)
+        key, subkey = random.split(key)
+        ep_reward = _q_learning_episode(subkey, env, q_table, alpha, epsilon, gamma)
         ep_rewards = ep_rewards.at[i].add(ep_reward)
 
     return ep_rewards
 
 
 def _q_learning_episode(
-        env,
-        policy,
-        key,
-        alpha: float = 0.01,
-        gamma: float = 0.9999
+        key: PRNGKey,
+        env: gymnasium.Env,
+        q_table: ArrayLike,
+        alpha: float,
+        epsilon: float,
+        gamma: float = 0.9999,
 ) -> float:
     """
     Performs a single episode rollout.
@@ -40,29 +48,24 @@ def _q_learning_episode(
     truncated = False
     terminated = False
     observation, _ = env.reset()
-    action = policy.get_action(observation)
 
     while not terminated and not truncated:
-        # get action from policy and perform environment step
-        next_observation, reward, terminated, truncated, _ = env.step(action)
+        key, subkey1, subkey2 = random.split(key, 3)
 
+        action = get_epsilon_greedy_action(subkey1, q_table, observation, epsilon)
+        # get action from policy and perform environment step
+        next_observation, reward, terminated, truncated, _ = env.step(int(action))
         # get next action
-        next_action = policy.get_greedy_action(next_observation)
+        next_action = get_greedy_action(subkey2, q_table, observation)
 
         # update target policy
-        val = policy.value_function.get_action_value(observation, action)
-        next_val = policy.value_function.get_action_value(next_observation, next_action)
+        val = q_table[observation, action]
+        next_val = q_table[next_observation, next_action]
         error = td_error(reward, gamma, val, next_val)
-        policy.value_function.update(observation, action, alpha * error)
+        q_table = q_table.at[observation, action].add(alpha * error)
 
         # housekeeping
-        action = policy.get_action(next_observation)
         observation = next_observation
         ep_reward += reward
 
     return ep_reward
-
-
-
-
-

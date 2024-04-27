@@ -1,141 +1,63 @@
-import abc
-
+import gymnasium
 import jax.numpy as jnp
-import jax.random
-from jax import Array, random
+from gymnasium.spaces.utils import flatdim
+from jax import Array, jit, random
+from jax.random import PRNGKey
 from jax.typing import ArrayLike
 
-from modular_rl.policy.value_functions import (TabularQFunction,
-                                               TabularValueFunction)
 
-
-class BasePolicy(abc.ABC):
-    """Base policy class interface."""
-
-    def __init__(self, observation_space, action_space, key=42):
-        self.observation_space = observation_space
-        self.action_space = action_space
-
-        self.key = jax.random.PRNGKey(key)
-
-    @abc.abstractmethod
-    def get_action(self, observation: Array, key: int) -> Array:
-        pass
-
-    @abc.abstractmethod
-    def get_action_probability(
-            self,
-            action: Array,
-            observation: Array
-    ) -> float:
-        pass
-
-
-class StateValueBasedPolicy(BasePolicy):
-    """Base policy class for state-value-based policies."""
-
-    def __init__(self, observation_space, action_space, key):
-        super().__init__(observation_space, action_space, key)
-
-        self.value_function = TabularValueFunction(observation_space)
-
-
-class QValueBasedPolicy(BasePolicy):
-    """Base policy class for q-value-based policies."""
-
-    def __init__(self, observation_space, action_space, initial_value=0.0):
-        super().__init__(observation_space, action_space)
-
-        self.value_function = TabularQFunction(
-            observation_space, action_space, initial_value
-        )
-
-    @abc.abstractmethod
-    def get_action(self, observation: Array, key: int) -> Array:
-        pass
-
-    @abc.abstractmethod
-    def get_action_probability(
-        self, action: Array, observation: Array
-    ) -> float:
-        pass
-
-    def update(self, observations, actions, values) -> None:
-        self.value_function.update(observations, actions, values)
-
-
-class UniformRandomPolicy(BasePolicy):
-    """Simple Random Policy."""
-
-    def get_action(self, observation: Array, key: int) -> Array:
-        return self.action_space.sample()
-
-    def get_action_probability(
-        self, action: Array, observation: Array
-    ) -> float:
-        return 1.0 / self.action_space.n
-
-
-class GreedyQPolicy(QValueBasedPolicy):
+def make_q_table(env: gymnasium.Env) -> Array:
     """
-    Greedy policy that selects the action that maximises the Q-function.
+    Creates a Q-table for the given environment.
+
+    :param env: Environment.
+    :return: Q-table.
     """
-
-    def get_action(self, observation: Array, key: int) -> Array:
-        return self.rng.choice(
-            jnp.flatnonzero(
-                self.value_function.values[observation]
-                == self.value_function.values[observation].max()
-            )
-        )
-
-    def get_action_probability(
-        self, action: Array, observation: Array
-    ) -> float:
-        return 1.0 / jnp.count_nonzero(
-            self.value_function.values[observation]
-            == self.value_function.values[observation].max()
-        )
+    q_table = jnp.zeros(
+        shape=(flatdim(env.observation_space), flatdim(env.action_space)),
+        dtype=jnp.float32,
+    )
+    return q_table
 
 
-class EpsilonGreedyPolicy(QValueBasedPolicy):
+@jit
+def get_greedy_action(
+        key: PRNGKey,
+        q_table: ArrayLike,
+        observation: ArrayLike
+) -> Array:
     """
-    Epsilon-Greedy policy that selects the action that maximises the Q-function
-    in 1-epsilon probability and performs a random action otherwise.
+    Returns the greedy action for the given observation.
+
+    :param key: PRNGKey.
+    :param q_table: Q-table.
+    :param observation: Observation.
+    :return: Greedy action.
     """
+    # TODO: technically correct way is commented out because it is super slow
+    # true_indices = q_table[observation] == q_table[observation].max()
+    # return random.choice(key, jnp.flatnonzero(true_indices))
+    return jnp.argmax(q_table[observation])
 
-    def __init__(self, observation_space, action_space, epsilon: float):
-        super().__init__(observation_space, action_space)
 
-        self.epsilon = epsilon
+def get_epsilon_greedy_action(
+        key: PRNGKey,
+        q_table: ArrayLike,
+        observation: ArrayLike,
+        epsilon: float
+) -> Array:
+    """
+    Returns an epsilon-greedy action for the given observation.
 
-    def get_action(
-            self,
-            observation: Array,
-            key: int
-    ) -> Array:
-        if random.uniform(self.key) < self.epsilon:
-            return self.action_space.sample()
-        else:
-            return random.choice(
-                self.key, jnp.flatnonzero(
-                    self.value_function.values[observation]
-                    == self.value_function.values[observation].max()
-                )
-            )
-
-    def get_greedy_action(self, observation, key):
-        return random.choice(
-            key, jnp.flatnonzero(
-                self.value_function.values[observation]
-                == self.value_function.values[observation].max()
-            )
-        )
-
-    def get_action_probability(
-        self, action: Array, observation: Array
-    ) -> float:
-        return 1.0 / jnp.count_nonzero(
-            self.value_function.values[observation]
-            == self.value_function.values[observation].max()
-        )
+    :param key: PRNGKey.
+    :param q_table: Q-table.
+    :param observation: Observation.
+    :param epsilon: Probability of randomly sampling an action
+    :return: The sampled action.
+    """
+    key, subkey = random.split(key)
+    roll = random.uniform(subkey)
+    if roll < epsilon:
+        return random.choice(key, jnp.arange(len(q_table[observation])))
+    else:
+        return get_greedy_action(key, q_table, observation)

@@ -1,5 +1,5 @@
-import jax.numpy as jnp
 import gymnasium
+import numpy as np
 from jax import Array
 from tqdm import tqdm
 
@@ -10,15 +10,14 @@ def q_learning(
         env: gymnasium.Env,
         policy,
         alpha: float,
-        key: int,
         num_episodes: int,
         gamma: float = 0.9999
 ) -> Array:
-    ep_rewards = jnp.zeros(num_episodes)
+    ep_rewards = np.zeros(num_episodes)
 
     for i in tqdm(range(num_episodes)):
-        ep_reward = _q_learning_episode(env, policy, key, alpha, gamma)
-        ep_rewards = ep_rewards.at[i].add(ep_reward)
+        ep_reward = _q_learning_episode(env, policy, alpha, gamma)
+        ep_rewards[i] = ep_reward
 
     return ep_rewards
 
@@ -26,7 +25,6 @@ def q_learning(
 def _q_learning_episode(
         env,
         policy,
-        key,
         alpha: float = 0.01,
         gamma: float = 0.9999
 ) -> float:

@@ -1,35 +1,12 @@
 import gymnasium
 import jax.numpy as jnp
-from jax import Array, random, jit
-from jax.typing import ArrayLike
+from jax import Array, jit, random
 from jax.random import PRNGKey
-
+from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from modular_rl.tools.error_functions import td_error
-
-
-def _get_greedy_action(
-        key: PRNGKey,
-        q_table: ArrayLike,
-        observation: ArrayLike
-) -> Array:
-    true_indices = q_table[observation] == q_table[observation].max()
-    return random.choice(key, jnp.flatnonzero(true_indices))
-
-
-def _get_epsilon_greedy_action(
-        key: PRNGKey,
-        q_table: ArrayLike,
-        observation: ArrayLike,
-        epsilon: float
-) -> Array:
-    key, subkey = random.split(key)
-    roll = random.uniform(subkey)
-    if roll < epsilon:
-        return random.choice(key, jnp.arange(len(q_table[observation])))
-    else:
-        return _get_greedy_action(key, q_table, observation)
+from ...policy.value_policy import get_epsilon_greedy_action
+from ...tools.error_functions import td_error
 
 
 def sarsa(
@@ -74,14 +51,14 @@ def _sarsa_episode(
 
     key, subkey = random.split(key)
 
-    action = _get_epsilon_greedy_action(subkey, q_table, observation, epsilon)
+    action = get_epsilon_greedy_action(subkey, q_table, observation, epsilon)
 
     while not terminated and not truncated:
         # get action from policy and perform environment step
         next_observation, reward, terminated, truncated, _ = env.step(int(action))
         # get next action
         key, subkey = random.split(key)
-        next_action = _get_epsilon_greedy_action(subkey, q_table, observation, epsilon)
+        next_action = get_epsilon_greedy_action(subkey, q_table, observation, epsilon)
 
         # update target policy
         q_table = _update_policy(q_table, observation, action, reward, next_observation, next_action, gamma, alpha)

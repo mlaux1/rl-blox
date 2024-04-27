@@ -1,5 +1,5 @@
-from jax.typing import ArrayLike
 from jax import jit
+from jax.typing import ArrayLike
 
 
 @jit

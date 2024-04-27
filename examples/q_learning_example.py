@@ -26,12 +26,12 @@ q_learning(
     q_learning_env,
     q_policy,
     alpha=LEARNING_RATE,
-    key=KEY,
     num_episodes=NUM_EPISODES
 )
+
 q_learning_env.close()
 
 test_env = gym.make(ENV_NAME, render_mode="human")
-generate_rollout(test_env, q_policy)
+generate_rollout(test_env, q_policy.get_action)
 test_env.close()
 
