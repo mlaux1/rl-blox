@@ -1,5 +1,6 @@
 import gymnasium
 import jax.numpy as jnp
+import numpy as onp
 from jax import Array, random
 
 from tqdm import tqdm
@@ -52,8 +53,7 @@ def _sarsa_episode(
 
         # update target policy
         val = policy.value_function.get_action_value(observation, action)
-        next_val = policy.value_function.get_action_value(
-            next_observation, next_action)
+        next_val = policy.value_function.get_action_value(next_observation, next_action)
         error = td_error(reward, gamma, val, next_val)
         policy.value_function.update(observation, action, alpha * error)
 

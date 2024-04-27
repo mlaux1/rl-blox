@@ -15,6 +15,7 @@ ENV_NAME = "Taxi-v3"
 train_env = gym.make(ENV_NAME)
 
 sarsa_env = RecordEpisodeStatistics(train_env, deque_size=NUM_EPISODES)
+
 policy = EpsilonGreedyPolicy(
     train_env.observation_space,
     train_env.action_space,

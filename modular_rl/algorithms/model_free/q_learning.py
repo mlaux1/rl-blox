@@ -44,22 +44,18 @@ def _q_learning_episode(
 
     while not terminated and not truncated:
         # get action from policy and perform environment step
-        next_observation, reward, terminated, truncated, info = (
-            env.step(action))
+        next_observation, reward, terminated, truncated, _ = env.step(action)
 
         # get next action
         next_action = policy.get_greedy_action(next_observation)
 
         # update target policy
-        val = policy.value_function.get_action_value(
-            observation, action)
-        next_val = policy.value_function.get_action_value(
-            next_observation, next_action)
-
+        val = policy.value_function.get_action_value(observation, action)
+        next_val = policy.value_function.get_action_value(next_observation, next_action)
         error = td_error(reward, gamma, val, next_val)
-
         policy.value_function.update(observation, action, alpha * error)
 
+        # housekeeping
         action = policy.get_action(next_observation)
         observation = next_observation
         ep_reward += reward
