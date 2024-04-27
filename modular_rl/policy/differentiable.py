@@ -198,4 +198,14 @@ class DeterministicNNPolicy(NeuralNetwork):
         sizes = [self.observation_space.shape[0]] + hidden_nodes + [self.action_space.shape[0]]
         super(DeterministicNNPolicy, self).__init__(sizes, key)
 
-    # TODO
+    def sample(self, state):
+        raise NotImplementedError()
+
+    def batch_predict(self, states):
+        raise NotImplementedError()
+
+    def update(self, q, states):
+        raise NotImplementedError()
+
+    def update_weights(self, theta, polyak):
+        raise NotImplementedError()

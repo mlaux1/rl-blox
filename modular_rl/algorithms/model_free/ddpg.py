@@ -1,6 +1,9 @@
 from typing import List, Tuple
 from functools import partial
+from collections import deque
 import gym
+from numpy.typing import ArrayLike
+import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
@@ -8,10 +11,16 @@ from modular_rl.policy.differentiable import NeuralNetwork, batched_nn_forward, 
 
 
 class ReplayBuffer:
-    def __init__(self, n_samples):
-        self.n_samples = n_samples
+    buffer: deque[Tuple[ArrayLike, ArrayLike, float, ArrayLike, bool]]
 
-    # TODO
+    def __init__(self, n_samples):
+        self.buffer = deque(maxlen=n_samples)
+
+    def add_sample(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+
+    def sample_batch(self, key):
+        raise NotImplementedError()
 
 
 class QNetwork(NeuralNetwork):
@@ -42,13 +51,15 @@ class QNetwork(NeuralNetwork):
         self.opt_state = self.solver.init(self.theta)
         self.forward = jax.jit(batched_nn_forward)
 
-    def update(self, states: jax.Array,
-               actions: jax.Array,  # TODO actions or max_actions?
-               rewards: jax.Array,
-               next_states: jax.Array,
-               max_next_actions: jax.Array,
-               gamma: float
-               ):
+    def update(
+            self,
+            states: jax.Array,
+            actions: jax.Array,
+            rewards: jax.Array,
+            next_states: jax.Array,
+            max_next_actions: jax.Array,
+            gamma: float
+    ):
         for _ in range(self.n_train_iters_per_update):
             theta_grad = jax.grad(
                 partial(
@@ -64,7 +75,7 @@ class QNetwork(NeuralNetwork):
         x = jnp.hstack((states, actions))
         return self.forward(x, self.theta).squeeze()
 
-    def update_weights(self, theta):
+    def update_weights(self, theta, polyak):
         raise NotImplementedError()
         # TODO copy weights to self.theta
 
@@ -72,7 +83,7 @@ class QNetwork(NeuralNetwork):
 @jax.jit
 def q_network_loss(
         states: jax.Array,
-        actions: jax.Array,  # TODO actions or max_actions?
+        actions: jax.Array,
         rewards: jax.Array,
         next_states: jax.Array,
         max_next_actions: jax.Array,
@@ -90,22 +101,50 @@ def q_network_loss(
     return optax.l2_loss(predictions=actual_values, targets=target_values).mean()
 
 
-def train_ddpg(env: gym.Env):
+def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, polyak, gamma):
     """
 
     References
     ----------
     * DQN: Playing Atari with Deep Reinforcement Learning, https://arxiv.org/abs/1312.5602
     * DQN: Human-level control through deep reinforcement learning, https://www.nature.com/articles/nature14236
+    * https://spinningup.openai.com/en/latest/algorithms/ddpg.html
     """
-    q = QNetwork(env.observation_space, env.action_space, [64, 64], 42, 1e-3)
-    target_q = QNetwork(env.observation_space, env.action_space, [64, 64], 42, 1e-3)
-    target_q.update_weights(q.theta)
+    key = jax.random.PRNGKey(42)
+    key, q_key = jax.random.split(key)
+    q = QNetwork(env.observation_space, env.action_space, [64, 64], q_key, 1e-3)
+    key, target_q_key = jax.random.split(key)
+    target_q = QNetwork(env.observation_space, env.action_space, [64, 64], target_q_key, 1e-3)
+    target_q.update_weights(q.theta, 0.0)
 
-    policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], 42)
+    key, policy_key = jax.random.split(key)
+    policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], policy_key)
+    key, target_policy_key = jax.random.split(key)
+    target_policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], target_policy_key)
 
-    done = False
-    while not done:
+    buffer = ReplayBuffer(10000)
+
+    t = 0
+
+    for _ in range(n_episodes):
         obs, _ = env.reset()
+        done = False
+        while not done:
+            action = np.asarray(policy.sample(obs))
+            next_obs, reward, terminated, truncated, _ = env.step(action)
 
-        # TODO
+            done = terminated or truncated
+            buffer.add_sample(obs, action, reward, next_obs, done)
+            t += 1
+
+            obs = next_obs
+
+            if t % n_iters_before_update == 0:
+                for _ in range(n_updates):
+                    key, sampling_key = jax.random.split(key)
+                    states, actions, rewards, next_states, dones = buffer.sample_batch(sampling_key)
+                    max_next_actions = target_policy.batch_predict(next_states)
+                    q.update(states, actions, rewards, next_states, max_next_actions, gamma)
+                    policy.update(q, states)
+                    target_q.update_weights(q.theta, polyak)
+                    target_policy.update_weights(target_policy.theta, polyak)
