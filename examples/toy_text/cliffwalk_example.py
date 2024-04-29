@@ -1,12 +1,13 @@
+from functools import partial
+
 import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
-from functools import partial
 
 from modular_rl.algorithms.model_free.q_learning import q_learning
 from modular_rl.algorithms.model_free.sarsa import sarsa
-from modular_rl.policy.value_policy import make_q_table, get_greedy_action
 from modular_rl.helper.experiment_helper import generate_rollout
+from modular_rl.policy.value_policy import get_greedy_action, make_q_table
 
 NUM_EPISODES = 2000
 LEARNING_RATE = 0.05

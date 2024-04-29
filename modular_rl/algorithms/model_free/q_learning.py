@@ -1,6 +1,6 @@
 import gymnasium
 import jax.numpy as jnp
-from jax import jit, Array, random
+from jax import Array, jit, random
 from jax.random import PRNGKey
 from jax.typing import ArrayLike
 from tqdm import tqdm
