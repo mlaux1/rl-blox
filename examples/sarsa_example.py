@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
 
-from modular_rl.algorithms.model_free.sarsa_jax import sarsa
+from modular_rl.algorithms.model_free.sarsa import sarsa
 from modular_rl.policy.value_policy import make_q_table
 
 NUM_EPISODES = 1000
