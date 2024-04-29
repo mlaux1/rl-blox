@@ -10,7 +10,7 @@ LEARNING_RATE = 0.1
 EPSILON = 0.05
 KEY = PRNGKey(42)
 WINDOW_SIZE = 10
-ENV_NAME = "Taxi-v3"
+ENV_NAME = "CliffWalking-v0"
 
 env = gym.make(ENV_NAME) #, render_mode="human")
 env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
