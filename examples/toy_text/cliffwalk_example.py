@@ -8,8 +8,8 @@ from modular_rl.algorithms.model_free.sarsa import sarsa
 from modular_rl.policy.value_policy import make_q_table, get_greedy_action
 from modular_rl.helper.experiment_helper import generate_rollout
 
-NUM_EPISODES = 1000
-LEARNING_RATE = 0.1
+NUM_EPISODES = 2000
+LEARNING_RATE = 0.05
 EPSILON = 0.05
 KEY = PRNGKey(42)
 WINDOW_SIZE = 10
@@ -40,15 +40,15 @@ env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
 
 sarsa_q_table = make_q_table(env)
 
-ep_rewards = sarsa(
+sarsa_q_table, ep_rewards = sarsa(
     KEY, env, sarsa_q_table,
     alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
 
 env.close()
 
 # create and run the final policy
-policy = partial(get_greedy_action, key=KEY, q_table=sarsa_q_table)
+sarsa_policy = partial(get_greedy_action, key=KEY, q_table=sarsa_q_table)
 
 test_env = gym.make(ENV_NAME, render_mode="human")
-generate_rollout(test_env, policy)
+generate_rollout(test_env, sarsa_policy)
 test_env.close()
