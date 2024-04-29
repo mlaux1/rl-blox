@@ -107,7 +107,47 @@ def q_network_loss(
     return optax.l2_loss(predictions=actual_values, targets=target_values).mean()
 
 
-def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch_size, noise_sigma, polyak, gamma):
+class PolicyTrainer:
+    """Contains the state of the policy optimizer."""
+    def __init__(self, policy: NeuralNetwork,
+                 optimizer=optax.adam,
+                 learning_rate: float = 1e-2,
+                 n_train_iters_per_update: int = 1):
+        self.policy = policy
+        self.n_train_iters_per_update = n_train_iters_per_update
+        self.solver = optimizer(learning_rate=learning_rate)
+        self.opt_state = self.solver.init(self.policy.theta)
+
+    def update(
+            self,
+            policy_gradient_func,
+            *args,
+            **kwargs):
+        for _ in range(self.n_train_iters_per_update):
+            theta_grad = policy_gradient_func(
+                self.policy, *args, **kwargs)
+            updates, self.opt_state = self.solver.update(
+                theta_grad, self.opt_state, self.policy.theta)
+            self.policy.theta = optax.apply_updates(self.policy.theta, updates)
+
+
+def dpg_policy_gradient(policy: DeterministicNNPolicy, states: jax.Array, q: QNetwork):
+    return jax.grad(partial(dpg_policy_gradient_loss, states, q.theta))(policy.theta)
+
+
+@jax.jit
+def dpg_policy_gradient_loss(
+        states: jax.Array,
+        q_theta: List[Tuple[jax.Array, jax.Array]],
+        policy_theta: List[Tuple[jax.Array, jax.Array]]
+) -> jax.Array:
+    max_actions = batched_nn_forward(states, policy_theta)
+    x = jnp.hstack((states, max_actions))
+    q = batched_nn_forward(x, q_theta).squeeze()
+    return jnp.mean(q)
+
+
+def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch_size, noise_sigma, polyak, gamma, policy_learning_rate=1e-4):
     """
 
     References
@@ -129,6 +169,7 @@ def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch
     policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], policy_key, noise_sigma)
     key, target_policy_key = jax.random.split(key)
     target_policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], target_policy_key, noise_sigma)
+    policy_trainer = PolicyTrainer(policy, learning_rate=policy_learning_rate)
 
     buffer = ReplayBuffer(10000)
 
@@ -152,6 +193,6 @@ def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch
                     states, actions, rewards, next_states, dones = buffer.sample_batch(batch_size, rng)
                     max_next_actions = target_policy.batch_predict(next_states)
                     q.update(states, actions, rewards, next_states, max_next_actions, gamma)
-                    policy.update(q, states)
+                    policy_trainer.update(dpg_policy_gradient, states, q)
                     target_q.update_weights(q.theta, polyak)
                     target_policy.update_weights(target_policy.theta, polyak)

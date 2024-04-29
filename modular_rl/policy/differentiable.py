@@ -214,6 +214,3 @@ class DeterministicNNPolicy(NeuralNetwork):
 
     def batch_predict(self, states):
         return batched_nn_forward(states, self.theta)
-
-    def update(self, q, states):
-        raise NotImplementedError()
