@@ -19,8 +19,18 @@ class ReplayBuffer:
     def add_sample(self, state, action, reward, next_state, done):
         self.buffer.append((state, action, reward, next_state, done))
 
-    def sample_batch(self, key):
-        raise NotImplementedError()
+    def sample_batch(
+            self,
+            batch_size: int,
+            rng: np.random.Generator
+    ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array, List[bool]]:
+        indices = rng.integers(0, len(self.buffer), batch_size)
+        states = jnp.vstack([self.buffer[i][0] for i in indices])
+        actions = jnp.stack([self.buffer[i][1] for i in indices])
+        rewards = jnp.hstack([self.buffer[i][2] for i in indices])
+        next_states = jnp.vstack([self.buffer[i][3] for i in indices])
+        dones = [self.buffer[i][4] for i in indices]
+        return states, actions, rewards, next_states, dones
 
 
 class QNetwork(NeuralNetwork):
@@ -101,7 +111,7 @@ def q_network_loss(
     return optax.l2_loss(predictions=actual_values, targets=target_values).mean()
 
 
-def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, polyak, gamma):
+def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch_size, polyak, gamma):
     """
 
     References
@@ -111,6 +121,8 @@ def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, polya
     * https://spinningup.openai.com/en/latest/algorithms/ddpg.html
     """
     key = jax.random.PRNGKey(42)
+    rng = np.random.default_rng(42)
+
     key, q_key = jax.random.split(key)
     q = QNetwork(env.observation_space, env.action_space, [64, 64], q_key, 1e-3)
     key, target_q_key = jax.random.split(key)
@@ -141,8 +153,7 @@ def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, polya
 
             if t % n_iters_before_update == 0:
                 for _ in range(n_updates):
-                    key, sampling_key = jax.random.split(key)
-                    states, actions, rewards, next_states, dones = buffer.sample_batch(sampling_key)
+                    states, actions, rewards, next_states, dones = buffer.sample_batch(batch_size, rng)
                     max_next_actions = target_policy.batch_predict(next_states)
                     q.update(states, actions, rewards, next_states, max_next_actions, gamma)
                     policy.update(q, states)
