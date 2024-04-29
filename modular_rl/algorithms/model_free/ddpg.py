@@ -148,7 +148,10 @@ def dpg_policy_gradient_loss(
 
 
 def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch_size, noise_sigma, polyak, gamma, policy_learning_rate=1e-4):
-    """
+    """Deep deterministic policy gradients.
+
+    DDPG is an off-policy actor critic algorithm that combines a deterministic
+    policy and deep Q networks.
 
     References
     ----------
