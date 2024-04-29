@@ -85,10 +85,6 @@ class QNetwork(NeuralNetwork):
         x = jnp.hstack((states, actions))
         return self.forward(x, self.theta).squeeze()
 
-    def update_weights(self, theta, polyak):
-        raise NotImplementedError()
-        # TODO copy weights to self.theta
-
 
 @jax.jit
 def q_network_loss(
@@ -111,7 +107,7 @@ def q_network_loss(
     return optax.l2_loss(predictions=actual_values, targets=target_values).mean()
 
 
-def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch_size, polyak, gamma):
+def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch_size, noise_sigma, polyak, gamma):
     """
 
     References
@@ -130,9 +126,9 @@ def train_ddpg(env: gym.Env, n_episodes, n_iters_before_update, n_updates, batch
     target_q.update_weights(q.theta, 0.0)
 
     key, policy_key = jax.random.split(key)
-    policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], policy_key)
+    policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], policy_key, noise_sigma)
     key, target_policy_key = jax.random.split(key)
-    target_policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], target_policy_key)
+    target_policy = DeterministicNNPolicy(env.observation_space, env.action_space, [64, 64], target_policy_key, noise_sigma)
 
     buffer = ReplayBuffer(10000)
 

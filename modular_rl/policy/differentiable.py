@@ -31,6 +31,13 @@ class NeuralNetwork:
             jax.random.uniform(b_key, (n,), jnp.float32, -bound, bound)
         )
 
+    def update_weights(self, theta, polyak):
+        for (sw, sb), (w, b) in zip(self.theta, theta):
+            sw *= polyak
+            sw += (1.0 - polyak) * w
+            sb *= polyak
+            sb *= (1.0 - polyak) * b
+
 
 def nn_forward(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jax.Array:
     """Neural network forward pass.
@@ -181,7 +188,6 @@ class DeterministicNNPolicy(NeuralNetwork):
     """
     observation_space: gym.spaces.Space
     action_space: gym.spaces.Space
-    theta = jax.Array
     sampling_key: jax.random.PRNGKey
 
     def __init__(
@@ -189,9 +195,12 @@ class DeterministicNNPolicy(NeuralNetwork):
             observation_space: gym.spaces.Space,
             action_space: gym.spaces.Space,
             hidden_nodes: List[int],
-            key: jax.random.PRNGKey):
+            key: jax.random.PRNGKey,
+            noise_sigma: float
+    ):
         self.observation_space = observation_space
         self.action_space = action_space
+        self.noise_sigma = noise_sigma
 
         self.sampling_key, key = jax.random.split(key)
 
@@ -199,13 +208,12 @@ class DeterministicNNPolicy(NeuralNetwork):
         super(DeterministicNNPolicy, self).__init__(sizes, key)
 
     def sample(self, state):
-        raise NotImplementedError()
+        action = nn_forward(state, self.theta).squeeze()
+        self.sampling_key, key = jax.random.split(self.sampling_key)
+        return action + jax.random.normal(key, action.shape, action.dtype)
 
     def batch_predict(self, states):
-        raise NotImplementedError()
+        return batched_nn_forward(states, self.theta)
 
     def update(self, q, states):
-        raise NotImplementedError()
-
-    def update_weights(self, theta, polyak):
         raise NotImplementedError()
