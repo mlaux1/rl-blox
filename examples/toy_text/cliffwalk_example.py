@@ -1,10 +1,12 @@
 import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
+from functools import partial
 
 from modular_rl.algorithms.model_free.q_learning import q_learning
 from modular_rl.algorithms.model_free.sarsa import sarsa
 from modular_rl.policy.value_policy import make_q_table, get_greedy_action
+from modular_rl.helper.experiment_helper import generate_rollout
 
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.1
@@ -20,17 +22,18 @@ env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
 q_table = make_q_table(env)
 
 # train using Q-Learning
-ep_rewards = q_learning(
+q_table, ep_rewards = q_learning(
     KEY, env, q_table,
     alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
 
 env.close()
 
 # create and run the final policy
+policy = partial(get_greedy_action, key=KEY, q_table=q_table)
 
-# test_env = gym.make(ENV_NAME, render_mode="human")
-# generate_rollout(test_env, policy)
-# test_env.close()
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, policy)
+test_env.close()
 
 env = gym.make(ENV_NAME)
 env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
@@ -38,12 +41,14 @@ env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
 sarsa_q_table = make_q_table(env)
 
 ep_rewards = sarsa(
-    KEY, env, q_table,
+    KEY, env, sarsa_q_table,
     alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
 
 env.close()
 
-# show final policy rollout
-# test_env = gym.make(ENV_NAME, render_mode="human")
-# generate_rollout(test_env, policy)
-# test_env.close()
+# create and run the final policy
+policy = partial(get_greedy_action, key=KEY, q_table=sarsa_q_table)
+
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, policy)
+test_env.close()
