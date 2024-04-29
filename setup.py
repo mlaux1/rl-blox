@@ -6,7 +6,7 @@ if __name__ == "__main__":
 
     setup(
         name="modular_rl",
-        version="0.1.0",
+        version="0.2.0",
         maintainer="Melvin Laux",
         maintainer_email="melvin.laux@uni-bremen.de",
         description="Modular RL implementations",
@@ -14,5 +14,14 @@ if __name__ == "__main__":
         long_description_content_type="text/markdown",
         license="Not public",
         packages=["modular_rl"],
-        install_requires=["numpy", "pytest", "torch", "gymnasium", "jax"],
+        install_requires=[
+            "numpy",
+            "pytest",
+            "torch",
+            "gymnasium",
+            "jax",
+            "optax",
+            "distrax",
+            "chex",
+            "tqdm"],
     )
