@@ -1,6 +1,6 @@
 import gymnasium
 import jax.numpy as jnp
-from jax import Array, random
+from jax import jit, Array, random
 from jax.random import PRNGKey
 from jax.typing import ArrayLike
 from tqdm import tqdm
@@ -59,13 +59,20 @@ def _q_learning_episode(
         next_action = get_greedy_action(subkey2, q_table, observation)
 
         # update target policy
-        val = q_table[observation, action]
-        next_val = q_table[next_observation, next_action]
-        error = td_error(reward, gamma, val, next_val)
-        q_table = q_table.at[observation, action].add(alpha * error)
+        q_table = _q_learning_update(q_table, observation, action, reward, next_observation, next_action, gamma, alpha)
 
         # housekeeping
         observation = next_observation
         ep_reward += reward
 
     return q_table, ep_reward
+
+
+@jit
+def _q_learning_update(q_table, observation, action, reward, next_observation, next_action, gamma, alpha):
+    val = q_table[observation, action]
+    next_val = q_table[next_observation, next_action]
+    error = td_error(reward, gamma, val, next_val)
+    q_table = q_table.at[observation, action].add(alpha * error)
+
+    return q_table
