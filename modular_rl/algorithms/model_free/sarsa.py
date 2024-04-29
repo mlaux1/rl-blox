@@ -24,10 +24,10 @@ def sarsa(
 
     for i in tqdm(range(num_episodes)):
         key, subkey = random.split(key)
-        ep_reward = _sarsa_episode(subkey, env, q_table, alpha, epsilon, gamma)
+        q_table, ep_reward = _sarsa_episode(subkey, env, q_table, alpha, epsilon, gamma)
         ep_rewards = ep_rewards.at[i].add(ep_reward)
 
-    return ep_rewards
+    return q_table, ep_rewards
 
 
 def _sarsa_episode(
@@ -68,7 +68,7 @@ def _sarsa_episode(
         observation = next_observation
         ep_reward += reward
 
-    return ep_reward
+    return q_table, ep_reward
 
 
 @jit

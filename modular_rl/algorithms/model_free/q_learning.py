@@ -24,10 +24,10 @@ def q_learning(
 
     for i in tqdm(range(num_episodes)):
         key, subkey = random.split(key)
-        ep_reward = _q_learning_episode(subkey, env, q_table, alpha, epsilon, gamma)
+        q_table, ep_reward = _q_learning_episode(subkey, env, q_table, alpha, epsilon, gamma)
         ep_rewards = ep_rewards.at[i].add(ep_reward)
 
-    return ep_rewards
+    return q_table, ep_rewards
 
 
 def _q_learning_episode(
@@ -68,4 +68,4 @@ def _q_learning_episode(
         observation = next_observation
         ep_reward += reward
 
-    return ep_reward
+    return q_table, ep_reward
