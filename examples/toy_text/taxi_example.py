@@ -1,47 +1,55 @@
+from functools import partial
+
 import gymnasium as gym
-import numpy as np
-import matplotlib.pyplot as plt
+from gymnasium.wrappers import RecordEpisodeStatistics
+from jax.random import PRNGKey
 
-from gymnasium.wrappers import FlattenObservation, RecordEpisodeStatistics
-from modular_rl.algorithms.model_free.sarsa import Sarsa
-from modular_rl.algorithms.model_free.q_learning import QLearning
-from modular_rl.policy.base_policy import EpsilonGreedyPolicy
+from modular_rl.algorithms.model_free.q_learning import q_learning
+from modular_rl.algorithms.model_free.sarsa import sarsa
 from modular_rl.helper.experiment_helper import generate_rollout
+from modular_rl.policy.value_policy import get_greedy_action, make_q_table
 
-from rl_experiments.evaluation.plotting import plot_training_stats
+NUM_EPISODES = 5000
+LEARNING_RATE = 0.05
+EPSILON = 0.05
+KEY = PRNGKey(42)
+WINDOW_SIZE = 10
+ENV_NAME = "Taxi-v3"
 
+env = gym.make(ENV_NAME)
+env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
 
-num_episodes = 2000
-learning_rate = 0.1
-epsilon = 0.1
+# create the q table
+q_table = make_q_table(env)
 
-train_env = gym.make("Taxi-v3")
+# train using Q-Learning
+q_table, ep_rewards = q_learning(
+    KEY, env, q_table,
+    alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
 
-sarsa_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
-policy = EpsilonGreedyPolicy(
-    train_env.observation_space, train_env.action_space, epsilon=epsilon
-)
-sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate, key=0)
-sarsa.train(num_episodes)
-sarsa_env.close()
+env.close()
 
-test_env = gym.make("Taxi-v3", render_mode="human")
-generate_rollout(test_env, sarsa.target_policy)
+# create and run the final policy
+policy = partial(get_greedy_action, key=KEY, q_table=q_table)
+
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, policy)
 test_env.close()
 
-#q_learning_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
-#q_learning = QLearning(q_learning_env, alpha=learning_rate, epsilon=epsilon)
-#q_learning.train(num_episodes)
-#q_learning_env.close()
+env = gym.make(ENV_NAME)
+env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
 
-#test_env = gym.make("Taxi-v3", render_mode="human")
-#generate_rollout(test_env, q_learning.target_policy)
-#test_env.close()
+sarsa_q_table = make_q_table(env)
 
-plot_training_stats(
-    np.array(sarsa_env.return_queue),
-    np.array(sarsa_env.length_queue),
-    rolling_length=100,
-    label="SARSA",
-)
+sarsa_q_table, ep_rewards = sarsa(
+    KEY, env, sarsa_q_table,
+    alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
 
+env.close()
+
+# create and run the final policy
+sarsa_policy = partial(get_greedy_action, key=KEY, q_table=sarsa_q_table)
+
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, sarsa_policy)
+test_env.close()

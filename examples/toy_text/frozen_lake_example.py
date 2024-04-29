@@ -1,64 +1,56 @@
 import gymnasium as gym
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import jax.random
+from gymnasium.wrappers import RecordEpisodeStatistics
+from jax.random import PRNGKey
 
-from modular_rl.algorithms.model_free.sarsa import Sarsa
-from modular_rl.policy.base_policy import EpsilonGreedyPolicy
+from modular_rl.algorithms.model_free.q_learning import q_learning
+from modular_rl.algorithms.model_free.sarsa import sarsa
 from modular_rl.helper.experiment_helper import generate_rollout
+from modular_rl.policy.value_policy import get_greedy_action, make_q_table
 
-from rl_experiments.evaluation.plotting import plot_training_stats
+NUM_EPISODES = 2000
+LEARNING_RATE = 0.05
+EPSILON = 0.05
+KEY = PRNGKey(42)
+WINDOW_SIZE = 10
+ENV_NAME = "FrozenLake-v1"
 
+key0, key1, key2, key3 = jax.random.split(KEY, 4)
 
-train_env = gym.make("FrozenLake-v1")
-train_env = gym.wrappers.RecordEpisodeStatistics(train_env, deque_size=100000)
+env = gym.make(ENV_NAME)
+env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
 
+# create the q table
+q_table = make_q_table(env)
 
-policy = EpsilonGreedyPolicy(
-    train_env.observation_space, train_env.action_space, epsilon=0.01
-)
-alg = Sarsa(train_env, policy, alpha=0.2, key=0)
+# train using Q-Learning
+q_table, ep_rewards = q_learning(
+    key0, env, q_table,
+    alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
 
-train_returns = alg.train(100000)
+env.close()
 
-train_env.close()
+# create and run the final policy
+policy = partial(get_greedy_action, key=key1, q_table=q_table)
 
-test_env = gym.make("FrozenLake-v1", render_mode="human")
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, policy)
+test_env.close()
 
-generate_rollout(test_env, alg.target_policy)
+env = gym.make(ENV_NAME)
+env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
 
-train_env.close()
+sarsa_q_table = make_q_table(env)
 
-plot_training_stats(
-    np.array(sarsa_env.return_queue),
-    np.array(sarsa_env.length_queue),
-    rolling_length=100,
-    title="SARSA",
-)
-rolling_length = 100
-fig, axs = plt.subplots(ncols=2, figsize=(12, 5))
+sarsa_q_table, ep_rewards = sarsa(
+    key2, env, sarsa_q_table,
+    alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
 
-axs[0].set_title("Episode rewards")
-# compute and assign a rolling average of the data to provide a smoother graph
-reward_moving_average = (
-    np.convolve(
-        np.array(train_env.return_queue).flatten(),
-        np.ones(rolling_length),
-        mode="valid",
-    )
-    / rolling_length
-)
-axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+env.close()
 
-axs[1].set_title("Episode lengths")
-length_moving_average = (
-    np.convolve(
-        np.array(train_env.length_queue).flatten(),
-        np.ones(rolling_length),
-        mode="same"
-    )
-    / rolling_length
-)
-axs[1].plot(range(len(length_moving_average)), length_moving_average)
-plt.tight_layout()
-plt.show()
+# create and run the final policy
+sarsa_policy = partial(get_greedy_action, key=key3, q_table=sarsa_q_table)
+
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, sarsa_policy)
+test_env.close()

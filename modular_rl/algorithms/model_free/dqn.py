@@ -1,14 +1,15 @@
-import gymnasium as gym
 import math
 import random
-import matplotlib.pyplot as plt
 from itertools import count
 
-from modular_rl.policy.base_model import ReplayBuffer, Transition, NeuralNetwork
-
+import gymnasium as gym
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
+from modular_rl.policy.base_model import (NeuralNetwork, ReplayBuffer,
+                                          Transition)
 
 env = gym.make("CartPole-v1")
 

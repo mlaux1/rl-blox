@@ -1,7 +1,8 @@
 import numpy as np
-
-from modular_rl.policy.value_functions import TabularValueFunction, TabularQFunction
 from gymnasium.spaces.discrete import Discrete
+
+from modular_rl.policy.value_functions import (TabularQFunction,
+                                               TabularValueFunction)
 
 
 class TestValueFunction:

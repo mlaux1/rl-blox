@@ -1,6 +1,6 @@
 import numpy as np
 
-from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
+from modular_rl.policy.base_policy import GreedyQPolicy, UniformRandomPolicy
 
 
 class MonteCarlo:
@@ -8,7 +8,10 @@ class MonteCarlo:
     Implements Every-Visit ann First-Visit On-Policy Monte Carlo Learning using Q-Values.
     """
 
-    def __init__(self, env, epsilon, update_mode="every_visit"):
+    def __init__(
+            self,
+            env,
+            epsilon, update_mode="every_visit"):
         self.epsilon = epsilon
         self.env = env
 
