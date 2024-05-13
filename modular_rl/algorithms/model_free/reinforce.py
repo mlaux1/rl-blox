@@ -1,15 +1,17 @@
-from typing import List, Tuple, Optional
 from functools import partial
-import numpy as np
-import jax
-import jax.numpy as jnp
-import optax
+from typing import List, Optional, Tuple
+
 import chex
 import gymnasium as gym
+import jax
+import jax.numpy as jnp
+import numpy as np
+import optax
 
-from modular_rl.policy.differentiable import (
-    NeuralNetwork, batched_nn_forward, GaussianNNPolicy,
-    batched_gaussian_log_probability, batched_softmax_log_probability)
+from modular_rl.policy.differentiable import (GaussianNNPolicy, NeuralNetwork,
+                                              batched_gaussian_log_probability,
+                                              batched_nn_forward,
+                                              batched_softmax_log_probability)
 
 
 class EpisodeDataset:

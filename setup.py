@@ -6,7 +6,7 @@ if __name__ == "__main__":
 
     setup(
         name="modular_rl",
-        version="0.2.0",
+        version="0.2.1",
         maintainer="Melvin Laux",
         maintainer_email="melvin.laux@uni-bremen.de",
         description="Modular RL implementations",
