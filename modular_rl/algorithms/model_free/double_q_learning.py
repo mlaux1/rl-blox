@@ -72,7 +72,7 @@ def _dql_episode(
         observation = next_observation
         ep_reward += reward
 
-    return q_table, ep_reward
+    return q_table1, q_table2, ep_reward
 
 
 @jit
@@ -81,5 +81,5 @@ def _dql_update(key, q_table1, q_table2, observation, action, reward, next_obser
     val = q_table1[observation, action]
     next_val = q_table2[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)
-    q_table2 = q_table1.at[observation, action].add(alpha * error)
-    return q_table2
+    q_table1 = q_table1.at[observation, action].add(alpha * error)
+    return q_table1
