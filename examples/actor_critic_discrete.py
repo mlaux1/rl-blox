@@ -1,10 +1,11 @@
 import gymnasium as gym
-from modular_rl.algorithms.model_free.reinforce import ValueFunctionApproximation, PolicyTrainer
-from modular_rl.algorithms.model_free.actor_critic import train_ac_epoch
-from modular_rl.policy.differentiable import SoftmaxNNPolicy
 import jax
 import optax
 
+from modular_rl.algorithms.model_free.actor_critic import train_ac_epoch
+from modular_rl.algorithms.model_free.reinforce import (
+    PolicyTrainer, ValueFunctionApproximation)
+from modular_rl.policy.differentiable import SoftmaxNNPolicy
 
 env_name = "CartPole-v1"
 #env_name = "MountainCar-v0"  # never reaches the goal -> never learns

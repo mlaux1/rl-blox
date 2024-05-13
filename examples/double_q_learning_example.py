@@ -4,7 +4,8 @@ import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
 
-from modular_rl.algorithms.model_free.double_q_learning import double_q_learning
+from modular_rl.algorithms.model_free.double_q_learning import \
+    double_q_learning
 from modular_rl.helper.experiment_helper import generate_rollout
 from modular_rl.policy.value_policy import get_greedy_action, make_q_table
 

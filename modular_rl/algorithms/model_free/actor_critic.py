@@ -1,11 +1,13 @@
 from functools import partial
-import numpy as np
+
 import jax
 import jax.numpy as jnp
-from .reinforce import (
-    EpisodeDataset, ValueFunctionApproximation,
-    gaussian_policy_gradient_pseudo_loss, softmax_policy_gradient_pseudo_loss)
-from ...policy.differentiable import NeuralNetwork, GaussianNNPolicy
+import numpy as np
+
+from ...policy.differentiable import GaussianNNPolicy, NeuralNetwork
+from .reinforce import (EpisodeDataset, ValueFunctionApproximation,
+                        gaussian_policy_gradient_pseudo_loss,
+                        softmax_policy_gradient_pseudo_loss)
 
 
 def ac_policy_gradient(
