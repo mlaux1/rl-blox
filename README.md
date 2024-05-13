@@ -2,6 +2,13 @@
 
 This project contains modular implementations of various model-free and model-based RL algorithms and consists of deep neural network-based as well as tabular representation of Q-Values, policies, etc. which can be used interchangeably. The goal of this project is for the authors to learn by reimplementing various RL algorithms and possible to eventually an algorithmic toolbox for research purposes. 
 
+## Design Principles
+
+The implementation of this project follows the following principles:
+1. Algorithms are functions!
+2. Algorithms are implemented in single files.
+3. Policies and values functions are data containers.
+
 ## Installation 
 
 ```bash
