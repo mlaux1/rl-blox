@@ -22,7 +22,9 @@ def generate_rollout(
 
     while not terminated or truncated:
         action = policy(observation=observation)
-        observation, reward, terminated, truncated, info = env.step(int(action)) # TODO: adapt to non-int actions
+        observation, reward, terminated, truncated, info = env.step(
+            int(action)
+        )  # TODO: adapt to non-int actions
 
         obs.append(observation)
         actions.append(action)

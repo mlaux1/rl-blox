@@ -8,8 +8,7 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 from jax import Array
 
-from modular_rl.policy.base_model import (NeuralNetwork, ReplayBuffer,
-                                          Transition)
+from modular_rl.policy.base_model import NeuralNetwork, ReplayBuffer, Transition
 
 
 class ValueFunction(abc.ABC):
@@ -27,10 +26,7 @@ class ValueFunction(abc.ABC):
 class TabularValueFunction(ValueFunction):
     """Tabular state value function."""
 
-    def __init__(
-            self,
-            observation_space: Discrete,
-            initial_value: float = 0.0):
+    def __init__(self, observation_space: Discrete, initial_value: float = 0.0):
         self.values = jnp.full(
             shape=flatdim(observation_space),
             fill_value=initial_value,
@@ -50,11 +46,7 @@ class QFunction(abc.ABC):
     """Base Q function class."""
 
     @abc.abstractmethod
-    def get_action_value(
-            self,
-            observation: Array,
-            action: Array
-    ) -> Array:
+    def get_action_value(self, observation: Array, action: Array) -> Array:
         pass
 
     @abc.abstractmethod
@@ -73,12 +65,11 @@ class TabularQFunction(QFunction):
     ):
         self.values = jnp.full(
             shape=(flatdim(observation_space), flatdim(action_space)),
-            fill_value=initial_value, dtype=jnp.float32,
+            fill_value=initial_value,
+            dtype=jnp.float32,
         )
 
-    def get_action_value(
-        self, observation: Array, action: Array
-    ) -> Array:
+    def get_action_value(self, observation: Array, action: Array) -> Array:
         return self.values[observation, action]
 
     def update(self, observations, actions, step) -> None:
@@ -96,9 +87,9 @@ class NNQFunction(QFunction):
         self.q_network = NeuralNetwork(observation_space.n, action_space.n).to(
             self.device
         )
-        self.target_network = NeuralNetwork(observation_space.n, action_space.n).to(
-            self.device
-        )
+        self.target_network = NeuralNetwork(
+            observation_space.n, action_space.n
+        ).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.replay_buffer = ReplayBuffer(size=10_000)
         self.batch_size = 64
@@ -149,11 +140,15 @@ class NNQFunction(QFunction):
                 non_final_next_states
             ).max(1)[0]
 
-        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+        expected_state_action_values = (
+            next_state_values * self.gamma
+        ) + reward_batch
 
         # Compute Huber loss
         criterion = torch.nn.SmoothL1Loss()
-        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+        loss = criterion(
+            state_action_values, expected_state_action_values.unsqueeze(1)
+        )
 
         # Optimise the model
         self.optimizer.zero_grad()

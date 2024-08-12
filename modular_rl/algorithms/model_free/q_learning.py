@@ -10,33 +10,34 @@ from ...tools.error_functions import td_error
 
 
 def q_learning(
-        key: PRNGKey,
-        env: gymnasium.Env,
-        q_table: ArrayLike,
-        alpha: float,
-        epsilon: float,
-        num_episodes: int,
-        gamma: float = 0.9999,
-
+    key: PRNGKey,
+    env: gymnasium.Env,
+    q_table: ArrayLike,
+    alpha: float,
+    epsilon: float,
+    num_episodes: int,
+    gamma: float = 0.9999,
 ) -> Array:
 
     ep_rewards = jnp.zeros(num_episodes)
 
     for i in tqdm(range(num_episodes)):
         key, subkey = random.split(key)
-        q_table, ep_reward = _q_learning_episode(subkey, env, q_table, alpha, epsilon, gamma)
+        q_table, ep_reward = _q_learning_episode(
+            subkey, env, q_table, alpha, epsilon, gamma
+        )
         ep_rewards = ep_rewards.at[i].add(ep_reward)
 
     return q_table, ep_rewards
 
 
 def _q_learning_episode(
-        key: PRNGKey,
-        env: gymnasium.Env,
-        q_table: ArrayLike,
-        alpha: float,
-        epsilon: float,
-        gamma: float = 0.9999,
+    key: PRNGKey,
+    env: gymnasium.Env,
+    q_table: ArrayLike,
+    alpha: float,
+    epsilon: float,
+    gamma: float = 0.9999,
 ) -> float:
     """
     Performs a single episode rollout.
@@ -52,14 +53,27 @@ def _q_learning_episode(
     while not terminated and not truncated:
         key, subkey1, subkey2 = random.split(key, 3)
 
-        action = get_epsilon_greedy_action(subkey1, q_table, observation, epsilon)
+        action = get_epsilon_greedy_action(
+            subkey1, q_table, observation, epsilon
+        )
         # get action from policy and perform environment step
-        next_observation, reward, terminated, truncated, _ = env.step(int(action))
+        next_observation, reward, terminated, truncated, _ = env.step(
+            int(action)
+        )
         # get next action
         next_action = get_greedy_action(subkey2, q_table, observation)
 
         # update target policy
-        q_table = _q_learning_update(q_table, observation, action, reward, next_observation, next_action, gamma, alpha)
+        q_table = _q_learning_update(
+            q_table,
+            observation,
+            action,
+            reward,
+            next_observation,
+            next_action,
+            gamma,
+            alpha,
+        )
 
         # housekeeping
         observation = next_observation
@@ -69,7 +83,16 @@ def _q_learning_episode(
 
 
 @jit
-def _q_learning_update(q_table, observation, action, reward, next_observation, next_action, gamma, alpha):
+def _q_learning_update(
+    q_table,
+    observation,
+    action,
+    reward,
+    next_observation,
+    next_action,
+    gamma,
+    alpha,
+):
     val = q_table[observation, action]
     next_val = q_table[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)

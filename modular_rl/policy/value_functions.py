@@ -7,8 +7,7 @@ import torch
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 
-from modular_rl.policy.base_model import (NeuralNetwork, ReplayBuffer,
-                                          Transition)
+from modular_rl.policy.base_model import NeuralNetwork, ReplayBuffer, Transition
 
 
 class ValueFunction(abc.ABC):
@@ -86,9 +85,9 @@ class NNQFunction(QFunction):
         self.q_network = NeuralNetwork(observation_space.n, action_space.n).to(
             self.device
         )
-        self.target_network = NeuralNetwork(observation_space.n, action_space.n).to(
-            self.device
-        )
+        self.target_network = NeuralNetwork(
+            observation_space.n, action_space.n
+        ).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.replay_buffer = ReplayBuffer(size=10_000)
         self.batch_size = 64
@@ -139,11 +138,15 @@ class NNQFunction(QFunction):
                 non_final_next_states
             ).max(1)[0]
 
-        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+        expected_state_action_values = (
+            next_state_values * self.gamma
+        ) + reward_batch
 
         # Compute Huber loss
         criterion = torch.nn.SmoothL1Loss()
-        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+        loss = criterion(
+            state_action_values, expected_state_action_values.unsqueeze(1)
+        )
 
         # Optimise the model
         self.optimizer.zero_grad()

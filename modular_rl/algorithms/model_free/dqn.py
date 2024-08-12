@@ -8,8 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from modular_rl.policy.base_model import (NeuralNetwork, ReplayBuffer,
-                                          Transition)
+from modular_rl.policy.base_model import NeuralNetwork, ReplayBuffer, Transition
 
 env = gym.make("CartPole-v1")
 
@@ -126,13 +125,17 @@ def optimize_model():
     # state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
     with torch.no_grad():
-        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0]
+        next_state_values[non_final_mask] = target_net(
+            non_final_next_states
+        ).max(1)[0]
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
     # Compute Huber loss
     criterion = nn.SmoothL1Loss()
-    loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+    loss = criterion(
+        state_action_values, expected_state_action_values.unsqueeze(1)
+    )
 
     # Optimize the model
     optimizer.zero_grad()

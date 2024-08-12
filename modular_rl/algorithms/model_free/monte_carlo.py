@@ -8,10 +8,7 @@ class MonteCarlo:
     Implements Every-Visit ann First-Visit On-Policy Monte Carlo Learning using Q-Values.
     """
 
-    def __init__(
-            self,
-            env,
-            epsilon, update_mode="every_visit"):
+    def __init__(self, env, epsilon, update_mode="every_visit"):
         self.epsilon = epsilon
         self.env = env
 
@@ -22,13 +19,10 @@ class MonteCarlo:
         self.update_mode = update_mode
 
         self.exploration_policy = UniformRandomPolicy(
-            env.observation_space,
-            env.action_space
+            env.observation_space, env.action_space
         )
         self.target_policy = GreedyQPolicy(
-            env.observation_space,
-            env.action_space,
-            0.0
+            env.observation_space, env.action_space, 0.0
         )
 
         self.n_visits = np.full(
@@ -76,7 +70,9 @@ class MonteCarlo:
             else:
                 action = self.target_policy.get_action(observation)
 
-            observation, reward, terminated, truncated, info = self.env.step(action)
+            observation, reward, terminated, truncated, info = self.env.step(
+                action
+            )
 
             observations.append(observation)
             actions.append(action)

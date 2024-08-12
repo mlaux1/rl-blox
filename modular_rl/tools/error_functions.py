@@ -4,8 +4,6 @@ from jax.typing import ArrayLike
 
 @jit
 def td_error(
-        reward: ArrayLike,
-        gamma: float,
-        value: ArrayLike,
-        next_value: ArrayLike):
+    reward: ArrayLike, gamma: float, value: ArrayLike, next_value: ArrayLike
+):
     return reward + gamma * next_value - value
