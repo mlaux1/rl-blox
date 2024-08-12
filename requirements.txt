@@ -7,3 +7,4 @@ distrax
 optax
 tqdm
 matplotlib
+pre-commit
