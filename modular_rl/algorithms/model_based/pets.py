@@ -17,11 +17,12 @@ class EnsembleOfGaussianMlps:
     ----------
     .. [1] TODO PETS paper
     """
-    def __init__(self, base_model, n_base_models, train_size, warm_start, key, verbose=0):
+    def __init__(self, base_model, n_base_models, train_size, warm_start, learning_rate, key, verbose=0):
         self.base_model = base_model
         self.n_base_models = n_base_models
         self.train_size = train_size
         self.warm_start = warm_start
+        self.learning_rate = learning_rate
         self.key = key
         self.verbose = verbose
 
@@ -36,7 +37,7 @@ class EnsembleOfGaussianMlps:
                 TrainState.create(
                     apply_fn=self.base_model.apply,
                     params=self.base_model.init(key, X[0]),
-                    tx=optax.adam(learning_rate=learning_rate),
+                    tx=optax.adam(learning_rate=self.learning_rate),
                 ) for key in model_keys]
 
         for i in range(self.n_base_models):
@@ -203,7 +204,7 @@ key = jax.random.PRNGKey(seed)
 net = GaussianMlp(shared_head=True, n_outputs=1, hidden_nodes=[50, 30])
 net.apply = jax.jit(net.apply)
 key, ensemble_key = jax.random.split(key, 2)
-ensemble = EnsembleOfGaussianMlps(net, 5, 0.5, True, ensemble_key, verbose=1)
+ensemble = EnsembleOfGaussianMlps(net, 5, 0.5, True, learning_rate, ensemble_key, verbose=1)
 
 key, data_key = jax.random.split(key, 2)
 X_train, Y_train, X_test, Y_test = generate_dataset3(data_key, n_samples)
