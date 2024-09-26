@@ -149,7 +149,7 @@ def heteroscedastic_aleatoric_uncertainty_loss(mean_pred, log_std_pred, Y):
        https://proceedings.neurips.cc/paper_files/paper/2017/file/9ef2ed4b7fd2c810847ffa5fa85bce38-Paper.pdf
     """
     var = jnp.exp(log_std_pred) ** 2
-    # TODO what if var == 0?
+    #var = jnp.where(var < 1e-6, 1.0, var)  # TODO do we need this?
     squared_erros = optax.l2_loss(mean_pred, Y)  # including factor 0.5
     # Second term should be 0.5 * jnp.mean(jnp.log(var)), but this is the same
     # because 2 * log_std_pred == jnp.log(var), so 2 and 0.5 cancel out.
