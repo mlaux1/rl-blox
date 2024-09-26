@@ -6,7 +6,6 @@ import jax
 import jax.numpy as jnp
 import flax
 import flax.linen as nn
-from benchmarks.benchmark_distance_point_to_triangle import random_state
 from flax.training.train_state import TrainState
 import optax
 
