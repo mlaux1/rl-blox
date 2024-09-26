@@ -30,16 +30,6 @@ class EnsembleOfGaussianMlps:
         n_samples = len(X)
         n_bootstrapped = int(self.train_size * n_samples)
 
-        if not hasattr(self, "train_states_") or not self.warm_start:
-            self.key, init_key = jax.random.split(self.key, 2)
-            model_keys = jax.random.split(init_key, self.n_base_models)
-            self.train_states_ = [
-                TrainState.create(
-                    apply_fn=self.base_model.apply,
-                    params=self.base_model.init(key, X[0]),
-                    tx=optax.adam(learning_rate=self.learning_rate),
-                ) for key in model_keys]
-
         self.key, bootstrapping_key = jax.random.split(self.key, 2)
         bootstrapped_indices = jax.random.choice(
             bootstrapping_key, n_samples,
@@ -48,27 +38,38 @@ class EnsembleOfGaussianMlps:
 
         X_train = X[bootstrapped_indices]
         Y_train = Y[bootstrapped_indices]
-        for i in range(self.n_base_models):
-            # TODO parallelize (vmap?)
-            # TODO mini-batches?
-            @jax.jit
-            def update_base_model(train_state, X, y):
-                def compute_loss(X, y, params):
-                    mean_pred, log_std_pred = self.base_model.apply(params, X)
-                    return heteroscedastic_aleatoric_uncertainty_loss(
-                        mean_pred, log_std_pred, y)
 
-                loss = partial(compute_loss, X, y)
-                loss_value, grads = jax.value_and_grad(loss)(train_state.params)
-                train_state = train_state.apply_gradients(grads=grads)
-                return loss_value, train_state
+        if not hasattr(self, "train_states_") or not self.warm_start:
+            self.key, init_key = jax.random.split(self.key, 2)
+            model_keys = jax.random.split(init_key, self.n_base_models)
+            def create_train_state(key, X_train):
+                return TrainState.create(
+                    apply_fn=self.base_model.apply,
+                    params=self.base_model.init(key, X_train[0]),
+                    tx=optax.adam(learning_rate=self.learning_rate),
+                )
+            create_train_states = jax.vmap(create_train_state, in_axes=(0, 0))
+            self.train_states_ = create_train_states(model_keys, X_train)
 
-            for _ in range(n_epochs):
-                loss_value, self.train_states_[i] = update_base_model(
-                    self.train_states_[i], X_train[i], Y_train[i])
+        def update_base_model(train_state, X, y):
+            def compute_loss(X, y, params):
+                mean_pred, log_std_pred = self.base_model.apply(params, X)
+                return heteroscedastic_aleatoric_uncertainty_loss(
+                    mean_pred, log_std_pred, y)
 
-            if self.verbose:
-                print(f"base model {i + 1}, loss {loss_value:.4f}")
+            loss = partial(compute_loss, X, y)
+            loss_value, grads = jax.value_and_grad(loss)(train_state.params)
+            train_state = train_state.apply_gradients(grads=grads)
+            return loss_value, train_state
+
+        update_base_models = jax.jit(jax.vmap(update_base_model, in_axes=(0, 0, 0)))
+
+        for _ in range(n_epochs):
+            loss_value, self.train_states_ = update_base_models(
+                self.train_states_, X_train, Y_train)
+
+        if self.verbose:
+            print(f"loss {loss_value}")
 
     def predict(self, X):
         means = []
