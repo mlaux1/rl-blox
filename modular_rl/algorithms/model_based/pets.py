@@ -71,8 +71,19 @@ class EnsembleOfGaussianMlps:
                 print(f"base model {i + 1}, loss {loss_value:.4f}")
 
     def predict(self, X):
-        for i in range(self.n_base_models):
-            raise NotImplementedError()
+        means = []
+        aleatoric_vars = []
+        for i, train_state in enumerate(ensemble.train_states_):
+            mean_i, log_std_i = net.apply(train_state.params, X_test)
+            means.append(mean_i)
+            aleatoric_vars.append(jnp.exp(log_std_i) ** 2)
+        mean = jnp.mean(jnp.stack(means, axis=0), axis=0)
+        aleatoric_var = jnp.mean(jnp.stack(aleatoric_vars, axis=0), axis=0)
+        diffs = []
+        for i, train_state in enumerate(ensemble.train_states_):
+            diffs.append((means[i] - mean) ** 2)
+        epistemic_var = jnp.sum(jnp.stack(diffs, axis=0), axis=0) / (self.n_base_models + 1)
+        return mean, aleatoric_var + epistemic_var
 
 
 class GaussianMlp(nn.Module):
@@ -201,10 +212,19 @@ import matplotlib.pyplot as plt
 plt.figure()
 plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
 plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
-for train_state in ensemble.train_states_:
+for idx, train_state in enumerate(ensemble.train_states_):
     mean, log_std = net.apply(train_state.params, X_test)
     std_196 = 1.96 * jnp.exp(log_std).squeeze()
     mean = mean.squeeze()
     plt.fill_between(X_test[:, 0], mean - std_196, mean + std_196, alpha=0.3)
-    plt.plot(X_test[:, 0], mean, label="Prediction")
+    plt.plot(X_test[:, 0], mean, ls="--", label=f"Prediction of model {idx + 1}")
+mean, var = ensemble.predict(X_test)
+mean = mean.squeeze()
+std = jnp.sqrt(var).squeeze()
+plt.plot(X_test[:, 0], mean, label="Ensemble", c="k")
+for factor in [1.0, 2.0, 3.0]:
+    plt.fill_between(
+        X_test[:, 0], mean - factor * std, mean + factor * std, color="k",
+        alpha=0.1)
+plt.legend(loc="best")
 plt.show()
