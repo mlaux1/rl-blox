@@ -41,7 +41,9 @@ def heteroscedastic_aleatoric_uncertainty_loss(mean_pred, log_std_pred, y):
     References
     ----------
     .. [1] Kendall, Gal (2017). What Uncertainties Do We Need in Bayesian Deep
-       Learning for Computer Vision? https://arxiv.org/abs/1703.04977
+       Learning for Computer Vision? In Advances in Neural Information
+       Processing Systems (NeurIPS). https://arxiv.org/abs/1703.04977,
+       https://proceedings.neurips.cc/paper_files/paper/2017/file/2650d6089a6d640c5e85b2b88265dc2b-Paper.pdf
     """
     var = jnp.exp(log_std_pred) ** 2
     squared_erros = optax.l2_loss(mean_pred, y)  # including factor 0.5
