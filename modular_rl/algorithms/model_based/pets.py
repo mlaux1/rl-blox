@@ -72,21 +72,19 @@ class EnsembleOfGaussianMlps:
             print(f"loss {loss_value}")
 
     def predict(self, X):
-        means = []
-        log_stds = []
-        for i, train_state in enumerate(self.train_states_):
-            mean_i, log_std_i = self.base_model.apply(train_state.params, X_test)
-            means.append(mean_i)
-            log_stds.append(log_std_i)
+        def base_model_predict(train_state, X):
+            return self.base_model.apply(train_state.params, X)
+        ensemble_predict = jax.jit(jax.vmap(base_model_predict, in_axes=(0, None)))
+        means, log_stds = ensemble_predict(self.train_states_, X)
         return gaussian_ensemble_prediction(means, log_stds)
 
 
 @jax.jit
 def gaussian_ensemble_prediction(means: List[jnp.ndarray], log_stds: List[jnp.ndarray]):
     n_base_models = len(means)
-    aleatoric_vars = [jnp.exp(log_std_i) ** 2 for log_std_i in log_stds]
-    mean = jnp.mean(jnp.stack(means, axis=0), axis=0)
-    aleatoric_var = jnp.mean(jnp.stack(aleatoric_vars, axis=0), axis=0)
+    aleatoric_vars = jnp.exp(log_stds) ** 2
+    mean = jnp.mean(means, axis=0)
+    aleatoric_var = jnp.mean(aleatoric_vars, axis=0)
     diffs = [(means[i] - mean) ** 2 for i in range(n_base_models)]
     epistemic_var = jnp.sum(jnp.stack(diffs, axis=0), axis=0) / (n_base_models + 1)
     return mean, aleatoric_var + epistemic_var
