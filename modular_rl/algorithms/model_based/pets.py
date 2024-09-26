@@ -10,7 +10,7 @@ from flax.training.train_state import TrainState
 import optax
 
 
-class BaseModel(nn.Module):
+class GaussianMlp(nn.Module):
     """Base model of probabilistic ensemble."""
 
     shared_head: bool
@@ -100,7 +100,7 @@ learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
 n_epochs = 5000
-net = BaseModel(shared_head=True, n_outputs=1, hidden_nodes=[50, 30])
+net = GaussianMlp(shared_head=True, n_outputs=1, hidden_nodes=[50, 30])
 
 random_state = np.random.RandomState(seed)
 key = jax.random.PRNGKey(seed)
