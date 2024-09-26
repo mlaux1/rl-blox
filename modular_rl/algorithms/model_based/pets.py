@@ -72,18 +72,23 @@ class EnsembleOfGaussianMlps:
 
     def predict(self, X):
         means = []
-        aleatoric_vars = []
+        log_stds = []
         for i, train_state in enumerate(ensemble.train_states_):
-            mean_i, log_std_i = net.apply(train_state.params, X_test)
+            mean_i, log_std_i = self.base_model.apply(train_state.params, X_test)
             means.append(mean_i)
-            aleatoric_vars.append(jnp.exp(log_std_i) ** 2)
-        mean = jnp.mean(jnp.stack(means, axis=0), axis=0)
-        aleatoric_var = jnp.mean(jnp.stack(aleatoric_vars, axis=0), axis=0)
-        diffs = []
-        for i, train_state in enumerate(ensemble.train_states_):
-            diffs.append((means[i] - mean) ** 2)
-        epistemic_var = jnp.sum(jnp.stack(diffs, axis=0), axis=0) / (self.n_base_models + 1)
-        return mean, aleatoric_var + epistemic_var
+            log_stds.append(log_std_i)
+        return gaussian_ensemble_prediction(means, log_stds)
+
+
+@jax.jit
+def gaussian_ensemble_prediction(means: List[jnp.ndarray], log_stds: List[jnp.ndarray]):
+    n_base_models = len(means)
+    aleatoric_vars = [jnp.exp(log_std_i) ** 2 for log_std_i in log_stds]
+    mean = jnp.mean(jnp.stack(means, axis=0), axis=0)
+    aleatoric_var = jnp.mean(jnp.stack(aleatoric_vars, axis=0), axis=0)
+    diffs = [(means[i] - mean) ** 2 for i in range(n_base_models)]
+    epistemic_var = jnp.sum(jnp.stack(diffs, axis=0), axis=0) / (n_base_models + 1)
+    return mean, aleatoric_var + epistemic_var
 
 
 class GaussianMlp(nn.Module):
@@ -179,7 +184,7 @@ def generate_dataset3(data_key, n_samples):
     x2 = jnp.linspace(jnp.pi, 2.0 * jnp.pi, n_samples // 2)
     x_train = jnp.hstack((x1, x2))
     y_train = jnp.sin(x_train) + 0.1 * jax.random.normal(data_key, x_train.shape)
-    x_test = jnp.linspace(-4.0 * jnp.pi, 4.0 * jnp.pi, n_samples)
+    x_test = jnp.linspace(-3.0 * jnp.pi, 3.0 * jnp.pi, n_samples)
     y_test = jnp.sin(x_test)
     return (x_train[:, np.newaxis], y_train[:, np.newaxis],
             x_test[:, np.newaxis], y_test[:, np.newaxis])
@@ -189,7 +194,7 @@ seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
-n_epochs = 10000
+n_epochs = 5000
 plot_base_models = False
 
 random_state = np.random.RandomState(seed)
@@ -198,7 +203,7 @@ key = jax.random.PRNGKey(seed)
 net = GaussianMlp(shared_head=True, n_outputs=1, hidden_nodes=[50, 30])
 net.apply = jax.jit(net.apply)
 key, ensemble_key = jax.random.split(key, 2)
-ensemble = EnsembleOfGaussianMlps(net, 10, 0.5, True, ensemble_key, verbose=1)
+ensemble = EnsembleOfGaussianMlps(net, 5, 0.5, True, ensemble_key, verbose=1)
 
 key, data_key = jax.random.split(key, 2)
 X_train, Y_train, X_test, Y_test = generate_dataset3(data_key, n_samples)
