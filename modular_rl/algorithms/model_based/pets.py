@@ -85,8 +85,8 @@ def gaussian_ensemble_prediction(means: List[jnp.ndarray], log_stds: List[jnp.nd
     aleatoric_vars = jnp.exp(log_stds) ** 2
     mean = jnp.mean(means, axis=0)
     aleatoric_var = jnp.mean(aleatoric_vars, axis=0)
-    diffs = [(means[i] - mean) ** 2 for i in range(n_base_models)]
-    epistemic_var = jnp.sum(jnp.stack(diffs, axis=0), axis=0) / (n_base_models + 1)
+    diffs = (means - mean) ** 2
+    epistemic_var = jnp.sum(diffs, axis=0) / (n_base_models + 1)
     return mean, aleatoric_var + epistemic_var
 
 
