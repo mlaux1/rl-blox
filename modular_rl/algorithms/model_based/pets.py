@@ -46,12 +46,11 @@ class EnsembleOfGaussianMlps:
             shape=(self.n_base_models, n_bootstrapped), replace=True
         )
 
+        X_train = X[bootstrapped_indices]
+        Y_train = Y[bootstrapped_indices]
         for i in range(self.n_base_models):
             # TODO parallelize (vmap?)
             # TODO mini-batches?
-            X_train = X[bootstrapped_indices[i]]
-            Y_train = Y[bootstrapped_indices[i]]
-
             @jax.jit
             def update_base_model(train_state, X, y):
                 def compute_loss(X, y, params):
@@ -66,7 +65,7 @@ class EnsembleOfGaussianMlps:
 
             for _ in range(n_epochs):
                 loss_value, self.train_states_[i] = update_base_model(
-                    self.train_states_[i], X_train, Y_train)
+                    self.train_states_[i], X_train[i], Y_train[i])
 
             if self.verbose:
                 print(f"base model {i + 1}, loss {loss_value:.4f}")
@@ -195,7 +194,7 @@ seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
-n_epochs = 5000
+n_epochs = 10000
 plot_base_models = False
 
 random_state = np.random.RandomState(seed)
