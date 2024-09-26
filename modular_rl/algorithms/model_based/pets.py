@@ -30,14 +30,14 @@ class EnsembleOfGaussianMlps:
         n_bootstrapped = int(self.train_size * n_samples)
 
         if not hasattr(self, "train_states_") or not self.warm_start:
-            keys = jax.random.split(self.key, self.n_base_models + 1)
-            self.key = keys[0]
+            self.key, init_key = jax.random.split(self.key, 2)
+            model_keys = jax.random.split(init_key, self.n_base_models)
             self.train_states_ = [
                 TrainState.create(
                     apply_fn=self.base_model.apply,
                     params=self.base_model.init(key, X[0]),
                     tx=optax.adam(learning_rate=learning_rate),
-                ) for key in keys[1:]]
+                ) for key in model_keys]
 
         for i in range(self.n_base_models):
             # TODO parallelize (pmap?)
