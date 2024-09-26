@@ -40,17 +40,17 @@ class EnsembleOfGaussianMlps:
                     tx=optax.adam(learning_rate=self.learning_rate),
                 ) for key in model_keys]
 
+        self.key, bootstrapping_key = jax.random.split(self.key, 2)
+        bootstrapped_indices = jax.random.choice(
+            bootstrapping_key, n_samples,
+            shape=(self.n_base_models, n_bootstrapped), replace=True
+        )
+
         for i in range(self.n_base_models):
-            # TODO parallelize (pmap?)
+            # TODO parallelize (vmap?)
             # TODO mini-batches?
-            # generate individual dataset by sampling with replacement
-            self.key, bootstrapping_key = jax.random.split(self.key, 2)
-            bootstrapped_indices = jax.random.choice(
-                bootstrapping_key, n_samples, shape=(n_bootstrapped,),
-                replace=True
-            )
-            X_train = X[bootstrapped_indices]
-            Y_train = Y[bootstrapped_indices]
+            X_train = X[bootstrapped_indices[i]]
+            Y_train = Y[bootstrapped_indices[i]]
 
             @jax.jit
             def update_base_model(train_state, X, y):
