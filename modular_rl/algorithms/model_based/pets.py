@@ -82,11 +82,9 @@ class EnsembleOfGaussianMlps:
 @jax.jit
 def gaussian_ensemble_prediction(means: List[jnp.ndarray], log_stds: List[jnp.ndarray]):
     n_base_models = len(means)
-    aleatoric_vars = jnp.exp(log_stds) ** 2
     mean = jnp.mean(means, axis=0)
-    aleatoric_var = jnp.mean(aleatoric_vars, axis=0)
-    diffs = (means - mean) ** 2
-    epistemic_var = jnp.sum(diffs, axis=0) / (n_base_models + 1)
+    epistemic_var = jnp.sum((means - mean) ** 2, axis=0) / (n_base_models + 1)
+    aleatoric_var = jnp.mean(jnp.exp(log_stds) ** 2, axis=0)
     return mean, aleatoric_var + epistemic_var
 
 
@@ -193,16 +191,16 @@ seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
-n_epochs = 10000
+n_epochs = 15000
 plot_base_models = False
 
 random_state = np.random.RandomState(seed)
 key = jax.random.PRNGKey(seed)
 
-net = GaussianMlp(shared_head=True, n_outputs=1, hidden_nodes=[50, 30])
+net = GaussianMlp(shared_head=True, n_outputs=1, hidden_nodes=[100, 50])
 net.apply = jax.jit(net.apply)
 key, ensemble_key = jax.random.split(key, 2)
-ensemble = EnsembleOfGaussianMlps(net, 5, 0.5, True, learning_rate, ensemble_key, verbose=1)
+ensemble = EnsembleOfGaussianMlps(net, 5, 0.7, True, learning_rate, ensemble_key, verbose=1)
 
 key, data_key = jax.random.split(key, 2)
 X_train, Y_train, X_test, Y_test = generate_dataset3(data_key, n_samples)
@@ -218,7 +216,8 @@ plt.figure()
 plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
 plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
 if plot_base_models:
-    for idx, train_state in enumerate(ensemble.train_states_):
+    # TODO how to plot base models now?
+    for idx, train_state in enumerate(ensemble.train_states_.params):
         mean, log_std = net.apply(train_state.params, X_test)
         std_196 = 1.96 * jnp.exp(log_std).squeeze()
         mean = mean.squeeze()
@@ -232,5 +231,8 @@ for factor in [1.0, 2.0, 3.0]:
     plt.fill_between(
         X_test[:, 0], mean - factor * std, mean + factor * std, color="k",
         alpha=0.1)
+min_y = Y_test.min()
+max_y = Y_test.max()
+plt.ylim((min_y - 2, max_y + 2))
 plt.legend(loc="best")
 plt.show()
