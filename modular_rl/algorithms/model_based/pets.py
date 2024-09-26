@@ -66,13 +66,14 @@ class EnsembleOfGaussianMlps:
             for _ in range(n_epochs):
                 loss_value, self.train_states_[i] = update_base_model(
                     self.train_states_[i], X_train, Y_train)
+
             if self.verbose:
                 print(f"base model {i + 1}, loss {loss_value:.4f}")
 
     def predict(self, X):
         means = []
         log_stds = []
-        for i, train_state in enumerate(ensemble.train_states_):
+        for i, train_state in enumerate(self.train_states_):
             mean_i, log_std_i = self.base_model.apply(train_state.params, X_test)
             means.append(mean_i)
             log_stds.append(log_std_i)
