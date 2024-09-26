@@ -45,10 +45,9 @@ def heteroscedastic_aleatoric_uncertainty_loss(mean_pred, log_std_pred, y):
     """
     var = jnp.exp(log_std_pred) ** 2
     squared_erros = optax.l2_loss(mean_pred, y)  # including factor 0.5
-    const = jnp.log(2.0 * jnp.pi) * mean_pred.size / 2.0
-    # Second term should be 0.5 * jnp.sum(jnp.log(var)), but this is the same
-    # because 2 * log_std_pred == jnp.log(var), so 2 and 0.5 cancel each other.
-    return jnp.sum(squared_erros / var) + jnp.sum(log_std_pred) + const
+    # Second term should be 0.5 * jnp.mean(jnp.log(var)), but this is the same
+    # because 2 * log_std_pred == jnp.log(var), so 2 and 0.5 cancel out.
+    return jnp.mean(squared_erros / var) + jnp.mean(log_std_pred)
 
 
 def update_base_model(model, train_state, X, y, n_iter):
@@ -95,7 +94,7 @@ def generate_dataset3(data_key, n_samples):
             x_test[:, np.newaxis], y_test[:, np.newaxis])
 
 
-seed = 44
+seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
