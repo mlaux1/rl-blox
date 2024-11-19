@@ -15,7 +15,7 @@ The implementation of this project follows the following principles:
 ## Installation
 
 ```bash
-git clone git@github.com:mlaux1/modular-rl.git
+git clone git@github.com:mlaux1/rl-blox.git
 ```
 
 After cloning the repository, it is recommended to install the library in editable mode.
@@ -26,8 +26,8 @@ pip install -e .
 
 ## Contributing
 
-If you wish to report bugs, please use the [issue tracker](https://github.com/mlaux1/modular-rl/issues). If you would like to contribute to DeformableGym, just open an issue or a
-[pull request](https://github.com/mlaux1/modular-rl/pulls). The target branch for
+If you wish to report bugs, please use the [issue tracker](https://github.com/mlaux1/rl-blox/issues). If you would like to contribute to DeformableGym, just open an issue or a
+[pull request](https://github.com/mlaux1/rl-blox/pulls). The target branch for
 merge requests is the development branch. The development branch will be merged to master for new releases. If you have
 questions about the software, you should ask them in the discussion section.
 
