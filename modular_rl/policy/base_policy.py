@@ -4,10 +4,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import default_rng
 
-from modular_rl.policy.value_functions import (
-    TabularQFunction,
-    TabularValueFunction,
-)
+from ...policy.value_functions import TabularQFunction, TabularValueFunction
 
 SEED = 42
 

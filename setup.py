@@ -5,7 +5,7 @@ if __name__ == "__main__":
         long_description = f.read()
 
     setup(
-        name="modular_rl",
+        name="rl_blox",
         version="0.2.1",
         maintainer="Melvin Laux",
         maintainer_email="melvin.laux@uni-bremen.de",
@@ -13,7 +13,7 @@ if __name__ == "__main__":
         long_description=long_description,
         long_description_content_type="text/markdown",
         license="Not public",
-        packages=["modular_rl"],
+        packages=["rl_blox"],
         install_requires=[
             "numpy",
             "pytest",
@@ -23,5 +23,6 @@ if __name__ == "__main__":
             "optax",
             "distrax",
             "chex",
-            "tqdm"],
+            "tqdm",
+        ],
     )
