@@ -6,7 +6,7 @@ if __name__ == "__main__":
 
     setup(
         name="rl_blox",
-        version="0.2.1",
+        version="0.3.0",
         maintainer="Melvin Laux",
         maintainer_email="melvin.laux@uni-bremen.de",
         description="Modular RL implementations",
