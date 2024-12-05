@@ -10,7 +10,7 @@ from rl_blox.policy.differentiable import GaussianNNPolicy
 
 # env_name = "Pendulum-v1"
 # env_name = "HalfCheetah-v4"
-env_name = "InvertedPendulum-v4"
+env_name = "InvertedPendulum-v5"
 train_env = gym.make(env_name)
 train_env.reset(seed=43)
 # render_env = gym.make(env_name, render_mode="human")
