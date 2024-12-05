@@ -1,63 +1,101 @@
+import gymnasium
 import jax.numpy as jnp
+from jax import Array, jit, random
+from jax.random import PRNGKey
 from jax.typing import ArrayLike
-from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
 from tqdm import tqdm
 
+from ...policy.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ...tools.error_functions import td_error
 
-class QLearning:
-    """
-    Basic Q-Learning using temporal differences and tabular q-values.
-    """
 
-    def __init__(self, env, alpha, epsilon):
-        self.alpha = alpha
-        self.epsilon = epsilon
-        self.env = env
+def q_learning(
+    key: PRNGKey,
+    env: gymnasium.Env,
+    q_table: ArrayLike,
+    alpha: float,
+    epsilon: float,
+    num_episodes: int,
+    gamma: float = 0.9999,
+) -> Array:
 
-        self.exploration_policy = UniformRandomPolicy(
-            env.observation_space, env.action_space
+    ep_rewards = jnp.zeros(num_episodes)
+
+    for i in tqdm(range(num_episodes)):
+        key, subkey = random.split(key)
+        q_table, ep_reward = _q_learning_episode(
+            subkey, env, q_table, alpha, epsilon, gamma
         )
-        self.target_policy = GreedyQPolicy(
-            env.observation_space, env.action_space)
+        ep_rewards = ep_rewards.at[i].add(ep_reward)
 
-    def train(
-            self,
-            max_episodes: int,
-            gamma=0.99
-    ) -> ArrayLike:
-        ep_rewards = jnp.zeros(max_episodes)
+    return q_table, ep_rewards
 
-        for i in tqdm(range(max_episodes)):
-            observation, _ = self.env.reset()
-            while True:
-                if np.random.random_sample() < self.epsilon:
-                    action = self.exploration_policy.get_action(observation)
-                else:
-                    action = self.target_policy.get_action(observation)
 
-                next_observation, reward, terminated, truncated, info = self.env.step(
-                    action
-                )
+def _q_learning_episode(
+    key: PRNGKey,
+    env: gymnasium.Env,
+    q_table: ArrayLike,
+    alpha: float,
+    epsilon: float,
+    gamma: float = 0.9999,
+) -> float:
+    """
+    Performs a single episode rollout.
 
-                next_action = self.target_policy.get_action(next_observation)
-                td_error = (
-                    reward
-                    + gamma
-                    * self.target_policy.value_function.get_action_value(
-                        next_observation, next_action
-                    )
-                    - self.target_policy.value_function.get_action_value(
-                        observation, action
-                    )
-                )
+    :param gamma: Discount factor.
+    :return: Episode reward.
+    """
+    ep_reward = 0
+    truncated = False
+    terminated = False
+    observation, _ = env.reset()
 
-                self.target_policy.update(observation, action, self.alpha * td_error)
+    while not terminated and not truncated:
+        key, subkey1, subkey2 = random.split(key, 3)
 
-                observation = next_observation
+        action = get_epsilon_greedy_action(
+            subkey1, q_table, observation, epsilon
+        )
+        # get action from policy and perform environment step
+        next_observation, reward, terminated, truncated, _ = env.step(
+            int(action)
+        )
+        # get next action
+        next_action = get_greedy_action(subkey2, q_table, observation)
 
-                ep_rewards[i] += reward
+        # update target policy
+        q_table = _q_learning_update(
+            q_table,
+            observation,
+            action,
+            reward,
+            next_observation,
+            next_action,
+            gamma,
+            alpha,
+        )
 
-                if terminated or truncated:
-                    break
+        # housekeeping
+        observation = next_observation
+        ep_reward += reward
 
-        return ep_rewards
+    return q_table, ep_reward
+
+
+@jit
+def _q_learning_update(
+    q_table,
+    observation,
+    action,
+    reward,
+    next_observation,
+    next_action,
+    gamma,
+    alpha,
+):
+    val = q_table[observation, action]
+    next_val = q_table[next_observation, next_action]
+    error = td_error(reward, gamma, val, next_val)
+    q_table = q_table.at[observation, action].add(alpha * error)
+
+    return q_table

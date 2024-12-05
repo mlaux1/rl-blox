@@ -1,10 +1,11 @@
 import gymnasium as gym
-from modular_rl.algorithms.model_free.reinforce import ValueFunctionApproximation, PolicyTrainer
-from modular_rl.algorithms.model_free.actor_critic import train_ac_epoch
-from modular_rl.policy.differentiable import GaussianNNPolicy
 import jax
 import optax
 
+from modular_rl.algorithms.model_free.actor_critic import train_ac_epoch
+from modular_rl.algorithms.model_free.reinforce import (
+    PolicyTrainer, ValueFunctionApproximation)
+from modular_rl.policy.differentiable import GaussianNNPolicy
 
 #env_name = "Pendulum-v1"
 #env_name = "HalfCheetah-v4"

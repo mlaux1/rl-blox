@@ -1,11 +1,12 @@
 import abc
 import logging
 
-import numpy as np
-import numpy.typing as npt
+import jax
+import jax.numpy as jnp
 import torch
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
+from jax import Array
 
 from modular_rl.policy.base_model import NeuralNetwork, ReplayBuffer, Transition
 
@@ -14,7 +15,7 @@ class ValueFunction(abc.ABC):
     """Base value function class interface."""
 
     @abc.abstractmethod
-    def get_state_value(self, observation: npt.ArrayLike) -> npt.ArrayLike:
+    def get_state_value(self, observation: Array) -> Array:
         pass
 
     @abc.abstractmethod
@@ -26,24 +27,26 @@ class TabularValueFunction(ValueFunction):
     """Tabular state value function."""
 
     def __init__(self, observation_space: Discrete, initial_value: float = 0.0):
-        self.values = np.full(
-            shape=flatdim(observation_space), fill_value=initial_value
+        self.values = jnp.full(
+            shape=flatdim(observation_space),
+            fill_value=initial_value,
+            dtype=jnp.float32,
         )
 
-    def get_state_value(self, observation: npt.ArrayLike) -> npt.ArrayLike:
+    @jax.jit
+    def get_state_value(self, observation: Array) -> Array:
         return self.values[observation]
 
+    @jax.jit
     def update(self, observations, step) -> None:
-        self.values[observations] += step
+        self.values.at[observations].add(step)
 
 
 class QFunction(abc.ABC):
     """Base Q function class."""
 
     @abc.abstractmethod
-    def get_action_value(
-        self, observation: npt.ArrayLike, action: npt.ArrayLike
-    ) -> npt.ArrayLike:
+    def get_action_value(self, observation: Array, action: Array) -> Array:
         pass
 
     @abc.abstractmethod
@@ -60,18 +63,17 @@ class TabularQFunction(QFunction):
         action_space: Discrete,
         initial_value: float = 0.0,
     ):
-        self.values = np.full(
+        self.values = jnp.full(
             shape=(flatdim(observation_space), flatdim(action_space)),
             fill_value=initial_value,
+            dtype=jnp.float32,
         )
 
-    def get_action_value(
-        self, observation: npt.ArrayLike, action: npt.ArrayLike
-    ) -> npt.ArrayLike:
+    def get_action_value(self, observation: Array, action: Array) -> Array:
         return self.values[observation, action]
 
     def update(self, observations, actions, step) -> None:
-        self.values[observations, actions] += step
+        self.values.at[observations, actions].add(step)
 
         logging.debug(f"Updating Q Table: {observations=}, {actions=}, {step=}")
         logging.debug(f"New Q table: {self.values}")
