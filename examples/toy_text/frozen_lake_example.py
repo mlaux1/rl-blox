@@ -18,7 +18,7 @@ ENV_NAME = "FrozenLake-v1"
 key0, key1, key2, key3 = jax.random.split(KEY, 4)
 
 env = gym.make(ENV_NAME)
-env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
+env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
 
 # create the q table
 q_table = make_q_table(env)
@@ -38,7 +38,7 @@ generate_rollout(test_env, policy)
 test_env.close()
 
 env = gym.make(ENV_NAME)
-env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
+env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
 
 sarsa_q_table = make_q_table(env)
 

@@ -15,7 +15,7 @@ WINDOW_SIZE = 10
 ENV_NAME = "CliffWalking-v0"
 
 env = gym.make(ENV_NAME)
-env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
+env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
 
 q_table = make_q_table(env)
 
