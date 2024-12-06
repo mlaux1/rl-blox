@@ -3,7 +3,7 @@
 
 # RL-BLOX
 <p float="center">
-    <img src="doc/source/_static/rl_blox_logo_v0.png" height="150px" />
+    <img src="doc/source/_static/rl_blox_logo_v1.png" height="150px" />
 </p>
 
 This project contains modular implementations of various model-free and model-based RL algorithms and consists of deep neural network-based as well as tabular representation of Q-Values, policies, etc. which can be used interchangeably. The goal of this project is for the authors to learn by reimplementing various RL algorithms and possible to eventually an algorithmic toolbox for research purposes.
@@ -29,13 +29,13 @@ pip install -e .
 
 ## Contributing
 
-If you wish to report bugs, please use the [issue tracker](https://github.com/mlaux1/rl-blox/issues). If you would like to contribute to DeformableGym, just open an issue or a
+If you wish to report bugs, please use the [issue tracker](https://github.com/mlaux1/rl-blox/issues). If you would like to contribute to RL-BLOX, just open an issue or a
 [pull request](https://github.com/mlaux1/rl-blox/pulls). The target branch for
 merge requests is the development branch. The development branch will be merged to master for new releases. If you have
 questions about the software, you should ask them in the discussion section.
 
 The recommended workflow to add a new feature, add documentation, or fix a bug is the following:
-- Push your changes to a branch (e.g. feature/x, doc/y, or fix/z) of your fork of the deformable_gym repository.
+- Push your changes to a branch (e.g. feature/x, doc/y, or fix/z) of your fork of the RL-BLOX repository.
 - Open a pull request to the latest development branch. There is usually an open merge request from the latest development branch to the main branch.
 - When the latest development branch is merged to the main branch, a new release will be made.
 
