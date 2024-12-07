@@ -288,8 +288,7 @@ def train_ddpg(
 
         for i in range(len(terminations)):
             if terminations[i] or truncations[i]:
-                print(f"{infos['episode']['t']=}, "
-                      f"length={infos['episode']['l']}, "
+                print(f"{t=}, length={infos['episode']['l']}, "
                       f"return={infos['episode']['r']}")
             break
 
