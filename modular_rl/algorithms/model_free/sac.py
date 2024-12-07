@@ -9,7 +9,6 @@ import flax.linen as nn
 from flax.training.train_state import TrainState
 import optax
 import distrax
-from stable_baselines3.common.buffers import ReplayBuffer
 from .ddpg import critic_loss, ReplayBuffer
 
 
@@ -262,15 +261,10 @@ def train_sac(
 
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
 
-        for info in infos.get("final_info", []):
-            print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-            break
+        if any(terminations) or any(truncations):
+            print(f"{global_step=}, episodic_return={infos['episode']['r']}")
 
-        real_next_obs = next_obs.copy()
-        for idx, trunc in enumerate(truncations):
-            if trunc:
-                real_next_obs[idx] = infos["final_observation"][idx]
-        rb.add_samples(obs, actions, rewards, real_next_obs, terminations)
+        rb.add_samples(obs, actions, rewards, next_obs, terminations)
 
         obs = next_obs
 
