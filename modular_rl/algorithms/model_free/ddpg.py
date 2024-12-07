@@ -286,16 +286,14 @@ def train_ddpg(
 
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
 
-        for final_info in infos.get("final_info", []):
-            if verbose and "episode" in final_info:
-                print(f"{t=}, return={final_info['episode']['r']}")
+        for i in range(len(terminations)):
+            if terminations[i] or truncations[i]:
+                print(f"{infos['episode']['t']=}, "
+                      f"length={infos['episode']['l']}, "
+                      f"return={infos['episode']['r']}")
             break
 
-        real_next_obs = next_obs.copy()
-        for idx, trunc in enumerate(truncations):
-            if trunc:
-                real_next_obs[idx] = infos["final_observation"][idx]
-        rb.add_samples(obs, actions, rewards, real_next_obs, terminations)
+        rb.add_samples(obs, actions, rewards, next_obs, terminations)
 
         obs = next_obs
 
