@@ -1,7 +1,7 @@
 import gymnasium as gym
 import numpy as np
 
-from modular_rl.algorithms.model_free.ddpg import train_ddpg, DeterministicMlpPolicyNetwork, MlpQNetwork
+from rl_blox.algorithms.model_free.ddpg import train_ddpg, DeterministicMlpPolicyNetwork, MlpQNetwork
 
 
 env_name = "Pendulum-v1"

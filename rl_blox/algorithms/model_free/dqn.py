@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from modular_rl.policy.base_model import NeuralNetwork, ReplayBuffer, Transition
+from ...policy.base_model import NeuralNetwork, ReplayBuffer, Transition
 
 env = gym.make("CartPole-v1")
 

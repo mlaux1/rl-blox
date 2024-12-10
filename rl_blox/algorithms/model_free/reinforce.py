@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from modular_rl.policy.differentiable import (
+from ...policy.differentiable import (
     GaussianNNPolicy,
     NeuralNetwork,
     batched_gaussian_log_probability,

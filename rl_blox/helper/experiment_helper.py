@@ -4,7 +4,7 @@ import gymnasium as gym
 import numpy as np
 from numpy.typing import ArrayLike
 
-from modular_rl.policy.base_policy import BasePolicy
+from ..policy.base_policy import BasePolicy
 
 
 def generate_rollout(
