@@ -1,6 +1,12 @@
-import numpy as np
 import gymnasium as gym
-from modular_rl.algorithms.model_free.sac import train_sac, GaussianMlpPolicyNetwork, SoftMlpQNetwork, mean_actions
+import numpy as np
+
+from rl_blox.algorithms.model_free.sac import (
+    GaussianMlpPolicyNetwork,
+    SoftMlpQNetwork,
+    mean_actions,
+    train_sac,
+)
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -18,7 +24,7 @@ policy, policy_params, q, q1_params, q2_params = train_sac(
     total_timesteps=8_000,
     buffer_size=1_000_000,
     gamma=0.99,
-    learning_starts=5_000
+    learning_starts=5_000,
 )
 envs.close()
 
