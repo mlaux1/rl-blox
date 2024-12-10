@@ -18,14 +18,25 @@ class NeuralNetwork:
 
     theta: List[Tuple[jax.Array, jax.Array]]
 
-    def __init__(self, sizes: List[int], key: jax.random.PRNGKey, initializer=jax.nn.initializers.he_uniform):
+    def __init__(
+        self,
+        sizes: List[int],
+        key: jax.random.PRNGKey,
+        initializer=jax.nn.initializers.he_uniform,
+    ):
         keys = jax.random.split(key, len(sizes))
         self.theta = [
             self._random_layer_params(m, n, k)
             for m, n, k in zip(sizes[:-1], sizes[1:], keys)
         ]
 
-    def _random_layer_params(self, m: int, n: int, key: jax.random.PRNGKey, initializer):
+    def _random_layer_params(
+        self,
+        m: int,
+        n: int,
+        key: jax.random.PRNGKey,
+        initializer=jax.nn.initializers.he_uniform,
+    ):
         w_key, b_key = jax.random.split(key)
         weight_initializer = initializer()
         bound = 1.0 / math.sqrt(m)
@@ -66,7 +77,9 @@ def nn_forward(
 batched_nn_forward = jax.vmap(nn_forward, in_axes=(0, None))
 
 
-def nn_forward_tanh(x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]) -> jax.Array:
+def nn_forward_tanh(
+    x: jax.Array, theta: List[Tuple[jax.Array, jax.Array]]
+) -> jax.Array:
     """Neural network forward pass with additional tanh at the output layer.
 
     The neural network consists of fully connected layers with tanh activation
