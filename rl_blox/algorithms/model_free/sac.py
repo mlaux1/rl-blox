@@ -1,15 +1,17 @@
 from functools import partial
-from typing import Tuple, List
-import gymnasium as gym
-import numpy as np
-import jax
-import jax.numpy as jnp
+from typing import List, Tuple
+
+import distrax
 import flax
 import flax.linen as nn
-from flax.training.train_state import TrainState
+import gymnasium as gym
+import jax
+import jax.numpy as jnp
+import numpy as np
 import optax
-import distrax
-from .ddpg import critic_loss, ReplayBuffer
+from flax.training.train_state import TrainState
+
+from .ddpg import ReplayBuffer, critic_loss
 
 
 class SoftMlpQNetwork(nn.Module):
@@ -55,42 +57,51 @@ class GaussianMlpPolicyNetwork(nn.Module):
         mean = nn.Dense(self.action_dim)(x)
         log_std = nn.Dense(self.action_dim)(x)
         log_std = nn.tanh(log_std)
-        log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (log_std + 1)  # From SpinUp / Denis Yarats
+        log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (
+            log_std + 1
+        )  # From SpinUp / Denis Yarats
         return mean, log_std
 
     @staticmethod
     def create(
-            actor_hidden_nodes: List[int],
-            envs: gym.vector.SyncVectorEnv
+        actor_hidden_nodes: List[int], envs: gym.vector.SyncVectorEnv
     ) -> "GaussianMlpPolicyNetwork":
         return GaussianMlpPolicyNetwork(
             hidden_nodes=actor_hidden_nodes,
             action_dim=np.prod(envs.single_action_space.shape),
-            action_scale=jnp.array((envs.action_space.high - envs.action_space.low) / 2.0),
-            action_bias=jnp.array((envs.action_space.high + envs.action_space.low) / 2.0),
+            action_scale=jnp.array(
+                (envs.action_space.high - envs.action_space.low) / 2.0
+            ),
+            action_bias=jnp.array(
+                (envs.action_space.high + envs.action_space.low) / 2.0
+            ),
         )
 
 
 def sample_actions(
-        policy: nn.Module, params: flax.core.FrozenDict, obs: jnp.ndarray,
-        key: jax.random.PRNGKey
+    policy: nn.Module,
+    params: flax.core.FrozenDict,
+    obs: jnp.ndarray,
+    key: jax.random.PRNGKey,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     mean, log_std = policy.apply(params, obs)
     std = jnp.exp(log_std)
     normal = distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)
-    x_t = normal.sample(seed=key, sample_shape=())  # for reparameterization trick (mean + std * N(0,1))
+    x_t = normal.sample(
+        seed=key, sample_shape=()
+    )  # for reparameterization trick (mean + std * N(0,1))
     y_t = jnp.tanh(x_t)
     action = y_t * policy.action_scale + policy.action_bias
     log_prob = normal.log_prob(x_t)
     log_prob = log_prob.reshape(-1, 1)
     # Enforcing Action Bound
-    log_prob -= jnp.log(policy.action_scale * (1 - y_t ** 2) + 1e-6)
+    log_prob -= jnp.log(policy.action_scale * (1 - y_t**2) + 1e-6)
     log_prob = log_prob.sum(1)
     return action, log_prob
 
 
 def mean_actions(
-        policy, params: flax.core.FrozenDict, obs: jnp.ndarray
+    policy, params: flax.core.FrozenDict, obs: jnp.ndarray
 ) -> jnp.ndarray:
     mean, log_std = policy.apply(params, obs)
     std = jnp.exp(log_std)
@@ -105,18 +116,19 @@ class TargetTrainState(TrainState):
     Target parameters are supposed to be more stable and will be updated by
     Polyak averaging.
     """
+
     target_params: flax.core.FrozenDict
 
 
 def sac_actor_loss(
-        policy: nn.Module,
-        q: nn.Module,
-        q1_state: TargetTrainState,
-        q2_state: TargetTrainState,
-        alpha: float,
-        action_key: jax.random.PRNGKey,
-        observations: jnp.ndarray,
-        params: flax.core.FrozenDict
+    policy: nn.Module,
+    q: nn.Module,
+    q1_state: TargetTrainState,
+    q2_state: TargetTrainState,
+    alpha: float,
+    action_key: jax.random.PRNGKey,
+    observations: jnp.ndarray,
+    params: flax.core.FrozenDict,
 ) -> jnp.ndarray:
     action, log_prob = sample_actions(policy, params, observations, action_key)
     qf1_pi = q.apply(q1_state.params, observations, action).squeeze()
@@ -127,20 +139,25 @@ def sac_actor_loss(
 
 
 def sac_exploration_loss(
-        policy: nn.Module,
-        target_entropy: float,
-        policy_state: TrainState,
-        action_key: jax.random.PRNGKey,
-        observations: jnp.ndarray,
-        log_alpha: dict
+    policy: nn.Module,
+    target_entropy: float,
+    policy_state: TrainState,
+    action_key: jax.random.PRNGKey,
+    observations: jnp.ndarray,
+    log_alpha: dict,
 ) -> jnp.ndarray:
-    _, log_prob = sample_actions(policy, policy_state.params, observations, action_key)
-    alpha_loss = (-jnp.exp(log_alpha["log_alpha"]) * (log_prob + target_entropy)).mean()
+    _, log_prob = sample_actions(
+        policy, policy_state.params, observations, action_key
+    )
+    alpha_loss = (
+        -jnp.exp(log_alpha["log_alpha"]) * (log_prob + target_entropy)
+    ).mean()
     return alpha_loss
 
 
 class EntropyControl:
     """Automatic entropy tuning."""
+
     alpha: jnp.ndarray
     autotune: bool
     target_entropy: jnp.ndarray
@@ -151,7 +168,9 @@ class EntropyControl:
     def __init__(self, envs, alpha, autotune, learning_rate):
         self.autotune = autotune
         if self.autotune:
-            self.target_entropy = -jnp.prod(jnp.array(envs.single_action_space.shape))
+            self.target_entropy = -jnp.prod(
+                jnp.array(envs.single_action_space.shape)
+            )
             self.log_alpha = {"log_alpha": jnp.zeros(1)}
             self.alpha = jnp.exp(self.log_alpha["log_alpha"])
             self.optimizer = optax.adam(learning_rate=learning_rate)
@@ -163,34 +182,48 @@ class EntropyControl:
         if not self.autotune:
             return 0.0
         exploration_loss = partial(
-            sac_exploration_loss, policy, self.target_entropy,
-            policy_state, action_key, observations)
-        exploration_loss_value, alpha_grads = jax.value_and_grad(exploration_loss)(self.log_alpha)
-        updates, self.optimizer_state = self.optimizer.update(alpha_grads, self.optimizer_state)
+            sac_exploration_loss,
+            policy,
+            self.target_entropy,
+            policy_state,
+            action_key,
+            observations,
+        )
+        exploration_loss_value, alpha_grads = jax.value_and_grad(
+            exploration_loss
+        )(self.log_alpha)
+        updates, self.optimizer_state = self.optimizer.update(
+            alpha_grads, self.optimizer_state
+        )
         self.log_alpha = optax.apply_updates(self.log_alpha, updates)
         self.alpha = jnp.exp(self.log_alpha["log_alpha"])
         return exploration_loss_value
 
 
 def train_sac(
-        envs,
-        policy: nn.Module,
-        q: nn.Module,
-        seed: int = 1,
-        total_timesteps: int = 1_000_000,
-        buffer_size: int = 1_000_000,
-        gamma: float = 0.99,
-        tau: float = 0.005,
-        batch_size: int = 256,
-        learning_starts: float = 5_000,
-        policy_lr: float = 3e-4,
-        q_lr: float = 1e-3,
-        policy_frequency: int = 2,
-        target_network_frequency: int = 1,
-        alpha: float = 0.2,
-        autotune: bool = True
-) -> Tuple[GaussianMlpPolicyNetwork, flax.core.FrozenDict, nn.Module,
-           flax.core.FrozenDict, flax.core.FrozenDict]:
+    envs,
+    policy: nn.Module,
+    q: nn.Module,
+    seed: int = 1,
+    total_timesteps: int = 1_000_000,
+    buffer_size: int = 1_000_000,
+    gamma: float = 0.99,
+    tau: float = 0.005,
+    batch_size: int = 256,
+    learning_starts: float = 5_000,
+    policy_lr: float = 3e-4,
+    q_lr: float = 1e-3,
+    policy_frequency: int = 2,
+    target_network_frequency: int = 1,
+    alpha: float = 0.2,
+    autotune: bool = True,
+) -> Tuple[
+    GaussianMlpPolicyNetwork,
+    flax.core.FrozenDict,
+    nn.Module,
+    flax.core.FrozenDict,
+    flax.core.FrozenDict,
+]:
     """Soft actor-critic.
 
     :param envs: Vectorized Gymnasium environments.
@@ -215,7 +248,9 @@ def train_sac(
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
 
-    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
+    assert isinstance(
+        envs.single_action_space, gym.spaces.Box
+    ), "only continuous action space is supported"
     action_space: gym.spaces.Box = envs.action_space
 
     obs, _ = envs.reset(seed=seed)
@@ -253,10 +288,17 @@ def train_sac(
     obs, _ = envs.reset(seed=seed)
     for global_step in range(total_timesteps):
         if global_step < learning_starts:
-            actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
+            actions = np.array(
+                [
+                    envs.single_action_space.sample()
+                    for _ in range(envs.num_envs)
+                ]
+            )
         else:
             key, action_key = jax.random.split(key, 2)
-            actions, _ = sample_actions(policy, policy_state.params, obs, action_key)
+            actions, _ = sample_actions(
+                policy, policy_state.params, obs, action_key
+            )
             actions = jax.device_get(actions)
 
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
@@ -269,32 +311,55 @@ def train_sac(
         obs = next_obs
 
         if global_step > learning_starts:
-            observations, actions, rewards, next_observations, dones = rb.sample_batch(batch_size, rng)
+            observations, actions, rewards, next_observations, dones = (
+                rb.sample_batch(batch_size, rng)
+            )
 
             key, action_key = jax.random.split(key, 2)
             q1_loss_value, q1_state, q2_loss_value, q2_state = update_critic(
-                q1_state, q2_state, policy_state,
-                observations, actions, rewards, next_observations, dones,
-                action_key, entropy_control.alpha
+                q1_state,
+                q2_state,
+                policy_state,
+                observations,
+                actions,
+                rewards,
+                next_observations,
+                dones,
+                action_key,
+                entropy_control.alpha,
             )
 
-            if global_step % policy_frequency == 0:  # TD 3 Delayed update support
+            if (
+                global_step % policy_frequency == 0
+            ):  # TD 3 Delayed update support
                 # compensate for the delay by doing 'policy_frequency' updates instead of 1
                 for _ in range(policy_frequency):
                     key, action_key = jax.random.split(key, 2)
                     actor_loss_value, policy_state = update_actor(
-                        policy_state, q1_state, q2_state, action_key, observations, entropy_control.alpha)
+                        policy_state,
+                        q1_state,
+                        q2_state,
+                        action_key,
+                        observations,
+                        entropy_control.alpha,
+                    )
                     if autotune:
                         key, action_key = jax.random.split(key, 2)
-                        exploration_loss_value = entropy_control.update(policy, policy_state, observations, key)
+                        exploration_loss_value = entropy_control.update(
+                            policy, policy_state, observations, key
+                        )
 
             # update the target networks
             if global_step % target_network_frequency == 0:
                 q1_state = q1_state.replace(
-                    target_params=optax.incremental_update(q1_state.params, q1_state.target_params, tau)
+                    target_params=optax.incremental_update(
+                        q1_state.params, q1_state.target_params, tau
+                    )
                 )
                 q2_state = q2_state.replace(
-                    target_params=optax.incremental_update(q2_state.params, q2_state.target_params, tau)
+                    target_params=optax.incremental_update(
+                        q2_state.params, q2_state.target_params, tau
+                    )
                 )
 
             if global_step % 1_000_000 == 0:
@@ -303,29 +368,60 @@ def train_sac(
                 print("losses/actor_loss", actor_loss_value, global_step)
                 print("losses/alpha", entropy_control.alpha, global_step)
                 if autotune:
-                    print("losses/alpha_loss", exploration_loss_value, global_step)
+                    print(
+                        "losses/alpha_loss", exploration_loss_value, global_step
+                    )
 
     return policy, policy_state.params, q, q1_state.params, q2_state.params
 
 
-def sac_update_actor(policy, q, policy_state, q1_state, q2_state, action_key, observations, alpha):
-    actor_loss = partial(sac_actor_loss, policy, q, q1_state, q2_state, alpha, action_key, observations)
-    actor_loss_value, actor_grads = jax.value_and_grad(actor_loss)(policy_state.params)
+def sac_update_actor(
+    policy, q, policy_state, q1_state, q2_state, action_key, observations, alpha
+):
+    actor_loss = partial(
+        sac_actor_loss,
+        policy,
+        q,
+        q1_state,
+        q2_state,
+        alpha,
+        action_key,
+        observations,
+    )
+    actor_loss_value, actor_grads = jax.value_and_grad(actor_loss)(
+        policy_state.params
+    )
     policy_state = policy_state.apply_gradients(grads=actor_grads)
     return actor_loss_value, policy_state
 
 
 def sac_update_critic(
-        q, policy, gamma,
-        q1_state, q2_state, policy_state,
-        observations, actions, rewards, next_observations, dones,
-        action_key, alpha
+    q,
+    policy,
+    gamma,
+    q1_state,
+    q2_state,
+    policy_state,
+    observations,
+    actions,
+    rewards,
+    next_observations,
+    dones,
+    action_key,
+    alpha,
 ):
     next_state_actions, next_state_log_pi = sample_actions(
-        policy, policy_state.params, next_observations, action_key)
-    q1_next_target = q.apply(q1_state.target_params, next_observations, next_state_actions).squeeze()
-    q2_next_target = q.apply(q2_state.target_params, next_observations, next_state_actions).squeeze()
-    min_q_next_target = jnp.minimum(q1_next_target, q2_next_target) - alpha * next_state_log_pi
+        policy, policy_state.params, next_observations, action_key
+    )
+    q1_next_target = q.apply(
+        q1_state.target_params, next_observations, next_state_actions
+    ).squeeze()
+    q2_next_target = q.apply(
+        q2_state.target_params, next_observations, next_state_actions
+    ).squeeze()
+    min_q_next_target = (
+        jnp.minimum(q1_next_target, q2_next_target) - alpha * next_state_log_pi
+    )
     next_q_value = rewards + (1 - dones) * gamma * min_q_next_target
     q_loss = partial(critic_loss, q, observations, actions, next_q_value)
     q1_loss_value, q1_grads = jax.value_and_grad(q_loss)(q1_state.params)

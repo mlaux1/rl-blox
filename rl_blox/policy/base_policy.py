@@ -1,9 +1,10 @@
 import abc
+
 import numpy as np
 import numpy.typing as npt
-
-from modular_rl.policy.value_functions import TabularValueFunction, TabularQFunction
 from numpy.random import default_rng
+
+from ..policy.value_functions import TabularQFunction, TabularValueFunction
 
 SEED = 42
 
@@ -117,6 +118,14 @@ class EpsilonGreedyPolicy(QValueBasedPolicy):
                     == self.value_function.values[observation].max()
                 )
             )
+
+    def get_greedy_action(self, observation):
+        return self.rng.choice(
+            np.flatnonzero(
+                self.value_function.values[observation]
+                == self.value_function.values[observation].max()
+            )
+        )
 
     def get_action_probability(
         self, action: npt.ArrayLike, observation: npt.ArrayLike

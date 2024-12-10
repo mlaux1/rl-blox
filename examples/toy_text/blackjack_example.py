@@ -1,46 +1,53 @@
 import gymnasium as gym
-import numpy as np
-import matplotlib.pyplot as plt
-
-from gymnasium.spaces.utils import flatdim
 from gymnasium.wrappers import RecordEpisodeStatistics
-from modular_rl.algorithms.model_free.sarsa import Sarsa
-from modular_rl.algorithms.model_free.q_learning import QLearning
-from modular_rl.policy.base_policy import EpsilonGreedyPolicy
-from modular_rl.helper.experiment_helper import generate_rollout, moving_average
-from rl_experiments.evaluation.plotting import plot_training_stats
+from jax.random import PRNGKey
 
-num_episodes = 1000
-learning_rate = 0.1
-epsilon = 0.1
-KEY = 0
+from rl_blox.algorithms.model_free.q_learning import q_learning
+from rl_blox.algorithms.model_free.sarsa import sarsa
+from rl_blox.helper.experiment_helper import generate_rollout
+from rl_blox.policy.value_policy import get_greedy_action, make_q_table
 
-train_env = gym.make("Blackjack-v1")
+NUM_EPISODES = 2000
+LEARNING_RATE = 0.05
+EPSILON = 0.05
+KEY = PRNGKey(42)
+WINDOW_SIZE = 10
+ENV_NAME = "Blackjack-v1"
 
-sarsa_env = RecordEpisodeStatistics(train_env, deque_size=num_episodes)
-policy = EpsilonGreedyPolicy(
-    train_env.observation_space, train_env.action_space, epsilon=epsilon
-)
-sarsa = Sarsa(sarsa_env, policy, alpha=learning_rate, key=KEY)
-sarsa.train(num_episodes)
+env = gym.make(ENV_NAME)
+env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
 
-test_env = gym.make("Blackjack-v0", render_mode="human")
-generate_rollout(test_env, sarsa.target_policy)
+# create the q table
+q_table = make_q_table(env)
 
-q_learning_env = gym.wrappers.RecordEpisodeStatistics(
-    train_env, deque_size=num_episodes
-)
-q_learning = QLearning(q_learning_env, alpha=learning_rate, epsilon=epsilon)
-q_learning.train(num_episodes)
+# train using Q-Learning
+q_table, ep_rewards = q_learning(
+    KEY, env, q_table,
+    alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
 
-generate_rollout(test_env, q_learning.target_policy)
+env.close()
 
-# train_env.close()
+# create and run the final policy
+policy = partial(get_greedy_action, key=KEY, q_table=q_table)
 
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, policy)
+test_env.close()
 
-plot_training_stats(
-    np.array(sarsa_env.return_queue),
-    np.array(sarsa_env.length_queue),
-    rolling_length=100,
-    title="SARSA",
-)
+env = gym.make(ENV_NAME)
+env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
+
+sarsa_q_table = make_q_table(env)
+
+sarsa_q_table, ep_rewards = sarsa(
+    KEY, env, sarsa_q_table,
+    alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
+
+env.close()
+
+# create and run the final policy
+sarsa_policy = partial(get_greedy_action, key=KEY, q_table=sarsa_q_table)
+
+test_env = gym.make(ENV_NAME, render_mode="human")
+generate_rollout(test_env, sarsa_policy)
+test_env.close()

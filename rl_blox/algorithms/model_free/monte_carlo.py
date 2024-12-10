@@ -1,6 +1,6 @@
 import numpy as np
 
-from modular_rl.policy.base_policy import UniformRandomPolicy, GreedyQPolicy
+from ...policy.base_policy import GreedyQPolicy, UniformRandomPolicy
 
 
 class MonteCarlo:
@@ -19,13 +19,10 @@ class MonteCarlo:
         self.update_mode = update_mode
 
         self.exploration_policy = UniformRandomPolicy(
-            env.observation_space,
-            env.action_space
+            env.observation_space, env.action_space
         )
         self.target_policy = GreedyQPolicy(
-            env.observation_space,
-            env.action_space,
-            0.0
+            env.observation_space, env.action_space, 0.0
         )
 
         self.n_visits = np.full(
@@ -73,7 +70,9 @@ class MonteCarlo:
             else:
                 action = self.target_policy.get_action(observation)
 
-            observation, reward, terminated, truncated, info = self.env.step(action)
+            observation, reward, terminated, truncated, info = self.env.step(
+                action
+            )
 
             observations.append(observation)
             actions.append(action)
