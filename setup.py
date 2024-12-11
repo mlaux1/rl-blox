@@ -6,7 +6,7 @@ if __name__ == "__main__":
 
     setup(
         name="rl_blox",
-        version="0.3.0",
+        version="0.3.1",
         maintainer="Melvin Laux",
         maintainer_email="melvin.laux@uni-bremen.de",
         description="Modular RL implementations",
@@ -16,13 +16,16 @@ if __name__ == "__main__":
         packages=["rl_blox"],
         install_requires=[
             "numpy",
-            "pytest",
-            "torch",
             "gymnasium",
             "jax",
             "optax",
             "distrax",
             "chex",
             "tqdm",
+            "flax",
         ],
+        extras_require={
+            "examples": ["gymnasium[classic-control,toy-text,mujoco]"],
+            "dev": ["pytest", "pre-commit", "flake8"],
+        },
     )
