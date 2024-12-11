@@ -3,10 +3,10 @@ import jax.random
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
 
-from modular_rl.algorithms.model_free.q_learning import q_learning
-from modular_rl.algorithms.model_free.sarsa import sarsa
-from modular_rl.helper.experiment_helper import generate_rollout
-from modular_rl.policy.value_policy import get_greedy_action, make_q_table
+from rl_blox.algorithms.model_free.q_learning import q_learning
+from rl_blox.algorithms.model_free.sarsa import sarsa
+from rl_blox.helper.experiment_helper import generate_rollout
+from rl_blox.policy.value_policy import get_greedy_action, make_q_table
 
 NUM_EPISODES = 2000
 LEARNING_RATE = 0.05
@@ -18,7 +18,7 @@ ENV_NAME = "FrozenLake-v1"
 key0, key1, key2, key3 = jax.random.split(KEY, 4)
 
 env = gym.make(ENV_NAME)
-env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
+env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
 
 # create the q table
 q_table = make_q_table(env)
@@ -38,7 +38,7 @@ generate_rollout(test_env, policy)
 test_env.close()
 
 env = gym.make(ENV_NAME)
-env = RecordEpisodeStatistics(env, deque_size=NUM_EPISODES)
+env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
 
 sarsa_q_table = make_q_table(env)
 

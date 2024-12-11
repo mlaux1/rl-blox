@@ -4,7 +4,7 @@ import gymnasium as gym
 import numpy as np
 from numpy.typing import ArrayLike
 
-from modular_rl.policy.base_policy import BasePolicy
+from ..policy.base_policy import BasePolicy
 
 
 def generate_rollout(
@@ -22,7 +22,9 @@ def generate_rollout(
 
     while not terminated or truncated:
         action = policy(observation=observation)
-        observation, reward, terminated, truncated, info = env.step(int(action)) # TODO: adapt to non-int actions
+        observation, reward, terminated, truncated, info = env.step(
+            int(action)
+        )  # TODO: adapt to non-int actions
 
         obs.append(observation)
         actions.append(action)

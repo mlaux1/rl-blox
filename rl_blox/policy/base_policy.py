@@ -4,8 +4,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import default_rng
 
-from modular_rl.policy.value_functions import (TabularQFunction,
-                                               TabularValueFunction)
+from ..policy.value_functions import TabularQFunction, TabularValueFunction
 
 SEED = 42
 
@@ -109,10 +108,7 @@ class EpsilonGreedyPolicy(QValueBasedPolicy):
 
         self.epsilon = epsilon
 
-    def get_action(
-            self,
-            observation: npt.ArrayLike
-    ) -> npt.ArrayLike:
+    def get_action(self, observation: npt.ArrayLike) -> npt.ArrayLike:
         if default_rng(SEED).random() < self.epsilon:
             return self.action_space.sample()
         else:

@@ -22,9 +22,7 @@ def make_q_table(env: gymnasium.Env) -> Array:
 
 @jit
 def get_greedy_action(
-        key: PRNGKey,
-        q_table: ArrayLike,
-        observation: ArrayLike
+    key: PRNGKey, q_table: ArrayLike, observation: ArrayLike
 ) -> Array:
     """
     Returns the greedy action for the given observation.
@@ -41,10 +39,7 @@ def get_greedy_action(
 
 
 def get_epsilon_greedy_action(
-        key: PRNGKey,
-        q_table: ArrayLike,
-        observation: ArrayLike,
-        epsilon: float
+    key: PRNGKey, q_table: ArrayLike, observation: ArrayLike, epsilon: float
 ) -> Array:
     """
     Returns an epsilon-greedy action for the given observation.

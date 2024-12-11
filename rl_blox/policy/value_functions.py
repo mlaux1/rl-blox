@@ -1,22 +1,20 @@
 import abc
 import logging
 
-import jax
-import jax.numpy as jnp
+import numpy as np
+import numpy.typing as npt
 import torch
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
-from jax import Array
 
-from modular_rl.policy.base_model import (NeuralNetwork, ReplayBuffer,
-                                          Transition)
+from ..policy.base_model import NeuralNetwork, ReplayBuffer, Transition
 
 
 class ValueFunction(abc.ABC):
     """Base value function class interface."""
 
     @abc.abstractmethod
-    def get_state_value(self, observation: Array) -> Array:
+    def get_state_value(self, observation: npt.ArrayLike) -> npt.ArrayLike:
         pass
 
     @abc.abstractmethod
@@ -27,23 +25,16 @@ class ValueFunction(abc.ABC):
 class TabularValueFunction(ValueFunction):
     """Tabular state value function."""
 
-    def __init__(
-            self,
-            observation_space: Discrete,
-            initial_value: float = 0.0):
-        self.values = jnp.full(
-            shape=flatdim(observation_space),
-            fill_value=initial_value,
-            dtype=jnp.float32,
+    def __init__(self, observation_space: Discrete, initial_value: float = 0.0):
+        self.values = np.full(
+            shape=flatdim(observation_space), fill_value=initial_value
         )
 
-    @jax.jit
-    def get_state_value(self, observation: Array) -> Array:
+    def get_state_value(self, observation: npt.ArrayLike) -> npt.ArrayLike:
         return self.values[observation]
 
-    @jax.jit
     def update(self, observations, step) -> None:
-        self.values.at[observations].add(step)
+        self.values[observations] += step
 
 
 class QFunction(abc.ABC):
@@ -51,10 +42,8 @@ class QFunction(abc.ABC):
 
     @abc.abstractmethod
     def get_action_value(
-            self,
-            observation: Array,
-            action: Array
-    ) -> Array:
+        self, observation: npt.ArrayLike, action: npt.ArrayLike
+    ) -> npt.ArrayLike:
         pass
 
     @abc.abstractmethod
@@ -71,18 +60,18 @@ class TabularQFunction(QFunction):
         action_space: Discrete,
         initial_value: float = 0.0,
     ):
-        self.values = jnp.full(
+        self.values = np.full(
             shape=(flatdim(observation_space), flatdim(action_space)),
-            fill_value=initial_value, dtype=jnp.float32,
+            fill_value=initial_value,
         )
 
     def get_action_value(
-        self, observation: Array, action: Array
-    ) -> Array:
+        self, observation: npt.ArrayLike, action: npt.ArrayLike
+    ) -> npt.ArrayLike:
         return self.values[observation, action]
 
     def update(self, observations, actions, step) -> None:
-        self.values.at[observations, actions].add(step)
+        self.values[observations, actions] += step
 
         logging.debug(f"Updating Q Table: {observations=}, {actions=}, {step=}")
         logging.debug(f"New Q table: {self.values}")
@@ -96,9 +85,9 @@ class NNQFunction(QFunction):
         self.q_network = NeuralNetwork(observation_space.n, action_space.n).to(
             self.device
         )
-        self.target_network = NeuralNetwork(observation_space.n, action_space.n).to(
-            self.device
-        )
+        self.target_network = NeuralNetwork(
+            observation_space.n, action_space.n
+        ).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.replay_buffer = ReplayBuffer(size=10_000)
         self.batch_size = 64
@@ -149,11 +138,15 @@ class NNQFunction(QFunction):
                 non_final_next_states
             ).max(1)[0]
 
-        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+        expected_state_action_values = (
+            next_state_values * self.gamma
+        ) + reward_batch
 
         # Compute Huber loss
         criterion = torch.nn.SmoothL1Loss()
-        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+        loss = criterion(
+            state_action_values, expected_state_action_values.unsqueeze(1)
+        )
 
         # Optimise the model
         self.optimizer.zero_grad()
