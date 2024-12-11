@@ -49,7 +49,7 @@ class MonteCarlo:
                 self.n_visits[idx] += 1
                 self.total_return[idx] += ep_return
                 new_q_val = self.total_return[idx] / self.n_visits[idx]
-                self.target_policy.update(idx, new_q_val)
+                self.target_policy.update(*idx, new_q_val)
 
     def collect_episode_rollout(self):
         """
