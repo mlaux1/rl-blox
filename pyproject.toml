@@ -1,3 +1,52 @@
+[build-system]
+requires = ["setuptools"]
+build-backends = "setuptools.build_meta"
+
+[project]
+name = "rl_blox"
+authors = [
+    { name="Melvin Laux", email="melvin.laux@uni-bremen.de" },
+]
+description = "Modular RL implementations in JAX"
+requires-python = ">=3.9"
+license = {text = "BSD-3-Clause"}
+keywords = ["Reinforcement Learning", "RL", "JAX"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: The 3-Clause BSD License (BSD-3-Clause)",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+
+]
+dependencies = [
+    "numpy",
+    "gymnasium",
+    "jax",
+    "jaxlib",
+    "optax",
+    "distrax",
+    "chex",
+    "tqdm",
+    "flax",
+]
+dynamic = ["version", "readme"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pre-commit", "flake8", "black", "isort"]
+examples = ["gymnasium[classic-control,toy-text,mujoco]"]
+
+[project.urls]
+Homepage = "https://github.com/mlaux1/rl-blox"
+Issues = "https://github.com/mlaux1/rl-blox/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "rl_blox.__version__"}
+readme = {file = ["README.md"]}
+
 [tool.black]
 line-length = 80
 target-version = ["py310", "py311", "py312"]
