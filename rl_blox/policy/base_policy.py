@@ -6,7 +6,7 @@ from numpy.random import default_rng
 
 from ..policy.value_functions import TabularQFunction, TabularValueFunction
 
-SEED = 42
+SEED = 0
 
 
 class BasePolicy(abc.ABC):
