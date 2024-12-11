@@ -1,10 +1,12 @@
 from functools import partial
 from typing import List, Optional, Tuple
 
-import chex
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import flax
+import flax.linen as nn
+from flax.training.train_state import TrainState
 import numpy as np
 import optax
 
@@ -101,7 +103,7 @@ def discounted_reward_to_go(rewards, gamma):
     return np.array(list(reversed(discounted_returns)))
 
 
-class ValueFunctionApproximation(NeuralNetwork):
+class ValueFunctionApproximation(nn.Module):
     """Approximation of the state-value function V(s).
 
     Note that a value function is usually specific for a policy because the
@@ -112,50 +114,55 @@ class ValueFunctionApproximation(NeuralNetwork):
 
     :param observation_space: observation space
     :param hidden_nodes: number of hidden nodes per hidden layer
-    :param key: jax pseudo random number generator key
-    :param learning_rate: learning rate for gradient descent
-    :param n_train_iters_per_update: number of optimizer iterations per update
     """
+    hidden_nodes: List[int]
+    """Numbers of hidden nodes of the MLP."""
 
-    def __init__(
-        self,
-        observation_space: gym.spaces.Space,
-        hidden_nodes: List[int],
-        key: jax.random.PRNGKey,
-        learning_rate: float = 1e-2,
-        n_train_iters_per_update: int = 1,
-    ):
-        sizes = [observation_space.shape[0]] + hidden_nodes + [1]
-        super(ValueFunctionApproximation, self).__init__(sizes, key)
-        self.n_train_iters_per_update = n_train_iters_per_update
-        self.solver = optax.adam(learning_rate=learning_rate)
-        self.opt_state = self.solver.init(self.theta)
-        self.forward = jax.jit(batched_nn_forward)
+    @nn.compact
+    def __call__(self, x):
+        for n_nodes in self.hidden_nodes:
+            x = nn.Dense(n_nodes)(x)
+            x = nn.relu(x)
+        x = nn.Dense(1)(x)
+        return x
 
-    def update(self, states: jax.Array, returns: jax.Array):
-        for _ in range(self.n_train_iters_per_update):
-            theta_grad = jax.grad(partial(value_loss, states, returns))(
-                self.theta
-            )
-            updates, self.opt_state = self.solver.update(
-                theta_grad, self.opt_state
-            )
-            self.theta = optax.apply_updates(self.theta, updates)
-
-    def predict(self, states: jax.Array) -> jax.Array:
-        return self.forward(states, self.theta).squeeze()
+    @staticmethod
+    def create(hidden_nodes: List[int]):
+        return ValueFunctionApproximation(hidden_nodes=hidden_nodes)
 
 
 @jax.jit
 def value_loss(
-    states: jax.Array,
-    returns: jax.Array,
-    theta: List[Tuple[jax.Array, jax.Array]],
-) -> jnp.float32:
-    """Value error as loss for the value function network."""
-    values = batched_nn_forward(states, theta).squeeze()  # squeeze Nx1-D -> N-D
-    chex.assert_equal_shape((values, returns))
-    return optax.l2_loss(predictions=values, targets=returns).mean()
+        v: nn.Module,
+        observations: jax.Array,
+        returns: jax.Array,
+        v_params: flax.core.FrozenDict
+) -> float:
+    """Value error as loss for the value function network.
+
+    :param v: Value function network.
+    :param observations: Batch of observations.
+    :param returns: Episode returns.
+    :param v_params: Parameters of the Q network.
+    :return: Mean squared distance between predicted and actual action values.
+    """
+    values = v.apply(v_params, observations).squeeze()
+    return 2.0 * optax.l2_loss(predictions=values, targets=returns).mean()
+
+
+@jax.jit
+def update_value_function(
+        v: nn.Module,
+        v_state: TrainState,
+        observations: jax.Array,
+        returns: jax.Array
+) -> Tuple[TrainState, float]:
+    """Value function update."""
+    v_loss_value, grads = jax.value_and_grad(
+        partial(value_loss, v=v, observations=observations, returns=regit turns)
+    )(v_state.params)
+    v_state = v_state.apply_gradients(grads=grads)
+    return v_state, v_loss_value
 
 
 @jax.jit
@@ -203,12 +210,14 @@ class PolicyTrainer:
         self,
         policy_gradient_func,
         value_function: Optional[ValueFunctionApproximation],
+        value_function_params: Optional[flax.core.FrozenDict],
         *args,
         **kwargs,
     ):
         for _ in range(self.n_train_iters_per_update):
             theta_grad = policy_gradient_func(
-                self.policy, value_function, *args, **kwargs
+                self.policy, value_function, value_function_params,
+                *args, **kwargs
             )
             updates, self.opt_state = self.solver.update(
                 theta_grad, self.opt_state, self.policy.theta
@@ -219,6 +228,7 @@ class PolicyTrainer:
 def reinforce_gradient(
     policy: NeuralNetwork,
     value_function: Optional[ValueFunctionApproximation],
+    value_function_params: Optional[flax.core.FrozenDict],
     states: jax.Array,
     actions: jax.Array,
     returns: jax.Array,
@@ -314,6 +324,7 @@ def reinforce_gradient(
 
     :param policy: Policy that we want to update and has been used for exploration.
     :param value_function: Estimated value function.
+    :param value_function_params: Parameters of the value function network.
     :param states: Samples that were collected with the policy.
     :param actions: Samples that were collected with the policy.
     :param returns: Samples that were collected with the policy.
@@ -322,7 +333,7 @@ def reinforce_gradient(
     """
     if value_function is not None:
         # state-value function as baseline, weights are advantages
-        baseline = value_function.predict(states)
+        baseline = value_function.apply(value_function_params, states)
     else:
         # no baseline, weights are MC returns
         baseline = jnp.zeros_like(returns)
@@ -352,6 +363,7 @@ def train_reinforce_epoch(
     policy_trainer,
     render_env,
     value_function,
+    value_function_state,
     batch_size,
     gamma,
     train_after_episode=False,
@@ -393,6 +405,7 @@ def train_reinforce_epoch(
     policy_trainer.update(
         reinforce_gradient,
         value_function,
+        value_function_state.params,
         states,
         actions,
         returns,
@@ -400,4 +413,5 @@ def train_reinforce_epoch(
     )
 
     if value_function is not None:
-        value_function.update(states, returns)
+        value_function_state, v_loss_value = update_value_function(
+            value_function, value_function_state, states, returns)

@@ -1,5 +1,6 @@
 import gymnasium as gym
 import jax
+from flax.training.train_state import TrainState
 import optax
 from rl_blox.algorithms.model_free.reinforce import (
     PolicyTrainer,
@@ -22,12 +23,15 @@ policy = GaussianNNPolicy(
     observation_space, action_space, [16, 32], jax.random.PRNGKey(42)
 )
 
-value_function = ValueFunctionApproximation(
-    observation_space,
-    [50, 50],
-    jax.random.PRNGKey(43),
-    n_train_iters_per_update=1,
+value_key = jax.random.PRNGKey(42)
+obs, _ = train_env.reset(seed=42)
+value_function = ValueFunctionApproximation(hidden_nodes=[50, 50])
+value_function_state = TrainState.create(
+    apply_fn=value_function.apply,
+    params=value_function.init(value_key, obs),
+    tx=optax.adam(learning_rate=1e-2),
 )
+value_function.apply = jax.jit(value_function.apply)
 
 policy_trainer = PolicyTrainer(
     policy, optimizer=optax.adamw, learning_rate=1e-4
@@ -42,6 +46,7 @@ for i in range(n_epochs):
         policy_trainer,
         render_env,
         value_function,
+        value_function_state,
         batch_size=1000,
         gamma=0.99,
         train_after_episode=False,
