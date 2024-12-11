@@ -6,7 +6,8 @@
     <img src="doc/source/_static/rl_blox_logo_v1.png" height="150px" />
 </p>
 
-This project contains modular implementations of various model-free and model-based RL algorithms and consists of deep neural network-based as well as tabular representation of Q-Values, policies, etc. which can be used interchangeably. The goal of this project is for the authors to learn by reimplementing various RL algorithms and possible to eventually an algorithmic toolbox for research purposes.
+This project contains modular implementations of various model-free and model-based RL algorithms and consists of deep neural network-based as well as tabular representation of Q-Values, policies, etc. which can be used interchangeably.
+The goal of this project is for the authors to learn by reimplementing various RL algorithms and possible to eventually an algorithmic toolbox for research purposes.
 
 ## Design Principles
 
@@ -27,6 +28,10 @@ After cloning the repository, it is recommended to install the library in editab
 pip install -e .
 ```
 
+To be able to run the provided examples use `pip install -e ".[examples]"`.
+To install development dependencies, please use `pip install -e ".dev"`
+You can install all optional dependencies using `pip install -e ".[examples]"`
+
 ## Contributing
 
 If you wish to report bugs, please use the [issue tracker](https://github.com/mlaux1/rl-blox/issues). If you would like to contribute to RL-BLOX, just open an issue or a
@@ -41,17 +46,15 @@ The recommended workflow to add a new feature, add documentation, or fix a bug i
 
 Note that there is a checklist for new features.
 
-It is forbidden to directly push to the main branch. Each new version has its own development branch from which a pull request will be opened to the main branch. Only the maintainers of the software are allowed to merge a development branch to the main branch.
+It is forbidden to directly push to the main branch.
+Each new version has its own development branch from which a pull request will be opened to the main branch.
+Only the maintainers of the software are allowed to merge a development branch to the main branch.
 
 ## Releases
 
 ### Semantic Versioning
 
-Semantic versioning must be used, that is, the major version number will be
-incremented when the API changes in a backwards incompatible way, the minor
-version will be incremented when new functionality is added in a backwards
-compatible manner, and the patch version is incremented for bugfixes,
-documentation, etc.
+Semantic versioning must be used, that is, the major version number will be incremented when the API changes in a backwards incompatible way, the minor version will be incremented when new functionality is added in a backwards compatible manner, and the patch version is incremented for bugfixes, documentation, etc.
 
 
 ## Funding
