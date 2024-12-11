@@ -1,40 +1,18 @@
-from typing import Tuple, List
 from collections import deque
 from functools import partial
+from typing import List, Tuple
 
-from numpy.typing import ArrayLike
-import numpy as np
-import jax
-import jax.numpy as jnp
 import flax
 import flax.linen as nn
-from flax.training.train_state import TrainState
-import optax
 import gymnasium as gym
+import jax
+import jax.numpy as jnp
+import numpy as np
+import optax
+from flax.training.train_state import TrainState
+from numpy.typing import ArrayLike
 
-
-class ReplayBuffer:
-    buffer: deque[Tuple[ArrayLike, ArrayLike, float, ArrayLike, bool]]
-
-    def __init__(self, n_samples):
-        self.buffer = deque(maxlen=n_samples)
-
-    def add_samples(self, observation, action, reward, next_observation, done):
-        for i in range(len(done)):
-            self.buffer.append((observation[i], action[i], reward[i], next_observation[i], done[i]))
-
-    def sample_batch(
-            self,
-            batch_size: int,
-            rng: np.random.Generator
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        indices = rng.integers(0, len(self.buffer), batch_size)
-        observations = jnp.vstack([self.buffer[i][0] for i in indices])
-        actions = jnp.stack([self.buffer[i][1] for i in indices])
-        rewards = jnp.hstack([self.buffer[i][2] for i in indices])
-        next_observations = jnp.vstack([self.buffer[i][3] for i in indices])
-        dones = jnp.hstack([self.buffer[i][4] for i in indices])
-        return observations, actions, rewards, next_observations, dones
+from ...policy.replay_buffer import ReplayBufferJax as ReplayBuffer
 
 
 class MlpQNetwork(nn.Module):
@@ -91,8 +69,12 @@ class DeterministicMlpPolicyNetwork(nn.Module):
         return DeterministicMlpPolicyNetwork(
             hidden_nodes=actor_hidden_nodes,
             action_dim=np.prod(envs.single_action_space.shape),
-            action_scale=jnp.array((envs.action_space.high - envs.action_space.low) / 2.0),
-            action_bias=jnp.array((envs.action_space.high + envs.action_space.low) / 2.0),
+            action_scale=jnp.array(
+                (envs.action_space.high - envs.action_space.low) / 2.0
+            ),
+            action_bias=jnp.array(
+                (envs.action_space.high + envs.action_space.low) / 2.0
+            ),
         )
 
 
@@ -102,15 +84,16 @@ class TargetTrainState(TrainState):
     Target parameters are supposed to be more stable and will be updated by
     Polyak averaging.
     """
+
     target_params: flax.core.FrozenDict
 
 
 def critic_loss(
-        q: nn.Module,
-        observations: np.ndarray,
-        actions: np.ndarray,
-        q_target: np.ndarray,
-        q_params: flax.core.FrozenDict
+    q: nn.Module,
+    observations: np.ndarray,
+    actions: np.ndarray,
+    q_target: np.ndarray,
+    q_params: flax.core.FrozenDict,
 ) -> float:
     """Loss function for action-value function of the critic.
 
@@ -126,11 +109,11 @@ def critic_loss(
 
 
 def actor_loss(
-        policy: nn.Module,
-        q: nn.Module,
-        q_state: TargetTrainState,
-        observations: np.ndarray,
-        policy_params: flax.core.FrozenDict
+    policy: nn.Module,
+    q: nn.Module,
+    q_state: TargetTrainState,
+    observations: np.ndarray,
+    policy_params: flax.core.FrozenDict,
 ) -> float:
     """Loss function for the deterministic policy of the actor.
 
@@ -142,25 +125,29 @@ def actor_loss(
     :return: Negative value of the actions selected by the policy for the given
              observations.
     """
-    return -q.apply(q_state.params, observations, policy.apply(policy_params, observations)).mean()
+    return -q.apply(
+        q_state.params, observations, policy.apply(policy_params, observations)
+    ).mean()
 
 
 def ddpg_update_critic(
-        policy: nn.Module,
-        q: nn.Module,
-        gamma: float,
-        policy_state: TargetTrainState,
-        q_state: TargetTrainState,
-        observations: np.ndarray,
-        actions: np.ndarray,
-        next_observations: np.ndarray,
-        rewards: np.ndarray,
-        dones: np.ndarray
+    policy: nn.Module,
+    q: nn.Module,
+    gamma: float,
+    policy_state: TargetTrainState,
+    q_state: TargetTrainState,
+    observations: np.ndarray,
+    actions: np.ndarray,
+    next_observations: np.ndarray,
+    rewards: np.ndarray,
+    dones: np.ndarray,
 ) -> Tuple[TargetTrainState, float]:
     """DDPG critic update."""
     # TODO why was it clipped to [-1, 1] before?
     next_actions = policy.apply(policy_state.target_params, next_observations)
-    q_next_target = q.apply(q_state.target_params, next_observations, next_actions).reshape(-1)
+    q_next_target = q.apply(
+        q_state.target_params, next_observations, next_actions
+    ).reshape(-1)
     q_actual = (rewards + (1 - dones) * gamma * q_next_target).reshape(-1)
 
     loss = partial(critic_loss, q, observations, actions, q_actual)
@@ -171,11 +158,11 @@ def ddpg_update_critic(
 
 
 def ddpg_update_actor(
-        actor: nn.Module,
-        q: nn.Module,
-        actor_state: TargetTrainState,
-        q_state: TargetTrainState,
-        observations: np.ndarray
+    actor: nn.Module,
+    q: nn.Module,
+    actor_state: TargetTrainState,
+    q_state: TargetTrainState,
+    observations: np.ndarray,
 ) -> Tuple[TargetTrainState, float]:
     """DDPG actor update."""
     loss = partial(actor_loss, actor, q, q_state, observations)
@@ -185,38 +172,37 @@ def ddpg_update_actor(
 
 
 def sample_actions(
-        actor: nn.Module,
-        actor_state: TargetTrainState,
-        action_space: gym.spaces.Box,
-        obs: np.ndarray,
-        exploration_noise: float,
-        rng: np.random.Generator
+    actor: nn.Module,
+    actor_state: TargetTrainState,
+    action_space: gym.spaces.Box,
+    obs: np.ndarray,
+    exploration_noise: float,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     """Sample actions with deterministic policy and Gaussian action noise."""
-    deterministic_actions = jax.device_get(
-        actor.apply(actor_state.params, obs))
+    deterministic_actions = jax.device_get(actor.apply(actor_state.params, obs))
     noise = rng.normal(0.0, actor.action_scale * exploration_noise)
     exploring_actions = deterministic_actions + noise
     return exploring_actions.clip(action_space.low, action_space.high)
 
 
 def train_ddpg(
-        envs,
-        policy: nn.Module,
-        q: nn.Module,
-        seed: int = 1,
-        total_timesteps: int = 1_000_000,
-        actor_learning_rate: float = 3e-4,
-        q_learning_rate: float = 3e-4,
-        buffer_size: int = 1_000_000,
-        gamma: float = 0.99,
-        tau: float = 0.005,
-        batch_size: int = 256,
-        gradient_steps: int = 1,
-        exploration_noise: float = 0.1,
-        learning_starts: int = 25_000,
-        policy_frequency: int = 2,
-        verbose: int = 0
+    envs,
+    policy: nn.Module,
+    q: nn.Module,
+    seed: int = 1,
+    total_timesteps: int = 1_000_000,
+    actor_learning_rate: float = 3e-4,
+    q_learning_rate: float = 3e-4,
+    buffer_size: int = 1_000_000,
+    gamma: float = 0.99,
+    tau: float = 0.005,
+    batch_size: int = 256,
+    gradient_steps: int = 1,
+    exploration_noise: float = 0.1,
+    learning_starts: int = 25_000,
+    policy_frequency: int = 2,
+    verbose: int = 0,
 ) -> Tuple[nn.Module, flax.core.FrozenDict, nn.Module, flax.core.FrozenDict]:
     """Deep Deterministic Policy Gradients (DDPG).
 
@@ -252,7 +238,9 @@ def train_ddpg(
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
 
-    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
+    assert isinstance(
+        envs.single_action_space, gym.spaces.Box
+    ), "only continuous action space is supported"
     action_space: gym.spaces.Box = envs.action_space
 
     envs.single_observation_space.dtype = np.float32
@@ -282,14 +270,23 @@ def train_ddpg(
         if t < learning_starts:
             actions = envs.action_space.sample()
         else:
-            actions = sample_actions(policy, policy_state, envs.single_action_space, obs, exploration_noise, rng)
+            actions = sample_actions(
+                policy,
+                policy_state,
+                envs.single_action_space,
+                obs,
+                exploration_noise,
+                rng,
+            )
 
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
 
         for i in range(len(terminations)):
             if terminations[i] or truncations[i]:
-                print(f"{t=}, length={infos['episode']['l']}, "
-                      f"return={infos['episode']['r']}")
+                print(
+                    f"{t=}, length={infos['episode']['l']}, "
+                    f"return={infos['episode']['r']}"
+                )
             break
 
         rb.add_samples(obs, actions, rewards, next_obs, terminations)
@@ -298,7 +295,9 @@ def train_ddpg(
 
         if t > learning_starts:
             for _ in range(gradient_steps):
-                observations, actions, rewards, next_observations, dones = rb.sample_batch(batch_size, rng)
+                observations, actions, rewards, next_observations, dones = (
+                    rb.sample_batch(batch_size, rng)
+                )
 
                 q_state, q_loss_value = update_critic(
                     policy_state,
@@ -307,19 +306,21 @@ def train_ddpg(
                     actions,
                     next_observations,
                     rewards,
-                    dones
+                    dones,
                 )
                 if t % policy_frequency == 0:
                     policy_state, actor_loss_value = update_actor(
-                        policy_state,
-                        q_state,
-                        observations
+                        policy_state, q_state, observations
                     )
                     policy_state = policy_state.replace(
-                        target_params=optax.incremental_update(policy_state.params, policy_state.target_params, tau)
+                        target_params=optax.incremental_update(
+                            policy_state.params, policy_state.target_params, tau
+                        )
                     )
                     q_state = q_state.replace(
-                        target_params=optax.incremental_update(q_state.params, q_state.target_params, tau)
+                        target_params=optax.incremental_update(
+                            q_state.params, q_state.target_params, tau
+                        )
                     )
 
     return policy, policy_state.params, q, q_state.params
