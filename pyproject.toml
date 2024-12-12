@@ -4,14 +4,19 @@ build-backends = "setuptools.build_meta"
 
 [project]
 name = "rl_blox"
+maintainers = [
+    { name="Melvin Laux", email="melvin.laux@uni-bremen.de"},
+]
 authors = [
     { name="Melvin Laux", email="melvin.laux@uni-bremen.de" },
+    { name="Alexander Fabisch", email="alexander.fabisch@dfki.de" },
 ]
-description = "Modular RL implementations in JAX"
+description = "Modular RL building blocks in JAX"
 requires-python = ">=3.9"
 license = {text = "BSD-3-Clause"}
 keywords = ["Reinforcement Learning", "RL", "JAX"]
 classifiers = [
+    "Development Status :: 3 - Alpha"
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -38,7 +43,7 @@ dynamic = ["version", "readme"]
 [project.optional-dependencies]
 dev = ["pytest", "pre-commit", "flake8", "black", "isort"]
 examples = ["gymnasium[classic-control,toy-text,mujoco]"]
-all = ["rl_blox[dev, examples]"]
+all = ["rl_blox[dev,examples]"]
 
 [project.urls]
 Homepage = "https://github.com/mlaux1/rl-blox"
