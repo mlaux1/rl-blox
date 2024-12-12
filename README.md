@@ -29,8 +29,8 @@ pip install -e .
 ```
 
 To be able to run the provided examples use `pip install -e ".[examples]"`.
-To install development dependencies, please use `pip install -e ".dev"`
-You can install all optional dependencies using `pip install -e ".[examples]"`
+To install development dependencies, please use `pip install -e ".[dev]"`.
+You can install all optional dependencies using `pip install -e ".[all]"`.
 
 ## Contributing
 
