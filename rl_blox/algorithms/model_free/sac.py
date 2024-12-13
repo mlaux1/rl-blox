@@ -11,7 +11,7 @@ import numpy as np
 import optax
 from flax.training.train_state import TrainState
 
-from rl_blox.policy.differentiable import GaussianMlpPolicyNetwork
+from ...policy.differentiable import GaussianMlpPolicyNetwork
 from .ddpg import ReplayBuffer, critic_loss
 
 
