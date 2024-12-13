@@ -11,11 +11,11 @@ import numpy as np
 import optax
 
 from ...policy.differentiable import (
-    GaussianNNPolicy,
-    NeuralNetwork,
-    batched_gaussian_log_probability,
-    batched_nn_forward,
-    batched_softmax_log_probability,
+    GaussianMlpPolicyNetwork,
+    gaussian_log_probabilities,
+    sample_gaussian_actions,
+    SoftmaxMlpPolicy,
+    softmax_log_probabilities,
 )
 
 
@@ -163,14 +163,15 @@ def update_value_function(
     return v_state, v_loss_value
 
 
-@jax.jit
 def gaussian_policy_gradient_pseudo_loss(
-    states: jax.Array,
+    policy: nn.Module,
+    observations: jax.Array,
     actions: jax.Array,
     weights: jax.Array,
-    theta: List[Tuple[jax.Array, jax.Array]],
-) -> jnp.float32:
-    logp = batched_gaussian_log_probability(states, actions, theta)
+    policy_params: flax.core.FrozenDict
+) -> float:
+    mean, log_std = policy.apply(policy_params, observations)
+    logp = gaussian_log_probabilities(mean, log_std, actions)
     return -jnp.mean(
         weights * logp
     )  # - to perform gradient ascent with a minimizer
@@ -178,10 +179,11 @@ def gaussian_policy_gradient_pseudo_loss(
 
 @jax.jit
 def softmax_policy_gradient_pseudo_loss(
+    policy: nn.Module,
     states: jax.Array,
     actions: jax.Array,
     weights: jax.Array,
-    theta: List[Tuple[jax.Array, jax.Array]],
+    policy_params: flax.core.FrozenDict
 ) -> jnp.float32:
     logp = batched_softmax_log_probability(states, actions, theta)
     return -jnp.mean(
@@ -189,48 +191,35 @@ def softmax_policy_gradient_pseudo_loss(
     )  # - to perform gradient ascent with a minimizer
 
 
-class PolicyTrainer:
-    """Contains the state of the policy optimizer."""
-
-    def __init__(
-        self,
-        policy: NeuralNetwork,
-        optimizer=optax.adam,
-        learning_rate: float = 1e-2,
-        n_train_iters_per_update: int = 1,
-    ):
-        self.policy = policy
-        self.n_train_iters_per_update = n_train_iters_per_update
-        self.solver = optimizer(learning_rate=learning_rate)
-        self.opt_state = self.solver.init(self.policy.theta)
-
-    def update(
-        self,
-        policy_gradient_func,
+def policy_update(
+        policy: nn.Module,
         value_function: Optional[ValueFunctionApproximation],
-        value_function_params: Optional[flax.core.FrozenDict],
-        *args,
-        **kwargs,
+        policy_state: TrainState,
+        value_function_state: TrainState,
+        observations: jnp.ndarray,
+        actions: jnp.ndarray,
+        returns: jnp.ndarray,
+        gamma_discount: float,
+        n_train_iters_per_update: int
     ):
-        for _ in range(self.n_train_iters_per_update):
-            theta_grad = policy_gradient_func(
-                self.policy, value_function, value_function_params,
-                *args, **kwargs
+        for _ in range(n_train_iters_per_update):
+            grads = reinforce_gradient(
+                policy, policy_state, value_function, value_function_params,
+                observations, actions, returns, gamma_discount
             )
-            updates, self.opt_state = self.solver.update(
-                theta_grad, self.opt_state, self.policy.theta
-            )
-            self.policy.theta = optax.apply_updates(self.policy.theta, updates)
+            policy_state = policy_state.apply_gradients(grads=grads)
+        return policy_state
 
 
 def reinforce_gradient(
-    policy: NeuralNetwork,
+    policy: nn.Module,
+    policy_state: TrainState,
     value_function: Optional[ValueFunctionApproximation],
     value_function_params: Optional[flax.core.FrozenDict],
-    states: jax.Array,
+    observations: jax.Array,
     actions: jax.Array,
     returns: jax.Array,
-    gamma_discount: Optional[jax.Array] = None,
+    gamma_discount: Optional[jax.Array] = None
 ) -> jax.Array:
     r"""REINFORCE policy gradient update.
 
@@ -321,9 +310,10 @@ def reinforce_gradient(
     * https://lilianweng.github.io/posts/2018-04-08-policy-gradient/
 
     :param policy: Policy that we want to update and has been used for exploration.
+    :param policy_state: Parameters of the policy network.
     :param value_function: Estimated value function.
     :param value_function_params: Parameters of the value function network.
-    :param states: Samples that were collected with the policy.
+    :param observations: Samples that were collected with the policy.
     :param actions: Samples that were collected with the policy.
     :param returns: Samples that were collected with the policy.
     :param gamma_discount: Discounting for individual steps of the episode.
@@ -331,7 +321,7 @@ def reinforce_gradient(
     """
     if value_function is not None:
         # state-value function as baseline, weights are advantages
-        baseline = value_function.apply(value_function_params, states)
+        baseline = value_function.apply(value_function_params, observations)
     else:
         # no baseline, weights are MC returns
         baseline = jnp.zeros_like(returns)
@@ -340,32 +330,36 @@ def reinforce_gradient(
         weights *= gamma_discount
 
     if isinstance(
-        policy, GaussianNNPolicy
+        policy, GaussianMlpPolicyNetwork
     ):  # TODO find another way without if-else
         return jax.grad(
             partial(
-                gaussian_policy_gradient_pseudo_loss, states, actions, weights
+                gaussian_policy_gradient_pseudo_loss, observations, actions,
+                weights
             )
         )(policy.theta)
     else:
         return jax.grad(
             partial(
-                softmax_policy_gradient_pseudo_loss, states, actions, weights
+                softmax_policy_gradient_pseudo_loss, observations, actions,
+                weights
             )
         )(policy.theta)
 
 
 def train_reinforce_epoch(
     train_env : gym.Env,
-    policy,
-    policy_trainer,
+    policy : nn.Module,
+    policy_state : TrainState,
     render_env : Optional[gym.Env],
     value_function : nn.Module,
     value_function_state : TrainState,
     batch_size : int,
     gamma : float,
-    train_after_episode : bool = False
+    train_after_episode : bool = False,
+    n_train_iters_per_update: int = 1
 ):
+    """TODO docstring"""
     dataset = EpisodeDataset()
     if render_env is not None:
         env = render_env
@@ -375,7 +369,8 @@ def train_reinforce_epoch(
     dataset.start_episode()
     observation, _ = env.reset()
     while True:
-        action = policy.sample(jnp.array(observation))
+        # TODO what if discrete?
+        action = sample_gaussian_actions(policy, policy_state.params, jnp.array(observation))  # TODO policy, params, key
         next_observation, reward, terminated, truncated, _ = env.step(
             np.asarray(action)
         )
@@ -400,17 +395,19 @@ def train_reinforce_epoch(
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
 
-    policy_trainer.update(
-        reinforce_gradient,
-        value_function,
-        value_function_state.params,
-        states,
-        actions,
-        returns,
-        gamma_discount,
+    update_pi = jax.jit(
+        partial(
+            policy_update,
+            policy=policy,
+            value_function=value_function,
+            gamma_discount=gamma_discount,
+            n_train_iters_per_update=n_train_iters_per_update
+        )
     )
+    policy_state = update_pi(
+        policy_state, value_function_state, states, actions, returns)
 
     if value_function is not None:
-        update = jax.jit(partial(update_value_function, v=value_function))
-        value_function_state, v_loss_value = update(
+        update_v = jax.jit(partial(update_value_function, v=value_function))
+        value_function_state, v_loss_value = update_v(
             v_state=value_function_state, observations=states, returns=returns)

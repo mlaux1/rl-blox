@@ -45,18 +45,34 @@ class GaussianMlpPolicyNetwork(nn.Module):
 
     @staticmethod
     def create(
-        actor_hidden_nodes: List[int], envs: gym.vector.SyncVectorEnv
+        actor_hidden_nodes: List[int], action_dim: int,
+        action_scale: jnp.ndarray, action_bias: jnp.ndarray
     ) -> "GaussianMlpPolicyNetwork":
         return GaussianMlpPolicyNetwork(
-            hidden_nodes=actor_hidden_nodes,
-            action_dim=np.prod(envs.single_action_space.shape),
-            action_scale=jnp.array(
-                (envs.action_space.high - envs.action_space.low) / 2.0
-            ),
-            action_bias=jnp.array(
-                (envs.action_space.high + envs.action_space.low) / 2.0
-            ),
-        )
+            hidden_nodes=actor_hidden_nodes, action_dim=action_dim,
+            action_scale=action_scale, action_bias=action_bias)
+
+
+def sample_gaussian_actions(
+    policy: nn.Module,
+    params: flax.core.FrozenDict,
+    obs: jnp.ndarray,
+    key: jax.random.PRNGKey,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    mean, log_std = policy.apply(params, obs)
+    std = jnp.exp(log_std)
+    normal = distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)
+    x_t = normal.sample(
+        seed=key, sample_shape=()
+    )  # for reparameterization trick (mean + std * N(0,1))
+    y_t = jnp.tanh(x_t)
+    action = y_t * policy.action_scale + policy.action_bias
+    log_prob = normal.log_prob(x_t)
+    log_prob = log_prob.reshape(-1, 1)
+    # Enforcing Action Bound
+    log_prob -= jnp.log(policy.action_scale * (1 - y_t**2) + 1e-6)
+    log_prob = log_prob.sum(1)
+    return action, log_prob
 
 
 class NeuralNetwork:
@@ -209,12 +225,10 @@ def sample_gaussian_nn(
 
 
 def gaussian_log_probability(
-    state: jax.Array,
-    action: jax.Array,
-    theta: List[Tuple[jax.Array, jax.Array]],
-) -> jnp.float32:
-    y = nn_forward(state, theta).squeeze()
-    mu, log_sigma = jnp.split(y, [action.shape[0]])
+    mu: jax.Array,
+    log_sigma: jax.Array,
+    action: jax.Array
+) -> float:
     log_sigma = jnp.clip(log_sigma, -20.0, 2.0)
     sigma = jnp.exp(log_sigma)
     return distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma).log_prob(
@@ -224,12 +238,12 @@ def gaussian_log_probability(
     # return -jnp.log(sigma) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * jnp.square((action - mu) / sigma)
 
 
-batched_gaussian_log_probability = jax.vmap(
-    gaussian_log_probability, in_axes=(0, 0, None)
+gaussian_log_probabilities = jax.vmap(
+    gaussian_log_probability, in_axes=(0, 0, 0)
 )
 
 
-class SoftmaxNNPolicy(NeuralNetwork):
+class SoftmaxMlpPolicy(nn.Module):
     r"""Stochastic softmax policy for discrete action spaces with a neural network.
 
     The neural network representing the policy :math:`\pi_{\theta}(a|s)` has
@@ -291,15 +305,13 @@ def sample_softmax_nn(
 
 
 def softmax_log_probability(
-    state: jax.Array,
+    logits: jax.Array,
     action: jax.Array,
-    theta: List[Tuple[jax.Array, jax.Array]],
-) -> jnp.float32:
-    logits = nn_forward(state, theta).squeeze()
+) -> float:
     return distrax.Categorical(logits=logits).log_prob(action)
     # return logits[action] - jax.scipy.special.logsumexp(logits)
 
 
-batched_softmax_log_probability = jax.vmap(
-    softmax_log_probability, in_axes=(0, 0, None)
+softmax_log_probabilities = jax.vmap(
+    softmax_log_probability, in_axes=(0, 0)
 )

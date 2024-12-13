@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+import jax.numpy as jnp
 
 from rl_blox.algorithms.model_free.sac import (
     GaussianMlpPolicyNetwork,
@@ -14,7 +15,12 @@ seed = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 envs = gym.vector.SyncVectorEnv([lambda: env])
-policy = GaussianMlpPolicyNetwork.create([256, 256], envs)
+policy = GaussianMlpPolicyNetwork.create(
+    [256, 256],
+    action_dim=np.prod(envs.single_action_space.shape),
+    action_scale=jnp.array((envs.action_space.high - envs.action_space.low) / 2.0),
+    action_bias=jnp.array((envs.action_space.high + envs.action_space.low) / 2.0)
+)
 q = SoftMlpQNetwork(hidden_nodes=[256, 256])
 policy, policy_params, q, q1_params, q2_params = train_sac(
     envs,

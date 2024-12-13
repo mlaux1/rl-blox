@@ -11,7 +11,7 @@ import numpy as np
 import optax
 from flax.training.train_state import TrainState
 
-from ...policy.differentiable import GaussianMlpPolicyNetwork
+from ...policy.differentiable import GaussianMlpPolicyNetwork, sample_gaussian_actions
 from .ddpg import ReplayBuffer, critic_loss
 
 
@@ -29,28 +29,6 @@ class SoftMlpQNetwork(nn.Module):
             x = nn.relu(x)
         x = nn.Dense(1)(x)
         return x
-
-
-def sample_actions(
-    policy: nn.Module,
-    params: flax.core.FrozenDict,
-    obs: jnp.ndarray,
-    key: jax.random.PRNGKey,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    mean, log_std = policy.apply(params, obs)
-    std = jnp.exp(log_std)
-    normal = distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)
-    x_t = normal.sample(
-        seed=key, sample_shape=()
-    )  # for reparameterization trick (mean + std * N(0,1))
-    y_t = jnp.tanh(x_t)
-    action = y_t * policy.action_scale + policy.action_bias
-    log_prob = normal.log_prob(x_t)
-    log_prob = log_prob.reshape(-1, 1)
-    # Enforcing Action Bound
-    log_prob -= jnp.log(policy.action_scale * (1 - y_t**2) + 1e-6)
-    log_prob = log_prob.sum(1)
-    return action, log_prob
 
 
 def mean_actions(
@@ -83,7 +61,7 @@ def sac_actor_loss(
     observations: jnp.ndarray,
     params: flax.core.FrozenDict,
 ) -> jnp.ndarray:
-    action, log_prob = sample_actions(policy, params, observations, action_key)
+    action, log_prob = sample_gaussian_actions(policy, params, observations, action_key)
     qf1_pi = q.apply(q1_state.params, observations, action).squeeze()
     qf2_pi = q.apply(q2_state.params, observations, action).squeeze()
     min_qf_pi = jnp.minimum(qf1_pi, qf2_pi)
@@ -99,7 +77,7 @@ def sac_exploration_loss(
     observations: jnp.ndarray,
     log_alpha: dict,
 ) -> jnp.ndarray:
-    _, log_prob = sample_actions(
+    _, log_prob = sample_gaussian_actions(
         policy, policy_state.params, observations, action_key
     )
     alpha_loss = (
@@ -249,7 +227,7 @@ def train_sac(
             )
         else:
             key, action_key = jax.random.split(key, 2)
-            actions, _ = sample_actions(
+            actions, _ = sample_gaussian_actions(
                 policy, policy_state.params, obs, action_key
             )
             actions = jax.device_get(actions)
@@ -363,7 +341,7 @@ def sac_update_critic(
     action_key,
     alpha,
 ):
-    next_state_actions, next_state_log_pi = sample_actions(
+    next_state_actions, next_state_log_pi = sample_gaussian_actions(
         policy, policy_state.params, next_observations, action_key
     )
     q1_next_target = q.apply(
