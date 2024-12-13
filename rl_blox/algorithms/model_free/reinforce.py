@@ -131,7 +131,6 @@ class ValueFunctionApproximation(nn.Module):
         return ValueFunctionApproximation(hidden_nodes=hidden_nodes)
 
 
-@jax.jit
 def value_loss(
         v: nn.Module,
         observations: jax.Array,
@@ -150,7 +149,6 @@ def value_loss(
     return 2.0 * optax.l2_loss(predictions=values, targets=returns).mean()
 
 
-@jax.jit
 def update_value_function(
         v: nn.Module,
         v_state: TrainState,
@@ -159,7 +157,7 @@ def update_value_function(
 ) -> Tuple[TrainState, float]:
     """Value function update."""
     v_loss_value, grads = jax.value_and_grad(
-        partial(value_loss, v=v, observations=observations, returns=regit turns)
+        partial(value_loss, v, observations, returns)
     )(v_state.params)
     v_state = v_state.apply_gradients(grads=grads)
     return v_state, v_loss_value
@@ -358,15 +356,15 @@ def reinforce_gradient(
 
 
 def train_reinforce_epoch(
-    train_env,
+    train_env : gym.Env,
     policy,
     policy_trainer,
-    render_env,
-    value_function,
-    value_function_state,
-    batch_size,
-    gamma,
-    train_after_episode=False,
+    render_env : Optional[gym.Env],
+    value_function : nn.Module,
+    value_function_state : TrainState,
+    batch_size : int,
+    gamma : float,
+    train_after_episode : bool = False
 ):
     dataset = EpisodeDataset()
     if render_env is not None:
@@ -413,5 +411,6 @@ def train_reinforce_epoch(
     )
 
     if value_function is not None:
-        value_function_state, v_loss_value = update_value_function(
-            value_function, value_function_state, states, returns)
+        update = jax.jit(partial(update_value_function, v=value_function))
+        value_function_state, v_loss_value = update(
+            v_state=value_function_state, observations=states, returns=returns)
