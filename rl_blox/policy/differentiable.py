@@ -2,10 +2,61 @@ import math
 from functools import partial
 from typing import List, Tuple
 
+import numpy as np
 import distrax
 import gymnasium as gym
 import jax
 from jax import numpy as jnp
+import flax
+import flax.linen as nn
+
+
+LOG_STD_MAX = 2
+LOG_STD_MIN = -5
+
+
+class GaussianMlpPolicyNetwork(nn.Module):
+    """Gaussian policy represented by multilayer perceptron (MLP)."""
+
+    hidden_nodes: List[int]
+    """Numbers of hidden nodes of the MLP."""
+
+    action_dim: int
+    """Dimension of the action space."""
+
+    action_scale: jnp.ndarray
+    """Scales for each component of the action."""
+
+    action_bias: jnp.ndarray
+    """Offset for each component of the action."""
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        for n_nodes in self.hidden_nodes:
+            x = nn.Dense(n_nodes)(x)
+            x = nn.relu(x)
+        mean = nn.Dense(self.action_dim)(x)
+        log_std = nn.Dense(self.action_dim)(x)
+        log_std = nn.tanh(log_std)
+        log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (
+            log_std + 1
+        )  # From SpinUp / Denis Yarats
+        return mean, log_std
+
+    @staticmethod
+    def create(
+        actor_hidden_nodes: List[int], envs: gym.vector.SyncVectorEnv
+    ) -> "GaussianMlpPolicyNetwork":
+        return GaussianMlpPolicyNetwork(
+            hidden_nodes=actor_hidden_nodes,
+            action_dim=np.prod(envs.single_action_space.shape),
+            action_scale=jnp.array(
+                (envs.action_space.high - envs.action_space.low) / 2.0
+            ),
+            action_bias=jnp.array(
+                (envs.action_space.high + envs.action_space.low) / 2.0
+            ),
+        )
 
 
 class NeuralNetwork:
