@@ -359,12 +359,13 @@ def train_reinforce_epoch(
     train_env : gym.Env,
     policy,
     policy_trainer,
-    render_env : Optional[gym.Env],
-    value_function : nn.Module,
-    value_function_state : TrainState,
-    batch_size : int,
-    gamma : float,
-    train_after_episode : bool = False
+    render_env: Optional[gym.Env],
+    value_function: nn.Module,
+    value_function_state: TrainState,
+    batch_size: int,
+    gamma: float,
+    train_after_episode: bool = False,
+    n_train_iters_per_update: int = 1
 ):
     dataset = EpisodeDataset()
     if render_env is not None:
@@ -412,5 +413,7 @@ def train_reinforce_epoch(
 
     if value_function is not None:
         update = jax.jit(partial(update_value_function, v=value_function))
-        value_function_state, v_loss_value = update(
-            v_state=value_function_state, observations=states, returns=returns)
+        for i in range(n_train_iters_per_update):
+            value_function_state, v_loss_value = update(
+                v_state=value_function_state, observations=states,
+                returns=returns)
