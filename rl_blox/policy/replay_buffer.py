@@ -1,3 +1,4 @@
+import random
 from collections import deque, namedtuple
 from typing import Tuple
 
@@ -6,13 +7,14 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 Transition = namedtuple(
-    "Transition", ("observation", "action", "reward", "next_observation")
+    "Transition",
+    ("observation", "action", "reward", "next_observation", "terminated"),
 )
 
 
-class ReplayBuffer(object):
+class ReplayBuffer:
     def __init__(self, size: int):
-        self.buffer = deque([], maxlen=size)
+        self.buffer = deque(maxlen=size)
 
     def push(self, *args):
         """Stores the transition."""
