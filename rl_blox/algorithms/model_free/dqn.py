@@ -1,19 +1,58 @@
-import jax
+from functools import partial
+from typing import List, Tuple
+
 import flax
-import flax.linen as nn
+import gymnasium
+import jax
+import jax.numpy as jnp
+import numpy as np
 import optax
+from flax import nnx
 
-from ..policy.replay_buffer import ReplayBuffer
-from .ddpg import MlpQNetwork
+from ...policy.replay_buffer import ReplayBuffer
 
 
-def dqn(
-    q_network: nn.Module,
+class MLP(nnx.Module):
+    def __init__(self, din, dhidden, dout, rngs: nnx.Rngs):
+        self.linear1 = nnx.Linear(din, dhidden, rngs=rngs)
+        self.linear2 = nnx.Linear(dhidden, dhidden, rngs=rngs)
+        self.linear3 = nnx.Linear(dhidden, dout, rngs=rngs)
+
+    def __call__(self, x):
+        x = nnx.relu(self.linear1(x))
+        x = nnx.relu(self.linear2(x))
+        x = self.linear3(x)
+        return x
+
+
+def critic_loss(obs, act, rew, next_obs, q_net, gamma):
+    # TODO: Fix this
+    act = jnp.array(env.action_space.sample(), ndmin=1)
+    obs = jnp.array(obs, ndmin=1)
+    x = jnp.concatenate([obs])
+    x2 = x + 3
+    q_val = q_net([x, x2])
+
+    next_q_vals = jnp.max(q_val, axis=1).T
+
+    y = jnp.zeros_like(next_q_vals) + jnp.array([1, 0])
+    y = y * next_q_vals
+
+    other = jnp.arange(2)
+
+    return 0
+
+
+def train_dqn(
+    env: gymnasium.Env,
     epsilon: float,
-    buffer_size: int = 1e6,
-    batch_size: int = 64,
-    totral_time_steps: int = 1e4,
+    buffer_size: int = 1_000_000,
+    batch_size: int = 1,
+    total_timesteps: int = 1e4,
     gradient_steps: int = 1,
+    learning_rate: float = 1e-4,
+    gamma: float = 0.9999,
+    tau: float = 0.05,
     seed: int = 1,
 ):
     """Deep Q-Networks.
@@ -21,25 +60,49 @@ def dqn(
     This algorithm is an off-policy value-function based RL algorithm. It uses a
     neural network to approximate the Q-function.
     """
-    
-    rng = np.random.default_rng(seed)
-    key = jax.random.PRNGKey(seed)
-    
-    key, q_key = jax.random.split(key, 2)
-    q_state = TargetTrainState.create(
-        apply_fn=q_network.apply,
-        params=q_network.init(q_key, obs, action_space.sample()),
-        target_params=q_network.init(q_key, obs, action_space.sample()),
-        tx=optax.adam(learning_rate=learning_rate),
-    )  
 
+    assert isinstance(
+        env.action_space, gymnasium.spaces.Discrete
+    ), "DQN only supports discrete action spaces"
+
+    rng = np.random.default_rng(seed)
+    nnx_rngs = nnx.Rngs(seed)
+    key = jax.random.PRNGKey(seed)
+
+    q_net = MLP(1, 64, 4, nnx_rngs)
 
     # initialise episode
-    # for each step:
-    # select epsilon greedy action
-    # execute action
-    # store transition in replay buffer
-    # sample minibatch from replay buffer
-    # perform gradient descent step based on minibatch
+    obs, _ = env.reset(seed=seed)
 
-    raise NotImplemented
+    rb = ReplayBuffer(buffer_size)
+
+    # for each step:
+    for _ in range(total_timesteps):
+        # select epsilon greedy action
+        key, subkey = jax.random.split(key)
+        roll = jax.random.uniform(subkey)
+        if roll < epsilon:
+            action = env.action_space.sample()
+        else:
+            q_vals = q_net([obs])
+            action = jnp.argmax(q_vals)
+
+        # execute action
+        next_obs, reward, terminated, truncated, info = env.step(int(action))
+
+        # store transition in replay buffer
+        rb.push(obs, action, reward, next_obs, terminated)
+
+        # sample minibatch from replay buffer
+        transition_batch = rb.sample(batch_size)
+
+        # perform gradient descent step based on minibatch
+        # TODO
+
+        # housekeeping
+        if terminated or truncated:
+            obs, _ = env.reset()
+        else:
+            obs = next_obs
+
+    return q_net
