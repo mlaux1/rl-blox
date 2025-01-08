@@ -25,22 +25,17 @@ class MLP(nnx.Module):
         return x
 
 
-def critic_loss(obs, act, rew, next_obs, q_net, gamma):
-    # TODO: Fix this
-    act = jnp.array(env.action_space.sample(), ndmin=1)
-    obs = jnp.array(obs, ndmin=1)
-    x = jnp.concatenate([obs])
-    x2 = x + 3
-    q_val = q_net([x, x2])
+def critic_loss(q_net, batch, gamma=0.9999):
+    obs, action, reward, next_obs, terminated = batch[0]
 
-    next_q_vals = jnp.max(q_val, axis=1).T
+    target = reward
+    if not terminated:
+        target += gamma * jnp.max(q_net([next_obs]))
 
-    y = jnp.zeros_like(next_q_vals) + jnp.array([1, 0])
-    y = y * next_q_vals
+    pred = q_net([obs])[action]
+    loss = optax.squared_error(pred, target)
 
-    other = jnp.arange(2)
-
-    return 0
+    return loss
 
 
 def train_dqn(
@@ -71,6 +66,9 @@ def train_dqn(
 
     q_net = MLP(1, 64, 4, nnx_rngs)
 
+    # initialise optimiser
+    optimizer = nnx.Optimizer(q_net, optax.adamw(learning_rate, 0.9))
+
     # initialise episode
     obs, _ = env.reset(seed=seed)
 
@@ -97,7 +95,11 @@ def train_dqn(
         transition_batch = rb.sample(batch_size)
 
         # perform gradient descent step based on minibatch
-        # TODO
+
+        grad_fn = nnx.value_and_grad(critic_loss)
+        loss, grads = grad_fn(q_net, transition_batch, gamma)
+
+        optimizer.update(grads)
 
         # housekeeping
         if terminated or truncated:
