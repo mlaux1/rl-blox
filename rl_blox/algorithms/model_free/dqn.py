@@ -32,13 +32,18 @@ def critic_loss(q_net, batch, gamma=0.9999):
     if not terminated:
         target += gamma * jnp.max(q_net([next_obs]))
 
+    # print(f"{target=}")
+
     pred = q_net([obs])[action]
+    # print(f"{pred=}")
+
     loss = optax.squared_error(pred, target)
 
     return loss
 
 
 def train_dqn(
+    q_net: MLP,
     env: gymnasium.Env,
     epsilon: float,
     buffer_size: int = 1_000_000,
@@ -61,10 +66,7 @@ def train_dqn(
     ), "DQN only supports discrete action spaces"
 
     rng = np.random.default_rng(seed)
-    nnx_rngs = nnx.Rngs(seed)
     key = jax.random.PRNGKey(seed)
-
-    q_net = MLP(1, 64, 4, nnx_rngs)
 
     # initialise optimiser
     optimizer = nnx.Optimizer(q_net, optax.adamw(learning_rate, 0.9))
@@ -75,7 +77,7 @@ def train_dqn(
     rb = ReplayBuffer(buffer_size)
 
     # for each step:
-    for _ in range(total_timesteps):
+    for ep in range(total_timesteps):
         # select epsilon greedy action
         key, subkey = jax.random.split(key)
         roll = jax.random.uniform(subkey)
@@ -83,7 +85,9 @@ def train_dqn(
             action = env.action_space.sample()
         else:
             q_vals = q_net([obs])
+            print(f"{q_vals=}")
             action = jnp.argmax(q_vals)
+            print(f"greedy action {action}")
 
         # execute action
         next_obs, reward, terminated, truncated, info = env.step(int(action))
@@ -103,6 +107,7 @@ def train_dqn(
 
         # housekeeping
         if terminated or truncated:
+            print(f"Episode {ep} complete.")
             obs, _ = env.reset()
         else:
             obs = next_obs
