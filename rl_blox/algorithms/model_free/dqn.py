@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
+from tqdm import tqdm
 
 from ...policy.replay_buffer import ReplayBuffer
 
@@ -20,38 +21,46 @@ class MLP(nnx.Module):
 
     def __call__(self, x):
         x = nnx.relu(self.linear1(x))
-        x = nnx.relu(self.linear2(x))
+        # x = nnx.relu(self.linear2(x))
         x = self.linear3(x)
         return x
 
 
-def critic_loss(q_net, batch, gamma=0.9999):
-    obs, action, reward, next_obs, terminated = batch[0]
+def critic_loss(q_net, batch, gamma=0.9):
+    obs = jnp.expand_dims(jnp.array(batch)[:, 0], 1)
+    action = jnp.array(batch)[:, 1].astype(int)
+    reward = jnp.expand_dims(jnp.array(batch)[:, 2], 1)
+    terminated = jnp.expand_dims(jnp.array(batch)[:, 4], 1)
+    next_obs = jnp.expand_dims(jnp.array(batch)[:, 3], 1)
 
-    target = reward
-    if not terminated:
-        target += gamma * jnp.max(q_net([next_obs]))
+    target = jnp.array(reward) + terminated * gamma * jnp.max(q_net(next_obs))
 
-    # print(f"{target=}")
+    pred = q_net(obs)
+    pred = pred[jnp.arange(len(pred)), action]
 
-    pred = q_net([obs])[action]
-    # print(f"{pred=}")
-
-    loss = optax.squared_error(pred, target)
+    loss = optax.squared_error(pred, jnp.squeeze(target)).mean()
 
     return loss
+
+
+@nnx.jit
+def train_step(q_net, optimizer, batch):
+    grad_fn = nnx.value_and_grad(critic_loss)
+    loss, grads = grad_fn(q_net, batch)
+    optimizer.update(grads)
 
 
 def train_dqn(
     q_net: MLP,
     env: gymnasium.Env,
     epsilon: float,
-    buffer_size: int = 1_000_000,
-    batch_size: int = 1,
+    decay: float,
+    buffer_size: int = 3_000,
+    batch_size: int = 32,
     total_timesteps: int = 1e4,
     gradient_steps: int = 1,
     learning_rate: float = 1e-4,
-    gamma: float = 0.9999,
+    gamma: float = 0.9,
     tau: float = 0.05,
     seed: int = 1,
 ):
@@ -69,7 +78,7 @@ def train_dqn(
     key = jax.random.PRNGKey(seed)
 
     # initialise optimiser
-    optimizer = nnx.Optimizer(q_net, optax.adamw(learning_rate, 0.9))
+    optimizer = nnx.Optimizer(q_net, optax.adam(learning_rate))
 
     # initialise episode
     obs, _ = env.reset(seed=seed)
@@ -77,7 +86,7 @@ def train_dqn(
     rb = ReplayBuffer(buffer_size)
 
     # for each step:
-    for ep in range(total_timesteps):
+    for step in tqdm(range(total_timesteps)):
         # select epsilon greedy action
         key, subkey = jax.random.split(key)
         roll = jax.random.uniform(subkey)
@@ -85,31 +94,26 @@ def train_dqn(
             action = env.action_space.sample()
         else:
             q_vals = q_net([obs])
-            print(f"{q_vals=}")
             action = jnp.argmax(q_vals)
-            print(f"greedy action {action}")
 
         # execute action
         next_obs, reward, terminated, truncated, info = env.step(int(action))
-
         # store transition in replay buffer
         rb.push(obs, action, reward, next_obs, terminated)
 
         # sample minibatch from replay buffer
-        transition_batch = rb.sample(batch_size)
+        if step > batch_size:
+            transition_batch = rb.sample(batch_size)
 
-        # perform gradient descent step based on minibatch
-
-        grad_fn = nnx.value_and_grad(critic_loss)
-        loss, grads = grad_fn(q_net, transition_batch, gamma)
-
-        optimizer.update(grads)
+            # perform gradient descent step based on minibatch
+            train_step(q_net, optimizer, transition_batch)
 
         # housekeeping
         if terminated or truncated:
-            print(f"Episode {ep} complete.")
             obs, _ = env.reset()
         else:
             obs = next_obs
+
+        epsilon = epsilon - 1.0 / total_timesteps
 
     return q_net

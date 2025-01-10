@@ -7,23 +7,24 @@ from gymnasium.spaces.utils import flatdim
 from rl_blox.algorithms.model_free.dqn import MLP, train_dqn
 
 # Set up environment
-env_name = "Taxi-v3"
-env = gym.make(env_name, render_mode="human")
+env_name = "CliffWalking-v0"
+env = gym.make(env_name)
 seed = 42
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
 nnx_rngs = nnx.Rngs(seed)
-q_net = MLP(1, 16, env.action_space.n, nnx_rngs)
+q_net = MLP(1, 10, env.action_space.n, nnx_rngs)
 
 # Train
 q = train_dqn(
     q_net,
     env,
-    epsilon=0.5,
-    learning_rate=0.1,
+    epsilon=1.00,
+    decay=0.97,
+    learning_rate=0.001,
     seed=seed,
-    total_timesteps=10_000,
+    total_timesteps=100_000,
 )
 env.close()
 
@@ -34,6 +35,7 @@ obs, _ = eval_env.reset()
 
 while True:
     action = int(jnp.argmax(q([obs])))
+    print(f"q_vals: {q([obs])} -> action {action}")
     next_obs, reward, terminated, truncated, info = eval_env.step(action)
 
     if terminated or truncated:
