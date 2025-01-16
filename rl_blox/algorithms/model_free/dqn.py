@@ -27,11 +27,18 @@ class MLP(nnx.Module):
 
 
 def critic_loss(q_net, batch, gamma=0.9):
-    obs = jnp.expand_dims(jnp.array(batch)[:, 0], 1)
-    action = jnp.array(batch)[:, 1].astype(int)
-    reward = jnp.expand_dims(jnp.array(batch)[:, 2], 1)
-    terminated = jnp.expand_dims(jnp.array(batch)[:, 4], 1)
-    next_obs = jnp.expand_dims(jnp.array(batch)[:, 3], 1)
+
+    obs = jnp.stack([t.observation for t in batch])
+    reward = jnp.stack([t.reward for t in batch])
+    action = jnp.stack([t.action for t in batch])
+    terminated = jnp.stack([t.terminated for t in batch])
+    next_obs = jnp.stack([t.next_observation for t in batch])
+    # print(jnp.stack(obs2))
+    # obs = jnp.expand_dims(jnp.array(batch)[:, 0], 1)
+    # action = jnp.array(batch)[:, 1].astype(int)
+    # reward = jnp.expand_dims(jnp.array(batch)[:, 2], 1)
+    # terminated = jnp.expand_dims(jnp.array(batch)[:, 4], 1)
+    # next_obs = jnp.expand_dims(jnp.array(batch)[:, 3], 1)
 
     target = jnp.array(reward) + terminated * gamma * jnp.max(q_net(next_obs))
 
