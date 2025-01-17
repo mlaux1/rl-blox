@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
+from jax import jit, vmap
 from tqdm import tqdm
 
 from ...policy.replay_buffer import ReplayBuffer
@@ -26,9 +27,14 @@ class MLP(nnx.Module):
         return x
 
 
-def critic_loss(q_net, batch, gamma=0.9):
+@jit
+def extract_obs(batch):
+    return jnp.stack([t.observation for t in batch])
 
-    obs = jnp.stack([t.observation for t in batch])
+
+def critic_loss(q_net, batch, gamma=0.9):
+    jax.debug.print("{x}", x=batch[0].observation)
+    obs = extract_obs(batch)
     reward = jnp.stack([t.reward for t in batch])
     action = jnp.stack([t.action for t in batch])
     terminated = jnp.stack([t.terminated for t in batch])
