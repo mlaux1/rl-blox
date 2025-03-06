@@ -1,13 +1,13 @@
-from codecs import replace_errors
 from functools import partial
 from typing import List, Tuple
-import numpy as np
-import jax
-import jax.numpy as jnp
+
 import flax
 import flax.linen as nn
-from flax.training.train_state import TrainState
+import jax
+import jax.numpy as jnp
+import numpy as np
 import optax
+from flax.training.train_state import TrainState
 
 
 class EnsembleOfGaussianMlps:
@@ -15,7 +15,12 @@ class EnsembleOfGaussianMlps:
 
     References
     ----------
-    .. [1] TODO PETS paper
+    .. [1] Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine.
+           2018. Deep reinforcement learning in a handful of trials using
+           probabilistic dynamics models. In Proceedings of the 32nd
+           International Conference on Neural Information Processing Systems
+           (NeurIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4759–4770.
+           https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
     def __init__(self, base_model, n_base_models, train_size, warm_start, learning_rate, key, verbose=0):
         self.base_model = base_model
