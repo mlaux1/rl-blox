@@ -22,7 +22,17 @@ class EnsembleOfGaussianMlps:
            (NeurIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4759–4770.
            https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
-    def __init__(self, base_model, n_base_models, train_size, warm_start, learning_rate, key, verbose=0):
+
+    def __init__(
+        self,
+        base_model,
+        n_base_models,
+        train_size,
+        warm_start,
+        learning_rate,
+        key,
+        verbose=0,
+    ):
         self.base_model = base_model
         self.n_base_models = n_base_models
         self.train_size = train_size
@@ -37,8 +47,10 @@ class EnsembleOfGaussianMlps:
 
         self.key, bootstrapping_key = jax.random.split(self.key, 2)
         bootstrapped_indices = jax.random.choice(
-            bootstrapping_key, n_samples,
-            shape=(self.n_base_models, n_bootstrapped), replace=True
+            bootstrapping_key,
+            n_samples,
+            shape=(self.n_base_models, n_bootstrapped),
+            replace=True,
         )
 
         X_train = X[bootstrapped_indices]
@@ -47,12 +59,14 @@ class EnsembleOfGaussianMlps:
         if not hasattr(self, "train_states_") or not self.warm_start:
             self.key, init_key = jax.random.split(self.key, 2)
             model_keys = jax.random.split(init_key, self.n_base_models)
+
             def create_train_state(key, X_train):
                 return TrainState.create(
                     apply_fn=self.base_model.apply,
                     params=self.base_model.init(key, X_train[0]),
                     tx=optax.adam(learning_rate=self.learning_rate),
                 )
+
             create_train_states = jax.vmap(create_train_state, in_axes=(0, 0))
             self.train_states_ = create_train_states(model_keys, X_train)
 
@@ -60,18 +74,22 @@ class EnsembleOfGaussianMlps:
             def compute_loss(X, y, params):
                 mean_pred, log_std_pred = self.base_model.apply(params, X)
                 return heteroscedastic_aleatoric_uncertainty_loss(
-                    mean_pred, log_std_pred, y)
+                    mean_pred, log_std_pred, y
+                )
 
             loss = partial(compute_loss, X, y)
             loss_value, grads = jax.value_and_grad(loss)(train_state.params)
             train_state = train_state.apply_gradients(grads=grads)
             return loss_value, train_state
 
-        update_base_models = jax.jit(jax.vmap(update_base_model, in_axes=(0, 0, 0)))
+        update_base_models = jax.jit(
+            jax.vmap(update_base_model, in_axes=(0, 0, 0))
+        )
 
         for _ in range(n_epochs):
             loss_value, self.train_states_ = update_base_models(
-                self.train_states_, X_train, Y_train)
+                self.train_states_, X_train, Y_train
+            )
 
         if self.verbose:
             print(f"loss {loss_value}")
@@ -79,13 +97,18 @@ class EnsembleOfGaussianMlps:
     def predict(self, X):
         def base_model_predict(train_state, X):
             return self.base_model.apply(train_state.params, X)
-        ensemble_predict = jax.jit(jax.vmap(base_model_predict, in_axes=(0, None)))
+
+        ensemble_predict = jax.jit(
+            jax.vmap(base_model_predict, in_axes=(0, None))
+        )
         means, log_stds = ensemble_predict(self.train_states_, X)
         return gaussian_ensemble_prediction(means, log_stds)
 
 
 @jax.jit
-def gaussian_ensemble_prediction(means: List[jnp.ndarray], log_stds: List[jnp.ndarray]):
+def gaussian_ensemble_prediction(
+    means: List[jnp.ndarray], log_stds: List[jnp.ndarray]
+):
     n_base_models = len(means)
     mean = jnp.mean(means, axis=0)
     epistemic_var = jnp.sum((means - mean) ** 2, axis=0) / (n_base_models + 1)
@@ -104,7 +127,9 @@ class GaussianMlp(nn.Module):
     """Numbers of hidden nodes of the MLP."""
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:# -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(
+        self, x: jnp.ndarray
+    ) -> jnp.ndarray:  # -> Tuple[jnp.ndarray, jnp.ndarray]:
         for n_nodes in self.hidden_nodes:
             x = nn.Dense(n_nodes)(x)
             x = nn.softplus(x)
@@ -154,7 +179,7 @@ def heteroscedastic_aleatoric_uncertainty_loss(mean_pred, log_std_pred, Y):
        https://proceedings.neurips.cc/paper_files/paper/2017/file/9ef2ed4b7fd2c810847ffa5fa85bce38-Paper.pdf
     """
     var = jnp.exp(log_std_pred) ** 2
-    #var = jnp.where(var < 1e-6, 1.0, var)  # TODO do we need this?
+    # var = jnp.where(var < 1e-6, 1.0, var)  # TODO do we need this?
     squared_erros = optax.l2_loss(mean_pred, Y)  # including factor 0.5
     # Second term should be 0.5 * jnp.mean(jnp.log(var)), but this is the same
     # because 2 * log_std_pred == jnp.log(var), so 2 and 0.5 cancel out.
