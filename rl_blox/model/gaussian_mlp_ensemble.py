@@ -36,6 +36,24 @@ class GaussianMlp(nn.Module):
 class EnsembleOfGaussianMlps:
     """Ensemble of Gaussian MLPs.
 
+    Parameters
+    ----------
+    base_model
+        Base learner.
+    n_base_models
+        Number of individual Gaussian MLPs.
+    train_size, optional
+        Fraction of the original training set to train each individual
+        Gaussian MLP.
+    warm_start, optional
+        Reuse old weights when training.
+    learning_rate, optional
+        Learning rate for ADAM optimizer.
+    key
+        jax random key.
+    verbose, optional
+        Verbosity level.
+
     References
     ----------
     .. [1] Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine.
@@ -94,6 +112,36 @@ class EnsembleOfGaussianMlps:
         learning_rate: float = 3e-3,
         verbose: int = 0,
     ) -> "EnsembleOfGaussianMlps":
+        """Create ensemble of Gaussian MLPs.
+
+        Parameters
+        ----------
+        n_outputs
+            Number of outputs of one individual Gaussian MLP.
+        hidden_nodes
+            Number of hidden nodes in each individual Gaussian MLP.
+        n_base_models
+            Number of individual Gaussian MLPs.
+        key
+            jax random key.
+        shared_head, optional
+            All nodes of the last hidden layer are connected to mean AND
+            log_std.
+        train_size, optional
+            Fraction of the original training set to train each individual
+            Gaussian MLP.
+        warm_start, optional
+            Reuse old weights when training.
+        learning_rate, optional
+            Learning rate for ADAM optimizer.
+        verbose, optional
+            Verbosity level.
+
+        Returns
+        -------
+        ensemble
+            Ensemble of Gaussian MLPs.
+        """
         return cls(
             base_model=GaussianMlp(
                 shared_head=shared_head,
@@ -111,6 +159,22 @@ class EnsembleOfGaussianMlps:
     def fit(
         self, X: ArrayLike, Y: ArrayLike, n_epochs: int
     ) -> "EnsembleOfGaussianMlps":
+        """Train model on dataset.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Each row contains a feature vector.
+        Y : array-like, shape (n_samples, n_outputs)
+            Each row contains a desired output.
+        n_epochs : int
+            Training epochs, i.e., sweeps over the whole dataset.
+
+        Returns
+        -------
+        self
+            For chaining.
+        """
         X = jnp.asarray(X)
         Y = jnp.asarray(Y)
 
@@ -169,6 +233,21 @@ class EnsembleOfGaussianMlps:
         return self
 
     def predict(self, X: ArrayLike) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Predict outputs.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Each row contains a feature vector.
+
+        Returns
+        -------
+        Y : array, shape (n_samples, n_outputs)
+            Each row contains a prediction.
+
+        var : array, shape (n_samples, n_outputs)
+            Each row contains the sum of aleatoric and epistemic variance.
+        """
         X = jnp.asarray(X)
         means, log_stds = self._ensemble_predict(self.train_states_, X)
         return gaussian_ensemble_prediction(means, log_stds)
@@ -178,6 +257,25 @@ class EnsembleOfGaussianMlps:
 def gaussian_ensemble_prediction(
     means: jnp.ndarray, log_stds: jnp.ndarray
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Compute output of ensemble from outputs of individual Gaussian MLPs.
+
+    Parameters
+    ----------
+    means : array, shape (n_base_models, n_samples, n_outputs)
+        Predicted means of each base model, sample, and output dimension.
+
+    log_stds : array, shape (n_base_models, n_samples, n_outputs)
+        Predicted logarithm of standard deviation of each base model, sample,
+        and output dimension.
+
+    Returns
+    -------
+    Y : array, shape (n_samples, n_outputs)
+        Each row contains a prediction.
+
+    var : array, shape (n_samples, n_outputs)
+        Each row contains the sum of aleatoric and epistemic variance.
+    """
     n_base_models = len(means)
     mean = jnp.mean(means, axis=0)
     epistemic_var = jnp.sum((means - mean) ** 2, axis=0) / (n_base_models + 1)
@@ -201,11 +299,19 @@ def heteroscedastic_aleatoric_uncertainty_loss(
     by a neural network, i.e., the neural network predicted a mean vector and
     a vector of component-wise log standard deviations per sample.
 
-    :param mean_pred: Means of the predicted Gaussian distributions.
-    :param log_std_pred: Logarithm of standard deviations of predicted Gaussian
-                         distributions.
-    :param Y: Actual outputs.
-    :returns: Negative log-likelihood.
+    Parameters
+    ----------
+    mean_pred
+        Means of the predicted Gaussian distributions.
+    log_std_pred
+        Logarithm of standard deviations of predicted Gaussian distributions.
+    Y
+        Actual outputs.
+
+    Returns
+    -------
+    nll
+        Negative log-likelihood.
 
     References
     ----------
