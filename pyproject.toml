@@ -1,7 +1,51 @@
 [tool.black]
 line-length = 80
 target-version = ["py310", "py311", "py312"]
+include = '''
+/(
+      rl_blox
+    | examples
+)\/.*\.pyi?$
+'''
+exclude = '''
+/(
+      .git
+    | __pycache__
+    | doc
+    | venv
+    | build
+    | dist
+)/
+'''
 
 [tool.isort]
 profile = "black"
 line_length = 80
+
+[tool.ruff]
+line-length = 80
+target-version = "py310"
+include = [
+    "rl_blox/**/*.py",
+    "examples/**/*.py",
+]
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+]
+# all rules can be found here: https://beta.ruff.rs/docs/rules/
+ignore=[
+    "SIM108",  # Use ternary operator
+]
