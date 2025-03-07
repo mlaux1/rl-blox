@@ -63,6 +63,13 @@ class EnsembleOfGaussianMlps:
         self.key = key
         self.verbose = verbose
 
+        def base_model_predict(train_state, X):
+            return self.base_model.apply(train_state.params, X)
+
+        self._ensemble_predict = jax.jit(
+            jax.vmap(base_model_predict, in_axes=(0, None))
+        )
+
     def fit(
         self, X: ArrayLike, Y: ArrayLike, n_epochs: int
     ) -> "EnsembleOfGaussianMlps":
@@ -125,14 +132,7 @@ class EnsembleOfGaussianMlps:
 
     def predict(self, X: ArrayLike) -> tuple[jnp.ndarray, jnp.ndarray]:
         X = jnp.asarray(X)
-
-        def base_model_predict(train_state, X):
-            return self.base_model.apply(train_state.params, X)
-
-        ensemble_predict = jax.jit(
-            jax.vmap(base_model_predict, in_axes=(0, None))
-        )
-        means, log_stds = ensemble_predict(self.train_states_, X)
+        means, log_stds = self._ensemble_predict(self.train_states_, X)
         return gaussian_ensemble_prediction(means, log_stds)
 
 
