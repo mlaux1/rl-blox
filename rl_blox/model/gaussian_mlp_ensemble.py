@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from functools import partial
 
+import flax.core
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
@@ -208,8 +209,12 @@ class EnsembleOfGaussianMlps:
             create_train_states = jax.vmap(create_train_state, in_axes=(0, 0))
             self.train_states_ = create_train_states(model_keys, X_train)
 
-        def update_base_model(train_state, X, y):
-            def compute_loss(X, y, params):
+        def update_base_model(
+            train_state: TrainState, X: jnp.ndarray, y: jnp.ndarray
+        ) -> tuple[jnp.ndarray, TrainState]:
+            def compute_loss(
+                X: jnp.ndarray, y: jnp.ndarray, params: flax.core.FrozenDict
+            ) -> jnp.ndarray:
                 mean_pred, log_std_pred = self.base_model.apply(params, X)
                 return heteroscedastic_aleatoric_uncertainty_loss(
                     mean_pred, log_std_pred, y
@@ -254,7 +259,9 @@ class EnsembleOfGaussianMlps:
         means, log_stds = self._ensemble_predict(self.train_states_, X)
         return gaussian_ensemble_prediction(means, log_stds)
 
-    def base_predict(self, X: ArrayLike, i: int) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def base_predict(
+        self, X: ArrayLike, i: int
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Predict with one of the base models.
 
         Parameters
@@ -282,10 +289,10 @@ class EnsembleOfGaussianMlps:
         if i < 0 or i >= self.n_base_models:
             raise ValueError(
                 f"Index of base model {i} is out of range "
-                f"[0, {self.n_base_models}).")
+                f"[0, {self.n_base_models})."
+            )
 
         return jax.tree.map(lambda x: x[i], self.train_states_)
-
 
 
 @jax.jit
