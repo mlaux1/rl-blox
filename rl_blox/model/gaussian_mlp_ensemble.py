@@ -1,11 +1,35 @@
 from functools import partial
-from typing import List
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
 from flax.training.train_state import TrainState
+from jax.typing import ArrayLike
+
+
+class GaussianMlp(nn.Module):
+    """Probabilistic neural network that predicts a Gaussian distribution."""
+
+    shared_head: bool
+    """All nodes of the last hidden layer are connected to mean AND log_std."""
+    n_outputs: int
+    """Number of output components"""
+    hidden_nodes: list[int]
+    """Numbers of hidden nodes of the MLP."""
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+        for n_nodes in self.hidden_nodes:
+            x = nn.Dense(n_nodes)(x)
+            x = nn.softplus(x)
+        x = nn.Dense(2 * self.n_outputs)(x)
+        if self.shared_head:
+            mean, log_std = jnp.split(x, (self.n_outputs,), axis=-1)
+        else:
+            mean = nn.Dense(self.n_outputs)(x)
+            log_std = nn.Dense(self.n_outputs)(x)
+        return mean, log_std
 
 
 class EnsembleOfGaussianMlps:
@@ -23,13 +47,13 @@ class EnsembleOfGaussianMlps:
 
     def __init__(
         self,
-        base_model,
-        n_base_models,
-        train_size,
-        warm_start,
-        learning_rate,
-        key,
-        verbose=0,
+        base_model: GaussianMlp,
+        n_base_models: int,
+        train_size: float,
+        warm_start: bool,
+        learning_rate: float,
+        key: jax.random.PRNGKey,
+        verbose: int = 0,
     ):
         self.base_model = base_model
         self.n_base_models = n_base_models
@@ -39,8 +63,13 @@ class EnsembleOfGaussianMlps:
         self.key = key
         self.verbose = verbose
 
-    def fit(self, X, Y, n_epochs):
-        n_samples = len(X)
+    def fit(
+        self, X: ArrayLike, Y: ArrayLike, n_epochs: int
+    ) -> "EnsembleOfGaussianMlps":
+        X = jnp.asarray(X)
+        Y = jnp.asarray(Y)
+
+        n_samples = X.shape[0]
         n_bootstrapped = int(self.train_size * n_samples)
 
         self.key, bootstrapping_key = jax.random.split(self.key, 2)
@@ -92,7 +121,11 @@ class EnsembleOfGaussianMlps:
         if self.verbose:
             print(f"loss {loss_value}")
 
-    def predict(self, X):
+        return self
+
+    def predict(self, X: ArrayLike) -> tuple[jnp.ndarray, jnp.ndarray]:
+        X = jnp.asarray(X)
+
         def base_model_predict(train_state, X):
             return self.base_model.apply(train_state.params, X)
 
@@ -105,39 +138,13 @@ class EnsembleOfGaussianMlps:
 
 @jax.jit
 def gaussian_ensemble_prediction(
-    means: List[jnp.ndarray], log_stds: List[jnp.ndarray]
+    means: list[jnp.ndarray], log_stds: list[jnp.ndarray]
 ):
     n_base_models = len(means)
     mean = jnp.mean(means, axis=0)
     epistemic_var = jnp.sum((means - mean) ** 2, axis=0) / (n_base_models + 1)
     aleatoric_var = jnp.mean(jnp.exp(log_stds) ** 2, axis=0)
     return mean, aleatoric_var + epistemic_var
-
-
-class GaussianMlp(nn.Module):
-    """Probabilistic neural network that predicts a Gaussian distribution."""
-
-    shared_head: bool
-    """All nodes of the last hidden layer are connected to each mean AND log_std output."""
-    n_outputs: int
-    """Number of output components"""
-    hidden_nodes: List[int]
-    """Numbers of hidden nodes of the MLP."""
-
-    @nn.compact
-    def __call__(
-        self, x: jnp.ndarray
-    ) -> jnp.ndarray:  # -> Tuple[jnp.ndarray, jnp.ndarray]:
-        for n_nodes in self.hidden_nodes:
-            x = nn.Dense(n_nodes)(x)
-            x = nn.softplus(x)
-        x = nn.Dense(2 * self.n_outputs)(x)
-        if self.shared_head:
-            mean, log_std = jnp.split(x, (self.n_outputs,), axis=-1)
-        else:
-            mean = nn.Dense(self.n_outputs)(x)
-            log_std = nn.Dense(self.n_outputs)(x)
-        return mean, log_std
 
 
 @jax.jit
