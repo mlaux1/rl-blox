@@ -3,10 +3,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 
-from rl_blox.model.gaussian_mlp_ensemble import (
-    EnsembleOfGaussianMlps,
-    GaussianMlp,
-)
+from rl_blox.model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
 
 
 def generate_dataset1(data_key, n_samples):
@@ -60,11 +57,17 @@ plot_base_models = True
 random_state = np.random.RandomState(seed)
 key = jax.random.PRNGKey(seed)
 
-net = GaussianMlp(shared_head=True, n_outputs=1, hidden_nodes=[100, 50])
-net.apply = jax.jit(net.apply)
 key, ensemble_key = jax.random.split(key, 2)
-ensemble = EnsembleOfGaussianMlps(
-    net, 5, 0.7, True, learning_rate, ensemble_key, verbose=1
+ensemble = EnsembleOfGaussianMlps.create(
+    1,
+    [100, 50],
+    5,
+    ensemble_key,
+    shared_head=True,
+    train_size=0.7,
+    warm_start=True,
+    learning_rate=learning_rate,
+    verbose=1,
 )
 
 key, data_key = jax.random.split(key, 2)
@@ -78,7 +81,7 @@ plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
 if plot_base_models:
     for idx in range(ensemble.n_base_models):
         train_state = jax.tree.map(lambda x: x[idx], ensemble.train_states_)
-        mean, log_std = net.apply(train_state.params, X_test)
+        mean, log_std = ensemble.base_model.apply(train_state.params, X_test)
         std_196 = 1.96 * jnp.exp(log_std).squeeze()
         mean = mean.squeeze()
         plt.fill_between(

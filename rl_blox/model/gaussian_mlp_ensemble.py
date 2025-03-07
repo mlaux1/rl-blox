@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from functools import partial
-from typing import Callable
 
 import flax.linen as nn
 import jax
@@ -45,6 +45,7 @@ class EnsembleOfGaussianMlps:
            (NeurIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4759–4770.
            https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
+
     base_model: GaussianMlp
     n_base_models: int
     train_size: float
@@ -53,7 +54,7 @@ class EnsembleOfGaussianMlps:
     key: jnp.ndarray
     verbose: int
     _ensemble_predict: Callable
-    train_states_ : TrainState
+    train_states_: TrainState
 
     def __init__(
         self,
@@ -78,6 +79,33 @@ class EnsembleOfGaussianMlps:
 
         self._ensemble_predict = jax.jit(
             jax.vmap(base_model_predict, in_axes=(0, None))
+        )
+
+    @classmethod
+    def create(
+        cls,
+        n_outputs: int,
+        hidden_nodes: list[int],
+        n_base_models: int,
+        key: jnp.ndarray,
+        shared_head: bool = True,
+        train_size: float = 0.7,
+        warm_start: bool = True,
+        learning_rate: float = 3e-3,
+        verbose: int = 0,
+    ) -> "EnsembleOfGaussianMlps":
+        return cls(
+            base_model=GaussianMlp(
+                shared_head=shared_head,
+                n_outputs=n_outputs,
+                hidden_nodes=hidden_nodes,
+            ),
+            n_base_models=n_base_models,
+            train_size=train_size,
+            warm_start=warm_start,
+            learning_rate=learning_rate,
+            key=key,
+            verbose=verbose,
         )
 
     def fit(
