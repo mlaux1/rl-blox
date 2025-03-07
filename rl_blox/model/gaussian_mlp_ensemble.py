@@ -137,7 +137,9 @@ class EnsembleOfGaussianMlps:
 
 
 @jax.jit
-def gaussian_ensemble_prediction(means: jnp.ndarray, log_stds: jnp.ndarray):
+def gaussian_ensemble_prediction(
+    means: jnp.ndarray, log_stds: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     n_base_models = len(means)
     mean = jnp.mean(means, axis=0)
     epistemic_var = jnp.sum((means - mean) ** 2, axis=0) / (n_base_models + 1)
@@ -146,7 +148,9 @@ def gaussian_ensemble_prediction(means: jnp.ndarray, log_stds: jnp.ndarray):
 
 
 @jax.jit
-def heteroscedastic_aleatoric_uncertainty_loss(mean_pred, log_std_pred, Y):
+def heteroscedastic_aleatoric_uncertainty_loss(
+    mean_pred: jnp.ndarray, log_std_pred: jnp.ndarray, Y: jnp.ndarray
+) -> jnp.ndarray:
     """Heteroscedastic aleatoric uncertainty loss for Gaussian NN.
 
     .. math::
