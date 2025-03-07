@@ -12,7 +12,7 @@ authors = [
     { name="Alexander Fabisch", email="alexander.fabisch@dfki.de" },
 ]
 description = "Modular RL building blocks in JAX"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "BSD-3-Clause"}
 keywords = ["Reinforcement Learning", "RL", "JAX"]
 classifiers = [
