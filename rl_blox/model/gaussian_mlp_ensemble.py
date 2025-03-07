@@ -71,6 +71,7 @@ class EnsembleOfGaussianMlps:
     learning_rate: float
     key: jnp.ndarray
     verbose: int
+    _base_model_predict: Callable
     _ensemble_predict: Callable
     train_states_: TrainState
 
@@ -95,6 +96,7 @@ class EnsembleOfGaussianMlps:
         def base_model_predict(train_state, X):
             return self.base_model.apply(train_state.params, X)
 
+        self._base_model_predict = jax.jit(base_model_predict)
         self._ensemble_predict = jax.jit(
             jax.vmap(base_model_predict, in_axes=(0, None))
         )
@@ -251,6 +253,39 @@ class EnsembleOfGaussianMlps:
         X = jnp.asarray(X)
         means, log_stds = self._ensemble_predict(self.train_states_, X)
         return gaussian_ensemble_prediction(means, log_stds)
+
+    def base_predict(self, X: ArrayLike, i: int) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Predict with one of the base models.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Each row contains a feature vector.
+
+        i
+            Index of base model.
+
+        Returns
+        -------
+        Y : array, shape (n_samples, n_outputs)
+            Each row contains a prediction.
+
+        var : array, shape (n_samples, n_outputs)
+            Each row contains the aleatoric variance.
+        """
+        X = jnp.asarray(X)
+        train_state = self._get_train_state(i)
+        return self._base_model_predict(train_state, X)
+
+    def _get_train_state(self, i: int) -> TrainState:
+        """Get train state of individual Gaussian MLP."""
+        if i < 0 or i >= self.n_base_models:
+            raise ValueError(
+                f"Index of base model {i} is out of range "
+                f"[0, {self.n_base_models}).")
+
+        return jax.tree.map(lambda x: x[i], self.train_states_)
+
 
 
 @jax.jit

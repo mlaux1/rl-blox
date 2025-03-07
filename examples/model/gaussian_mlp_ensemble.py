@@ -79,16 +79,15 @@ plt.figure()
 plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
 plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
 if plot_base_models:
-    for idx in range(ensemble.n_base_models):
-        train_state = jax.tree.map(lambda x: x[idx], ensemble.train_states_)
-        mean, log_std = ensemble.base_model.apply(train_state.params, X_test)
+    for i in range(ensemble.n_base_models):
+        mean, log_std = ensemble.base_predict(X_test, i)
         std_196 = 1.96 * jnp.exp(log_std).squeeze()
         mean = mean.squeeze()
         plt.fill_between(
             X_test[:, 0], mean - std_196, mean + std_196, alpha=0.3
         )
         plt.plot(
-            X_test[:, 0], mean, ls="--", label=f"Prediction of model {idx + 1}"
+            X_test[:, 0], mean, ls="--", label=f"Prediction of model {i + 1}"
         )
 mean, var = ensemble.predict(X_test)
 mean = mean.squeeze()
