@@ -25,7 +25,6 @@ classifiers = [
     "License :: OSI Approved :: The 3-Clause BSD License (BSD-3-Clause)",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-
 ]
 dependencies = [
     "numpy",
