@@ -55,7 +55,7 @@ learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
 n_epochs = 15000
-plot_base_models = False
+plot_base_models = True
 
 random_state = np.random.RandomState(seed)
 key = jax.random.PRNGKey(seed)
@@ -76,8 +76,8 @@ plt.figure()
 plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
 plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
 if plot_base_models:
-    # TODO how to plot base models now?
-    for idx, train_state in enumerate(ensemble.train_states_.params):
+    for idx in range(ensemble.n_base_models):
+        train_state = jax.tree.map(lambda x: x[idx], ensemble.train_states_)
         mean, log_std = net.apply(train_state.params, X_test)
         std_196 = 1.96 * jnp.exp(log_std).squeeze()
         mean = mean.squeeze()
