@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Callable
 
 import flax.linen as nn
 import jax
@@ -44,6 +45,14 @@ class EnsembleOfGaussianMlps:
            (NeurIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4759–4770.
            https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
+    base_model: GaussianMlp
+    n_base_models: int
+    train_size: float
+    warm_start: bool
+    learning_rate: float
+    key: jnp.ndarray
+    verbose: int
+    _ensemble_predict: Callable
 
     def __init__(
         self,
