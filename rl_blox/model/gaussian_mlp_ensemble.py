@@ -53,6 +53,7 @@ class EnsembleOfGaussianMlps:
     key: jnp.ndarray
     verbose: int
     _ensemble_predict: Callable
+    train_states_ : TrainState
 
     def __init__(
         self,
