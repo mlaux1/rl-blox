@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
 
 from rl_blox.model.gaussian_mlp_ensemble import (
@@ -70,10 +71,6 @@ key, data_key = jax.random.split(key, 2)
 X_train, Y_train, X_test, Y_test = generate_dataset3(data_key, n_samples)
 
 ensemble.fit(X_train, Y_train, n_epochs)
-
-
-import matplotlib.pyplot as plt
-
 
 plt.figure()
 plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")

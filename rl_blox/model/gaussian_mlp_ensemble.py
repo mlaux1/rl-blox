@@ -52,7 +52,7 @@ class EnsembleOfGaussianMlps:
         train_size: float,
         warm_start: bool,
         learning_rate: float,
-        key: jax.random.PRNGKey,
+        key: jnp.ndarray,
         verbose: int = 0,
     ):
         self.base_model = base_model
@@ -137,9 +137,7 @@ class EnsembleOfGaussianMlps:
 
 
 @jax.jit
-def gaussian_ensemble_prediction(
-    means: list[jnp.ndarray], log_stds: list[jnp.ndarray]
-):
+def gaussian_ensemble_prediction(means: jnp.ndarray, log_stds: jnp.ndarray):
     n_base_models = len(means)
     mean = jnp.mean(means, axis=0)
     epistemic_var = jnp.sum((means - mean) ** 2, axis=0) / (n_base_models + 1)
