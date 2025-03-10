@@ -7,7 +7,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax.typing import ArrayLike
 
-from rl_blox.model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
+from ...model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
+from ...model.cross_entropy_method import optimize_cem
 
 
 class ReplayBuffer:
@@ -60,8 +61,72 @@ class ModelPredictiveControl:
 
         self.key = jax.random.PRNGKey(seed)
 
-    def action(self, obs: ArrayLike) -> jnp.ndarray:
-        raise NotImplementedError()
+    def action(self, last_act: ArrayLike, obs: ArrayLike, key: jnp.ndarray) -> jnp.ndarray:
+        last_act = jnp.asarray(last_act)
+        obs = jnp.asarray(obs)
+        return self._trajectory_sampling_inf(last_act, obs)
+
+    def _trajectory_sampling_1(self, last_act: jnp.ndarray, obs: jnp.ndarray):
+        """TS1 refers to particles uniformly re-sampling a bootstrap per time step."""
+        observations = jnp.vstack([obs for _ in range(self.n_samples)])
+        # TODO store (first) actions
+        for t in range(self.task_horizon):
+            self.key, bootstrap_key = jax.random.split(self.key, 2)
+            model_indices = jax.random.randint(
+                bootstrap_key,
+                shape=(self.n_samples,),
+                minval=0,
+                maxval=self.dynamics_model.n_base_models,
+            )
+            next_observations = []
+            for i, j in enumerate(model_indices):
+                act = self._cem_optimize_action(last_act)
+                X = jnp.hstack((observations[i], act))[:, jnp.newaxis]
+                next_obs = self.dynamics_model.base_predict(X, j)[0]
+                next_observations.append(next_obs)
+            next_observations = jnp.vstack(next_observations)
+
+            observations = next_observations
+        return act  # TODO return best first action
+
+    def _trajectory_sampling_inf(self, last_act: jnp.ndarray, obs: jnp.ndarray):
+        """TSinf refers to particle bootstraps never changing during a trial."""
+        self.key, bootstrap_key = jax.random.split(self.key, 2)
+        model_indices = jax.random.randint(
+            bootstrap_key,
+            shape=(self.n_samples,),
+            minval=0,
+            maxval=self.dynamics_model.n_base_models,
+        )
+        observations = jnp.vstack([obs for _ in range(self.n_samples)])
+        # TODO store (first) actions
+        for t in range(self.task_horizon):
+            next_observations = []
+            for i, j in enumerate(model_indices):
+                act = self._cem_optimize_action(last_act)
+                X = jnp.hstack((observations[i], act))[:, jnp.newaxis]
+                next_obs = self.dynamics_model.base_predict(X, j)[0]
+                next_observations.append(next_obs)
+            next_observations = jnp.vstack(next_observations)
+
+            observations = next_observations
+        return act  # TODO return best first action
+
+    def _cem_optimize_action(self, last_act: jnp.ndarray):
+        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
+        self.key, cem_key = jax.random.split(self.key, 2)
+        init_var = jnp.ones_like(last_act)  # TODO
+        return optimize_cem(
+            self.reward_model,
+            last_act,
+            # TODO make configurable
+            init_var,
+            cem_key,
+            n_iter=10,
+            n_population=50,
+            n_elite=25
+        )
+
 
     def fit(
         self,
@@ -84,7 +149,7 @@ def train_pets(
     seed: int = 1,
     buffer_size: int = 1_000_000,
     total_timesteps: int = 1_000_000,
-    learning_starts: int = 25_000,
+    learning_starts: int = 100,
     batch_size: int = 256,
     verbose: int = 0,
 ) -> ModelPredictiveControl:
@@ -107,7 +172,7 @@ def train_pets(
     * for trial :math:`k=1` to K do
         * Train a PE dynamics model :math:`f` given
           :math:`\mathcal{D}`.
-        * for time :math:`t=0` to `task_horizon` do
+        * for time :math:`t=0` to T (`task_horizon`) do
             * for actions samples :math:`a_{t:t+T} \sim CEM(\cdot)`,
               1 to `n_samples` do
                 * Propagate state particles :math:`s_{\tau}^p` using TS and
