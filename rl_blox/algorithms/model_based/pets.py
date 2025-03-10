@@ -16,17 +16,16 @@ class ReplayBuffer:
     def __init__(self, n_samples):
         self.buffer = deque(maxlen=n_samples)
 
-    def add_samples(self, observation, action, reward, next_observation, done):
-        for i in range(len(done)):
-            self.buffer.append(
-                (
-                    observation[i],
-                    action[i],
-                    reward[i],
-                    next_observation[i],
-                    done[i],
-                )
+    def add_sample(self, observation, action, reward, next_observation, done):
+        self.buffer.append(
+            (
+                observation,
+                action,
+                reward,
+                next_observation,
+                done,
             )
+        )
 
     def sample_batch(
         self, batch_size: int, rng: np.random.Generator
@@ -59,14 +58,20 @@ class ModelPredictiveControl:
         self.task_horizon = task_horizon
         self.n_samples = n_samples
 
-        self.rng = np.random.default_rng(seed)
         self.key = jax.random.PRNGKey(seed)
 
     def action(self, obs: ArrayLike) -> jnp.ndarray:
         raise NotImplementedError()
 
-    def fit(self, rb: ReplayBuffer) -> "ModelPredictiveControl":
-        raise NotImplementedError()
+    def fit(
+        self,
+        observations: ArrayLike,
+        actions: ArrayLike,
+        next_observations: ArrayLike,
+    ) -> "ModelPredictiveControl":
+        X = jnp.hstack((observations, actions))
+        Y = jnp.asarray(next_observations)
+        self.dynamics_model.fit(X, Y, n_epochs=1)
         return self
 
 
@@ -80,6 +85,7 @@ def train_pets(
     buffer_size: int = 1_000_000,
     total_timesteps: int = 1_000_000,
     learning_starts: int = 25_000,
+    batch_size: int = 256,
     verbose: int = 0,
 ) -> ModelPredictiveControl:
     r"""Probabilistic Ensemble - Trajectory Sampling (PE-TS).
@@ -137,6 +143,8 @@ def train_pets(
     learning_starts
         Learning starts after this number of random steps was taken in the
         environment.
+    batch_size
+        Size of a batch during gradient computation.
     verbose
         Verbosity level.
 
@@ -154,6 +162,8 @@ def train_pets(
            (NeurIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4759–4770.
            https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
+    rng = np.random.default_rng(seed)
+
     assert isinstance(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
@@ -167,6 +177,10 @@ def train_pets(
     obs, _ = env.reset(seed=seed)
 
     for t in range(total_timesteps):
+        if t > learning_starts:
+            obs, acts, rews, next_obs, dones = rb.sample_batch(batch_size, rng)
+            mpc.fit(obs, acts, next_obs)
+
         if t < learning_starts:
             action = action_space.sample()
         else:
@@ -174,17 +188,16 @@ def train_pets(
 
         next_obs, reward, termination, truncation, info = env.step(action)
 
-        if verbose and (termination or truncation):
-            print(
-                f"{t=}, length={info['episode']['l']}, "
-                f"return={info['episode']['r']}"
-            )
+        rb.add_sample(obs, action, reward, next_obs, termination)
 
-        rb.add_samples(obs, action, reward, next_obs, termination)
+        if termination or truncation:
+            if verbose:
+                print(
+                    f"{t=}, length={info['episode']['l']}, "
+                    f"return={info['episode']['r']}"
+                )
+            obs, _ = env.reset()
 
         obs = next_obs
-
-        if t > learning_starts:
-            mpc.fit(rb)
 
     return mpc
