@@ -12,9 +12,10 @@ from rl_blox.model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
 def train_pets(
     env: gym.Env,
     dynamics_model: EnsembleOfGaussianMlps,
-    horizon: int,
+    task_horizon: int,
+    n_samples: int,
 ):
-    """Probabilistic Ensemble - Trajectory Sampling (PE-TS).
+    r"""Probabilistic Ensemble - Trajectory Sampling (PE-TS).
 
     Each probabilistic neural network of the probabilistic ensemble (PE)
     dynamics model captures aleatoric uncertainty (inherent variance of the
@@ -27,14 +28,35 @@ def train_pets(
     sequence, applies the first action in the sequence, and repeats until the
     task-horizon.
 
+    Algorithm:
+
+    * Initialize dataset :math:`\mathcal{D}` with a random controller.
+    * for trial :math:`k=1` to K do
+        * Train a PE dynamics model :math:`f` given
+          :math:`\mathcal{D}`.
+        * for time :math:`t=0` to `task_horizon` do
+            * for actions samples :math:`a_{t:t+T} \sim CEM(\cdot)`,
+              1 to `n_samples` do
+                * Propagate state particles :math:`s_{\tau}^p` using TS and
+                  :math:`f|\left{\mathcal{D},a_{t:t+T}\right}`
+                * Evaluate actions as
+                  :math:`\sum_{\tau=t}^{t+T} \frac{1}{P} \sum_{p=1}^P r(s_{\tau}^p, a_{\tau})`
+                * Update :math:`CEM(\cdot)` distribution.
+        * Execute first action :math:`a_t^*` (only) from optimal actions
+          :math:`a_{t:t+T}^*`.
+        * Record outcome:
+          :math:`\mathcal{D} \leftarrow \mathcal{D} \cup \left{s_t, a_t^*, s_{t+1}\right}`
+
     Parameters
     ----------
     env
         gymnasium environment.
     dynamics_model
         Probabilistic ensemble dynamics model.
-    sampling_horizon
-        Horizon length for trajectory sampling.
+    task_horizon
+        Task horizon: number of time steps to predict with dynamics model.
+    n_samples
+        Number of action samples per time step.
 
     References
     ----------
