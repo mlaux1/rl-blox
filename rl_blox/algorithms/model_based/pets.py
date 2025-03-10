@@ -1,13 +1,12 @@
+from collections import deque
+from collections.abc import Callable
+
 import gymnasium as gym
-import flax
-import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
-from flax.training.train_state import TrainState
-from collections import deque
-from numpy.typing import ArrayLike
+from jax.typing import ArrayLike
+
 from rl_blox.model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
 
 
@@ -19,12 +18,18 @@ class ReplayBuffer:
 
     def add_samples(self, observation, action, reward, next_observation, done):
         for i in range(len(done)):
-            self.buffer.append((observation[i], action[i], reward[i], next_observation[i], done[i]))
+            self.buffer.append(
+                (
+                    observation[i],
+                    action[i],
+                    reward[i],
+                    next_observation[i],
+                    done[i],
+                )
+            )
 
     def sample_batch(
-            self,
-            batch_size: int,
-            rng: np.random.Generator
+        self, batch_size: int, rng: np.random.Generator
     ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         indices = rng.integers(0, len(self.buffer), batch_size)
         observations = jnp.vstack([self.buffer[i][0] for i in indices])
@@ -35,8 +40,39 @@ class ReplayBuffer:
         return observations, actions, rewards, next_observations, dones
 
 
+class ModelPredictiveControl:
+    """Model-Predictive Control (MPC).
+
+    TODO
+    """
+
+    def __init__(
+        self,
+        reward_model: Callable,
+        dynamics_model: EnsembleOfGaussianMlps,
+        task_horizon: int,
+        n_samples: int,
+        seed: int,
+    ):
+        self.dynamics_model = dynamics_model
+        self.reward_model = reward_model
+        self.task_horizon = task_horizon
+        self.n_samples = n_samples
+
+        self.rng = np.random.default_rng(seed)
+        self.key = jax.random.PRNGKey(seed)
+
+    def action(self, obs: ArrayLike) -> jnp.ndarray:
+        raise NotImplementedError()
+
+    def fit(self, rb: ReplayBuffer) -> "ModelPredictiveControl":
+        raise NotImplementedError()
+        return self
+
+
 def train_pets(
     env: gym.Env,
+    reward_model: Callable,
     dynamics_model: EnsembleOfGaussianMlps,
     task_horizon: int,
     n_samples: int,
@@ -45,7 +81,7 @@ def train_pets(
     total_timesteps: int = 1_000_000,
     learning_starts: int = 25_000,
     verbose: int = 0,
-):
+) -> ModelPredictiveControl:
     r"""Probabilistic Ensemble - Trajectory Sampling (PE-TS).
 
     Each probabilistic neural network of the probabilistic ensemble (PE)
@@ -71,17 +107,21 @@ def train_pets(
                 * Propagate state particles :math:`s_{\tau}^p` using TS and
                   :math:`f|\left{\mathcal{D},a_{t:t+T}\right}`
                 * Evaluate actions as
-                  :math:`\sum_{\tau=t}^{t+T} \frac{1}{P} \sum_{p=1}^P r(s_{\tau}^p, a_{\tau})`
+                  :math:`\sum_{\tau=t}^{t+T} \frac{1}{P} \sum_{p=1}^P
+                  r(s_{\tau}^p, a_{\tau})`
                 * Update :math:`CEM(\cdot)` distribution.
         * Execute first action :math:`a_t^*` (only) from optimal actions
           :math:`a_{t:t+T}^*`.
         * Record outcome:
-          :math:`\mathcal{D} \leftarrow \mathcal{D} \cup \left{s_t, a_t^*, s_{t+1}\right}`
+          :math:`\mathcal{D} \leftarrow \mathcal{D} \cup
+          \left{s_t, a_t^*, s_{t+1}\right}`
 
     Parameters
     ----------
     env
         gymnasium environment.
+    reward_model
+        Reward function for the environment.
     dynamics_model
         Probabilistic ensemble dynamics model.
     task_horizon
@@ -100,6 +140,11 @@ def train_pets(
     verbose
         Verbosity level.
 
+    Returns
+    -------
+    mpc
+        Model-predictive control based on dynamics model.
+
     References
     ----------
     .. [1] Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine.
@@ -109,12 +154,15 @@ def train_pets(
            (NeurIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4759–4770.
            https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
-    rng = np.random.default_rng(seed)
-    key = jax.random.PRNGKey(seed)
-
-    assert isinstance(env.action_space, gym.spaces.Box), "only continuous action space is supported"
+    assert isinstance(
+        env.action_space, gym.spaces.Box
+    ), "only continuous action space is supported"
     action_space: gym.spaces.Box = env.action_space
     rb = ReplayBuffer(buffer_size)
+
+    mpc = ModelPredictiveControl(
+        reward_model, dynamics_model, task_horizon, n_samples, seed
+    )
 
     obs, _ = env.reset(seed=seed)
 
@@ -122,19 +170,21 @@ def train_pets(
         if t < learning_starts:
             action = action_space.sample()
         else:
-            raise NotImplementedError("action generation")
+            action = mpc.action(obs)
 
         next_obs, reward, termination, truncation, info = env.step(action)
 
-        if termination or truncation:
-            print(f"{t=}, length={info['episode']['l']}, "
-                  f"return={info['episode']['r']}")
+        if verbose and (termination or truncation):
+            print(
+                f"{t=}, length={info['episode']['l']}, "
+                f"return={info['episode']['r']}"
+            )
 
         rb.add_samples(obs, action, reward, next_obs, termination)
 
         obs = next_obs
 
         if t > learning_starts:
-            raise NotImplementedError("training procedure")
+            mpc.fit(rb)
 
-    raise NotImplementedError()
+    return mpc
