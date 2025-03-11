@@ -24,5 +24,5 @@ mpc = train_pets(
     n_samples=20,
     seed=20,
     learning_starts=100,
-    verbose=1,
+    verbose=10,
 )

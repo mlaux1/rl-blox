@@ -1,4 +1,5 @@
 import chex
+import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
@@ -6,8 +7,11 @@ from jax.typing import ArrayLike
 PENDULUM_MAX_TORQUE: float = 2.0
 
 
+@jax.jit
 def pendulum_reward(act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
     """Vectorized reward model for environment 'Pendulum-v1'.
+
+    https://github.com/Farama-Foundation/Gymnasium/blob/main/gymnasium/envs/classic_control/pendulum.py
 
     Parameters
     ----------

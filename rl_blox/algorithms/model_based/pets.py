@@ -63,6 +63,8 @@ class ModelPredictiveControl:
         Number of sampled paths from the dynamics model.
     seed
         Seed for random number generator.
+    verbose
+        Verbosity level.
     """
 
     def __init__(
@@ -73,12 +75,14 @@ class ModelPredictiveControl:
         task_horizon: int,
         n_samples: int,
         seed: int,
+        verbose: int = 0,
     ):
         self.action_space = action_space
         self.dynamics_model = dynamics_model
         self.reward_model = reward_model
         self.task_horizon = task_horizon
         self.n_samples = n_samples
+        self.verbose = verbose
 
         self.key = jax.random.PRNGKey(seed)
 
@@ -94,6 +98,8 @@ class ModelPredictiveControl:
 
     def _trajectory_sampling_inf(self, last_act: jnp.ndarray, obs: jnp.ndarray):
         """TSinf refers to particle bootstraps never changing during a trial."""
+        if self.verbose >= 5:
+            print("[PETS/MPC] start trajectory sampling")
         self.key, bootstrap_key = jax.random.split(self.key, 2)
         model_indices = jax.random.randint(
             bootstrap_key,
@@ -101,11 +107,15 @@ class ModelPredictiveControl:
             minval=0,
             maxval=self.dynamics_model.n_base_models,
         )
+        if self.verbose >= 6:
+            print(f"[PETS/MPC] samples indices: {model_indices}")
         actions_per_bootstrap = []
         rewards_per_bootstrap = []
         observations = jnp.vstack([obs for _ in range(self.n_samples)])
         last_actions = jnp.vstack([last_act for _ in range(self.n_samples)])
-        for _ in range(self.task_horizon):
+        for t in range(self.task_horizon):
+            if self.verbose >= 6:
+                print(f"[PETS/MPC] predict step: {t=}")
             next_observations = []
             actions_per_step = []
             rewards_per_step = []
@@ -113,9 +123,9 @@ class ModelPredictiveControl:
                 act, rew = self._cem_optimize_action(
                     last_actions[i], observations[i]
                 )
+                obs_act = jnp.hstack((observations[i], act))
                 next_obs = self.dynamics_model.base_predict(
-                    jnp.hstack((observations[i], act))[:, jnp.newaxis],
-                    model_indices[i],
+                    obs_act[jnp.newaxis, :], model_indices[i]
                 )[0]
                 next_observations.append(next_obs)
                 actions_per_step.append(act)
@@ -169,11 +179,29 @@ class ModelPredictiveControl:
         observations: ArrayLike,
         actions: ArrayLike,
         next_observations: ArrayLike,
-        n_epochs: int
+        n_epochs: int,
     ) -> "ModelPredictiveControl":
-        X = jnp.hstack((observations, actions))
-        Y = jnp.asarray(next_observations)
-        self.dynamics_model.fit(X, Y, n_epochs)
+        observations = jnp.asarray(observations)
+        actions = jnp.asarray(actions)
+        next_observations = jnp.asarray(next_observations)
+
+        chex.assert_equal_shape((observations, next_observations))
+        chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
+
+        observations_actions = jnp.hstack((observations, actions))
+        chex.assert_shape(
+            observations_actions,
+            (observations.shape[0], observations.shape[1] + actions.shape[1]),
+        )
+
+        if self.verbose >= 5:
+            print("[PETS/MPC] start training")
+        self.dynamics_model.fit(
+            observations_actions, next_observations, n_epochs
+        )
+        if self.verbose >= 5:
+            print("[PETS/MPC] training done")
+
         return self
 
 
@@ -286,12 +314,15 @@ def train_pets(
         task_horizon,
         n_samples,
         seed,
+        verbose=verbose - 1,
     )
 
     obs, _ = env.reset(seed=seed)
     action = None
 
     for t in range(total_timesteps):
+        if verbose >= 5 and t % 100 == 0:
+            print(f"[PETS] {t=}")
         if t >= learning_starts:
             obs, acts, rews, next_obs, dones = rb.sample_batch(batch_size, rng)
             mpc.fit(obs, acts, next_obs, n_epochs_per_iteration)
