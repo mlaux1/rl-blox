@@ -158,8 +158,8 @@ class ModelPredictiveControl:
             n_population=400,
             n_elite=40,
             alpha=0.1,
-            lower_bound=None,
-            upper_bound=None,
+            lower_bound=self.action_space.low,
+            upper_bound=self.action_space.high,
         )
         rew = self.reward_model(obs, act)
         return act, rew
