@@ -45,23 +45,45 @@ class ReplayBuffer:
 class ModelPredictiveControl:
     """Model-Predictive Control (MPC).
 
-    TODO
+    Parameters
+    ----------
+    action_space
+        Action space of the environment.
+    reward_model
+        Vectorized implementation of the environment's reward function.
+        The first argument should be the current observation (obs). The
+        second argument should be an array of actions (act). For each action
+        it should return the reward associated with the pair of the observation
+        and action.
+    dynamics_model
+        Learned model of the environment's dynamic.
+    task_horizon
+        Horizon in which the controller predicts states and optimizes actions.
+    n_samples
+        Number of sampled paths from the dynamics model.
+    seed
+        Seed for random number generator.
     """
 
     def __init__(
         self,
-        reward_model: Callable,
+        action_space: gym.spaces.Box,
+        reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
         dynamics_model: EnsembleOfGaussianMlps,
         task_horizon: int,
         n_samples: int,
         seed: int,
     ):
+        self.action_space = action_space
         self.dynamics_model = dynamics_model
         self.reward_model = reward_model
         self.task_horizon = task_horizon
         self.n_samples = n_samples
 
         self.key = jax.random.PRNGKey(seed)
+
+        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
+        self.init_var = (self.action_space.high - self.action_space.low) ** 2 / 16.0
 
     def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
         last_act = jnp.asarray(last_act)
@@ -86,7 +108,7 @@ class ModelPredictiveControl:
             actions_per_step = []
             rewards_per_step = []
             for i in range(self.n_samples):
-                act, rew = self._cem_optimize_action(last_actions[i])
+                act, rew = self._cem_optimize_action(last_actions[i], observations[i])
                 next_obs = self.dynamics_model.base_predict(
                     jnp.hstack((observations[i], act))[:, jnp.newaxis],
                     model_indices[i]
@@ -117,16 +139,18 @@ class ModelPredictiveControl:
     def _cem_optimize_action(self, last_act: jnp.ndarray, obs: jnp.ndarray):
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
         self.key, cem_key = jax.random.split(self.key, 2)
-        init_var = jnp.ones_like(last_act)  # TODO
         act = optimize_cem(
             partial(self.reward_model, obs=obs),
             last_act,
+            key=cem_key,
             # TODO make configurable
-            init_var,
-            cem_key,
-            n_iter=10,
-            n_population=50,
-            n_elite=25
+            init_var=self.init_var,
+            n_iter=5,
+            n_population=400,
+            n_elite=40,
+            alpha=0.1,
+            lower_bound=None,
+            upper_bound=None,
         )
         rew = self.reward_model(obs, act)
         return act, rew
@@ -240,7 +264,7 @@ def train_pets(
     rb = ReplayBuffer(buffer_size)
 
     mpc = ModelPredictiveControl(
-        reward_model, dynamics_model, task_horizon, n_samples, seed
+        action_space, reward_model, dynamics_model, task_horizon, n_samples, seed
     )
 
     obs, _ = env.reset(seed=seed)

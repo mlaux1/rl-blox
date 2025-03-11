@@ -6,7 +6,7 @@ from jax.typing import ArrayLike
 
 
 def optimize_cem(
-    cost_function: Callable,
+    cost_function: Callable[[ArrayLike], jnp.ndarray],
     init_mean: ArrayLike,
     init_var: ArrayLike,
     key: jnp.ndarray,
@@ -107,7 +107,15 @@ def optimize_cem(
 
 
 def step_cem(
-    cost_function, mean, var, step_key, n_elite, n_population, lb, ub, alpha
+    cost_function: Callable[[ArrayLike], jnp.ndarray],
+    mean: jnp.ndarray,
+    var: jnp.ndarray,
+    step_key: jnp.ndarray,
+    n_elite: int,
+    n_population: int,
+    lb: jnp.ndarray,
+    ub: jnp.ndarray,
+    alpha: float,
 ):
     if lb is not None and ub is not None:
         lb_dist = mean - lb
