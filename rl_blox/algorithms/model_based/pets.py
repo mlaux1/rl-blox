@@ -9,8 +9,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax.typing import ArrayLike
 
-from ...model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
 from ...model.cross_entropy_method import optimize_cem
+from ...model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
 
 
 class ReplayBuffer:
@@ -83,7 +83,9 @@ class ModelPredictiveControl:
         self.key = jax.random.PRNGKey(seed)
 
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
-        self.init_var = (self.action_space.high - self.action_space.low) ** 2 / 16.0
+        self.init_var = (
+            self.action_space.high - self.action_space.low
+        ) ** 2 / 16.0
 
     def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
         last_act = jnp.asarray(last_act)
@@ -103,15 +105,17 @@ class ModelPredictiveControl:
         rewards_per_bootstrap = []
         observations = jnp.vstack([obs for _ in range(self.n_samples)])
         last_actions = jnp.vstack([last_act for _ in range(self.n_samples)])
-        for t in range(self.task_horizon):
+        for _t in range(self.task_horizon):
             next_observations = []
             actions_per_step = []
             rewards_per_step = []
             for i in range(self.n_samples):
-                act, rew = self._cem_optimize_action(last_actions[i], observations[i])
+                act, rew = self._cem_optimize_action(
+                    last_actions[i], observations[i]
+                )
                 next_obs = self.dynamics_model.base_predict(
                     jnp.hstack((observations[i], act))[:, jnp.newaxis],
-                    model_indices[i]
+                    model_indices[i],
                 )[0]
                 next_observations.append(next_obs)
                 actions_per_step.append(act)
@@ -124,13 +128,18 @@ class ModelPredictiveControl:
             rewards_per_bootstrap.append(rewards_per_step)
 
         best_bootstrap = self._find_best_bootstrap(
-            jnp.array(rewards_per_bootstrap))
+            jnp.array(rewards_per_bootstrap)
+        )
 
         return actions_per_bootstrap[0][best_bootstrap]
 
-    def _find_best_bootstrap(self, rewards_per_bootstrap: jnp.ndarray) -> jnp.ndarray:
+    def _find_best_bootstrap(
+        self, rewards_per_bootstrap: jnp.ndarray
+    ) -> jnp.ndarray:
         rewards_per_bootstrap = jnp.array(rewards_per_bootstrap)
-        chex.assert_shape(rewards_per_bootstrap, (self.task_horizon, self.n_samples))
+        chex.assert_shape(
+            rewards_per_bootstrap, (self.task_horizon, self.n_samples)
+        )
         returns_per_bootstrap = jnp.sum(rewards_per_bootstrap, axis=1)
         chex.assert_shape(returns_per_bootstrap, (self.n_samples,))
         best_bootstrap = jnp.argmax(returns_per_bootstrap)
@@ -154,7 +163,6 @@ class ModelPredictiveControl:
         )
         rew = self.reward_model(obs, act)
         return act, rew
-
 
     def fit(
         self,
@@ -264,7 +272,12 @@ def train_pets(
     rb = ReplayBuffer(buffer_size)
 
     mpc = ModelPredictiveControl(
-        action_space, reward_model, dynamics_model, task_horizon, n_samples, seed
+        action_space,
+        reward_model,
+        dynamics_model,
+        task_horizon,
+        n_samples,
+        seed,
     )
 
     obs, _ = env.reset(seed=seed)
