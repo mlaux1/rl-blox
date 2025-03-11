@@ -122,8 +122,10 @@ class ModelPredictiveControl:
             actions_per_step = []
             rewards_per_step = []
             for i in range(self.n_samples):
-                act, rew = self._cem_optimize_action(
-                    actions[i], observations[i]
+                act, rew = (
+                    self._cem_optimize_action(  # vmap and jit, check source https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
+                        actions[i], observations[i]
+                    )
                 )
                 actions_per_step.append(act)
                 rewards_per_step.append(rew)
@@ -131,7 +133,8 @@ class ModelPredictiveControl:
             actions = jnp.vstack(actions_per_step)
             obs_act = jnp.hstack((observations, actions))
             next_observations = self.dynamics_model.vmap_base_predict(
-                obs_act, model_indices)
+                obs_act, model_indices
+            )
 
             observations = next_observations
 
@@ -319,7 +322,8 @@ def train_pets(
             print(f"[PETS] {t=}")
         if t >= learning_starts:
             D_obs, D_acts, D_rews, D_next_obs, D_dones = rb.sample_batch(
-                batch_size, rng)
+                batch_size, rng
+            )
             mpc.fit(D_obs, D_acts, D_next_obs, n_epochs_per_iteration)
 
         if t < learning_starts:

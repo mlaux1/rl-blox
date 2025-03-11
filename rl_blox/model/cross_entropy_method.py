@@ -13,8 +13,8 @@ def optimize_cem(
     n_iter: int,
     n_population: int,
     n_elite: int,
-    lower_bound: ArrayLike | None = None,
-    upper_bound: ArrayLike | None = None,
+    lower_bound: ArrayLike,
+    upper_bound: ArrayLike,
     epsilon: float = 0.001,
     alpha: float = 0.25,
     return_history: bool = False,
@@ -38,9 +38,9 @@ def optimize_cem(
     n_elite
         The number of top solutions that will be used to obtain the distribution
         at the next iteration.
-    lower_bound, optional
+    lower_bound
         An array of lower bounds.
-    upper_bound, optional
+    upper_bound
         An array of upper bounds.
     epsilon, optional
         A minimum variance. If the maximum variance drops below epsilon,
@@ -64,8 +64,8 @@ def optimize_cem(
     samples, optional
         History of all samples.
     """
-    ub = jnp.asarray(upper_bound) if upper_bound is not None else None
-    lb = jnp.asarray(lower_bound) if lower_bound is not None else None
+    ub = jnp.asarray(upper_bound)
+    lb = jnp.asarray(lower_bound)
 
     if n_elite > n_population:
         raise ValueError(
@@ -117,15 +117,12 @@ def step_cem(
     ub: jnp.ndarray,
     alpha: float,
 ):
-    if lb is not None and ub is not None:
-        lb_dist = mean - lb
-        ub_dist = ub - mean
-        constrained_var = jnp.minimum(
-            jnp.minimum((lb_dist / 2) ** 2, (ub_dist / 2) ** 2),
-            var,
-        )
-    else:
-        constrained_var = var
+    lb_dist = mean - lb
+    ub_dist = ub - mean
+    constrained_var = jnp.minimum(
+        jnp.minimum((0.5 * lb_dist) ** 2, (0.5 * ub_dist) ** 2),
+        var,
+    )
 
     samples = (
         jax.random.truncated_normal(
