@@ -41,6 +41,13 @@ class ReplayBuffer:
         dones = jnp.hstack([self.buffer[i][4] for i in indices])
         return observations, actions, rewards, next_observations, dones
 
+    def mean_reward(self, n_steps):
+        if n_steps > len(self.buffer):
+            return jnp.inf
+        return jnp.mean(
+            jnp.hstack([self.buffer[i][2] for i in np.arange(-n_steps, 0)])
+        )
+
 
 class ModelPredictiveControl:
     """Model-Predictive Control (MPC).
@@ -145,7 +152,9 @@ class ModelPredictiveControl:
 
         return actions_per_bootstrap[0][best_bootstrap]
 
-    def _cem_action_with_max_reward(self, last_act: jnp.ndarray, obs: jnp.ndarray):
+    def _cem_action_with_max_reward(
+        self, last_act: jnp.ndarray, obs: jnp.ndarray
+    ):
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
         self.key, cem_key = jax.random.split(self.key, 2)
         act = optimize_cem(
@@ -318,8 +327,8 @@ def train_pets(
     action = None
 
     for t in range(total_timesteps):
-        if verbose >= 5 and t % 100 == 0:
-            print(f"[PETS] {t=}")
+        if verbose >= 5 and t % 10 == 0:
+            print(f"[PETS] {t=}, mean rewards={rb.mean_reward(10)}")
         if t >= learning_starts:
             D_obs, D_acts, D_rews, D_next_obs, D_dones = rb.sample_batch(
                 batch_size, rng
