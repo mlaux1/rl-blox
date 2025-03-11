@@ -101,6 +101,7 @@ class EnsembleOfGaussianMlps:
         self._ensemble_predict = jax.jit(
             jax.vmap(base_model_predict, in_axes=(0, None))
         )
+        self.train_states_ = None
 
     @classmethod
     def create(
@@ -195,7 +196,7 @@ class EnsembleOfGaussianMlps:
         X_train = X[bootstrapped_indices]
         Y_train = Y[bootstrapped_indices]
 
-        if not hasattr(self, "train_states_") or not self.warm_start:
+        if self.train_states_ is None or not self.warm_start:
             self.key, init_key = jax.random.split(self.key, 2)
             model_keys = jax.random.split(init_key, self.n_base_models)
 
@@ -255,6 +256,7 @@ class EnsembleOfGaussianMlps:
         var : array, shape (n_samples, n_outputs)
             Each row contains the sum of aleatoric and epistemic variance.
         """
+        assert self.train_states_ is not None
         X = jnp.asarray(X)
         means, log_stds = self._ensemble_predict(self.train_states_, X)
         return gaussian_ensemble_prediction(means, log_stds)
@@ -280,6 +282,7 @@ class EnsembleOfGaussianMlps:
         var : array, shape (n_samples, n_outputs)
             Each row contains the aleatoric variance.
         """
+        assert self.train_states_ is not None
         X = jnp.asarray(X)
         train_state = self._get_train_state(i)
         return self._base_model_predict(train_state, X)

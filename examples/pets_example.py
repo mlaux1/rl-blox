@@ -17,7 +17,7 @@ def pendulum_reward(act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
     theta_dot = obs[..., 1]
     act = jnp.clip(act, -MAX_TORQUE, MAX_TORQUE)[..., 0]
 
-    costs = norm_angle(theta) ** 2 + 0.1 * theta_dot ** 2 + 0.001 * (act ** 2)
+    costs = norm_angle(theta) ** 2 + 0.1 * theta_dot**2 + 0.001 * (act**2)
     return -costs
 
 

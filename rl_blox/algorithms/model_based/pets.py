@@ -288,7 +288,7 @@ def train_pets(
     action = None
 
     for t in range(total_timesteps):
-        if t > learning_starts:
+        if t >= learning_starts:
             obs, acts, rews, next_obs, dones = rb.sample_batch(batch_size, rng)
             mpc.fit(obs, acts, next_obs)
 
