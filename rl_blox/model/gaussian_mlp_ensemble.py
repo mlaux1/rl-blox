@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from functools import partial
 
+import chex
 import flax.core
 import flax.linen as nn
 import jax
@@ -346,11 +347,11 @@ def heteroscedastic_aleatoric_uncertainty_loss(
 
     Parameters
     ----------
-    mean_pred
+    mean_pred : array, shape (n_samples, n_outputs)
         Means of the predicted Gaussian distributions.
-    log_std_pred
+    log_std_pred : array, shape (n_samples, n_outputs)
         Logarithm of standard deviations of predicted Gaussian distributions.
-    Y
+    Y : array, shape (n_samples, n_outputs)
         Actual outputs.
 
     Returns
@@ -374,6 +375,9 @@ def heteroscedastic_aleatoric_uncertainty_loss(
        Neural Information Processing Systems (NeurIPS).
        https://proceedings.neurips.cc/paper_files/paper/2017/file/9ef2ed4b7fd2c810847ffa5fa85bce38-Paper.pdf
     """
+    chex.assert_equal_shape((mean_pred, log_std_pred))
+    chex.assert_equal_shape((mean_pred, Y))
+
     var = jnp.exp(log_std_pred) ** 2
     # var = jnp.where(var < 1e-6, 1.0, var)  # TODO do we need this?
     squared_erros = optax.l2_loss(mean_pred, Y)  # including factor 0.5
