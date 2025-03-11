@@ -6,7 +6,7 @@ from jax.typing import ArrayLike
 
 
 def optimize_cem(
-    cost_function: Callable[[ArrayLike], jnp.ndarray],
+    fitness_function: Callable[[ArrayLike], jnp.ndarray],
     init_mean: ArrayLike,
     init_var: ArrayLike,
     key: jnp.ndarray,
@@ -19,12 +19,12 @@ def optimize_cem(
     alpha: float = 0.25,
     return_history: bool = False,
 ) -> jnp.ndarray | tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Cross Entropy Method (CEM) optimizer.
+    """Cross Entropy Method (CEM) optimizer (maximizer).
 
     Parameters
     ----------
-    cost_function
-        A function for computing costs over a batch of candidate solutions.
+    fitness_function
+        A function for computing fitnesses of a batch of candidate solutions.
     init_mean
         The mean of the initial candidate distribution.
     init_var
@@ -86,7 +86,7 @@ def optimize_cem(
 
         key, step_key = jax.random.split(key, 2)
         mean, var, samples = step_cem(
-            cost_function,
+            fitness_function,
             mean,
             var,
             step_key,
@@ -107,7 +107,7 @@ def optimize_cem(
 
 
 def step_cem(
-    cost_function: Callable[[ArrayLike], jnp.ndarray],
+    fitness_function: Callable[[ArrayLike], jnp.ndarray],
     mean: jnp.ndarray,
     var: jnp.ndarray,
     step_key: jnp.ndarray,
@@ -131,8 +131,8 @@ def step_cem(
         * jnp.sqrt(constrained_var)[jnp.newaxis]
         + mean[jnp.newaxis]
     )
-    costs = cost_function(samples)
-    ranking = jnp.argsort(costs)
+    f = fitness_function(samples)
+    ranking = jnp.argsort(f, descending=True)
     elites = samples[ranking][:n_elite]
     mean = alpha * mean + (1.0 - alpha) * jnp.mean(elites, axis=0)
     var = alpha * var + (1.0 - alpha) * jnp.var(elites, axis=0)

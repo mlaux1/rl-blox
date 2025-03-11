@@ -123,7 +123,7 @@ class ModelPredictiveControl:
             rewards_per_step = []
             for i in range(self.n_samples):
                 act, rew = (
-                    self._cem_optimize_action(  # vmap and jit, check source https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
+                    self._cem_action_with_max_reward(  # vmap and jit, check source https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
                         actions[i], observations[i]
                     )
                 )
@@ -145,7 +145,7 @@ class ModelPredictiveControl:
 
         return actions_per_bootstrap[0][best_bootstrap]
 
-    def _cem_optimize_action(self, last_act: jnp.ndarray, obs: jnp.ndarray):
+    def _cem_action_with_max_reward(self, last_act: jnp.ndarray, obs: jnp.ndarray):
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
         self.key, cem_key = jax.random.split(self.key, 2)
         act = optimize_cem(

@@ -6,16 +6,16 @@ from matplotlib import cm
 from rl_blox.model.cross_entropy_method import optimize_cem
 
 
-def cost_function(x: jnp.ndarray) -> jnp.ndarray:
+def fitness_function(x: jnp.ndarray) -> jnp.ndarray:
     x = x - jnp.arange(x.shape[-1])[jnp.newaxis] - 1.0
-    return jnp.sum(x * x, axis=-1)
+    return -jnp.sum(x * x, axis=-1)
 
 
 x = jnp.linspace(-4, 4, 101)
 y = jnp.linspace(-4, 4, 101)
 X, Y = jnp.meshgrid(x, y)
 XY = jnp.stack((X, Y), axis=-1)
-C = cost_function(XY)
+C = fitness_function(XY)
 
 plt.figure(figsize=(8, 4))
 
@@ -24,7 +24,7 @@ init_mean = jnp.array([-3, -3])
 init_var = 9 * jnp.ones(2)
 key = jax.random.PRNGKey(42)
 solution, path, samples = optimize_cem(
-    cost_function,
+    fitness_function,
     init_mean,
     init_var,
     key,
@@ -58,7 +58,7 @@ init_mean = jnp.array([-1, -1])
 init_var = 9 * jnp.ones(2)
 key = jax.random.PRNGKey(42)
 solution, path, samples = optimize_cem(
-    cost_function,
+    fitness_function,
     init_mean,
     init_var,
     key,
