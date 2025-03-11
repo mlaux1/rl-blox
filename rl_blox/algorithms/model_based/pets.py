@@ -105,7 +105,7 @@ class ModelPredictiveControl:
         rewards_per_bootstrap = []
         observations = jnp.vstack([obs for _ in range(self.n_samples)])
         last_actions = jnp.vstack([last_act for _ in range(self.n_samples)])
-        for _t in range(self.task_horizon):
+        for _ in range(self.task_horizon):
             next_observations = []
             actions_per_step = []
             rewards_per_step = []
@@ -169,10 +169,11 @@ class ModelPredictiveControl:
         observations: ArrayLike,
         actions: ArrayLike,
         next_observations: ArrayLike,
+        n_epochs: int
     ) -> "ModelPredictiveControl":
         X = jnp.hstack((observations, actions))
         Y = jnp.asarray(next_observations)
-        self.dynamics_model.fit(X, Y, n_epochs=1)
+        self.dynamics_model.fit(X, Y, n_epochs)
         return self
 
 
@@ -187,6 +188,7 @@ def train_pets(
     total_timesteps: int = 1_000_000,
     learning_starts: int = 100,
     batch_size: int = 256,
+    n_epochs_per_iteration: int = 10,
     verbose: int = 0,
 ) -> ModelPredictiveControl:
     r"""Probabilistic Ensemble - Trajectory Sampling (PE-TS).
@@ -250,6 +252,8 @@ def train_pets(
         environment.
     batch_size
         Size of a batch during gradient computation.
+    n_epochs_per_iteration
+        Number of epochs to train in each iteration.
     verbose
         Verbosity level.
 
@@ -290,7 +294,7 @@ def train_pets(
     for t in range(total_timesteps):
         if t >= learning_starts:
             obs, acts, rews, next_obs, dones = rb.sample_batch(batch_size, rng)
-            mpc.fit(obs, acts, next_obs)
+            mpc.fit(obs, acts, next_obs, n_epochs_per_iteration)
 
         if t < learning_starts:
             action = action_space.sample()
