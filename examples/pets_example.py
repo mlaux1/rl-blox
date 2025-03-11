@@ -9,7 +9,7 @@ from rl_blox.model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
 MAX_TORQUE: float = 2.0
 
 
-def pendulum_reward(obs: ArrayLike, act: ArrayLike) -> jnp.ndarray:
+def pendulum_reward(act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
     obs = jnp.asarray(obs)
     act = jnp.asarray(act)
 

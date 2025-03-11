@@ -51,10 +51,10 @@ class ModelPredictiveControl:
         Action space of the environment.
     reward_model
         Vectorized implementation of the environment's reward function.
-        The first argument should be the current observation (obs). The
-        second argument should be an array of actions (act). For each action
-        it should return the reward associated with the pair of the observation
-        and action.
+        The first argument should be an array of actions (act). The second
+        argument should be the current observation (obs), in which these
+        actions will be executed. For each action it should return the reward
+        associated with the pair of the observation and action.
     dynamics_model
         Learned model of the environment's dynamic.
     task_horizon
@@ -178,7 +178,7 @@ class ModelPredictiveControl:
 
 def train_pets(
     env: gym.Env,
-    reward_model: Callable,
+    reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
     dynamics_model: EnsembleOfGaussianMlps,
     task_horizon: int,
     n_samples: int,
@@ -228,7 +228,11 @@ def train_pets(
     env
         gymnasium environment.
     reward_model
-        Reward function for the environment.
+        Vectorized implementation of the environment's reward function.
+        The first argument should be an array of actions (act). The second
+        argument should be the current observation (obs), in which these
+        actions will be executed. For each action it should return the reward
+        associated with the pair of the observation and action.
     dynamics_model
         Probabilistic ensemble dynamics model.
     task_horizon
