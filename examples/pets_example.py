@@ -1,28 +1,9 @@
 import gymnasium as gym
 import jax
-import jax.numpy as jnp
-from jax.typing import ArrayLike
 
 from rl_blox.algorithms.model_based.pets import train_pets
+from rl_blox.algorithms.model_based.pets_reward_models import pendulum_reward
 from rl_blox.model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
-
-MAX_TORQUE: float = 2.0
-
-
-def pendulum_reward(act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
-    obs = jnp.asarray(obs)  # (..., 3): cos(theta), sin(theta), theta_dot
-    act = jnp.asarray(act)  # (..., 1): torque
-
-    theta = jnp.arccos(jnp.clip(obs[..., 0], -1.0, 1.0))
-    theta_dot = obs[..., 2]
-    act = jnp.clip(act, -MAX_TORQUE, MAX_TORQUE)[..., 0]
-
-    costs = norm_angle(theta) ** 2 + 0.1 * theta_dot**2 + 0.001 * (act**2)
-    return -costs
-
-
-def norm_angle(angle: jnp.ndarray) -> jnp.ndarray:
-    return ((angle + jnp.pi) % (2.0 * jnp.pi)) - jnp.pi
 
 
 env_name = "Pendulum-v1"
