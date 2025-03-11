@@ -161,7 +161,7 @@ class ModelPredictiveControl:
             lower_bound=self.action_space.low,
             upper_bound=self.action_space.high,
         )
-        rew = self.reward_model(obs, act)
+        rew = self.reward_model(act, obs)
         return act, rew
 
     def fit(
