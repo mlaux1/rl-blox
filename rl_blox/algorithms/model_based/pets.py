@@ -1,6 +1,8 @@
 from collections import deque
 from collections.abc import Callable
+from functools import partial
 
+import chex
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -61,33 +63,10 @@ class ModelPredictiveControl:
 
         self.key = jax.random.PRNGKey(seed)
 
-    def action(self, last_act: ArrayLike, obs: ArrayLike, key: jnp.ndarray) -> jnp.ndarray:
+    def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
         last_act = jnp.asarray(last_act)
         obs = jnp.asarray(obs)
         return self._trajectory_sampling_inf(last_act, obs)
-
-    def _trajectory_sampling_1(self, last_act: jnp.ndarray, obs: jnp.ndarray):
-        """TS1 refers to particles uniformly re-sampling a bootstrap per time step."""
-        observations = jnp.vstack([obs for _ in range(self.n_samples)])
-        # TODO store (first) actions
-        for t in range(self.task_horizon):
-            self.key, bootstrap_key = jax.random.split(self.key, 2)
-            model_indices = jax.random.randint(
-                bootstrap_key,
-                shape=(self.n_samples,),
-                minval=0,
-                maxval=self.dynamics_model.n_base_models,
-            )
-            next_observations = []
-            for i, j in enumerate(model_indices):
-                act = self._cem_optimize_action(last_act)
-                X = jnp.hstack((observations[i], act))[:, jnp.newaxis]
-                next_obs = self.dynamics_model.base_predict(X, j)[0]
-                next_observations.append(next_obs)
-            next_observations = jnp.vstack(next_observations)
-
-            observations = next_observations
-        return act  # TODO return best first action
 
     def _trajectory_sampling_inf(self, last_act: jnp.ndarray, obs: jnp.ndarray):
         """TSinf refers to particle bootstraps never changing during a trial."""
@@ -98,26 +77,49 @@ class ModelPredictiveControl:
             minval=0,
             maxval=self.dynamics_model.n_base_models,
         )
+        actions_per_bootstrap = []
+        rewards_per_bootstrap = []
         observations = jnp.vstack([obs for _ in range(self.n_samples)])
-        # TODO store (first) actions
+        last_actions = jnp.vstack([last_act for _ in range(self.n_samples)])
         for t in range(self.task_horizon):
             next_observations = []
-            for i, j in enumerate(model_indices):
-                act = self._cem_optimize_action(last_act)
-                X = jnp.hstack((observations[i], act))[:, jnp.newaxis]
-                next_obs = self.dynamics_model.base_predict(X, j)[0]
+            actions_per_step = []
+            rewards_per_step = []
+            for i in range(self.n_samples):
+                act, rew = self._cem_optimize_action(last_actions[i])
+                next_obs = self.dynamics_model.base_predict(
+                    jnp.hstack((observations[i], act))[:, jnp.newaxis],
+                    model_indices[i]
+                )[0]
                 next_observations.append(next_obs)
-            next_observations = jnp.vstack(next_observations)
+                actions_per_step.append(act)
+                rewards_per_step.append(rew)
 
-            observations = next_observations
-        return act  # TODO return best first action
+            observations = jnp.vstack(next_observations)
+            last_actions = jnp.vstack(actions_per_step)
 
-    def _cem_optimize_action(self, last_act: jnp.ndarray):
+            actions_per_bootstrap.append(actions_per_step)
+            rewards_per_bootstrap.append(rewards_per_step)
+
+        best_bootstrap = self._find_best_bootstrap(
+            jnp.array(rewards_per_bootstrap))
+
+        return actions_per_bootstrap[0][best_bootstrap]
+
+    def _find_best_bootstrap(self, rewards_per_bootstrap: jnp.ndarray) -> jnp.ndarray:
+        rewards_per_bootstrap = jnp.array(rewards_per_bootstrap)
+        chex.assert_shape(rewards_per_bootstrap, (self.task_horizon, self.n_samples))
+        returns_per_bootstrap = jnp.sum(rewards_per_bootstrap, axis=1)
+        chex.assert_shape(returns_per_bootstrap, (self.n_samples,))
+        best_bootstrap = jnp.argmax(returns_per_bootstrap)
+        return best_bootstrap
+
+    def _cem_optimize_action(self, last_act: jnp.ndarray, obs: jnp.ndarray):
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
         self.key, cem_key = jax.random.split(self.key, 2)
         init_var = jnp.ones_like(last_act)  # TODO
-        return optimize_cem(
-            self.reward_model,
+        act = optimize_cem(
+            partial(self.reward_model, obs=obs),
             last_act,
             # TODO make configurable
             init_var,
@@ -126,6 +128,8 @@ class ModelPredictiveControl:
             n_population=50,
             n_elite=25
         )
+        rew = self.reward_model(obs, act)
+        return act, rew
 
 
     def fit(
@@ -240,6 +244,7 @@ def train_pets(
     )
 
     obs, _ = env.reset(seed=seed)
+    action = None
 
     for t in range(total_timesteps):
         if t > learning_starts:
@@ -249,7 +254,8 @@ def train_pets(
         if t < learning_starts:
             action = action_space.sample()
         else:
-            action = mpc.action(obs)
+            assert action is not None
+            action = mpc.action(action, obs)
 
         next_obs, reward, termination, truncation, info = env.step(action)
 
