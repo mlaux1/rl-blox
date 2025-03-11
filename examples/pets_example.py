@@ -30,7 +30,7 @@ env = gym.make(env_name)
 seed = 1
 key = jax.random.PRNGKey(42)
 dynamics_model = EnsembleOfGaussianMlps.create(
-    env.action_space.shape[0],  # TODO determine automatically
+    env.observation_space.shape[0],  # TODO determine automatically
     [500, 500, 500],
     5,
     key,

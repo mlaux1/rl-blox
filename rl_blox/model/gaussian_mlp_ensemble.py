@@ -183,6 +183,9 @@ class EnsembleOfGaussianMlps:
         X = jnp.asarray(X)
         Y = jnp.asarray(Y)
 
+        chex.assert_equal_shape_prefix((X, Y), prefix_len=1)
+        chex.assert_axis_dimension(Y, axis=1, expected=self.base_model.n_outputs)
+
         n_samples = X.shape[0]
         n_bootstrapped = int(self.train_size * n_samples)
 
@@ -215,11 +218,11 @@ class EnsembleOfGaussianMlps:
             train_state: TrainState, X: jnp.ndarray, y: jnp.ndarray
         ) -> tuple[jnp.ndarray, TrainState]:
             def compute_loss(
-                X: jnp.ndarray, y: jnp.ndarray, params: flax.core.FrozenDict
+                X: jnp.ndarray, Y: jnp.ndarray, params: flax.core.FrozenDict
             ) -> jnp.ndarray:
                 mean_pred, log_std_pred = self.base_model.apply(params, X)
                 return heteroscedastic_aleatoric_uncertainty_loss(
-                    mean_pred, log_std_pred, y
+                    mean_pred, log_std_pred, Y
                 )
 
             loss = partial(compute_loss, X, y)
@@ -375,8 +378,8 @@ def heteroscedastic_aleatoric_uncertainty_loss(
        Neural Information Processing Systems (NeurIPS).
        https://proceedings.neurips.cc/paper_files/paper/2017/file/9ef2ed4b7fd2c810847ffa5fa85bce38-Paper.pdf
     """
-    chex.assert_equal_shape((mean_pred, log_std_pred))
     chex.assert_equal_shape((mean_pred, Y))
+    chex.assert_equal_shape((log_std_pred, Y))
 
     var = jnp.exp(log_std_pred) ** 2
     # var = jnp.where(var < 1e-6, 1.0, var)  # TODO do we need this?
