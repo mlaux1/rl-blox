@@ -2,6 +2,7 @@ from collections.abc import Callable
 from functools import partial
 
 import chex
+import distrax
 import flax.core
 import flax.linen as nn
 import jax
@@ -294,6 +295,14 @@ class EnsembleOfGaussianMlps:
         X = jnp.asarray(X)
         train_state = self._get_train_state(i)
         return self._base_model_predict(train_state, X)
+
+    def base_sample(self, x, i, key):
+        assert self.train_states_ is not None
+        train_state = self._get_train_state(i)
+        mean, log_std = self._base_model_predict(train_state, x[jnp.newaxis])
+        y = distrax.MultivariateNormalDiag(loc=mean, scale_diag=jnp.exp(log_std)).sample(seed=key)
+        return y[0]
+
 
     def vmap_base_predict(
         self, X: ArrayLike, i: jnp.ndarray
