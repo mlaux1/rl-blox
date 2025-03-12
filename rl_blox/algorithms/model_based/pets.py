@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax.typing import ArrayLike
 
-from ...model.cross_entropy_method import optimize_cem
+from ...model.cross_entropy_method import cem_sample, cem_update
 from ...model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
 
 
@@ -114,6 +114,28 @@ class ModelPredictiveControl:
                     trajectory_sampling_inf,
                     obs=obs,
                     dynamics_model=self.dynamics_model,
+                )
+            )
+        )
+        var = jnp.vstack([self.init_var for _ in range(self.n_samples)])
+        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
+        # TODO make configurable
+        opt_sample = jax.jit(
+            jax.vmap(
+                partial(
+                    cem_sample,
+                    n_population=400,
+                    lb=self.action_space.low,
+                    up=self.action_space.high,
+                )
+            )
+        )
+        opt_update = jax.jit(
+            jax.vmap(
+                partial(
+                    cem_update,
+                    n_elite=40,
+                    alpha=0.1,
                 )
             )
         )

@@ -98,21 +98,6 @@ def optimize_cem(
         return mean
 
 
-def cem_update(
-    samples: jnp.ndarray,
-    fitness: jnp.ndarray,
-    mean: jnp.ndarray,
-    var: jnp.ndarray,
-    n_elite: int,
-    alpha: float,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    ranking = jnp.argsort(fitness, descending=True)
-    elites = samples[ranking][:n_elite]
-    mean = alpha * mean + (1.0 - alpha) * jnp.mean(elites, axis=0)
-    var = alpha * var + (1.0 - alpha) * jnp.var(elites, axis=0)
-    return mean, var
-
-
 def cem_sample(
     mean: jnp.ndarray,
     var: jnp.ndarray,
@@ -135,3 +120,18 @@ def cem_sample(
         + mean[jnp.newaxis]
     )
     return samples
+
+
+def cem_update(
+    samples: jnp.ndarray,
+    fitness: jnp.ndarray,
+    mean: jnp.ndarray,
+    var: jnp.ndarray,
+    n_elite: int,
+    alpha: float,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    ranking = jnp.argsort(fitness, descending=True)
+    elites = samples[ranking][:n_elite]
+    mean = alpha * mean + (1.0 - alpha) * jnp.mean(elites, axis=0)
+    var = alpha * var + (1.0 - alpha) * jnp.var(elites, axis=0)
+    return mean, var
