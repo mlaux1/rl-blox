@@ -128,7 +128,7 @@ class ModelPredictiveControl:
                 print(f"[PETS/MPC] predict step: {t=}")
             actions_per_step = []
             rewards_per_step = []
-            for i in range(self.n_samples):
+            for i in range(self.n_samples):  # TODO bullshit, we have to optimize all actions of a trajectory at once
                 act, rew = (
                     self._cem_action_with_max_reward(  # vmap and jit, check source https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
                         actions[i], observations[i]
