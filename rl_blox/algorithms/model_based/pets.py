@@ -155,6 +155,9 @@ class ModelPredictiveControl:
             ]
         )
 
+        # TODO for _ in range(n_iter):
+        # TODO action_samples = opt_sample(...)
+        # TODO does the number of bootstraps correspond to the population size?
         keys = jax.random.split(self.key, self.n_samples + 1)
         self.key = keys[0]
         obs_trajectory = ts_inf(actions, model_indices, keys[1:])
@@ -163,6 +166,7 @@ class ModelPredictiveControl:
         chex.assert_shape(rewards, (self.n_samples, self.task_horizon))
         returns = rewards.sum(axis=1)
         chex.assert_shape(returns, (self.n_samples,))
+        # TODO opt_update(...)
 
         return actions[jnp.argmax(returns), 0]
 
@@ -222,7 +226,7 @@ def trajectory_sampling_inf(
     observations = []
     for act in acts:
         key, sampling_key = jax.random.split(key, 2)
-        obs = dynamics_model.base_sample(
+        obs = dynamics_model.base_sample(  # TODO do we sample or just take the mean?
             jnp.hstack((obs, act)), model_idx, sampling_key
         )
         observations.append(obs)
