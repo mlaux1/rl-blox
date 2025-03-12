@@ -64,6 +64,8 @@ def optimize_cem(
     samples, optional
         History of all samples.
     """
+    mean = jnp.asarray(init_mean)
+    var = jnp.asarray(init_var)
     ub = jnp.asarray(upper_bound)
     lb = jnp.asarray(lower_bound)
 
@@ -72,9 +74,6 @@ def optimize_cem(
             f"Number of elites {n_elite=} must be at most the population "
             f"size {n_population=}."
         )
-
-    mean = jnp.asarray(init_mean)
-    var = jnp.asarray(init_var)
 
     if return_history:
         path = []
@@ -85,17 +84,10 @@ def optimize_cem(
             break
 
         key, step_key = jax.random.split(key, 2)
-        mean, var, samples = step_cem(
-            fitness_function,
-            mean,
-            var,
-            step_key,
-            n_elite,
-            n_population,
-            lb,
-            ub,
-            alpha,
-        )
+        samples = cem_sample(mean, var, step_key, n_population, lb, ub)
+        f = fitness_function(samples)
+        mean, var = cem_update(samples, f, mean, var, n_elite, alpha)
+
         if return_history:
             path.append(jnp.copy(mean))
             sample_history.append(samples)
@@ -106,24 +98,35 @@ def optimize_cem(
         return mean
 
 
-def step_cem(
-    fitness_function: Callable[[ArrayLike], jnp.ndarray],
+def cem_update(
+    samples: jnp.ndarray,
+    fitness: jnp.ndarray,
+    mean: jnp.ndarray,
+    var: jnp.ndarray,
+    n_elite: int,
+    alpha: float,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    ranking = jnp.argsort(fitness, descending=True)
+    elites = samples[ranking][:n_elite]
+    mean = alpha * mean + (1.0 - alpha) * jnp.mean(elites, axis=0)
+    var = alpha * var + (1.0 - alpha) * jnp.var(elites, axis=0)
+    return mean, var
+
+
+def cem_sample(
     mean: jnp.ndarray,
     var: jnp.ndarray,
     step_key: jnp.ndarray,
-    n_elite: int,
     n_population: int,
     lb: jnp.ndarray,
     ub: jnp.ndarray,
-    alpha: float,
-):
+) -> jnp.ndarray:
     lb_dist = mean - lb
     ub_dist = ub - mean
     constrained_var = jnp.minimum(
         jnp.minimum((0.5 * lb_dist) ** 2, (0.5 * ub_dist) ** 2),
         var,
     )
-
     samples = (
         jax.random.truncated_normal(
             step_key, -2.0, 2.0, shape=(n_population, mean.shape[0])
@@ -131,9 +134,4 @@ def step_cem(
         * jnp.sqrt(constrained_var)[jnp.newaxis]
         + mean[jnp.newaxis]
     )
-    f = fitness_function(samples)
-    ranking = jnp.argsort(f, descending=True)
-    elites = samples[ranking][:n_elite]
-    mean = alpha * mean + (1.0 - alpha) * jnp.mean(elites, axis=0)
-    var = alpha * var + (1.0 - alpha) * jnp.var(elites, axis=0)
-    return mean, var, samples
+    return samples
