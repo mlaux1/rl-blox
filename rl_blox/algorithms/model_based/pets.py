@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.typing import ArrayLike
+from gymnasium.wrappers import RecordEpisodeStatistics
 
 from ...model.cross_entropy_method import cem_sample, cem_update
 from ...model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
@@ -370,6 +371,10 @@ def train_pets(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
     action_space: gym.spaces.Box = env.action_space
+
+    if verbose:
+        env = RecordEpisodeStatistics(env)
+
     rb = ReplayBuffer(buffer_size)
 
     mpc = ModelPredictiveControl(
