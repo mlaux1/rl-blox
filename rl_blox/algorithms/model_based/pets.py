@@ -108,6 +108,23 @@ class ModelPredictiveControl:
         self.upper_bound = jnp.vstack(
             [self.action_space.high for _ in range(self.task_horizon)]
         )
+        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
+        self.opt_sample = jax.jit(
+            partial(
+                cem_sample,
+                n_population=self.n_samples,
+                lb=self.lower_bound,
+                ub=self.upper_bound,
+            )
+        )
+        # TODO make configurable
+        self.opt_update = jax.jit(
+            partial(
+                cem_update,
+                n_elite=int(0.1 * self.n_samples),
+                alpha=0.1,
+            )
+        )
 
     def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L194
@@ -132,23 +149,6 @@ class ModelPredictiveControl:
                 )
             )
         )
-        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
-        opt_sample = jax.jit(
-            partial(
-                cem_sample,
-                n_population=self.n_samples,
-                lb=self.lower_bound,
-                ub=self.upper_bound,
-            )
-        )
-        # TODO make configurable
-        opt_update = jax.jit(
-            partial(
-                cem_update,
-                n_elite=int(0.1 * self.n_samples),
-                alpha=0.1,
-            )
-        )
 
         self.key, bootstrap_key = jax.random.split(self.key, 2)
         model_indices = jax.random.randint(
@@ -163,9 +163,9 @@ class ModelPredictiveControl:
 
         for i in range(10):  # TODO parameter
             if self.verbose >= 8:
-                print("[PETS/MPC] Iteration #{i+1}")
+                print(f"[PETS/MPC] Iteration #{i+1}")
             self.key, sampling_key = jax.random.split(self.key, 2)
-            actions = opt_sample(mean, var, sampling_key)
+            actions = self.opt_sample(mean, var, sampling_key)
             chex.assert_shape(
                 actions,
                 (self.n_samples, self.task_horizon) + self.action_space.shape,
@@ -183,7 +183,7 @@ class ModelPredictiveControl:
             returns = rewards.sum(axis=1)
             chex.assert_shape(returns, (self.n_samples,))
 
-            mean, var = opt_update(actions, returns, mean, var)
+            mean, var = self.opt_update(actions, returns, mean, var)
 
         # TODO track best? argmax(returns)?
         best_plan = mean
