@@ -173,8 +173,11 @@ class ModelPredictiveControl:
         mean = self.prev_plan
         var = jnp.copy(self.init_var)
         for i in range(self.n_opt_iter):
+            if self.verbose >= 10:
+                print(f"[PETS/MPC] it #{i + 1}")
             self.key, sampling_key = jax.random.split(self.key, 2)
             actions = self._cem_sample(mean, var, sampling_key)
+            assert not jnp.any(jnp.isnan(actions))
             chex.assert_shape(
                 actions,
                 (self.n_samples, self.task_horizon) + self.action_space.shape,
@@ -183,6 +186,7 @@ class ModelPredictiveControl:
             keys = jax.random.split(self.key, self.n_samples + 1)
             self.key = keys[0]
             obs_trajectory = self._ts_inf(actions, model_indices, keys[1:], obs)
+            assert not jnp.any(jnp.isnan(obs_trajectory))
             chex.assert_equal_shape_prefix(
                 (actions, obs_trajectory), prefix_len=2
             )

@@ -76,7 +76,6 @@ class EnsembleOfGaussianMlps:
     verbose: int
     _base_model_predict: Callable
     _ensemble_predict: Callable
-    _vmap_base_model_predict: Callable
     train_states_: TrainState
 
     def __init__(
@@ -103,9 +102,6 @@ class EnsembleOfGaussianMlps:
         self._base_model_predict = jax.jit(base_model_predict)
         self._ensemble_predict = jax.jit(
             jax.vmap(base_model_predict, in_axes=(0, None))
-        )
-        self._vmap_base_model_predict = jax.jit(
-            jax.vmap(base_model_predict, in_axes=(0, 0))
         )
         self.train_states_ = None
 
@@ -302,35 +298,6 @@ class EnsembleOfGaussianMlps:
         mean, log_std = self._base_model_predict(train_state, x[jnp.newaxis])
         y = distrax.MultivariateNormalDiag(loc=mean, scale_diag=jnp.exp(log_std)).sample(seed=key)
         return y[0]
-
-
-    def vmap_base_predict(
-        self, X: ArrayLike, i: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
-        """Predict with multiple base models.
-
-        Parameters
-        ----------
-        X : array-like, shape (n_samples, n_features)
-            Each row contains a feature vector that should be predicted with
-            a different base model.
-
-        i : array-like, shape (n_samples,)
-            Indices of base models to be used for prediction.
-
-        Returns
-        -------
-        Y : array, shape (n_samples, n_outputs)
-            Each row contains a prediction.
-        """
-        assert self.train_states_ is not None
-        # shape: (n_samples, 1, n_features)
-        X = jnp.asarray(X)[:, jnp.newaxis, :]
-        i = jnp.asarray(i).astype(int)
-        chex.assert_equal_shape_prefix((X, i), prefix_len=1)
-        train_state = self._get_train_state(i)
-        mean, _ = self._vmap_base_model_predict(train_state, X)
-        return mean[:, 0, :]  # shape: (n_samples, n_outputs)
 
     def _get_train_state(self, i: ArrayLike) -> TrainState:
         """Get train state of individual Gaussian MLP(s)."""
