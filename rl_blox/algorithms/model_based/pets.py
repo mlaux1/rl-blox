@@ -244,7 +244,8 @@ def train_pets(
     total_timesteps: int = 1_000_000,
     learning_starts: int = 100,
     batch_size: int = 256,
-    n_epochs_per_iteration: int = 10,
+    n_steps_per_iteration: int = 100,
+    gradient_steps: int = 10,
     verbose: int = 0,
 ) -> ModelPredictiveControl:
     r"""Probabilistic Ensemble - Trajectory Sampling (PE-TS).
@@ -308,8 +309,10 @@ def train_pets(
         environment.
     batch_size
         Size of a batch during gradient computation.
-    n_epochs_per_iteration
-        Number of epochs to train in each iteration.
+    n_steps_per_iteration
+        Number of steps to take in the environment before we refine the model.
+    gradient_steps
+        Number of gradient steps during one training phase.
     verbose
         Verbosity level.
 
@@ -351,11 +354,15 @@ def train_pets(
     for t in range(total_timesteps):
         if verbose >= 5 and t % 10 == 0:
             print(f"[PETS] {t=}, mean rewards={rb.mean_reward(10)}")
-        if t >= learning_starts:
-            D_obs, D_acts, D_rews, D_next_obs, D_dones = rb.sample_batch(
-                batch_size, rng
-            )
-            mpc.fit(D_obs, D_acts, D_next_obs, n_epochs_per_iteration)
+        if (
+            t >= learning_starts
+            and (t - learning_starts) % n_steps_per_iteration == 0
+        ):
+            for _ in range(gradient_steps):
+                D_obs, D_acts, D_rews, D_next_obs, D_dones = rb.sample_batch(
+                    batch_size, rng
+                )
+                mpc.fit(D_obs, D_acts, D_next_obs, n_epochs=1)
 
         if t < learning_starts:
             action = action_space.sample()
