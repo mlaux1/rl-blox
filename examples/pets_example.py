@@ -15,6 +15,7 @@ dynamics_model = EnsembleOfGaussianMlps.create(
     [500, 500, 500],
     5,
     key,
+    learning_rate=1e-3,
 )
 mpc = train_pets(
     env,
