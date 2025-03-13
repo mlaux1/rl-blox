@@ -153,6 +153,17 @@ class ModelPredictiveControl:
         if self.verbose >= 5:
             print("[PETS/MPC] sampling trajectories")
 
+        mean = self._optimize_actions(obs)
+
+        # TODO track best? argmax(returns)?
+        best_plan = mean
+        self.prev_plan = jnp.concatenate(
+            (best_plan[1:], self.avg_act[jnp.newaxis]), axis=0
+        )
+
+        return best_plan[0]
+
+    def _optimize_actions(self, obs):
         self.key, bootstrap_key = jax.random.split(self.key, 2)
         model_indices = jax.random.randint(
             bootstrap_key,
@@ -160,13 +171,11 @@ class ModelPredictiveControl:
             minval=0,
             maxval=self.dynamics_model.n_base_models,
         )
-
         mean = self.prev_plan
         var = jnp.copy(self.init_var)
-
         for i in range(self.n_opt_iter):
             if self.verbose >= 10:
-                print(f"[PETS/MPC] Iteration #{i+1}")
+                print(f"[PETS/MPC] Iteration #{i + 1}")
             self.key, sampling_key = jax.random.split(self.key, 2)
             actions = self._cem_sample(mean, var, sampling_key)
             chex.assert_shape(
@@ -187,14 +196,7 @@ class ModelPredictiveControl:
             chex.assert_shape(returns, (self.n_samples,))
 
             mean, var = self._cem_update(actions, returns, mean, var)
-
-        # TODO track best? argmax(returns)?
-        best_plan = mean
-        self.prev_plan = jnp.concatenate(
-            (best_plan[1:], self.avg_act[jnp.newaxis]), axis=0
-        )
-
-        return best_plan[0]
+        return mean
 
     def fit(
         self,
