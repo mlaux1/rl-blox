@@ -94,11 +94,14 @@ class ModelPredictiveControl:
         self.key = jax.random.PRNGKey(seed)
 
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
+        self.avg_act = 0.5 * (self.action_space.high + self.action_space.low)
+        self.prev_plan = jnp.vstack([self.avg_act for _ in range(task_horizon)])
         self.init_var = (
             self.action_space.high - self.action_space.low
         ) ** 2 / 16.0
 
     def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
+        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L194
         last_act = jnp.asarray(last_act)
         obs = jnp.asarray(obs)
         return self._trajectory_sampling_inf(last_act, obs)
@@ -148,12 +151,7 @@ class ModelPredictiveControl:
             maxval=self.dynamics_model.n_base_models,
         )
 
-        actions = jnp.array(
-            [
-                [last_act for _ in range(self.task_horizon)]
-                for _ in range(self.n_samples)
-            ]
-        )
+        actions = jnp.concatenate([self.prev_plan[jnp.newaxis] for _ in range(self.n_samples)], axis=0)
 
         # TODO for _ in range(n_iter):
         # TODO action_samples = opt_sample(...)
@@ -168,7 +166,10 @@ class ModelPredictiveControl:
         chex.assert_shape(returns, (self.n_samples,))
         # TODO opt_update(...)
 
-        return actions[jnp.argmax(returns), 0]
+        best_plan = actions[jnp.argmax(returns)]
+        self.prev_plan = jnp.concatenate((best_plan[1:], self.avg_act[jnp.newaxis]), axis=0)
+
+        return best_plan[0]
 
     def fit(
         self,
@@ -223,10 +224,13 @@ def trajectory_sampling_inf(
     model_idx
         Index of the model used for trajectory sampling.
     """
+    # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = []
     for act in acts:
+        # We sample from one of the base models.
+        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
         key, sampling_key = jax.random.split(key, 2)
-        obs = dynamics_model.base_sample(  # TODO do we sample or just take the mean?
+        obs = dynamics_model.base_sample(
             jnp.hstack((obs, act)), model_idx, sampling_key
         )
         observations.append(obs)
