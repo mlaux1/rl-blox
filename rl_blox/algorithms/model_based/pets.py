@@ -113,7 +113,7 @@ class ModelPredictiveControl:
             [self.action_space.high for _ in range(self.task_horizon)]
         )
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
-        self.opt_sample = jax.jit(
+        self._cem_sample = jax.jit(
             partial(
                 cem_sample,
                 n_population=self.n_samples,
@@ -122,14 +122,14 @@ class ModelPredictiveControl:
             )
         )
         # TODO make configurable
-        self.opt_update = jax.jit(
+        self._cem_update = jax.jit(
             partial(
                 cem_update,
                 n_elite=int(0.1 * self.n_samples),
                 alpha=0.1,
             )
         )
-        self.ts_inf = jax.jit(
+        self._ts_inf = jax.jit(
             jax.vmap(
                 partial(
                     trajectory_sampling_inf,
@@ -168,7 +168,7 @@ class ModelPredictiveControl:
             if self.verbose >= 10:
                 print(f"[PETS/MPC] Iteration #{i+1}")
             self.key, sampling_key = jax.random.split(self.key, 2)
-            actions = self.opt_sample(mean, var, sampling_key)
+            actions = self._cem_sample(mean, var, sampling_key)
             chex.assert_shape(
                 actions,
                 (self.n_samples, self.task_horizon) + self.action_space.shape,
@@ -176,7 +176,7 @@ class ModelPredictiveControl:
 
             keys = jax.random.split(self.key, self.n_samples + 1)
             self.key = keys[0]
-            obs_trajectory = self.ts_inf(actions, model_indices, keys[1:], obs)
+            obs_trajectory = self._ts_inf(actions, model_indices, keys[1:], obs)
             chex.assert_equal_shape_prefix(
                 (actions, obs_trajectory), prefix_len=2
             )
@@ -186,7 +186,7 @@ class ModelPredictiveControl:
             returns = rewards.sum(axis=1)
             chex.assert_shape(returns, (self.n_samples,))
 
-            mean, var = self.opt_update(actions, returns, mean, var)
+            mean, var = self._cem_update(actions, returns, mean, var)
 
         # TODO track best? argmax(returns)?
         best_plan = mean
