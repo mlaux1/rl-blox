@@ -125,6 +125,15 @@ class ModelPredictiveControl:
                 alpha=0.1,
             )
         )
+        self.ts_inf = jax.jit(
+            jax.vmap(
+                partial(
+                    trajectory_sampling_inf,
+                    dynamics_model=self.dynamics_model,
+                ),
+                in_axes=(0, 0, 0, None),
+            )
+        )
 
     def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L194
@@ -139,16 +148,6 @@ class ModelPredictiveControl:
 
         if self.verbose >= 5:
             print("[PETS/MPC] sampling trajectories")
-
-        ts_inf = jax.jit(
-            jax.vmap(
-                partial(
-                    trajectory_sampling_inf,
-                    obs=obs,
-                    dynamics_model=self.dynamics_model,
-                )
-            )
-        )
 
         self.key, bootstrap_key = jax.random.split(self.key, 2)
         model_indices = jax.random.randint(
@@ -173,7 +172,7 @@ class ModelPredictiveControl:
 
             keys = jax.random.split(self.key, self.n_samples + 1)
             self.key = keys[0]
-            obs_trajectory = ts_inf(actions, model_indices, keys[1:])
+            obs_trajectory = self.ts_inf(actions, model_indices, keys[1:], obs)
             chex.assert_equal_shape_prefix(
                 (actions, obs_trajectory), prefix_len=2
             )
