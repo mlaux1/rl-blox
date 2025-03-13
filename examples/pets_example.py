@@ -21,7 +21,7 @@ mpc = train_pets(
     pendulum_reward,
     dynamics_model,
     task_horizon=15,  # 150,
-    n_samples=20,
+    n_samples=400,
     seed=20,
     learning_starts=100,
     verbose=10,

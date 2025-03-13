@@ -1,5 +1,6 @@
 from typing import Callable
 
+import chex
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
@@ -106,6 +107,10 @@ def cem_sample(
     lb: jnp.ndarray,
     ub: jnp.ndarray,
 ) -> jnp.ndarray:
+    chex.assert_equal_shape((mean, var))
+    chex.assert_equal_shape((mean, lb))
+    chex.assert_equal_shape((mean, ub))
+
     lb_dist = mean - lb
     ub_dist = ub - mean
     constrained_var = jnp.minimum(
@@ -114,7 +119,7 @@ def cem_sample(
     )
     samples = (
         jax.random.truncated_normal(
-            step_key, -2.0, 2.0, shape=(n_population, mean.shape[0])
+            step_key, -2.0, 2.0, shape=(n_population,) + mean.shape
         )
         * jnp.sqrt(constrained_var)[jnp.newaxis]
         + mean[jnp.newaxis]

@@ -96,9 +96,18 @@ class ModelPredictiveControl:
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
         self.avg_act = 0.5 * (self.action_space.high + self.action_space.low)
         self.prev_plan = jnp.vstack([self.avg_act for _ in range(task_horizon)])
-        self.init_var = (
-            self.action_space.high - self.action_space.low
-        ) ** 2 / 16.0
+        self.init_var = jnp.vstack(
+            [
+                (self.action_space.high - self.action_space.low) ** 2 / 16.0
+                for _ in range(self.task_horizon)
+            ]
+        )
+        self.lower_bound = jnp.vstack(
+            [self.action_space.low for _ in range(self.task_horizon)]
+        )
+        self.upper_bound = jnp.vstack(
+            [self.action_space.high for _ in range(self.task_horizon)]
+        )
 
     def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L194
@@ -111,6 +120,9 @@ class ModelPredictiveControl:
         assert last_act.ndim == 1
         assert obs.ndim == 1
 
+        if self.verbose >= 5:
+            print("[PETS/MPC] sampling trajectories")
+
         ts_inf = jax.jit(
             jax.vmap(
                 partial(
@@ -120,26 +132,21 @@ class ModelPredictiveControl:
                 )
             )
         )
-        var = jnp.vstack([self.init_var for _ in range(self.n_samples)])
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
-        # TODO make configurable
         opt_sample = jax.jit(
-            jax.vmap(
-                partial(
-                    cem_sample,
-                    n_population=400,
-                    lb=self.action_space.low,
-                    up=self.action_space.high,
-                )
+            partial(
+                cem_sample,
+                n_population=self.n_samples,
+                lb=self.lower_bound,
+                ub=self.upper_bound,
             )
         )
+        # TODO make configurable
         opt_update = jax.jit(
-            jax.vmap(
-                partial(
-                    cem_update,
-                    n_elite=40,
-                    alpha=0.1,
-                )
+            partial(
+                cem_update,
+                n_elite=int(0.1 * self.n_samples),
+                alpha=0.1,
             )
         )
 
@@ -151,23 +158,38 @@ class ModelPredictiveControl:
             maxval=self.dynamics_model.n_base_models,
         )
 
-        actions = jnp.concatenate([self.prev_plan[jnp.newaxis] for _ in range(self.n_samples)], axis=0)
+        mean = self.prev_plan
+        var = jnp.copy(self.init_var)
 
-        # TODO for _ in range(n_iter):
-        # TODO action_samples = opt_sample(...)
-        # TODO does the number of bootstraps correspond to the population size?
-        keys = jax.random.split(self.key, self.n_samples + 1)
-        self.key = keys[0]
-        obs_trajectory = ts_inf(actions, model_indices, keys[1:])
-        chex.assert_equal_shape_prefix((actions, obs_trajectory), prefix_len=2)
-        rewards = self.reward_model(actions, obs_trajectory)
-        chex.assert_shape(rewards, (self.n_samples, self.task_horizon))
-        returns = rewards.sum(axis=1)
-        chex.assert_shape(returns, (self.n_samples,))
-        # TODO opt_update(...)
+        for i in range(10):  # TODO parameter
+            if self.verbose >= 8:
+                print("[PETS/MPC] Iteration #{i+1}")
+            self.key, sampling_key = jax.random.split(self.key, 2)
+            actions = opt_sample(mean, var, sampling_key)
+            chex.assert_shape(
+                actions,
+                (self.n_samples, self.task_horizon) + self.action_space.shape,
+            )
 
-        best_plan = actions[jnp.argmax(returns)]
-        self.prev_plan = jnp.concatenate((best_plan[1:], self.avg_act[jnp.newaxis]), axis=0)
+            keys = jax.random.split(self.key, self.n_samples + 1)
+            self.key = keys[0]
+            obs_trajectory = ts_inf(actions, model_indices, keys[1:])
+            chex.assert_equal_shape_prefix(
+                (actions, obs_trajectory), prefix_len=2
+            )
+
+            rewards = self.reward_model(actions, obs_trajectory)
+            chex.assert_shape(rewards, (self.n_samples, self.task_horizon))
+            returns = rewards.sum(axis=1)
+            chex.assert_shape(returns, (self.n_samples,))
+
+            mean, var = opt_update(actions, returns, mean, var)
+
+        # TODO track best? argmax(returns)?
+        best_plan = mean
+        self.prev_plan = jnp.concatenate(
+            (best_plan[1:], self.avg_act[jnp.newaxis]), axis=0
+        )
 
         return best_plan[0]
 
