@@ -198,9 +198,11 @@ class ModelPredictiveControl:
 
             mean, var = self._cem_update(actions, returns, mean, var)
             if self.verbose >= 10:
-                print(f"[PETS/MPC] it #{i + 1}, "
-                      f"return [{returns.min()}, {returns.max()}], "
-                      f"{jnp.mean(returns)} +- {jnp.std(returns)}")
+                print(
+                    f"[PETS/MPC] it #{i + 1}, "
+                    f"return [{returns.min()}, {returns.max()}], "
+                    f"{jnp.mean(returns)} +- {jnp.std(returns)}"
+                )
 
         return actions[np.argmax(returns)]
 
