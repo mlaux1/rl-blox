@@ -13,6 +13,12 @@ def soft_clipped_exp(x, min_x, max_x):
     return jnp.exp(clipped_x)
 
 
+def sigmoid_clipped_exp(x, min_x, max_x):
+    delta = max_x - min_x
+    clipped_x = min_x + delta * jax.nn.sigmoid(4 * (x / delta))
+    return jnp.exp(clipped_x)
+
+
 x = jnp.linspace(-20, 20, 1001)
 
 min_x = -10
@@ -22,6 +28,7 @@ plt.figure()
 plt.plot(x, jnp.exp(x), label="exp")
 plt.plot(x, clipped_exp(x, min_x, max_x), label="clipped exp")
 plt.plot(x, soft_clipped_exp(x, min_x, max_x), label="soft clipped exp")
+plt.plot(x, sigmoid_clipped_exp(x, min_x, max_x), label="sigmoid clipped exp")
 plt.xlabel("x")
 plt.ylabel("y")
 plt.ylim((0, 10))
