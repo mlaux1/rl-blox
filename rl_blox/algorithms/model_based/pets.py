@@ -161,7 +161,7 @@ class ModelPredictiveControl:
         var = jnp.copy(self.init_var)
 
         for i in range(10):  # TODO parameter
-            if self.verbose >= 8:
+            if self.verbose >= 10:
                 print(f"[PETS/MPC] Iteration #{i+1}")
             self.key, sampling_key = jax.random.split(self.key, 2)
             actions = self.opt_sample(mean, var, sampling_key)
@@ -401,10 +401,7 @@ def train_pets(
 
         if termination or truncation:
             if verbose:
-                print(
-                    f"{t=}, length={info['episode']['l']}, "
-                    f"return={info['episode']['r']}"
-                )
+                print(f"{t=}, {info=}")
             obs, _ = env.reset()
 
         obs = next_obs
