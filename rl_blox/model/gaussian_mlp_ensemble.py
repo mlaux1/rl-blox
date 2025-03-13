@@ -26,14 +26,14 @@ class GaussianMlp(nn.Module):
     def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         for n_nodes in self.hidden_nodes:
             x = nn.Dense(n_nodes)(x)
-            x = nn.swish(x)
+            x = nn.softplus(x)
         x = nn.Dense(2 * self.n_outputs)(x)
         if self.shared_head:
-            mean, log_var = jnp.split(x, (self.n_outputs,), axis=-1)
+            mean, log_std = jnp.split(x, (self.n_outputs,), axis=-1)
         else:
             mean = nn.Dense(self.n_outputs)(x)
-            log_var = nn.Dense(self.n_outputs)(x)
-        return mean, log_var
+            log_std = nn.Dense(self.n_outputs)(x)
+        return mean, log_std
 
 
 class EnsembleOfGaussianMlps:
@@ -132,7 +132,7 @@ class EnsembleOfGaussianMlps:
             jax random key.
         shared_head, optional
             All nodes of the last hidden layer are connected to mean AND
-            log_var.
+            log_std.
         train_size, optional
             Fraction of the original training set to train each individual
             Gaussian MLP.
@@ -185,9 +185,7 @@ class EnsembleOfGaussianMlps:
         Y = jnp.asarray(Y)
 
         chex.assert_equal_shape_prefix((X, Y), prefix_len=1)
-        chex.assert_axis_dimension(
-            Y, axis=1, expected=self.base_model.n_outputs
-        )
+        chex.assert_axis_dimension(Y, axis=1, expected=self.base_model.n_outputs)
 
         n_samples = X.shape[0]
         n_bootstrapped = int(self.train_size * n_samples)
@@ -223,9 +221,9 @@ class EnsembleOfGaussianMlps:
             def compute_loss(
                 X: jnp.ndarray, Y: jnp.ndarray, params: flax.core.FrozenDict
             ) -> jnp.ndarray:
-                mean_pred, log_var_pred = self.base_model.apply(params, X)
+                mean_pred, log_std_pred = self.base_model.apply(params, X)
                 return heteroscedastic_aleatoric_uncertainty_loss(
-                    mean_pred, log_var_pred, Y
+                    mean_pred, log_std_pred, Y
                 )
 
             loss = partial(compute_loss, X, y)
@@ -265,8 +263,8 @@ class EnsembleOfGaussianMlps:
         """
         assert self.train_states_ is not None
         X = jnp.asarray(X)
-        means, log_vars = self._ensemble_predict(self.train_states_, X)
-        return gaussian_ensemble_prediction(means, log_vars)
+        means, log_stds = self._ensemble_predict(self.train_states_, X)
+        return gaussian_ensemble_prediction(means, log_stds)
 
     def base_predict(
         self, X: ArrayLike, i: int
@@ -297,10 +295,8 @@ class EnsembleOfGaussianMlps:
     def base_sample(self, x, i, key):
         assert self.train_states_ is not None
         train_state = self._get_train_state(i)
-        mean, log_var = self._base_model_predict(train_state, x[jnp.newaxis])
-        y = distrax.MultivariateNormalDiag(
-            loc=mean, scale_diag=jnp.exp(0.5 * log_var)
-        ).sample(seed=key)
+        mean, log_std = self._base_model_predict(train_state, x[jnp.newaxis])
+        y = distrax.MultivariateNormalDiag(loc=mean, scale_diag=jnp.exp(log_std)).sample(seed=key)
         return y[0]
 
     def _get_train_state(self, i: ArrayLike) -> TrainState:
@@ -310,7 +306,7 @@ class EnsembleOfGaussianMlps:
 
 @jax.jit
 def gaussian_ensemble_prediction(
-    means: jnp.ndarray, log_vars: jnp.ndarray
+    means: jnp.ndarray, log_stds: jnp.ndarray
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Compute output of ensemble from outputs of individual Gaussian MLPs.
 
@@ -319,8 +315,8 @@ def gaussian_ensemble_prediction(
     means : array, shape (n_base_models, n_samples, n_outputs)
         Predicted means of each base model, sample, and output dimension.
 
-    log_vars : array, shape (n_base_models, n_samples, n_outputs)
-        Predicted logarithm of variance of each base model, sample,
+    log_stds : array, shape (n_base_models, n_samples, n_outputs)
+        Predicted logarithm of standard deviation of each base model, sample,
         and output dimension.
 
     Returns
@@ -334,13 +330,13 @@ def gaussian_ensemble_prediction(
     n_base_models = len(means)
     mean = jnp.mean(means, axis=0)
     epistemic_var = jnp.sum((means - mean) ** 2, axis=0) / (n_base_models + 1)
-    aleatoric_var = jnp.mean(jnp.exp(log_vars), axis=0)
+    aleatoric_var = jnp.mean(jnp.exp(log_stds) ** 2, axis=0)
     return mean, aleatoric_var + epistemic_var
 
 
 @jax.jit
 def heteroscedastic_aleatoric_uncertainty_loss(
-    mean_pred: jnp.ndarray, log_var_pred: jnp.ndarray, Y: jnp.ndarray
+    mean_pred: jnp.ndarray, log_std_pred: jnp.ndarray, Y: jnp.ndarray
 ) -> jnp.ndarray:
     """Heteroscedastic aleatoric uncertainty loss for Gaussian NN.
 
@@ -352,14 +348,14 @@ def heteroscedastic_aleatoric_uncertainty_loss(
 
     This is the negative log-likelihood of Gaussian distributions predicted
     by a neural network, i.e., the neural network predicted a mean vector and
-    a vector of component-wise log variance per sample.
+    a vector of component-wise log standard deviations per sample.
 
     Parameters
     ----------
     mean_pred : array, shape (n_samples, n_outputs)
         Means of the predicted Gaussian distributions.
-    log_var_pred : array, shape (n_samples, n_outputs)
-        Logarithm of variances of predicted Gaussian distributions.
+    log_std_pred : array, shape (n_samples, n_outputs)
+        Logarithm of standard deviations of predicted Gaussian distributions.
     Y : array, shape (n_samples, n_outputs)
         Actual outputs.
 
@@ -385,9 +381,11 @@ def heteroscedastic_aleatoric_uncertainty_loss(
        https://proceedings.neurips.cc/paper_files/paper/2017/file/9ef2ed4b7fd2c810847ffa5fa85bce38-Paper.pdf
     """
     chex.assert_equal_shape((mean_pred, Y))
-    chex.assert_equal_shape((log_var_pred, Y))
+    chex.assert_equal_shape((log_std_pred, Y))
 
-    var = jnp.exp(log_var_pred)
+    var = jnp.exp(log_std_pred) ** 2
     # var = jnp.where(var < 1e-6, 1.0, var)  # TODO do we need this?
     squared_erros = optax.l2_loss(mean_pred, Y)  # including factor 0.5
-    return jnp.mean(squared_erros / var) + 0.5 * jnp.mean(log_var_pred)
+    # Second term should be 0.5 * jnp.mean(jnp.log(var)), but this is the same
+    # because 2 * log_std_pred == jnp.log(var), so 2 and 0.5 cancel out.
+    return jnp.mean(squared_erros / var) + jnp.mean(log_std_pred)

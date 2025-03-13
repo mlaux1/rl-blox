@@ -80,8 +80,8 @@ plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
 plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
 if plot_base_models:
     for i in range(ensemble.n_base_models):
-        mean, log_var = ensemble.base_predict(X_test, i)
-        std_196 = 1.96 * jnp.exp(0.5 * log_var).squeeze()
+        mean, log_std = ensemble.base_predict(X_test, i)
+        std_196 = 1.96 * jnp.exp(log_std).squeeze()
         mean = mean.squeeze()
         plt.fill_between(
             X_test[:, 0], mean - std_196, mean + std_196, alpha=0.3
