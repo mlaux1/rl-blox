@@ -308,6 +308,77 @@ class EnsembleOfGaussianMlps:
         return jax.tree.map(lambda x: x[i], self.train_states_)
 
 
+def exp_log_var(
+    log_var: jnp.ndarray, min_log_var: jnp.ndarray, max_log_var: jnp.ndarray
+) -> jnp.ndarray:
+    """Transform logarithm of the variance to variance numerically stable.
+
+    The approach is described by Chua et al. [1]_ in Appendix A.1:
+
+    An under-appreciated detail of probabilistic networks is how the variance
+    output is implemented with automatic differentiation. Often the real-valued
+    output is treated as a log variance (or similar), and transformed through
+    an exponential function (or similar) to produce a nonnegative-valued
+    output, necessary to be interpreted as a variance. However, whilst this
+    variance output is well-behaved at points within the training distribution,
+    its value is undefined outside the trained distribution. In fact, during
+    the training, there is no explicit loss term that regulate the behavior of
+    the variance outside of the training points. Thus, when this model is then
+    evaluated at previously unseen states, as is often the case during the MBRL
+    learning process, the outputted variance can assume any arbitrary value,
+    and in practice we noticed how it occasionally collapse to zero, or explode
+    toward infinity.
+    This behavior is in contrast with other models, such as GPs, where the
+    variance is more well behaving, being bounded and Lipschitz-smooth. As a
+    remedy, we found that in our model lower bounding and upper bounding the
+    output variance such that they could not be lower or higher than the lowest
+    and highest values in the training data significantly helped. To bound the
+    variance output for a probabilistic network to be between the upper and
+    lower bounds found during training the network on the training data,
+    we used the following code with automatic differentiation:
+    `[read the code]`
+    with a small regularization penalty on term on max_logvar so that it does
+    not grow beyond the training distribution’s maximum output variance, and on
+    the negative of min_logvar so that it does not drop below the training
+    distribution’s minimum output variance.
+
+    The implementation is available at
+    https://github.com/kchua/handful-of-trials/blob/master/dmbrl/modeling/models/BNN.py#L392
+
+    Parameters
+    ----------
+    log_var : array, shape (n_samples, n_outputs)
+        Logarithm of variance, predicted by neural network.
+
+    min_log_var : array, shape (n_outputs,)
+        Lower bound.
+
+    max_log_var : array, shape (n_outputs,)
+        Upper bound.
+
+    Returns
+    -------
+    var
+        Variance.
+
+    References
+    ----------
+    .. [1] Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine.
+           2018. Deep reinforcement learning in a handful of trials using
+           probabilistic dynamics models. In Proceedings of the 32nd
+           International Conference on Neural Information Processing Systems
+           (NeurIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4759–4770.
+           https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
+    """
+    log_var = max_log_var[jnp.newaxis] - jax.nn.softplus(
+        max_log_var[jnp.newaxis], log_var
+    )
+    log_var = min_log_var[jnp.newaxis] + jax.nn.softplus(
+        log_var - min_log_var[jnp.newaxis]
+    )
+    return jnp.exp(log_var)
+
+
 @jax.jit
 def gaussian_ensemble_prediction(
     means: jnp.ndarray, log_vars: jnp.ndarray
