@@ -7,7 +7,7 @@ from rl_blox.model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
 
 
 env_name = "Pendulum-v1"
-env = gym.make(env_name)
+env = gym.make(env_name, render_mode="human")
 seed = 1
 key = jax.random.PRNGKey(42)
 dynamics_model = EnsembleOfGaussianMlps.create(
@@ -20,9 +20,10 @@ mpc = train_pets(
     env,
     pendulum_reward,
     dynamics_model,
-    task_horizon=15,  # 150,
+    task_horizon=50,
     n_samples=400,
+    n_opt_iter=20,
     seed=20,
-    learning_starts=100,
+    learning_starts=500,
     verbose=10,
 )

@@ -68,6 +68,8 @@ class ModelPredictiveControl:
         Horizon in which the controller predicts states and optimizes actions.
     n_samples
         Number of sampled paths from the dynamics model.
+    n_opt_iter
+        Number of iterations of the optimization algorithm.
     seed
         Seed for random number generator.
     verbose
@@ -81,6 +83,7 @@ class ModelPredictiveControl:
         dynamics_model: EnsembleOfGaussianMlps,
         task_horizon: int,
         n_samples: int,
+        n_opt_iter: int,
         seed: int,
         verbose: int = 0,
     ):
@@ -89,6 +92,7 @@ class ModelPredictiveControl:
         self.reward_model = reward_model
         self.task_horizon = task_horizon
         self.n_samples = n_samples
+        self.n_opt_iter = n_opt_iter
         self.verbose = verbose
 
         self.key = jax.random.PRNGKey(seed)
@@ -160,7 +164,7 @@ class ModelPredictiveControl:
         mean = self.prev_plan
         var = jnp.copy(self.init_var)
 
-        for i in range(10):  # TODO parameter
+        for i in range(self.n_opt_iter):
             if self.verbose >= 10:
                 print(f"[PETS/MPC] Iteration #{i+1}")
             self.key, sampling_key = jax.random.split(self.key, 2)
@@ -264,6 +268,7 @@ def train_pets(
     dynamics_model: EnsembleOfGaussianMlps,
     task_horizon: int,
     n_samples: int,
+    n_opt_iter: int = 5,
     seed: int = 1,
     buffer_size: int = 1_000_000,
     total_timesteps: int = 1_000_000,
@@ -323,6 +328,8 @@ def train_pets(
         Task horizon: number of time steps to predict with dynamics model.
     n_samples
         Number of action samples per time step.
+    n_opt_iter, optional
+        Number of iterations of the optimization algorithm.
     seed, optional
         Seed for random number generators in Jax and NumPy.
     buffer_size, optional
@@ -369,6 +376,7 @@ def train_pets(
         dynamics_model,
         task_horizon,
         n_samples,
+        n_opt_iter,
         seed,
         verbose=verbose - 1,
     )
