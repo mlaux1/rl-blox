@@ -148,6 +148,7 @@ class GaussianMlpEnsemble(nnx.Module):
         )
 
         # TODO move safe_log_var to nnx.Module
+        # TODO can we introduce bounds for the bounds?
         def safe_log_var(log_var, min_log_var, max_log_var):
             log_var = max_log_var - nnx.softplus(max_log_var - log_var)
             log_var = min_log_var + nnx.softplus(log_var - min_log_var)
@@ -204,6 +205,9 @@ class GaussianMlpEnsemble(nnx.Module):
             log_var_i, self.min_log_var, self.max_log_var
         )
         return mean_i, jnp.exp(log_var_i)
+
+    def base_sample(self, x, i):  # TODO implement
+        raise NotImplementedError()
 
 
 def gaussian_nll(

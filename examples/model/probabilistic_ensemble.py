@@ -52,7 +52,7 @@ seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
-n_epochs = 5_000
+n_epochs = 2_000
 plot_base_models = True
 
 key = jax.random.PRNGKey(seed)
@@ -72,7 +72,9 @@ opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))
 # TODO bootstrap training sets
 for t in range(n_epochs):
     loss = train_step(model, opt, X_train, Y_train)
-    print(f"{t=}: {loss=}")
+    if t % 100 == 0:
+        print(f"{t=}: {loss=}")
+print(model)
 
 plt.figure()
 plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
