@@ -105,6 +105,20 @@ class GaussianMlpEnsemble(nnx.Module):
 
         self.ensemble = make_model(rngs)
 
+        # TODO move safe_log_var to nnx.Module
+        def safe_log_var(log_var, min_log_var, max_log_var):
+            log_var = max_log_var - nnx.softplus(max_log_var - log_var)
+            log_var = min_log_var + nnx.softplus(log_var - min_log_var)
+            return log_var
+
+        self._safe_log_var = nnx.vmap(
+            nnx.vmap(safe_log_var, in_axes=(0, None, None)),
+            in_axes=(0, None, None),
+        )
+
+        self.min_log_var = nnx.Param(-10.0 * jnp.ones(self.n_outputs))
+        self.max_log_var = nnx.Param(0.5 * jnp.ones(self.n_outputs))
+
         def forward(
             model: GaussianMlp, x: jnp.ndarray
         ) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -121,18 +135,18 @@ class GaussianMlpEnsemble(nnx.Module):
         else:
             raise ValueError(f"{x.shape=}")
 
-        # TODO replace by numerically safe method
-        # logvar = max_logvar - jax.nn.softplus(max_logvar - logvar)
-        # logvar = min_logvar + jax.nn.softplus(logvar - min_logvar)
+        log_vars = self._safe_log_var(
+            log_vars, self.min_log_var, self.max_log_var
+        )
 
         return means, log_vars
 
     def aggegrate(self, x):
         means, log_vars = self._forward_ensemble(self.ensemble, x)
 
-        # TODO replace by numerically safe method
-        # logvar = max_logvar - jax.nn.softplus(max_logvar - logvar)
-        # logvar = min_logvar + jax.nn.softplus(logvar - min_logvar)
+        log_vars = self._safe_log_var(
+            log_vars, self.min_log_var, self.max_log_var
+        )
 
         mean = jnp.mean(means, axis=0)
         aleatoric_var = jnp.mean(jnp.exp(log_vars), axis=0)
@@ -199,12 +213,20 @@ def gaussian_nll(
 
 
 @nnx.jit
-def train_step(model, optimizer, X, Y):
+def train_step(
+    model: GaussianMlpEnsemble,
+    optimizer: nnx.Optimizer,
+    X: jnp.ndarray,
+    Y: jnp.ndarray,
+):
     gaussian_ensemble_nll = nnx.vmap(gaussian_nll, in_axes=(0, 0, None))
 
-    def loss(model):
+    def loss(model: GaussianMlpEnsemble):
         mean, log_var = model(X)
-        return gaussian_ensemble_nll(mean, log_var, Y).sum()
+        boundary_loss = 0.01 * (
+            model.max_log_var.sum() - model.min_log_var.sum()
+        )
+        return gaussian_ensemble_nll(mean, log_var, Y).sum() + boundary_loss
 
     loss, grads = nnx.value_and_grad(loss)(model)
     optimizer.update(grads)
