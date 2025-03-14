@@ -14,7 +14,7 @@ class GaussianMlp(nnx.Module):
     shared_head
         All nodes of the last hidden layer are connected to mean AND log_std.
 
-    n_inputs
+    n_features
         Number of features.
 
     n_outputs
@@ -76,6 +76,38 @@ class GaussianMlp(nnx.Module):
 
 
 class GaussianMlpEnsemble(nnx.Module):
+    """Ensemble of Gaussian MLPs.
+
+    Parameters
+    ----------
+    n_ensemble
+        Number of individual Gaussian MLPs.
+
+    shared_head
+        All nodes of the last hidden layer are connected to mean AND log_var.
+
+    n_features
+        Number of features.
+
+    n_outputs
+        Number of output components.
+
+    hidden_nodes
+        Numbers of hidden nodes of the MLP.
+
+    rngs
+        Random number generator.
+
+    References
+    ----------
+    .. [1] Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine.
+           2018. Deep reinforcement learning in a handful of trials using
+           probabilistic dynamics models. In Proceedings of the 32nd
+           International Conference on Neural Information Processing Systems
+           (NeurIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4759–4770.
+           https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
+    """
+
     ensemble: GaussianMlp
     n_ensemble: int
     n_outputs: int
