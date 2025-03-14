@@ -52,8 +52,9 @@ seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
-n_epochs = 2_000
+n_epochs = 3_000
 plot_base_models = True
+train_size = 0.7
 
 key = jax.random.PRNGKey(seed)
 key, data_key = jax.random.split(key, 2)
@@ -69,9 +70,20 @@ model = GaussianMlpEnsemble(
 )
 opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))
 
-# TODO bootstrap training sets
+# TODO turn this into a function
+# TODO mini-batches
+key, bootstrapping_key = jax.random.split(key, 2)
+n_bootstrapped = int(train_size * n_samples)
+bootstrapped_indices = jax.random.choice(
+    bootstrapping_key,
+    n_samples,
+    shape=(model.n_ensemble, n_bootstrapped),
+    replace=True,
+)
+X_bootstrapped = X_train[bootstrapped_indices]
+Y_bootstrapped = Y_train[bootstrapped_indices]
 for t in range(n_epochs):
-    loss = train_step(model, opt, X_train, Y_train)
+    loss = train_step(model, opt, X_bootstrapped, Y_bootstrapped)
     if t % 100 == 0:
         print(f"{t=}: {loss=}")
 print(model)

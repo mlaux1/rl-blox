@@ -275,14 +275,12 @@ def train_step(
     X: jnp.ndarray,
     Y: jnp.ndarray,
 ):
-    gaussian_ensemble_nll = nnx.vmap(gaussian_nll, in_axes=(0, 0, None))
+    chex.assert_equal_shape_prefix((X, Y), prefix_len=2)
 
     def loss(model: GaussianMlpEnsemble):
         mean, log_var = model(X)
-        boundary_loss = 0.01 * (
-            model.max_log_var.sum() - model.min_log_var.sum()
-        )
-        return gaussian_ensemble_nll(mean, log_var, Y).sum() + boundary_loss
+        boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
+        return gaussian_nll(mean, log_var, Y).sum() + 0.01 * boundary_loss
 
     loss, grads = nnx.value_and_grad(loss)(model)
     optimizer.update(grads)
