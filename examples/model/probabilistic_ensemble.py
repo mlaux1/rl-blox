@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import optax
 from flax import nnx
 
-from rl_blox.model.probabilistic_ensemble import GaussianMlp, train_step
+from rl_blox.model.probabilistic_ensemble import GaussianMlpEnsemble, train_step
 
 
 def generate_dataset1(data_key, n_samples):
@@ -59,7 +59,8 @@ key = jax.random.PRNGKey(seed)
 key, data_key = jax.random.split(key, 2)
 X_train, Y_train, X_test, Y_test = generate_dataset3(data_key, n_samples)
 
-model = GaussianMlp(
+model = GaussianMlpEnsemble(
+    n_ensemble=5,
     shared_head=True,
     n_features=1,
     n_outputs=1,
@@ -76,7 +77,7 @@ plt.figure()
 plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
 plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
 if plot_base_models:
-    for i in range(model.n_base_models):
+    for i in range(model.n_ensemble):
         mean, log_std = model.base_predict(X_test, i)
         std_196 = 1.96 * jnp.exp(log_std).squeeze()
         mean = mean.squeeze()
@@ -86,9 +87,9 @@ if plot_base_models:
         plt.plot(
             X_test[:, 0], mean, ls="--", label=f"Prediction of model {i + 1}"
         )
-mean, log_var = model(X_test)
+mean, var = model.aggegrate(X_test)
 mean = mean.squeeze()
-std = jnp.exp(0.5 * log_var).squeeze()
+std = jnp.sqrt(var).squeeze()
 plt.plot(X_test[:, 0], mean, label="Ensemble", c="k")
 for factor in [1.0, 2.0, 3.0]:
     plt.fill_between(
