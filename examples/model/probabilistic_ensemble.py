@@ -52,8 +52,8 @@ seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = n_samples
-n_epochs = 15000
-plot_base_models = False
+n_epochs = 5_000
+plot_base_models = True
 
 key = jax.random.PRNGKey(seed)
 key, data_key = jax.random.split(key, 2)
@@ -69,6 +69,7 @@ model = GaussianMlpEnsemble(
 )
 opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))
 
+# TODO bootstrap training sets
 for t in range(n_epochs):
     loss = train_step(model, opt, X_train, Y_train)
     print(f"{t=}: {loss=}")
@@ -78,8 +79,8 @@ plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
 plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
 if plot_base_models:
     for i in range(model.n_ensemble):
-        mean, log_std = model.base_predict(X_test, i)
-        std_196 = 1.96 * jnp.exp(log_std).squeeze()
+        mean, var = model.base_predict(X_test, i)
+        std_196 = 1.96 * jnp.sqrt(var).squeeze()
         mean = mean.squeeze()
         plt.fill_between(
             X_test[:, 0], mean - std_196, mean + std_196, alpha=0.3

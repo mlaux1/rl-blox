@@ -1,6 +1,5 @@
-from typing import Callable
-
 import chex
+import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
@@ -109,6 +108,7 @@ class GaussianMlpEnsemble(nnx.Module):
     """
 
     ensemble: GaussianMlp
+    base_model: GaussianMlp
     n_ensemble: int
     n_outputs: int
 
@@ -136,6 +136,16 @@ class GaussianMlpEnsemble(nnx.Module):
             )
 
         self.ensemble = make_model(rngs)
+
+        self.base_model = GaussianMlp(
+            shared_head=shared_head,
+            n_features=n_features,
+            n_outputs=n_outputs,
+            hidden_nodes=hidden_nodes,
+            rngs=nnx.Rngs(
+                jax.random.PRNGKey(0)
+            ),  # Dummy rng, since we'll replace params
+        )
 
         # TODO move safe_log_var to nnx.Module
         def safe_log_var(log_var, min_log_var, max_log_var):
@@ -184,6 +194,16 @@ class GaussianMlpEnsemble(nnx.Module):
         aleatoric_var = jnp.mean(jnp.exp(log_vars), axis=0)
         epistemic_var = jnp.var(means, axis=0)
         return mean, aleatoric_var + epistemic_var
+
+    def base_predict(self, x, i):
+        graphdef, state = nnx.split(self.ensemble)
+        state_i = jax.tree_map(lambda x: x[i], state)
+        base_model = nnx.merge(graphdef, state_i)
+        mean_i, log_var_i = base_model(x)
+        log_var_i = self._safe_log_var(
+            log_var_i, self.min_log_var, self.max_log_var
+        )
+        return mean_i, jnp.exp(log_var_i)
 
 
 def gaussian_nll(
