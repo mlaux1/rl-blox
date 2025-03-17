@@ -4,7 +4,11 @@ import matplotlib.pyplot as plt
 import optax
 from flax import nnx
 
-from rl_blox.model.probabilistic_ensemble import GaussianMlpEnsemble, train_step
+from rl_blox.model.probabilistic_ensemble import (
+    GaussianMlpEnsemble,
+    bootstrap,
+    train_step,
+)
 
 
 def generate_dataset1(data_key, n_samples):
@@ -73,17 +77,13 @@ opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))
 # TODO turn this into a function
 # TODO mini-batches
 key, bootstrapping_key = jax.random.split(key, 2)
-n_bootstrapped = int(train_size * n_samples)
-bootstrapped_indices = jax.random.choice(
-    bootstrapping_key,
-    n_samples,
-    shape=(model.n_ensemble, n_bootstrapped),
-    replace=True,
+bootstrapped_indices = bootstrap(
+    model.n_ensemble, train_size, n_samples, bootstrapping_key
 )
 X_bootstrapped = X_train[bootstrapped_indices]
 Y_bootstrapped = Y_train[bootstrapped_indices]
 for t in range(n_epochs):
-    loss = train_step(model, opt, X_bootstrapped, Y_bootstrapped)
+    loss = train_step(model, opt, X_train, Y_train, bootstrapped_indices)
     if t % 100 == 0:
         print(f"{t=}: {loss=}")
 print(model)

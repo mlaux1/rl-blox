@@ -268,14 +268,52 @@ def gaussian_nll(
     return jnp.mean(squared_errors * inv_var) + 0.5 * jnp.mean(log_var_pred)
 
 
+def bootstrap(
+    n_ensemble: int, train_size: float, n_samples: int, key: jnp.ndarray
+) -> jnp.ndarray:
+    """Bootstrap training sets.
+
+    Parameters
+    ----------
+    n_ensemble
+        Size of ensemble.
+
+    train_size
+        Fraction of training set size to be sampled for each model.
+
+    n_samples
+        Training set size.
+
+    key
+        Random sampling key.
+
+    Returns
+    -------
+    indices : array, shape (n_ensemble, n_bootstrapped)
+        Indices of
+    """
+    n_bootstrapped = int(train_size * n_samples)
+    return jax.random.choice(
+        key,
+        n_samples,
+        shape=(n_ensemble, n_bootstrapped),
+        replace=True,
+    )
+
+
 @nnx.jit
 def train_step(
     model: GaussianMlpEnsemble,
     optimizer: nnx.Optimizer,
     X: jnp.ndarray,
     Y: jnp.ndarray,
+    indices: jnp.ndarray,
 ):
-    chex.assert_equal_shape_prefix((X, Y), prefix_len=2)
+    chex.assert_equal_shape_prefix((X, Y), prefix_len=1)
+    chex.assert_axis_dimension(indices, axis=0, expected=model.n_ensemble)
+
+    X = X[indices]
+    Y = Y[indices]
 
     def loss(model: GaussianMlpEnsemble):
         mean, log_var = model(X)
