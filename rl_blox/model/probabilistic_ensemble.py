@@ -302,7 +302,7 @@ def bootstrap(
 
 
 @nnx.jit
-def train_epoch(
+def train_step(
     model: GaussianMlpEnsemble,
     optimizer: nnx.Optimizer,
     X: jnp.ndarray,

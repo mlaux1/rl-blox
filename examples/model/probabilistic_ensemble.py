@@ -9,7 +9,7 @@ from flax import nnx
 from rl_blox.model.probabilistic_ensemble import (
     GaussianMlpEnsemble,
     bootstrap,
-    train_epoch,
+    train_step,
 )
 
 
@@ -86,7 +86,7 @@ for t in range(n_epochs):
     shuffled_indices = jax.random.permutation(key, bootstrap_indices, axis=1)
     for batch_start in jnp.arange(0, shuffled_indices.shape[1], batch_size):
         batch_indices = shuffled_indices[:, batch_start:batch_start + batch_size]
-        loss = train_epoch(model, opt, X_train, Y_train, batch_indices)
+        loss = train_step(model, opt, X_train, Y_train, batch_indices)
     if t % 100 == 0:
         print(f"{t=}: {loss=}")
 print(model)
