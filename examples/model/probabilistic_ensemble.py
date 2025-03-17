@@ -1,3 +1,5 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -7,7 +9,7 @@ from flax import nnx
 from rl_blox.model.probabilistic_ensemble import (
     GaussianMlpEnsemble,
     bootstrap,
-    train_step,
+    train_epoch,
 )
 
 
@@ -55,7 +57,7 @@ def generate_dataset3(data_key, n_samples):
 seed = 42
 learning_rate = 3e-3
 n_samples = 200
-batch_size = n_samples
+batch_size = 15
 n_epochs = 3_000
 plot_base_models = True
 train_size = 0.7
@@ -74,16 +76,17 @@ model = GaussianMlpEnsemble(
 )
 opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))
 
-# TODO turn this into a function
 # TODO mini-batches
-key, bootstrapping_key = jax.random.split(key, 2)
-bootstrapped_indices = bootstrap(
-    model.n_ensemble, train_size, n_samples, bootstrapping_key
+key, bootstrap_key = jax.random.split(key, 2)
+bootstrap_indices = bootstrap(
+    model.n_ensemble, train_size, n_samples, bootstrap_key
 )
-X_bootstrapped = X_train[bootstrapped_indices]
-Y_bootstrapped = Y_train[bootstrapped_indices]
 for t in range(n_epochs):
-    loss = train_step(model, opt, X_train, Y_train, bootstrapped_indices)
+    key, shuffle_key = jax.random.split(key, 2)
+    shuffled_indices = jax.random.permutation(key, bootstrap_indices, axis=1)
+    for batch_start in jnp.arange(0, shuffled_indices.shape[1], batch_size):
+        batch_indices = shuffled_indices[:, batch_start:batch_start + batch_size]
+        loss = train_epoch(model, opt, X_train, Y_train, batch_indices)
     if t % 100 == 0:
         print(f"{t=}: {loss=}")
 print(model)

@@ -302,7 +302,7 @@ def bootstrap(
 
 
 @nnx.jit
-def train_step(
+def train_epoch(
     model: GaussianMlpEnsemble,
     optimizer: nnx.Optimizer,
     X: jnp.ndarray,
@@ -312,15 +312,12 @@ def train_step(
     chex.assert_equal_shape_prefix((X, Y), prefix_len=1)
     chex.assert_axis_dimension(indices, axis=0, expected=model.n_ensemble)
 
-    X = X[indices]
-    Y = Y[indices]
-
     def loss(model: GaussianMlpEnsemble):
-        mean, log_var = model(X)
+        mean, log_var = model(X[indices])
         boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
-        return gaussian_nll(mean, log_var, Y).sum() + 0.01 * boundary_loss
+        return gaussian_nll(mean, log_var, Y[indices]).sum() + 0.01 * boundary_loss
 
-    loss, grads = nnx.value_and_grad(loss)(model)
+    value, grads = nnx.value_and_grad(loss)(model)
     optimizer.update(grads)
 
-    return loss
+    return value
