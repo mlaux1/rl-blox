@@ -1,5 +1,3 @@
-from functools import partial
-
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -57,7 +55,7 @@ def generate_dataset3(data_key, n_samples):
 seed = 42
 learning_rate = 3e-3
 n_samples = 200
-batch_size = 15
+batch_size = 50
 n_epochs = 3_000
 plot_base_models = True
 train_size = 0.7
@@ -85,7 +83,9 @@ for t in range(n_epochs):
     key, shuffle_key = jax.random.split(key, 2)
     shuffled_indices = jax.random.permutation(key, bootstrap_indices, axis=1)
     for batch_start in jnp.arange(0, shuffled_indices.shape[1], batch_size):
-        batch_indices = shuffled_indices[:, batch_start:batch_start + batch_size]
+        batch_indices = shuffled_indices[
+            :, batch_start : batch_start + batch_size
+        ]
         loss = train_step(model, opt, X_train, Y_train, batch_indices)
     if t % 100 == 0:
         print(f"{t=}: {loss=}")

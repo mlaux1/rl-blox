@@ -315,7 +315,9 @@ def train_step(
     def loss(model: GaussianMlpEnsemble):
         mean, log_var = model(X[indices])
         boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
-        return gaussian_nll(mean, log_var, Y[indices]).sum() + 0.01 * boundary_loss
+        return (
+            gaussian_nll(mean, log_var, Y[indices]).sum() + 0.01 * boundary_loss
+        )
 
     value, grads = nnx.value_and_grad(loss)(model)
     optimizer.update(grads)
