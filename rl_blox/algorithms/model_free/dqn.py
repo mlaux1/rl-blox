@@ -79,7 +79,6 @@ def train_dqn(
     q_net: MLP,
     env: gymnasium.Env,
     epsilon: float,
-    decay: float,
     buffer_size: int = 3_000,
     batch_size: int = 32,
     total_timesteps: int = 1e4,
@@ -139,6 +138,6 @@ def train_dqn(
         else:
             obs = next_obs
 
-        epsilon = epsilon - (0.9 * (step / total_timesteps))
+        epsilon = epsilon - (0.9 * (step / (total_timesteps / 10.0)))
 
     return q_net
