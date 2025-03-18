@@ -55,13 +55,13 @@ seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = 40
-n_epochs = 3_000
+n_epochs = 1_000
 train_size = 0.7
 plot_base_models = True
 
 key = jax.random.key(seed)
 key, data_key = jax.random.split(key, 2)
-X_train, Y_train, X_test, Y_test = generate_dataset1(data_key, n_samples)
+X_train, Y_train, X_test, Y_test = generate_dataset3(data_key, n_samples)
 
 model = GaussianMlpEnsemble(
     n_ensemble=5,
@@ -83,14 +83,16 @@ train_ensemble(
     n_epochs,
     batch_size,
     train_key,
-    verbose=2
+    verbose=2,
 )
 print(model)
 print(f"{model.min_log_var=}")
 print(f"{model.max_log_var=}")
 
-plt.figure()
-plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
+plt.figure(figsize=(10, 5))
+
+plt.subplot(211)
+plt.scatter(X_train[:, 0], Y_train[:, 0], label="Training set")
 plt.plot(X_test[:, 0], Y_test[:, 0], label="True function")
 if plot_base_models:
     for i in range(model.n_ensemble):
@@ -119,4 +121,28 @@ min_y = Y_test.min()
 max_y = Y_test.max()
 plt.ylim((min_y - 5, max_y + 5))
 plt.legend(loc="best")
+
+plt.subplot(212)
+model_idx = 0
+plt.title(f"Samples from model #{model_idx}")
+plt.scatter(X_train[:, 0], Y_train[:, 0], label="Training set")
+distribution = model.base_sample(X_test, model_idx)
+key, sampling_key = jax.random.split(key, 2)
+samples = distribution.sample(seed=sampling_key, sample_shape=(10,))
+x = jnp.broadcast_to(X_test[jnp.newaxis], samples.shape)
+plt.scatter(x.flatten(), samples.flatten(), label="Samples", alpha=0.3, s=5)
+x_test = jnp.array([[5.0]])
+distribution_point = model.base_sample(x_test, model_idx)
+key, sampling_key = jax.random.split(key, 2)
+samples = distribution_point.sample(seed=sampling_key, sample_shape=(100,))
+plt.scatter(
+    jnp.broadcast_to(x_test, samples.shape).flatten(),
+    samples.flatten(),
+    label="Samples",
+    alpha=0.3,
+    s=10,
+)
+plt.ylim((min_y - 5, max_y + 5))
+plt.legend(loc="best")
+
 plt.show()

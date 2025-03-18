@@ -1,4 +1,5 @@
 import chex
+import distrax
 import jax
 import jax.numpy as jnp
 import optax
@@ -161,8 +162,9 @@ class GaussianMlpEnsemble(nnx.Module):
             log_var = min_log_var + nnx.softplus(log_var - min_log_var)
             return log_var
 
+        self._safe_log_var_i = nnx.vmap(safe_log_var, in_axes=(0, None, None))
         self._safe_log_var = nnx.vmap(
-            nnx.vmap(safe_log_var, in_axes=(0, None, None)),
+            self._safe_log_var_i,
             in_axes=(0, None, None),
         )
 
@@ -221,8 +223,18 @@ class GaussianMlpEnsemble(nnx.Module):
         )
         return mean_i, jnp.exp(log_var_i)
 
-    def base_sample(self, x, i):  # TODO implement
-        raise NotImplementedError()
+    def base_sample(
+        self, x: jnp.ndarray, i: int
+    ) -> distrax.MultivariateNormalDiag:
+        graphdef, state = nnx.split(self.ensemble)
+        state_i = jax.tree_map(lambda x: x[i], state)
+        base_model = nnx.merge(graphdef, state_i)
+        mean_i, log_var_i = base_model(x)
+        log_var_i = self._safe_log_var_i(
+            log_var_i, self.min_log_var, self.max_log_var
+        )
+        std_i = jnp.exp(0.5 * log_var_i)
+        return distrax.MultivariateNormalDiag(loc=mean_i, scale_diag=std_i)
 
 
 def gaussian_nll(
