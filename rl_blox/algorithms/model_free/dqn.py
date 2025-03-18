@@ -8,7 +8,6 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
-from jax import jit, lax, vmap
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
@@ -30,7 +29,26 @@ class MLP(nnx.Module):
         return x
 
 
-@jit
+def linear_schedule(
+    total_timesteps: int,
+    start: float = 1.0,
+    end: float = 0.1,
+    fraction: float = 0.1,
+) -> jnp.ndarray:
+
+    transition_steps = int(
+        total_timesteps * fraction
+    )  # Number of steps for decay
+    schedule = jnp.ones(total_timesteps) * end  # Default value after decay
+
+    schedule.at[:transition_steps].set(
+        jnp.linspace(start, end, transition_steps)
+    )
+
+    return schedule
+
+
+@jax.jit
 def _extract(
     batch: list,
 ) -> tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
@@ -204,8 +222,6 @@ def train_dqn(
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
 
-    epsilon = 1.0
-
     # initialise optimiser
     optimizer = nnx.Optimizer(q_net, optax.adam(learning_rate))
 
@@ -214,17 +230,16 @@ def train_dqn(
 
     rb = ReplayBuffer(buffer_size)
 
-    # _explore_action = nnx.jit(env.action_space.sample)
+    epsilon = linear_schedule(total_timesteps)
 
     # for each step:
     for step in tqdm(range(total_timesteps)):
-        # select epsilon greedy action
-        # action = _explore_action()
-        action = env.action_space.sample()
 
         key, subkey = jax.random.split(key)
         roll = jax.random.uniform(subkey)
-        if roll > epsilon:
+        if roll < epsilon[step]:
+            action = env.action_space.sample()
+        else:
             action = _select_action(q_net, obs)
 
         # execute action
@@ -236,7 +251,6 @@ def train_dqn(
         if step > batch_size:
             transition_batch = rb.sample(batch_size)
 
-            # perform gradient descent step based on minibatch
             _train_step(q_net, optimizer, transition_batch)
 
         # housekeeping
@@ -244,7 +258,5 @@ def train_dqn(
             obs, _ = env.reset()
         else:
             obs = next_obs
-
-        epsilon = epsilon - (0.9 * (step / (total_timesteps / 10.0)))
 
     return q_net
