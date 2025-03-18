@@ -13,6 +13,7 @@ seed = 42
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
+# Initialise the Q-Network
 nnx_rngs = nnx.Rngs(seed)
 q_net = MLP(4, 10, env.action_space.n, nnx_rngs)
 
@@ -26,10 +27,9 @@ q = train_dqn(
 )
 env.close()
 
+# Show the final policy
 eval_env = gym.make(env_name, render_mode="human")
-
 obs, _ = eval_env.reset()
-
 
 while True:
     action = int(jnp.argmax(q([obs])))
