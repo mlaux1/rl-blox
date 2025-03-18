@@ -82,11 +82,9 @@ bootstrap_indices = bootstrap(
 for t in range(n_epochs):
     key, shuffle_key = jax.random.split(key, 2)
     shuffled_indices = jax.random.permutation(key, bootstrap_indices, axis=1)
-    for batch_start in jnp.arange(0, shuffled_indices.shape[1], batch_size):
-        batch_indices = shuffled_indices[
-            :, batch_start : batch_start + batch_size
-        ]
-        loss = train_step(model, opt, X_train, Y_train, batch_indices)
+    shuffled_indices = shuffled_indices[:, :-(bootstrap_indices.shape[1] % batch_size)]
+    batched_indices = shuffled_indices.reshape(model.n_ensemble, batch_size, -1).transpose([1, 0, 2])
+    loss = train_step(model, opt, X_train, Y_train, batched_indices)
     if t % 100 == 0:
         print(f"{t=}: {loss=}")
 print(model)

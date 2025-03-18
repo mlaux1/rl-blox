@@ -301,6 +301,14 @@ def bootstrap(
     )
 
 
+def gaussian_ensemble_loss(
+        model: GaussianMlpEnsemble, X: jnp.ndarray, Y: jnp.ndarray
+) -> jnp.ndarray:
+    mean, log_var = model(X)
+    boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
+    return gaussian_nll(mean, log_var, Y).sum() + 0.01 * boundary_loss
+
+
 @nnx.jit
 def train_step(
     model: GaussianMlpEnsemble,
@@ -310,16 +318,15 @@ def train_step(
     indices: jnp.ndarray,
 ):
     chex.assert_equal_shape_prefix((X, Y), prefix_len=1)
-    chex.assert_axis_dimension(indices, axis=0, expected=model.n_ensemble)
+    chex.assert_axis_dimension(indices, axis=1, expected=model.n_ensemble)
 
-    def loss(model: GaussianMlpEnsemble):
-        mean, log_var = model(X[indices])
-        boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
-        return (
-            gaussian_nll(mean, log_var, Y[indices]).sum() + 0.01 * boundary_loss
-        )
+    @nnx.scan(in_axes=(nnx.Carry, None, None, 0), out_axes=(nnx.Carry, 0))
+    def batch_update(mod_opt, X, Y, batch):
+        model, optimizer = mod_opt
+        loss, grads = nnx.value_and_grad(gaussian_ensemble_loss, argnums=0)(model, X[batch], Y[batch])
+        optimizer.update(grads)
+        return (model, optimizer), loss
 
-    value, grads = nnx.value_and_grad(loss)(model)
-    optimizer.update(grads)
+    (model, optimizer), loss = batch_update((model, optimizer), X, Y, indices)
 
-    return value
+    return jnp.asarray(loss).mean()
