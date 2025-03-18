@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
+from jax.typing import ArrayLike
 
 
 class GaussianMlp(nnx.Module):
@@ -72,6 +73,13 @@ class GaussianMlp(nnx.Module):
             log_var = self.output_layers[1](x)
 
         return mean, log_var
+
+
+def constrained_param(
+    x: jnp.ndarray, min_val: ArrayLike, max_val: ArrayLike
+) -> jnp.ndarray:
+    """Compute sigmoid-constrained parameter."""
+    return min_val + (max_val - min_val) * jax.nn.sigmoid(x)
 
 
 class GaussianMlpEnsemble(nnx.Module):
@@ -159,8 +167,8 @@ class GaussianMlpEnsemble(nnx.Module):
             in_axes=(0, None, None),
         )
 
-        self.min_log_var = nnx.Param(-10.0 * jnp.ones(self.n_outputs))
-        self.max_log_var = nnx.Param(0.5 * jnp.ones(self.n_outputs))
+        self.raw_min_log_var = nnx.Param(jnp.zeros(self.n_outputs))
+        self.raw_max_log_var = nnx.Param(jnp.zeros(self.n_outputs))
 
         def forward(
             model: GaussianMlp, x: jnp.ndarray
@@ -169,6 +177,14 @@ class GaussianMlpEnsemble(nnx.Module):
 
         self._forward_ensemble = nnx.vmap(forward, in_axes=(0, None))
         self._forward_individual = nnx.vmap(forward, in_axes=(0, 0))
+
+    @property
+    def min_log_var(self):
+        return constrained_param(self.raw_min_log_var.value, -20.0, 0.0)
+
+    @property
+    def max_log_var(self):
+        return constrained_param(self.raw_max_log_var.value, -4.0, 5.0)
 
     def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         if x.ndim == 2:
@@ -302,28 +318,31 @@ def bootstrap(
 
 
 def gaussian_ensemble_loss(
-        model: GaussianMlpEnsemble, X: jnp.ndarray, Y: jnp.ndarray
+    model: GaussianMlpEnsemble, X: jnp.ndarray, Y: jnp.ndarray
 ) -> jnp.ndarray:
+    """Sum of Gaussian NLL and penalty for log_var boundaries."""
     mean, log_var = model(X)
     boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
     return gaussian_nll(mean, log_var, Y).sum() + 0.01 * boundary_loss
 
 
 @nnx.jit
-def train_step(
+def train_epoch(
     model: GaussianMlpEnsemble,
     optimizer: nnx.Optimizer,
     X: jnp.ndarray,
     Y: jnp.ndarray,
     indices: jnp.ndarray,
-):
+) -> jnp.ndarray:
     chex.assert_equal_shape_prefix((X, Y), prefix_len=1)
     chex.assert_axis_dimension(indices, axis=1, expected=model.n_ensemble)
 
     @nnx.scan(in_axes=(nnx.Carry, None, None, 0), out_axes=(nnx.Carry, 0))
     def batch_update(mod_opt, X, Y, batch):
         model, optimizer = mod_opt
-        loss, grads = nnx.value_and_grad(gaussian_ensemble_loss, argnums=0)(model, X[batch], Y[batch])
+        loss, grads = nnx.value_and_grad(gaussian_ensemble_loss, argnums=0)(
+            model, X[batch], Y[batch]
+        )
         optimizer.update(grads)
         return (model, optimizer), loss
 

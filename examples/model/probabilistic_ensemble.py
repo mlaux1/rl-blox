@@ -7,7 +7,7 @@ from flax import nnx
 from rl_blox.model.probabilistic_ensemble import (
     GaussianMlpEnsemble,
     bootstrap,
-    train_step,
+    train_epoch,
 )
 
 
@@ -55,8 +55,8 @@ def generate_dataset3(data_key, n_samples):
 seed = 42
 learning_rate = 3e-3
 n_samples = 200
-batch_size = 50
-n_epochs = 3_000
+batch_size = 40
+n_epochs = 1_000
 plot_base_models = True
 train_size = 0.7
 
@@ -74,7 +74,6 @@ model = GaussianMlpEnsemble(
 )
 opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))
 
-# TODO mini-batches
 key, bootstrap_key = jax.random.split(key, 2)
 bootstrap_indices = bootstrap(
     model.n_ensemble, train_size, n_samples, bootstrap_key
@@ -84,10 +83,12 @@ for t in range(n_epochs):
     shuffled_indices = jax.random.permutation(key, bootstrap_indices, axis=1)
     shuffled_indices = shuffled_indices[:, :-(bootstrap_indices.shape[1] % batch_size)]
     batched_indices = shuffled_indices.reshape(model.n_ensemble, batch_size, -1).transpose([1, 0, 2])
-    loss = train_step(model, opt, X_train, Y_train, batched_indices)
+    loss = train_epoch(model, opt, X_train, Y_train, batched_indices)
     if t % 100 == 0:
         print(f"{t=}: {loss=}")
 print(model)
+print(f"{model.min_log_var=}")
+print(f"{model.max_log_var=}")
 
 plt.figure()
 plt.scatter(X_train[:, 0], Y_train[:, 0], label="Samples")
