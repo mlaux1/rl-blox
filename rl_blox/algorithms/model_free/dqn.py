@@ -22,7 +22,7 @@ class MLP(nnx.Module):
 
     def __call__(self, x):
         x = nnx.relu(self.linear1(x))
-        # x = nnx.relu(self.linear2(x))
+        x = nnx.relu(self.linear2(x))
         x = self.linear3(x)
         return x
 
@@ -64,20 +64,50 @@ def _train_step(q_net, optimizer, batch):
 def train_dqn(
     q_net: MLP,
     env: gymnasium.Env,
-    epsilon: float,
     buffer_size: int = 3_000,
     batch_size: int = 32,
     total_timesteps: int = 1e4,
-    gradient_steps: int = 1,
     learning_rate: float = 1e-4,
     gamma: float = 0.99,
-    tau: float = 0.05,
     seed: int = 1,
 ):
-    """Deep Q-Networks.
+    """Deep Q Learning with Experience Replay
 
-    This algorithm is an off-policy value-function based RL algorithm. It uses a
-    neural network to approximate the Q-function.
+    Implements the most basic version of DQN with experience replay as described
+    in Mnih et al. (2013), which is an off-policy value-based RL algorithm. It
+    uses a neural network to approximate the Q-function and samples minibatches
+    from the replay buffer to calculate updates.
+
+    This implementation aims to be as close as possible to the original algorithm
+    described in the paper while remaining not overly engineered towards a
+    specific environment. For example, this implementation uses the same linear
+    schedule to decrease epsilon from 1.0 to 0.1 over the first ten percent of
+    training steps, but does not impose any architecture on the used Q-net or
+    requires a specific preprocessing of observations as is done in the original
+    paper to solve the Atari use case.
+
+    Parameters
+    ----------
+    q_net : MLP
+        The Q-network to be optimised.
+    env: gymnasium
+        The envrionment to train the Q-network on.
+    buffer_size : int
+        The maximum size of the replay buffer.
+    total_timesteps : int
+        The number of environment sets to train for.
+    learning_rate : float
+        The learning rate for updating the weights of the Q-net.
+    gamma : float
+        The discount factor.
+    seed : int
+        The random seed, which can be set to reproduce results.
+
+
+    Returns
+    -------
+    q_net : MLP
+        The trained Q-network.
     """
 
     assert isinstance(
