@@ -156,7 +156,6 @@ class GaussianMlpEnsemble(nnx.Module):
         )
 
         # TODO move safe_log_var to nnx.Module
-        # TODO can we introduce bounds for the bounds?
         def safe_log_var(log_var, min_log_var, max_log_var):
             log_var = max_log_var - nnx.softplus(max_log_var - log_var)
             log_var = min_log_var + nnx.softplus(log_var - min_log_var)
@@ -349,3 +348,69 @@ def train_epoch(
     (model, optimizer), loss = batch_update((model, optimizer), X, Y, indices)
 
     return jnp.asarray(loss).mean()
+
+
+def train_ensemble(
+    model: GaussianMlpEnsemble,
+    optimizer: nnx.Optimizer,
+    train_size: float,
+    X: jnp.ndarray,
+    Y: jnp.ndarray,
+    n_epochs: int,
+    batch_size: int,
+    key: jnp.ndarray,
+    verbose: int = 0,
+) -> jnp.ndarray:
+    """Train ensemble.
+
+    Parameters
+    ----------
+    model
+        Probabilistic ensemble.
+    optimizer
+        Optimization algorithm.
+    X
+        Feature matrix.
+    Y
+        Target values.
+    n_epochs
+        Number of epochs to train.
+    batch_size
+        Batch size.
+    key
+        For random number generation in bootstrapping to generate individual
+        training set of each model and shuffling in each episode.
+    verbose
+        Verbosity level.
+
+    Returns
+    -------
+    loss
+        Measured in last epoch.
+    """
+    assert batch_size > 0
+    assert n_epochs > 0
+
+    key, bootstrap_key = jax.random.split(key, 2)
+    n_samples = len(X)
+    bootstrap_indices = bootstrap(
+        model.n_ensemble, train_size, n_samples, bootstrap_key
+    )
+
+    loss = jnp.inf
+    for t in range(1, n_epochs + 1):
+        key, shuffle_key = jax.random.split(key, 2)
+        shuffled_indices = jax.random.permutation(
+            key, bootstrap_indices, axis=1
+        )
+        shuffled_indices = shuffled_indices[
+            :, : -(bootstrap_indices.shape[1] % batch_size)
+        ]
+        batched_indices = shuffled_indices.reshape(
+            model.n_ensemble, batch_size, -1
+        ).transpose([1, 0, 2])
+        loss = train_epoch(model, optimizer, X, Y, batched_indices)
+        if verbose and t % 100 == 0 or verbose >= 1 and t % 10 == 0:
+            print(f"[train_ensemble] {t=}: {loss=}")
+
+    return loss

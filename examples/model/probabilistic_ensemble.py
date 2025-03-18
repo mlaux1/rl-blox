@@ -6,8 +6,7 @@ from flax import nnx
 
 from rl_blox.model.probabilistic_ensemble import (
     GaussianMlpEnsemble,
-    bootstrap,
-    train_epoch,
+    train_ensemble,
 )
 
 
@@ -56,17 +55,17 @@ seed = 42
 learning_rate = 3e-3
 n_samples = 200
 batch_size = 40
-n_epochs = 1_000
-plot_base_models = True
+n_epochs = 3_000
 train_size = 0.7
+plot_base_models = True
 
-key = jax.random.PRNGKey(seed)
+key = jax.random.key(seed)
 key, data_key = jax.random.split(key, 2)
-X_train, Y_train, X_test, Y_test = generate_dataset3(data_key, n_samples)
+X_train, Y_train, X_test, Y_test = generate_dataset1(data_key, n_samples)
 
 model = GaussianMlpEnsemble(
     n_ensemble=5,
-    shared_head=True,
+    shared_head=False,
     n_features=1,
     n_outputs=1,
     hidden_nodes=[100, 50],
@@ -74,18 +73,18 @@ model = GaussianMlpEnsemble(
 )
 opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))
 
-key, bootstrap_key = jax.random.split(key, 2)
-bootstrap_indices = bootstrap(
-    model.n_ensemble, train_size, n_samples, bootstrap_key
+key, train_key = jax.random.split(key, 2)
+train_ensemble(
+    model,
+    opt,
+    train_size,
+    X_train,
+    Y_train,
+    n_epochs,
+    batch_size,
+    train_key,
+    verbose=2
 )
-for t in range(n_epochs):
-    key, shuffle_key = jax.random.split(key, 2)
-    shuffled_indices = jax.random.permutation(key, bootstrap_indices, axis=1)
-    shuffled_indices = shuffled_indices[:, :-(bootstrap_indices.shape[1] % batch_size)]
-    batched_indices = shuffled_indices.reshape(model.n_ensemble, batch_size, -1).transpose([1, 0, 2])
-    loss = train_epoch(model, opt, X_train, Y_train, batched_indices)
-    if t % 100 == 0:
-        print(f"{t=}: {loss=}")
 print(model)
 print(f"{model.min_log_var=}")
 print(f"{model.max_log_var=}")
@@ -118,6 +117,6 @@ for factor in [1.0, 2.0, 3.0]:
     )
 min_y = Y_test.min()
 max_y = Y_test.max()
-plt.ylim((min_y - 2, max_y + 2))
+plt.ylim((min_y - 5, max_y + 5))
 plt.legend(loc="best")
 plt.show()
