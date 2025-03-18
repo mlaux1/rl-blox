@@ -20,7 +20,6 @@ q_net = MLP(4, 10, env.action_space.n, nnx_rngs)
 q = train_dqn(
     q_net,
     env,
-    epsilon=1.00,
     learning_rate=0.003,
     seed=seed,
     total_timesteps=30_000,

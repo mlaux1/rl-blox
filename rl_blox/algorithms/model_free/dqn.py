@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
-from jax import jit, vmap
+from jax import jit, lax, vmap
 from tqdm import tqdm
 
 from ...policy.replay_buffer import ReplayBuffer
@@ -59,6 +59,12 @@ def _train_step(q_net, optimizer, batch):
     grad_fn = nnx.value_and_grad(_critic_loss)
     loss, grads = grad_fn(q_net, batch)
     optimizer.update(grads)
+
+
+@nnx.jit
+def _select_action(q_net, obs):
+    q_vals = q_net([obs])
+    return jnp.argmax(q_vals)
 
 
 def train_dqn(
@@ -117,6 +123,8 @@ def train_dqn(
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
 
+    epsilon = 1.0
+
     # initialise optimiser
     optimizer = nnx.Optimizer(q_net, optax.adam(learning_rate))
 
@@ -125,16 +133,16 @@ def train_dqn(
 
     rb = ReplayBuffer(buffer_size)
 
+    _explore_action = env.action_space.sample()
+
     # for each step:
     for step in tqdm(range(total_timesteps)):
         # select epsilon greedy action
+        action = env.action_space.sample()
         key, subkey = jax.random.split(key)
         roll = jax.random.uniform(subkey)
-        if roll < epsilon:
-            action = env.action_space.sample()
-        else:
-            q_vals = q_net([obs])
-            action = jnp.argmax(q_vals)
+        if roll > epsilon:
+            action = _select_action(q_net, obs)
 
         # execute action
         next_obs, reward, terminated, truncated, info = env.step(int(action))
