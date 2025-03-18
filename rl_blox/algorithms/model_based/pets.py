@@ -7,11 +7,15 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.typing import ArrayLike
 from gymnasium.wrappers import RecordEpisodeStatistics
+from jax.typing import ArrayLike
 
 from ...model.cross_entropy_method import cem_sample, cem_update
-from ...model.probabilistic_ensemble import GaussianMlpEnsemble, EnsembleTrainState, train_ensemble
+from ...model.probabilistic_ensemble import (
+    EnsembleTrainState,
+    GaussianMlpEnsemble,
+    train_ensemble,
+)
 
 
 class ReplayBuffer:
@@ -273,8 +277,12 @@ def trajectory_sampling_inf(
         # We sample from one of the base models.
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
         key, sampling_key = jax.random.split(key, 2)
-        dist = dynamics_model.base_sample(jnp.hstack((obs, act))[jnp.newaxis], model_idx)
-        obs = dist.sample(seed=sampling_key, sample_shape=1)[0, 0]  # TODO why [0, 0] and not [0]?
+        dist = dynamics_model.base_sample(
+            jnp.hstack((obs, act))[jnp.newaxis], model_idx
+        )
+        obs = dist.sample(seed=sampling_key, sample_shape=1)[
+            0, 0
+        ]  # TODO why [0, 0] and not [0]?
         observations.append(obs)
     return jnp.vstack(observations)
 
