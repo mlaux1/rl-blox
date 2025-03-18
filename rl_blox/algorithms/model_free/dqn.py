@@ -28,40 +28,26 @@ class MLP(nnx.Module):
 
 
 @jit
-def extract_obs(batch):
-    return jnp.stack([t.observation for t in batch])
-
-
-@jit
-def extract_rew(batch):
-    return jnp.stack([t.reward for t in batch])
-
-
-@jit
-def extract_act(batch):
-    return jnp.stack([t.action for t in batch])
-
-
-@jit
-def extract(batch):
+def _extract(batch):
+    observation = jnp.stack([t.observation for t in batch])
+    reward = jnp.stack([t.reward for t in batch])
+    action = jnp.stack([t.action for t in batch])
     terminated = jnp.stack([t.terminated for t in batch])
     next_obs = jnp.stack([t.next_observation for t in batch])
-    return terminated, next_obs
+    return observation, reward, action, terminated, next_obs
 
 
-def critic_loss(q_net, batch, gamma=0.99):
-    obs = extract_obs(batch)
-    rew = extract_rew(batch)
-    act = extract_act(batch)
-    terminated, next_obs = extract(batch)
+@nnx.jit
+def _critic_loss(q_net, batch, gamma=0.99):
+    obs, reward, action, terminated, next_obs = _extract(batch)
 
     next_q = q_net(next_obs)
     max_next_q = jnp.max(next_q, axis=1)
 
-    target = jnp.array(rew) + (1 - terminated) * gamma * max_next_q
+    target = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
 
     pred = q_net(obs)
-    pred = pred[jnp.arange(len(pred)), act]
+    pred = pred[jnp.arange(len(pred)), action]
 
     loss = optax.squared_error(pred, target).mean()
 
@@ -69,8 +55,8 @@ def critic_loss(q_net, batch, gamma=0.99):
 
 
 @nnx.jit
-def train_step(q_net, optimizer, batch):
-    grad_fn = nnx.value_and_grad(critic_loss)
+def _train_step(q_net, optimizer, batch):
+    grad_fn = nnx.value_and_grad(_critic_loss)
     loss, grads = grad_fn(q_net, batch)
     optimizer.update(grads)
 
@@ -130,7 +116,7 @@ def train_dqn(
             transition_batch = rb.sample(batch_size)
 
             # perform gradient descent step based on minibatch
-            train_step(q_net, optimizer, transition_batch)
+            _train_step(q_net, optimizer, transition_batch)
 
         # housekeeping
         if terminated or truncated:
