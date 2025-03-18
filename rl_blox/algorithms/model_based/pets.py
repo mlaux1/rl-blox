@@ -11,7 +11,7 @@ from jax.typing import ArrayLike
 from gymnasium.wrappers import RecordEpisodeStatistics
 
 from ...model.cross_entropy_method import cem_sample, cem_update
-from ...model.gaussian_mlp_ensemble import EnsembleOfGaussianMlps
+from ...model.probabilistic_ensemble import GaussianMlpEnsemble, EnsembleTrainState, train_ensemble
 
 
 class ReplayBuffer:
@@ -81,7 +81,7 @@ class ModelPredictiveControl:
         self,
         action_space: gym.spaces.Box,
         reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
-        dynamics_model: EnsembleOfGaussianMlps,
+        dynamics_model: EnsembleTrainState,
         task_horizon: int,
         n_samples: int,
         n_opt_iter: int,
@@ -134,7 +134,7 @@ class ModelPredictiveControl:
             jax.vmap(
                 partial(
                     trajectory_sampling_inf,
-                    dynamics_model=self.dynamics_model,
+                    dynamics_model=self.dynamics_model.model,
                 ),
                 in_axes=(0, 0, 0, None),
             )
@@ -168,7 +168,7 @@ class ModelPredictiveControl:
             bootstrap_key,
             shape=(self.n_samples,),
             minval=0,
-            maxval=self.dynamics_model.n_base_models,
+            maxval=self.dynamics_model.model.n_ensemble,
         )
         mean = self.prev_plan
         var = jnp.copy(self.init_var)
@@ -228,8 +228,16 @@ class ModelPredictiveControl:
 
         if self.verbose >= 5:
             print("[PETS/MPC] start training")
-        self.dynamics_model.fit(
-            observations_actions, next_observations, n_epochs
+        self.key, train_key = jax.random.split(self.key)
+        train_ensemble(
+            model=self.dynamics_model.model,
+            optimizer=self.dynamics_model.optimizer,
+            train_size=self.dynamics_model.train_size,
+            X=observations_actions,
+            Y=next_observations,
+            n_epochs=n_epochs,
+            batch_size=self.dynamics_model.batch_size,
+            key=train_key,
         )
         if self.verbose >= 5:
             print("[PETS/MPC] training done")
@@ -242,7 +250,7 @@ def trajectory_sampling_inf(
     model_idx: int,
     key: jnp.ndarray,
     obs: jnp.ndarray,
-    dynamics_model: EnsembleOfGaussianMlps,
+    dynamics_model: GaussianMlpEnsemble,
 ):
     """TSinf refers to particle bootstraps never changing during a trial.
 
@@ -265,9 +273,8 @@ def trajectory_sampling_inf(
         # We sample from one of the base models.
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
         key, sampling_key = jax.random.split(key, 2)
-        obs = dynamics_model.base_sample(
-            jnp.hstack((obs, act)), model_idx, sampling_key
-        )
+        dist = dynamics_model.base_sample(jnp.hstack((obs, act))[jnp.newaxis], model_idx)
+        obs = dist.sample(seed=sampling_key, sample_shape=1)[0, 0]  # TODO why [0, 0] and not [0]?
         observations.append(obs)
     return jnp.vstack(observations)
 
@@ -275,7 +282,7 @@ def trajectory_sampling_inf(
 def train_pets(
     env: gym.Env,
     reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
-    dynamics_model: EnsembleOfGaussianMlps,
+    dynamics_model: EnsembleTrainState,
     task_horizon: int,
     n_samples: int,
     n_opt_iter: int = 5,
