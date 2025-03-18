@@ -167,6 +167,9 @@ class ModelPredictiveControl:
         return best_plan[0]
 
     def _optimize_actions(self, obs):
+        best_return = -jnp.inf
+        best_plan = self.prev_plan
+
         self.key, bootstrap_key = jax.random.split(self.key, 2)
         model_indices = jax.random.randint(
             bootstrap_key,
@@ -174,6 +177,7 @@ class ModelPredictiveControl:
             minval=0,
             maxval=self.dynamics_model.model.n_ensemble,
         )
+
         mean = self.prev_plan
         var = jnp.copy(self.init_var)
         for i in range(self.n_opt_iter):
@@ -201,14 +205,21 @@ class ModelPredictiveControl:
             chex.assert_shape(returns, (self.n_samples,))
 
             mean, var = self._cem_update(actions, returns, mean, var)
-            if self.verbose >= 10:
+            if self.verbose >= 20:
                 print(
                     f"[PETS/MPC] it #{i + 1}, "
                     f"return [{returns.min()}, {returns.max()}], "
                     f"{jnp.mean(returns)} +- {jnp.std(returns)}"
                 )
 
-        return actions[np.argmax(returns)]
+            best_idx = jnp.argmax(returns)
+            if returns[best_idx] >= best_return:
+                best_return = returns[best_idx]
+                best_plan = actions[best_idx]
+            if self.verbose >= 10:
+                print(f"[PETS/MPC] it #{i + 1}, best return [{best_return}]")
+
+        return best_plan
 
     def fit(
         self,
