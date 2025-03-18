@@ -32,26 +32,56 @@ def extract_obs(batch):
     return jnp.stack([t.observation for t in batch])
 
 
-def critic_loss(q_net, batch, gamma=0.9):
-    jax.debug.print("{x}", x=batch[0].observation)
-    obs = extract_obs(batch)
-    reward = jnp.stack([t.reward for t in batch])
-    action = jnp.stack([t.action for t in batch])
+@jit
+def extract_rew(batch):
+    return jnp.stack([t.reward for t in batch])
+
+
+@jit
+def extract_act(batch):
+    return jnp.stack([t.action for t in batch])
+
+
+@jit
+def extract(batch):
     terminated = jnp.stack([t.terminated for t in batch])
     next_obs = jnp.stack([t.next_observation for t in batch])
-    # print(jnp.stack(obs2))
-    # obs = jnp.expand_dims(jnp.array(batch)[:, 0], 1)
-    # action = jnp.array(batch)[:, 1].astype(int)
-    # reward = jnp.expand_dims(jnp.array(batch)[:, 2], 1)
-    # terminated = jnp.expand_dims(jnp.array(batch)[:, 4], 1)
-    # next_obs = jnp.expand_dims(jnp.array(batch)[:, 3], 1)
+    return terminated, next_obs
 
-    target = jnp.array(reward) + terminated * gamma * jnp.max(q_net(next_obs))
+
+def critic_loss(q_net, batch, gamma=0.9):
+    obs = extract_obs(batch)
+    jax.debug.print("Extracted obs with shape {x.shape}", x=obs)
+    rew = extract_rew(batch)
+    jax.debug.print("Extracted rew with shape {x.shape}", x=rew)
+    act = extract_act(batch)
+    jax.debug.print("Extracted act with shape {x.shape}", x=act)
+    terminated, next_obs = extract(batch)
+
+    jax.debug.print("Extracted next_obs with shape {x.shape}", x=next_obs)
+    jax.debug.print("Extracted terminated with shape {x.shape}", x=terminated)
+
+    next_q = q_net(next_obs)
+    jax.debug.print("Extracted next_q {x} with shape {x.shape}", x=next_q)
+    max_next_q = jnp.max(next_q, axis=1)
+    jax.debug.print(
+        "Extracted max_next_q {x} with shape {x.shape}", x=max_next_q
+    )
+
+    target = jnp.array(rew) + (1 - terminated) * gamma * max_next_q
+
+    jax.debug.print("Computed target {x} with shape {x.shape}", x=target)
 
     pred = q_net(obs)
-    pred = pred[jnp.arange(len(pred)), action]
 
-    loss = optax.squared_error(pred, jnp.squeeze(target)).mean()
+    jax.debug.print("Computed pred {x} with shape {x.shape}", x=pred)
+    pred = pred[jnp.arange(len(pred)), act]
+
+    jax.debug.print("Computed pred2 {x} with shape {x.shape}", x=pred)
+
+    loss = optax.squared_error(pred, target).mean()
+
+    jax.debug.print("Computed loss {x} with shape {x.shape}", x=loss)
 
     return loss
 
@@ -73,7 +103,7 @@ def train_dqn(
     total_timesteps: int = 1e4,
     gradient_steps: int = 1,
     learning_rate: float = 1e-4,
-    gamma: float = 0.9,
+    gamma: float = 0.99,
     tau: float = 0.05,
     seed: int = 1,
 ):
