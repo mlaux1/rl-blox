@@ -9,9 +9,10 @@ import numpy as np
 import optax
 from flax import nnx
 from jax import jit, lax, vmap
+from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from ...policy.replay_buffer import ReplayBuffer
+from ...policy.replay_buffer import ReplayBuffer, Transition
 
 
 class MLP(nnx.Module):
@@ -28,7 +29,30 @@ class MLP(nnx.Module):
 
 
 @jit
-def _extract(batch):
+def _extract(
+    batch: list,
+) -> tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
+    """Extracts the arrays of the given list of transitions.
+
+    Parameters
+    ----------
+    batch : list[Transition]
+        The batch of transitions
+
+    Returns
+    -------
+    observation : ArrayLike
+        All observations of the given batch as a stacked array.
+    reward : ArrayLike
+        All rewards of the given batch as a stacked array.
+    action : ArrayLike
+        All actions of the given batch as a stacked array.
+    terminated : ArrayLike
+        All terminations of the given batch as a stacked array.
+    next_observation : ArrayLike
+        All next_observations of the given batch as a stacked array.
+
+    """
     observation = jnp.stack([t.observation for t in batch])
     reward = jnp.stack([t.reward for t in batch])
     action = jnp.stack([t.action for t in batch])
@@ -38,7 +62,28 @@ def _extract(batch):
 
 
 @nnx.jit
-def _critic_loss(q_net, batch, gamma=0.99):
+def _critic_loss(
+    q_net: MLP,
+    batch: list[Transition],
+    gamma: float = 0.99,
+) -> float:
+    """Calculates the loss of the given Q-net for a given minibatch of
+    transitions.
+
+    Parameters
+    ----------
+    q_net : MLP
+        The Q-network to compute the loss for.
+    batch : list[Transition]
+        The minibatch of transitions.
+    gamma : float, default=0.99
+        The discount factor.
+
+    Returns
+    -------
+    loss : float
+        The computed loss for the given minibatch.
+    """
     obs, reward, action, terminated, next_obs = _extract(batch)
 
     next_q = q_net(next_obs)
@@ -55,7 +100,22 @@ def _critic_loss(q_net, batch, gamma=0.99):
 
 
 @nnx.jit
-def _train_step(q_net, optimizer, batch):
+def _train_step(
+    q_net: MLP,
+    optimizer: nnx.Optimizer,
+    batch: ArrayLike,
+) -> None:
+    """Performs a single training step to optimise the Q-network.
+
+    Parameters
+    ----------
+    q_net : MLP
+        The MLP to be updated.
+    optimizer : nnx.Optimizer
+        The optimizer to be used.
+    batch :
+        The minibatch of transitions to compute the update from.
+    """
     grad_fn = nnx.value_and_grad(_critic_loss)
     loss, grads = grad_fn(q_net, batch)
     optimizer.update(grads)
@@ -76,7 +136,7 @@ def train_dqn(
     learning_rate: float = 1e-4,
     gamma: float = 0.99,
     seed: int = 1,
-):
+) -> MLP:
     """Deep Q Learning with Experience Replay
 
     Implements the most basic version of DQN with experience replay as described
@@ -133,12 +193,14 @@ def train_dqn(
 
     rb = ReplayBuffer(buffer_size)
 
-    _explore_action = env.action_space.sample()
+    # _explore_action = nnx.jit(env.action_space.sample)
 
     # for each step:
     for step in tqdm(range(total_timesteps)):
         # select epsilon greedy action
+        # action = _explore_action()
         action = env.action_space.sample()
+
         key, subkey = jax.random.split(key)
         roll = jax.random.uniform(subkey)
         if roll > epsilon:
