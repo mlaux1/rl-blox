@@ -49,39 +49,21 @@ def extract(batch):
     return terminated, next_obs
 
 
-def critic_loss(q_net, batch, gamma=0.9):
+def critic_loss(q_net, batch, gamma=0.99):
     obs = extract_obs(batch)
-    jax.debug.print("Extracted obs with shape {x.shape}", x=obs)
     rew = extract_rew(batch)
-    jax.debug.print("Extracted rew with shape {x.shape}", x=rew)
     act = extract_act(batch)
-    jax.debug.print("Extracted act with shape {x.shape}", x=act)
     terminated, next_obs = extract(batch)
 
-    jax.debug.print("Extracted next_obs with shape {x.shape}", x=next_obs)
-    jax.debug.print("Extracted terminated with shape {x.shape}", x=terminated)
-
     next_q = q_net(next_obs)
-    jax.debug.print("Extracted next_q {x} with shape {x.shape}", x=next_q)
     max_next_q = jnp.max(next_q, axis=1)
-    jax.debug.print(
-        "Extracted max_next_q {x} with shape {x.shape}", x=max_next_q
-    )
 
     target = jnp.array(rew) + (1 - terminated) * gamma * max_next_q
 
-    jax.debug.print("Computed target {x} with shape {x.shape}", x=target)
-
     pred = q_net(obs)
-
-    jax.debug.print("Computed pred {x} with shape {x.shape}", x=pred)
     pred = pred[jnp.arange(len(pred)), act]
 
-    jax.debug.print("Computed pred2 {x} with shape {x.shape}", x=pred)
-
     loss = optax.squared_error(pred, target).mean()
-
-    jax.debug.print("Computed loss {x} with shape {x.shape}", x=loss)
 
     return loss
 
@@ -157,6 +139,6 @@ def train_dqn(
         else:
             obs = next_obs
 
-        epsilon = epsilon - 1.0 / total_timesteps
+        epsilon = epsilon - (0.9 * (step / total_timesteps))
 
     return q_net
