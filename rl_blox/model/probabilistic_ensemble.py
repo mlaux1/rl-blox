@@ -1,3 +1,5 @@
+from typing import NamedTuple
+
 import chex
 import distrax
 import jax
@@ -340,7 +342,7 @@ def gaussian_ensemble_loss(
 @nnx.jit
 def train_epoch(
     model: GaussianMlpEnsemble,
-    optimizer: nnx.Optimizer,
+    optimizer: nnx.Optimizer[GaussianMlpEnsemble],
     X: jnp.ndarray,
     Y: jnp.ndarray,
     indices: jnp.ndarray,
@@ -362,9 +364,16 @@ def train_epoch(
     return jnp.asarray(loss).mean()
 
 
+class EnsembleTrainState(NamedTuple):
+    model: GaussianMlpEnsemble
+    optimizer: nnx.Optimizer[GaussianMlpEnsemble]
+    train_size: float
+    batch_size: int
+
+
 def train_ensemble(
     model: GaussianMlpEnsemble,
-    optimizer: nnx.Optimizer,
+    optimizer: nnx.Optimizer[GaussianMlpEnsemble],
     train_size: float,
     X: jnp.ndarray,
     Y: jnp.ndarray,
