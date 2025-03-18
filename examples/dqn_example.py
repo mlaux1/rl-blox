@@ -21,10 +21,9 @@ q = train_dqn(
     q_net,
     env,
     epsilon=1.00,
-    decay=0.97,
-    learning_rate=0.001,
+    learning_rate=0.003,
     seed=seed,
-    total_timesteps=100_000,
+    total_timesteps=30_000,
 )
 env.close()
 
@@ -35,7 +34,6 @@ obs, _ = eval_env.reset()
 
 while True:
     action = int(jnp.argmax(q([obs])))
-    print(f"q_vals: {q([obs])} -> action {action}")
     next_obs, reward, terminated, truncated, info = eval_env.step(action)
 
     if terminated or truncated:
