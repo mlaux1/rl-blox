@@ -16,6 +16,8 @@ from ...policy.replay_buffer import ReplayBuffer, Transition
 
 
 class MLP(nnx.Module):
+    """Basic Multi-layer Perceptron with two hidden layers."""
+
     def __init__(self, din, dhidden, dout, rngs: nnx.Rngs):
         self.linear1 = nnx.Linear(din, dhidden, rngs=rngs)
         self.linear2 = nnx.Linear(dhidden, dhidden, rngs=rngs)
@@ -122,7 +124,26 @@ def _train_step(
 
 
 @nnx.jit
-def _select_action(q_net, obs):
+def _select_action(
+    q_net: MLP,
+    obs: ArrayLike,
+) -> int:
+    """Selects the greedy action for a given observation based on the given
+    Q-Network by choosing the action that maximises the Q-Value.
+
+    Parameters
+    ----------
+    q_net : MLP
+        The Q-Network to be used for greedy action selection.
+    obs : ArrayLike
+        The observation for which to select an action.
+
+    Returns
+    -------
+    action : int
+        The selected greedy action.
+
+    """
     q_vals = q_net([obs])
     return jnp.argmax(q_vals)
 
