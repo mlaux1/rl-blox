@@ -244,18 +244,22 @@ class ModelPredictiveControl:
         if self.verbose >= 5:
             print("[PETS/MPC] start training")
         self.key, train_key = jax.random.split(self.key)
-        train_ensemble(  # TODO should we use bootstrapping?
+        loss = train_ensemble(  # TODO should we use bootstrapping?
             model=self.dynamics_model.model,
             optimizer=self.dynamics_model.optimizer,
             train_size=self.dynamics_model.train_size,
             X=observations_actions,
-            Y=next_observations,
+            # This is configurable in the original implementation, although it
+            # is the same for every environment used in the experiments. We
+            # assume that we are dealing with continuous state vectors and
+            # predict the delta in the transition.
+            Y=next_observations - observations,
             n_epochs=n_epochs,
             batch_size=self.dynamics_model.batch_size,
             key=train_key,
         )
         if self.verbose >= 5:
-            print("[PETS/MPC] training done")
+            print(f"[PETS/MPC] training done; {loss=}")
 
         return self
 
@@ -291,9 +295,10 @@ def trajectory_sampling_inf(
         dist = dynamics_model.base_sample(
             jnp.hstack((obs, act))[jnp.newaxis], model_idx
         )
-        obs = dist.sample(seed=sampling_key, sample_shape=1)[
+        delta_obs = dist.sample(seed=sampling_key, sample_shape=1)[
             0, 0
         ]  # TODO why [0, 0] and not [0]?
+        obs = obs + delta_obs
         observations.append(obs)
     return jnp.vstack(observations)
 

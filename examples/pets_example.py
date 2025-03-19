@@ -1,5 +1,4 @@
 import gymnasium as gym
-import jax
 import optax
 from flax import nnx
 
@@ -29,13 +28,13 @@ mpc = train_pets(
     env,
     pendulum_reward,
     dynamics_model,
-    task_horizon=200,
+    task_horizon=100,
     n_samples=400,
-    n_steps_per_iteration=200,
     gradient_steps=5,
     batch_size=256,  # TODO batch size to sample from replay buffer
     n_opt_iter=10,
     seed=seed,
-    learning_starts=500,
+    learning_starts=200,  # one episode
+    n_steps_per_iteration=200,  # one episode
     verbose=20,
 )
