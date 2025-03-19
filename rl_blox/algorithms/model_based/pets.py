@@ -13,7 +13,7 @@ from jax.typing import ArrayLike
 from ...model.cross_entropy_method import cem_sample, cem_update
 from ...model.probabilistic_ensemble import (
     EnsembleTrainState,
-    GaussianMlpEnsemble,
+    GaussianMLPEnsemble,
     train_ensemble,
 )
 
@@ -244,7 +244,7 @@ class ModelPredictiveControl:
         if self.verbose >= 5:
             print("[PETS/MPC] start training")
         self.key, train_key = jax.random.split(self.key)
-        train_ensemble(
+        train_ensemble(  # TODO should we use bootstrapping?
             model=self.dynamics_model.model,
             optimizer=self.dynamics_model.optimizer,
             train_size=self.dynamics_model.train_size,
@@ -265,7 +265,7 @@ def trajectory_sampling_inf(
     model_idx: int,
     key: jnp.ndarray,
     obs: jnp.ndarray,
-    dynamics_model: GaussianMlpEnsemble,
+    dynamics_model: GaussianMLPEnsemble,
 ):
     """TSinf refers to particle bootstraps never changing during a trial.
 

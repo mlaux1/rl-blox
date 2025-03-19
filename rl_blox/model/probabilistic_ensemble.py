@@ -9,7 +9,7 @@ from flax import nnx
 from jax.typing import ArrayLike
 
 
-class GaussianMlp(nnx.Module):
+class GaussianMLP(nnx.Module):
     """Probabilistic neural network that predicts a Gaussian distribution.
 
     Parameters
@@ -85,7 +85,7 @@ def constrained_param(
     return min_val + (max_val - min_val) * jax.nn.sigmoid(x)
 
 
-class GaussianMlpEnsemble(nnx.Module):
+class GaussianMLPEnsemble(nnx.Module):
     """Ensemble of Gaussian MLPs.
 
     Parameters
@@ -118,8 +118,8 @@ class GaussianMlpEnsemble(nnx.Module):
            https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
 
-    ensemble: GaussianMlp
-    base_model: GaussianMlp
+    ensemble: GaussianMLP
+    base_model: GaussianMLP
     n_ensemble: int
     n_outputs: int
 
@@ -137,8 +137,8 @@ class GaussianMlpEnsemble(nnx.Module):
 
         @nnx.split_rngs(splits=self.n_ensemble)
         @nnx.vmap
-        def make_model(rngs: nnx.Rngs) -> GaussianMlp:
-            return GaussianMlp(
+        def make_model(rngs: nnx.Rngs) -> GaussianMLP:
+            return GaussianMLP(
                 shared_head=shared_head,
                 n_features=n_features,
                 n_outputs=n_outputs,
@@ -148,7 +148,7 @@ class GaussianMlpEnsemble(nnx.Module):
 
         self.ensemble = make_model(rngs)
 
-        self.base_model = GaussianMlp(
+        self.base_model = GaussianMLP(
             shared_head=shared_head,
             n_features=n_features,
             n_outputs=n_outputs,
@@ -174,7 +174,7 @@ class GaussianMlpEnsemble(nnx.Module):
         self.raw_max_log_var = nnx.Param(jnp.zeros(self.n_outputs))
 
         def forward(
-            model: GaussianMlp, x: jnp.ndarray
+            model: GaussianMLP, x: jnp.ndarray
         ) -> tuple[jnp.ndarray, jnp.ndarray]:
             return model(x)
 
@@ -331,7 +331,7 @@ def bootstrap(
 
 
 def gaussian_ensemble_loss(
-    model: GaussianMlpEnsemble, X: jnp.ndarray, Y: jnp.ndarray
+    model: GaussianMLPEnsemble, X: jnp.ndarray, Y: jnp.ndarray
 ) -> jnp.ndarray:
     """Sum of Gaussian NLL and penalty for log_var boundaries."""
     mean, log_var = model(X)
@@ -341,8 +341,8 @@ def gaussian_ensemble_loss(
 
 @nnx.jit
 def train_epoch(
-    model: GaussianMlpEnsemble,
-    optimizer: nnx.Optimizer[GaussianMlpEnsemble],
+    model: GaussianMLPEnsemble,
+    optimizer: nnx.Optimizer[GaussianMLPEnsemble],
     X: jnp.ndarray,
     Y: jnp.ndarray,
     indices: jnp.ndarray,
@@ -365,15 +365,15 @@ def train_epoch(
 
 
 class EnsembleTrainState(NamedTuple):
-    model: GaussianMlpEnsemble
-    optimizer: nnx.Optimizer[GaussianMlpEnsemble]
+    model: GaussianMLPEnsemble
+    optimizer: nnx.Optimizer[GaussianMLPEnsemble]
     train_size: float
     batch_size: int
 
 
 def train_ensemble(
-    model: GaussianMlpEnsemble,
-    optimizer: nnx.Optimizer[GaussianMlpEnsemble],
+    model: GaussianMLPEnsemble,
+    optimizer: nnx.Optimizer[GaussianMLPEnsemble],
     train_size: float,
     X: jnp.ndarray,
     Y: jnp.ndarray,

@@ -5,7 +5,7 @@ import optax
 from flax import nnx
 
 from rl_blox.model.probabilistic_ensemble import (
-    GaussianMlpEnsemble,
+    GaussianMLPEnsemble,
     train_ensemble,
 )
 
@@ -63,7 +63,7 @@ key = jax.random.key(seed)
 key, data_key = jax.random.split(key, 2)
 X_train, Y_train, X_test, Y_test = generate_dataset3(data_key, n_samples)
 
-model = GaussianMlpEnsemble(
+model = GaussianMLPEnsemble(
     n_ensemble=5,
     shared_head=False,
     n_features=1,
