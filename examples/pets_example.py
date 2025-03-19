@@ -30,7 +30,7 @@ mpc = train_pets(
     dynamics_model,
     task_horizon=100,
     n_samples=400,
-    gradient_steps=5,
+    gradient_steps=20,
     batch_size=256,  # TODO batch size to sample from replay buffer
     n_opt_iter=10,
     seed=seed,

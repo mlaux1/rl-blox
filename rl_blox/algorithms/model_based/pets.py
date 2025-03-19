@@ -379,11 +379,13 @@ def train_pets(
         Number of steps to execute in the environment.
     learning_starts
         Learning starts after this number of random steps was taken in the
-        environment.
+        environment. Should correspond to the expected number of steps in one
+        episode.
     batch_size
         Size of a batch during gradient computation.
     n_steps_per_iteration
         Number of steps to take in the environment before we refine the model.
+        Should correspond to the expected number of steps in one episode.
     gradient_steps
         Number of gradient steps during one training phase.
     verbose
@@ -425,6 +427,8 @@ def train_pets(
         seed,
         verbose=verbose - 1,
     )
+
+    env.action_space.seed(seed)
 
     obs, _ = env.reset(seed=seed)
     action = None
