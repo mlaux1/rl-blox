@@ -314,6 +314,7 @@ def train_pets(
     buffer_size: int = 1_000_000,
     total_timesteps: int = 1_000_000,
     learning_starts: int = 100,
+    learning_starts_gradient_steps: int = 100,
     batch_size: int = 256,
     n_steps_per_iteration: int = 100,
     gradient_steps: int = 10,
@@ -381,6 +382,8 @@ def train_pets(
         Learning starts after this number of random steps was taken in the
         environment. Should correspond to the expected number of steps in one
         episode.
+    learning_start_gradient_steps
+        Number of gradient steps used after learning_starts steps.
     batch_size
         Size of a batch during gradient computation.
     n_steps_per_iteration
@@ -428,6 +431,8 @@ def train_pets(
         verbose=verbose - 1,
     )
 
+    n_epochs = learning_starts_gradient_steps
+
     env.action_space.seed(seed)
 
     obs, _ = env.reset(seed=seed)
@@ -440,11 +445,12 @@ def train_pets(
             t >= learning_starts
             and (t - learning_starts) % n_steps_per_iteration == 0
         ):
-            for _ in range(gradient_steps):
+            for _ in range(n_epochs):
                 D_obs, D_acts, D_rews, D_next_obs, D_dones = rb.sample_batch(
                     batch_size, rng
                 )
                 mpc.fit(D_obs, D_acts, D_next_obs, n_epochs=1)
+            n_epochs = gradient_steps
 
         if t < learning_starts:
             action = action_space.sample()
