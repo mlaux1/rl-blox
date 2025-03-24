@@ -165,8 +165,8 @@ class ModelPredictiveControl:
         return best_plan[0]
 
     def _optimize_actions(self, obs):
-        best_return = -jnp.inf
         best_plan = self.prev_plan
+        best_return = -jnp.inf
 
         self.key, bootstrap_key = jax.random.split(self.key, 2)
         model_indices = jax.random.randint(
@@ -179,62 +179,63 @@ class ModelPredictiveControl:
         mean = self.prev_plan
         var = jnp.copy(self.init_var)
         for i in range(self.n_opt_iter):
-            if self.verbose >= 10:
-                print(f"[PETS/MPC] it #{i + 1}")
-            self.key, sampling_key = jax.random.split(self.key, 2)
-            actions = self._cem_sample(mean, var, sampling_key)
-            assert not jnp.any(jnp.isnan(actions))
-            chex.assert_shape(
-                actions,
-                (self.n_samples, self.task_horizon) + self.action_space.shape,
-            )
+            mean, var, best_plan, best_return, expected_returns = self._cem_iter(
+                obs, model_indices, mean, var, best_plan, best_return)
 
-            self.key, particle_key = jax.random.split(self.key, 2)
-            particle_keys = jax.random.split(
-                particle_key, (self.n_samples, self.n_particles)
-            )
-            chex.assert_shape(
-                particle_keys, (self.n_samples, self.n_particles, 2)
-            )
-            chex.assert_shape(model_indices, (self.n_particles,))
-            chex.assert_shape(
-                actions,
-                (self.n_samples, self.task_horizon) + self.action_space.shape,
-            )
-            chex.assert_shape(obs, (obs.shape[0],))
-            trajectories = self._ts_inf(
-                particle_keys, model_indices, actions, obs
-            )
-            chex.assert_shape(
-                trajectories,
-                (
-                    self.n_samples,
-                    self.n_particles,
-                    self.task_horizon + 1,
-                    trajectories.shape[-1],
-                ),
-            )
-            expected_returns = evaluate_plans(
-                actions, trajectories, self.reward_model
-            )
-            chex.assert_shape(expected_returns, (self.n_samples,))
-
-            mean, var = self._cem_update(actions, expected_returns, mean, var)
             if self.verbose >= 20:
                 print(
                     f"[PETS/MPC] it #{i + 1}, "
                     f"return [{expected_returns.min()}, {expected_returns.max()}], "
                     f"{jnp.mean(expected_returns)} +- {jnp.std(expected_returns)}"
                 )
-
-            best_idx = jnp.argmax(expected_returns)
-            if expected_returns[best_idx] >= best_return:
-                best_return = expected_returns[best_idx]
-                best_plan = actions[best_idx]
             if self.verbose >= 10:
                 print(f"[PETS/MPC] it #{i + 1}, best return [{best_return}]")
 
         return best_plan
+
+    def _cem_iter(self, obs, model_indices, mean, var, best_plan, best_return):
+        self.key, sampling_key = jax.random.split(self.key, 2)
+        actions = self._cem_sample(mean, var, sampling_key)
+        assert not jnp.any(jnp.isnan(actions))
+        chex.assert_shape(
+            actions,
+            (self.n_samples, self.task_horizon) + self.action_space.shape,
+        )
+        self.key, particle_key = jax.random.split(self.key, 2)
+        particle_keys = jax.random.split(
+            particle_key, (self.n_samples, self.n_particles)
+        )
+        chex.assert_shape(
+            particle_keys, (self.n_samples, self.n_particles, 2)
+        )
+        chex.assert_shape(model_indices, (self.n_particles,))
+        chex.assert_shape(
+            actions,
+            (self.n_samples, self.task_horizon) + self.action_space.shape,
+        )
+        chex.assert_shape(obs, (obs.shape[0],))
+        trajectories = self._ts_inf(
+            particle_keys, model_indices, actions, obs
+        )
+        chex.assert_shape(
+            trajectories,
+            (
+                self.n_samples,
+                self.n_particles,
+                self.task_horizon + 1,
+                trajectories.shape[-1],
+            ),
+        )
+        expected_returns = evaluate_plans(
+            actions, trajectories, self.reward_model
+        )
+        chex.assert_shape(expected_returns, (self.n_samples,))
+        mean, var = self._cem_update(actions, expected_returns, mean, var)
+        best_idx = jnp.argmax(expected_returns)
+        if expected_returns[best_idx] >= best_return:
+            best_return = expected_returns[best_idx]
+            best_plan = actions[best_idx]
+        return mean, var, best_plan, best_return, expected_returns
 
     def fit(
         self,
