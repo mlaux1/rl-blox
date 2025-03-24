@@ -71,6 +71,8 @@ class ModelPredictiveControl:
         Learned model of the environment's dynamic.
     task_horizon
         Horizon in which the controller predicts states and optimizes actions.
+    n_particles
+        Number of particles to compute the expected returns.
     n_samples
         Number of sampled paths from the dynamics model.
     n_opt_iter
@@ -87,6 +89,7 @@ class ModelPredictiveControl:
         reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
         dynamics_model: EnsembleTrainState,
         task_horizon: int,
+        n_particles: int,
         n_samples: int,
         n_opt_iter: int,
         seed: int,
@@ -96,6 +99,7 @@ class ModelPredictiveControl:
         self.dynamics_model = dynamics_model
         self.reward_model = reward_model
         self.task_horizon = task_horizon
+        self.n_particles = n_particles
         self.n_samples = n_samples
         self.n_opt_iter = n_opt_iter
         self.verbose = verbose
@@ -134,24 +138,13 @@ class ModelPredictiveControl:
                 alpha=0.1,
             )
         )
-        self._ts_inf = jax.jit(
-            jax.vmap(
-                partial(
-                    trajectory_sampling_inf,
-                    dynamics_model=self.dynamics_model.model,
-                ),
-                in_axes=(0, 0, 0, None),
-            )
-        )
+        self._ts_inf = make_ts_inf(self.dynamics_model.model)
 
     def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L194
         last_act = jnp.asarray(last_act)
         obs = jnp.asarray(obs)
-        return self._trajectory_sampling_inf(last_act, obs)
 
-    def _trajectory_sampling_inf(self, last_act: jnp.ndarray, obs: jnp.ndarray):
-        """TSinf refers to particle bootstraps never changing during a trial."""
         assert last_act.ndim == 1
         assert obs.ndim == 1
 
@@ -173,7 +166,7 @@ class ModelPredictiveControl:
         self.key, bootstrap_key = jax.random.split(self.key, 2)
         model_indices = jax.random.randint(
             bootstrap_key,
-            shape=(self.n_samples,),
+            shape=(self.n_particles,),
             minval=0,
             maxval=self.dynamics_model.model.n_ensemble,
         )
@@ -191,30 +184,58 @@ class ModelPredictiveControl:
                 (self.n_samples, self.task_horizon) + self.action_space.shape,
             )
 
-            keys = jax.random.split(self.key, self.n_samples + 1)
-            self.key = keys[0]
-            obs_trajectory = self._ts_inf(actions, model_indices, keys[1:], obs)
-            assert not jnp.any(jnp.isnan(obs_trajectory))
-            chex.assert_equal_shape_prefix(
-                (actions, obs_trajectory), prefix_len=2
+            self.key, particle_key = jax.random.split(self.key, 2)
+            particle_keys = jax.random.split(
+                particle_key, (self.n_samples, self.n_particles)
             )
+            chex.assert_shape(
+                particle_keys, (self.n_samples, self.n_particles, 2)
+            )
+            chex.assert_shape(model_indices, (self.n_particles,))
+            chex.assert_shape(
+                actions,
+                (self.n_samples, self.task_horizon) + self.action_space.shape,
+            )
+            chex.assert_shape(obs, (obs.shape[0],))
+            trajectories = self._ts_inf(
+                particle_keys, model_indices, actions, obs
+            )
+            chex.assert_shape(
+                trajectories,
+                (
+                    self.n_samples,
+                    self.n_particles,
+                    self.task_horizon,
+                    obs.shape[0],
+                ),
+            )
+            jax.debug.print(f"{trajectories.shape=}")
+            assert not jnp.any(jnp.isnan(trajectories))
 
-            rewards = self.reward_model(actions, obs_trajectory)
-            chex.assert_shape(rewards, (self.n_samples, self.task_horizon))
-            returns = rewards.sum(axis=1)
-            chex.assert_shape(returns, (self.n_samples,))
+            broadcasted_actions = np.broadcast_to(
+                actions[:, jnp.newaxis],
+                trajectories.shape[:-1] + self.action_space.shape,
+            )  # broadcast along particle axis
+            rewards = self.reward_model(broadcasted_actions, trajectories)
+            chex.assert_shape(
+                rewards, (self.n_samples, self.n_particles, self.task_horizon)
+            )
+            returns = rewards.sum(axis=-1)
+            chex.assert_shape(returns, (self.n_samples, self.n_particles))
+            expected_returns = returns.mean(axis=-1)
+            chex.assert_shape(expected_returns, (self.n_samples,))
 
-            mean, var = self._cem_update(actions, returns, mean, var)
+            mean, var = self._cem_update(actions, expected_returns, mean, var)
             if self.verbose >= 20:
                 print(
                     f"[PETS/MPC] it #{i + 1}, "
-                    f"return [{returns.min()}, {returns.max()}], "
-                    f"{jnp.mean(returns)} +- {jnp.std(returns)}"
+                    f"return [{expected_returns.min()}, {expected_returns.max()}], "
+                    f"{jnp.mean(expected_returns)} +- {jnp.std(expected_returns)}"
                 )
 
-            best_idx = jnp.argmax(returns)
-            if returns[best_idx] >= best_return:
-                best_return = returns[best_idx]
+            best_idx = jnp.argmax(expected_returns)
+            if expected_returns[best_idx] >= best_return:
+                best_return = expected_returns[best_idx]
                 best_plan = actions[best_idx]
             if self.verbose >= 10:
                 print(f"[PETS/MPC] it #{i + 1}, best return [{best_return}]")
@@ -264,28 +285,31 @@ class ModelPredictiveControl:
         return self
 
 
-def trajectory_sampling_inf(
-    acts: jnp.ndarray,
-    model_idx: int,
+def ts_inf(
     key: jnp.ndarray,
+    model_idx: int,
+    acts: jnp.ndarray,
     obs: jnp.ndarray,
     dynamics_model: GaussianMLPEnsemble,
 ):
-    """TSinf refers to particle bootstraps never changing during a trial.
+    """Trajectory sampling infinity (TSinf).
+
+    Particles do never change the bootstrap during a trial.
 
     Parameters
     ----------
-    acts
-        Actions at times t:t+T with the task horizon T.
-    dynamics_model
-        Probabilistic ensemble dynamics model.
     key
         Random key for sampling.
+    model_idx
+        Index of the model used for sampling.
+    acts
+        Actions at times t:t+T with the task horizon T.
     obs
         Observation at time t.
-    model_idx
-        Index of the model used for trajectory sampling.
+    dynamics_model
+        Probabilistic ensemble dynamics model.
     """
+    key, sampling_key = jax.random.split(key, 2)
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = []
     for act in acts:
@@ -303,11 +327,74 @@ def trajectory_sampling_inf(
     return jnp.vstack(observations)
 
 
+def make_ts_inf(
+    model: GaussianMLPEnsemble,
+) -> Callable[
+    [jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray
+]:
+    """JIT-compile and vmap trajectory sampler TSinf.
+
+    The trajectory sampler will take as inputs the following arguments:
+
+    keys : array, shape (n_samples, n_particles, 2)
+        Keys for random number generator.
+
+    model_idx : array, (n_particles,)
+        Each particle will use another base model for sampling.
+
+    acts : array, shape (n_samples, task_horizon) + action_space.shape
+        A sequence of actions to take for each sample of the optimizer.
+
+    obs : array, shape observation_space.shape
+        Initial observation.
+
+    Returns trajectories as an array of
+    shape (n_samples, n_particles, task_horizon) + obs.shape
+
+    Examples
+    --------
+    >>> from flax import nnx
+    >>> import jax
+    >>> import chex
+    >>> model = GaussianMLPEnsemble(
+    ...     5, False, 4, 3, [500, 500, 500, nnx.Rngs(0)])
+    >>> n_samples = 400
+    >>> n_particles = 20
+    >>> task_horizon = 100
+    >>> ts_inf = make_ts_inf(model)
+    >>> key = jax.random.key(0)
+    >>> key, samp_key, model_key, act_key, obs_key = jax.random.split(key, 5)
+    >>> sampling_keys = jax.random.split(samp_key, (n_samples, n_particles))
+    >>> model_indices = jax.random.randint(
+    ...     model_key, (n_particles,), 0, model.n_ensemble)
+    >>> acts = jax.random.normal(act_key, (n_samples, task_horizon, 1))
+    >>> obs = jax.random.normal(obs_key, (3,))
+    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs)
+    >>> chex.assert_shape(
+    ...     trajectories, (n_samples, n_particles, task_horizon, 3))
+    """
+    return jax.jit(
+        jax.vmap(  # over samples for CEM
+            jax.vmap(  # over particles for estimation of return
+                partial(
+                    ts_inf,
+                    dynamics_model=model,
+                ),
+                # key, model_idx, acts, obs
+                in_axes=(0, 0, None, None),
+            ),
+            # key, model_idx, acts, obs
+            in_axes=(0, None, 0, None),
+        )
+    )
+
+
 def train_pets(
     env: gym.Env,
     reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
     dynamics_model: EnsembleTrainState,
     task_horizon: int,
+    n_particles: int,
     n_samples: int,
     n_opt_iter: int = 5,
     seed: int = 1,
@@ -368,6 +455,8 @@ def train_pets(
         Probabilistic ensemble dynamics model.
     task_horizon
         Task horizon: number of time steps to predict with dynamics model.
+    n_particles
+        Number of particles to compute the expected returns.
     n_samples
         Number of action samples per time step.
     n_opt_iter, optional
@@ -425,6 +514,7 @@ def train_pets(
         reward_model,
         dynamics_model,
         task_horizon,
+        n_particles,
         n_samples,
         n_opt_iter,
         seed,

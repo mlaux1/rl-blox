@@ -4,7 +4,10 @@ from flax import nnx
 
 from rl_blox.algorithms.model_based.pets import train_pets
 from rl_blox.algorithms.model_based.pets_reward_models import pendulum_reward
-from rl_blox.model.probabilistic_ensemble import EnsembleTrainState, GaussianMLPEnsemble
+from rl_blox.model.probabilistic_ensemble import (
+    EnsembleTrainState,
+    GaussianMLPEnsemble,
+)
 
 
 env_name = "Pendulum-v1"
@@ -29,6 +32,7 @@ mpc = train_pets(
     pendulum_reward,
     dynamics_model,
     task_horizon=150,
+    n_particles=20,
     n_samples=400,
     batch_size=256,  # TODO batch size to sample from replay buffer
     n_opt_iter=5,
