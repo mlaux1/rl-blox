@@ -37,11 +37,11 @@ mpc = train_pets(
     batch_size=256,  # TODO batch size to sample from replay buffer
     n_opt_iter=5,
     seed=seed,
-    learning_starts=400,  # 200 steps = one episode
+    learning_starts=600,  # 200 steps = one episode
     learning_starts_gradient_steps=200,
     n_steps_per_iteration=200,  # 200 steps = one episode
     gradient_steps=50,
-    total_timesteps=10_000,
+    total_timesteps=800,
     verbose=20,
 )
 env.close()

@@ -108,7 +108,7 @@ class ModelPredictiveControl:
 
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
         self.avg_act = 0.5 * (self.action_space.high + self.action_space.low)
-        self.prev_plan = jnp.vstack([self.avg_act for _ in range(task_horizon)])
+        self.start_episode()
         self.init_var = jnp.vstack(
             [
                 (self.action_space.high - self.action_space.low) ** 2 / 16.0
@@ -139,6 +139,11 @@ class ModelPredictiveControl:
             )
         )
         self._ts_inf = make_ts_inf(self.dynamics_model.model)
+
+    def start_episode(self):
+        self.prev_plan = jnp.vstack(
+            [self.avg_act for _ in range(self.task_horizon)]
+        )
 
     def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L194
@@ -205,24 +210,13 @@ class ModelPredictiveControl:
                 (
                     self.n_samples,
                     self.n_particles,
-                    self.task_horizon,
-                    obs.shape[0],
+                    self.task_horizon + 1,
+                    trajectories.shape[-1],
                 ),
             )
-            jax.debug.print(f"{trajectories.shape=}")
-            assert not jnp.any(jnp.isnan(trajectories))
-
-            broadcasted_actions = np.broadcast_to(
-                actions[:, jnp.newaxis],
-                trajectories.shape[:-1] + self.action_space.shape,
-            )  # broadcast along particle axis
-            rewards = self.reward_model(broadcasted_actions, trajectories)
-            chex.assert_shape(
-                rewards, (self.n_samples, self.n_particles, self.task_horizon)
+            expected_returns = evaluate_plans(
+                actions, trajectories, self.reward_model
             )
-            returns = rewards.sum(axis=-1)
-            chex.assert_shape(returns, (self.n_samples, self.n_particles))
-            expected_returns = returns.mean(axis=-1)
             chex.assert_shape(expected_returns, (self.n_samples,))
 
             mean, var = self._cem_update(actions, expected_returns, mean, var)
@@ -311,7 +305,7 @@ def ts_inf(
     """
     key, sampling_key = jax.random.split(key, 2)
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
-    observations = []
+    observations = [obs]
     for act in acts:
         # We sample from one of the base models.
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
@@ -387,6 +381,46 @@ def make_ts_inf(
             in_axes=(0, None, 0, None),
         )
     )
+
+
+def evaluate_plans(
+    actions: jnp.ndarray,
+    trajectories: jnp.ndarray,
+    reward_model: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+) -> jnp.ndarray:
+    """Evaluate plans based on sampled trajectories.
+
+    Parameters
+    ----------
+    actions : array, shape (n_samples, task_horizon) + action_space.shape
+        Action sequences (plans).
+
+    trajectories : array, shape (n_samples, n_particles, task_horizon + 1) + observation_space.shape
+        Sequences of observations sampled with plans.
+
+    reward_model : callable
+        Mapping from pairs of state and action to reward.
+
+    Returns
+    -------
+    expected_returns : array, shape (n_samples,)
+        Expected returns, summed up over task horizon, averaged over particles.
+    """
+    assert not jnp.any(jnp.isnan(trajectories))
+    n_samples, task_horizon = actions.shape[:2]
+    action_shape = actions.shape[2:]
+    n_particles = trajectories.shape[1]
+
+    broadcasted_actions = np.broadcast_to(
+        actions[:, jnp.newaxis],
+        (n_samples, n_particles, task_horizon) + action_shape,
+    )  # broadcast along particle axis
+    rewards = reward_model(broadcasted_actions, trajectories[:, :, :-1])
+    # sum along task_horizon axis
+    returns = rewards.sum(axis=-1)
+    # mean along particle axis
+    expected_returns = returns.mean(axis=-1)
+    return expected_returns
 
 
 def train_pets(
@@ -555,6 +589,7 @@ def train_pets(
         if termination or truncation:
             if verbose:
                 print(f"{t=}, {info=}")
+            mpc.start_episode()
             obs, _ = env.reset()
 
         obs = next_obs
