@@ -77,6 +77,9 @@ class ModelPredictiveControl:
         Number of sampled paths from the dynamics model.
     n_opt_iter
         Number of iterations of the optimization algorithm.
+    init_with_previous_plan
+        Initialize optimizer in each step with previous plan shifted by one
+        time step.
     seed
         Seed for random number generator.
     verbose
@@ -92,6 +95,7 @@ class ModelPredictiveControl:
         n_particles: int,
         n_samples: int,
         n_opt_iter: int,
+        init_with_previous_plan: bool,
         seed: int,
         verbose: int = 0,
     ):
@@ -102,12 +106,13 @@ class ModelPredictiveControl:
         self.n_particles = n_particles
         self.n_samples = n_samples
         self.n_opt_iter = n_opt_iter
+        self.init_with_previous_plan = init_with_previous_plan
         self.verbose = verbose
 
         self.key = jax.random.PRNGKey(seed)
 
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
-        self.avg_act = 0.5 * (self.action_space.high + self.action_space.low)
+        self.avg_act = jnp.asarray(0.5 * (self.action_space.high + self.action_space.low))
         self.start_episode()
         self.init_var = jnp.vstack(
             [
@@ -176,7 +181,10 @@ class ModelPredictiveControl:
             maxval=self.dynamics_model.model.n_ensemble,
         )
 
-        mean = self.prev_plan
+        if self.init_with_previous_plan:
+            mean = self.prev_plan
+        else:
+            mean = jnp.broadcast_to(self.avg_act, self.prev_plan.shape)
         var = jnp.copy(self.init_var)
         for i in range(self.n_opt_iter):
             mean, var, best_plan, best_return, expected_returns = self._cem_iter(
@@ -222,7 +230,7 @@ class ModelPredictiveControl:
             (
                 self.n_samples,
                 self.n_particles,
-                self.task_horizon + 1,
+                self.task_horizon + 1,  # initial observation + trajectory
                 trajectories.shape[-1],
             ),
         )
@@ -432,6 +440,7 @@ def train_pets(
     n_particles: int,
     n_samples: int,
     n_opt_iter: int = 5,
+    init_with_previous_plan: bool = True,
     seed: int = 1,
     buffer_size: int = 1_000_000,
     total_timesteps: int = 1_000_000,
@@ -496,6 +505,9 @@ def train_pets(
         Number of action samples per time step.
     n_opt_iter, optional
         Number of iterations of the optimization algorithm.
+    init_with_previous_plan
+        Initialize optimizer in each step with previous plan shifted by one
+        time step.
     seed, optional
         Seed for random number generators in Jax and NumPy.
     buffer_size, optional
@@ -552,6 +564,7 @@ def train_pets(
         n_particles,
         n_samples,
         n_opt_iter,
+        init_with_previous_plan,
         seed,
         verbose=verbose - 1,
     )
