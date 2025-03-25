@@ -203,7 +203,7 @@ class GaussianMLPEnsemble(nnx.Module):
 
         return means, log_vars
 
-    def aggegrate(self, x):
+    def aggregate(self, x):
         means, log_vars = self._forward_ensemble(self.ensemble, x)
 
         log_vars = self._safe_log_var(

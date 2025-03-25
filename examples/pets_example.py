@@ -42,7 +42,7 @@ mpc = train_pets(
     learning_starts_gradient_steps=200,
     n_steps_per_iteration=200,  # 200 steps = one episode
     gradient_steps=50,
-    total_timesteps=10_000,
-    verbose=20,
+    total_timesteps=5_000,
+    verbose=1,
 )
 env.close()

@@ -105,7 +105,7 @@ if plot_base_models:
         plt.plot(
             X_test[:, 0], mean, ls="--", label=f"Prediction of model {i + 1}"
         )
-mean, var = model.aggegrate(X_test)
+mean, var = model.aggregate(X_test)
 mean = mean.squeeze()
 std = jnp.sqrt(var).squeeze()
 plt.plot(X_test[:, 0], mean, label="Ensemble", c="k")
