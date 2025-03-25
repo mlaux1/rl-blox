@@ -451,12 +451,13 @@ def store_checkpoint(path: str, model: GaussianMLPEnsemble):
     checkpointer.save(path, state)
 
 
-def restore_checkpoint(path: str) -> GaussianMLPEnsemble:
+def restore_checkpoint(path: str, model: GaussianMLPEnsemble) -> GaussianMLPEnsemble:
     """Restore checkpoint with orbax.
 
     Parameters
     ----------
     path : Absolute path to directory in which the checkpoint should be stored.
+    model : Model with graphdef that should be restored.
 
     Returns
     -------
@@ -464,4 +465,6 @@ def restore_checkpoint(path: str) -> GaussianMLPEnsemble:
     """
     import orbax.checkpoint as ocp
     checkpointer = ocp.PyTreeCheckpointer()
-    return checkpointer.restore(path)
+    state = checkpointer.restore(path)
+    graphdef, _ = nnx.split(model)
+    return nnx.merge(graphdef, state)
