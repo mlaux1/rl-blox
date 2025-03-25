@@ -6,6 +6,7 @@ import chex
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+from flax import nnx
 import numpy as np
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.typing import ArrayLike
@@ -145,6 +146,7 @@ class ModelPredictiveControl:
             )
         )
         self._ts_inf = make_ts_inf(self.dynamics_model.model)
+        self._model_state = None
 
     def start_episode(self):
         self.prev_plan = jnp.vstack(
@@ -224,7 +226,7 @@ class ModelPredictiveControl:
         )
         chex.assert_shape(obs, (obs.shape[0],))
         trajectories = self._ts_inf(
-            particle_keys, model_indices, actions, obs
+            particle_keys, model_indices, actions, obs, self._model_state
         )
         chex.assert_shape(
             trajectories,
@@ -283,6 +285,7 @@ class ModelPredictiveControl:
             batch_size=self.dynamics_model.batch_size,
             key=train_key,
         )
+        _, self._model_state = nnx.split(self.dynamics_model.model)
         if self.verbose >= 5:
             print(f"[PETS/MPC] training done; {loss=}")
 
@@ -294,7 +297,8 @@ def ts_inf(
     model_idx: int,
     acts: jnp.ndarray,
     obs: jnp.ndarray,
-    dynamics_model: GaussianMLPEnsemble,
+    dynamics_model_state: nnx.GraphState,
+    dynamics_model_graphdef: nnx.GraphDef[GaussianMLPEnsemble],
 ):
     """Trajectory sampling infinity (TSinf).
 
@@ -310,9 +314,12 @@ def ts_inf(
         Actions at times t:t+T with the task horizon T.
     obs
         Observation at time t.
-    dynamics_model
-        Probabilistic ensemble dynamics model.
+    dynamics_model_state
+        State of the probabilistic ensemble.
+    dynamics_model_graphdef
+        Graph definition of probabilistic ensemble.
     """
+    dynamics_model = nnx.merge(dynamics_model_graphdef, dynamics_model_state)
     key, sampling_key = jax.random.split(key, 2)
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = [obs]
@@ -331,9 +338,7 @@ def ts_inf(
     return jnp.vstack(observations)
 
 
-def make_ts_inf(
-    model: GaussianMLPEnsemble,
-) -> Callable[
+def make_ts_inf(dynamics_model: GaussianMLPEnsemble) -> Callable[
     [jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray
 ]:
     """JIT-compile and vmap trajectory sampler TSinf.
@@ -351,6 +356,9 @@ def make_ts_inf(
 
     obs : array, shape observation_space.shape
         Initial observation.
+
+    dynamics_model : GaussianMLPEnsemble
+        Dynamics model.
 
     Returns trajectories as an array of
     shape (n_samples, n_particles, task_horizon) + obs.shape
@@ -373,22 +381,24 @@ def make_ts_inf(
     ...     model_key, (n_particles,), 0, model.n_ensemble)
     >>> acts = jax.random.normal(act_key, (n_samples, task_horizon, 1))
     >>> obs = jax.random.normal(obs_key, (3,))
-    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs)
+    >>> _, state = nnx.split(model)
+    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs, state)
     >>> chex.assert_shape(
     ...     trajectories, (n_samples, n_particles, task_horizon, 3))
     """
+    graphdef, _ = nnx.split(dynamics_model)
     return jax.jit(
         jax.vmap(  # over samples for CEM
             jax.vmap(  # over particles for estimation of return
                 partial(
                     ts_inf,
-                    dynamics_model=model,
+                    dynamics_model_graphdef=graphdef,
                 ),
-                # key, model_idx, acts, obs
-                in_axes=(0, 0, None, None),
+                # key, model_idx, acts, obs, dynamics_model_state
+                in_axes=(0, 0, None, None, None),
             ),
-            # key, model_idx, acts, obs
-            in_axes=(0, None, 0, None),
+            # key, model_idx, acts, obs, dynamics_model_state
+            in_axes=(0, None, 0, None, None),
         )
     )
 
