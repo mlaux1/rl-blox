@@ -291,6 +291,7 @@ class ModelPredictiveControl:
             Y=next_observations - observations,
             n_epochs=n_epochs,
             batch_size=self.dynamics_model.batch_size,
+            regularization=self.dynamics_model.regularization,
             key=train_key,
         )
         if self.verbose >= 5:

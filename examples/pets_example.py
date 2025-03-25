@@ -26,6 +26,7 @@ dynamics_model = EnsembleTrainState(
     optimizer=nnx.Optimizer(model, optax.adam(learning_rate=1e-3)),
     train_size=0.7,
     batch_size=32,
+    regularization=0.0005,
 )
 mpc = train_pets(
     env,

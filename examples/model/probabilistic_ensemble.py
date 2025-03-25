@@ -57,6 +57,7 @@ n_samples = 200
 batch_size = 40
 n_epochs = 1_000
 train_size = 0.7
+regularization = 0.5
 plot_base_models = True
 
 key = jax.random.key(seed)
@@ -82,6 +83,7 @@ train_ensemble(
     Y_train,
     n_epochs,
     batch_size,
+    regularization,
     train_key,
     verbose=2,
 )
