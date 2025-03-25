@@ -330,6 +330,15 @@ def bootstrap(
     )
 
 
+def l2_regularization_loss(model: GaussianMLPEnsemble) -> jnp.ndarray:
+    l2_reg_los = 0.0
+    for layer in (
+        model.base_model.hidden_layers + model.base_model.output_layers
+    ):
+        l2_reg_los = l2_reg_los + (layer.kernel**2).sum()
+    return 0.5 * l2_reg_los
+
+
 def gaussian_ensemble_loss(
     model: GaussianMLPEnsemble,
     X: jnp.ndarray,
@@ -337,15 +346,12 @@ def gaussian_ensemble_loss(
     regularization: float,
 ) -> jnp.ndarray:
     """Sum of Gaussian NLL and penalty for log_var boundaries and weights."""
-    l2_regularization = 0.0
-    for layer in model.base_model.hidden_layers + model.base_model.output_layers:
-        l2_regularization = l2_regularization + regularization * (layer.kernel ** 2).sum()
     mean, log_var = model(X)
     boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
     return (
         gaussian_nll(mean, log_var, Y).sum()
         + 0.01 * boundary_loss
-        + regularization * l2_regularization
+        + regularization * l2_regularization_loss(model)
     )
 
 
@@ -468,12 +474,15 @@ def store_checkpoint(path: str, model: GaussianMLPEnsemble):
     model : Model that should be stored.
     """
     import orbax.checkpoint as ocp
+
     graphdef, state = nnx.split(model)
     checkpointer = ocp.PyTreeCheckpointer()
     checkpointer.save(path, state)
 
 
-def restore_checkpoint(path: str, model: GaussianMLPEnsemble) -> GaussianMLPEnsemble:
+def restore_checkpoint(
+    path: str, model: GaussianMLPEnsemble
+) -> GaussianMLPEnsemble:
     """Restore checkpoint with orbax.
 
     Parameters
@@ -486,6 +495,7 @@ def restore_checkpoint(path: str, model: GaussianMLPEnsemble) -> GaussianMLPEnse
     model : Model state without graphdef.
     """
     import orbax.checkpoint as ocp
+
     checkpointer = ocp.PyTreeCheckpointer()
     state = checkpointer.restore(path)
     graphdef, _ = nnx.split(model)

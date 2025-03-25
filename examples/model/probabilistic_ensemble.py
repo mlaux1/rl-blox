@@ -7,6 +7,7 @@ from flax import nnx
 from rl_blox.model.probabilistic_ensemble import (
     GaussianMLPEnsemble,
     train_ensemble,
+    l2_regularization_loss,
 )
 
 
@@ -57,7 +58,7 @@ n_samples = 200
 batch_size = 40
 n_epochs = 1_000
 train_size = 0.7
-regularization = 0.5
+regularization = 0.0
 plot_base_models = True
 
 key = jax.random.key(seed)
@@ -90,6 +91,7 @@ train_ensemble(
 print(model)
 print(f"{model.min_log_var=}")
 print(f"{model.max_log_var=}")
+print(f"{l2_regularization_loss(model)=}")
 
 plt.figure(figsize=(10, 5))
 
