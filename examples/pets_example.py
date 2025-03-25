@@ -38,11 +38,12 @@ mpc = train_pets(
     n_opt_iter=20,
     init_with_previous_plan=False,
     seed=seed,
-    learning_starts=600,  # 200 steps = one episode
-    learning_starts_gradient_steps=200,
+    learning_starts=400,  # 200 steps = one episode
+    learning_starts_gradient_steps=100,
     n_steps_per_iteration=200,  # 200 steps = one episode
     gradient_steps=50,
-    total_timesteps=5_000,
-    verbose=1,
+    total_timesteps=1_000,
+    save_checkpoints=True,
+    verbose=15,
 )
 env.close()

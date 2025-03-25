@@ -15,6 +15,7 @@ from ...model.probabilistic_ensemble import (
     EnsembleTrainState,
     GaussianMLPEnsemble,
     train_ensemble,
+    store_checkpoint,
 )
 
 
@@ -449,6 +450,7 @@ def train_pets(
     batch_size: int = 256,
     n_steps_per_iteration: int = 100,
     gradient_steps: int = 10,
+    save_checkpoints: bool = False,
     verbose: int = 0,
 ) -> ModelPredictiveControl:
     r"""Probabilistic Ensemble - Trajectory Sampling (PE-TS).
@@ -527,6 +529,8 @@ def train_pets(
         Should correspond to the expected number of steps in one episode.
     gradient_steps
         Number of gradient steps during one training phase.
+    save_checkpoints
+        Save checkpoint each time we update the model.
     verbose
         Verbosity level.
 
@@ -589,6 +593,11 @@ def train_pets(
                 )
                 mpc.fit(D_obs, D_acts, D_next_obs, n_epochs=1)
             n_epochs = gradient_steps
+            if save_checkpoints:
+                store_checkpoint(
+                    f"/tmp/pets_dynamics_model_{t}",
+                    mpc.dynamics_model.model,
+                )
 
         if t < learning_starts:
             action = action_space.sample()
