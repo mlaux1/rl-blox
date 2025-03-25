@@ -6,8 +6,8 @@ import chex
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
-from flax import nnx
 import numpy as np
+from flax import nnx
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.typing import ArrayLike
 
@@ -15,8 +15,8 @@ from ...model.cross_entropy_method import cem_sample, cem_update
 from ...model.probabilistic_ensemble import (
     EnsembleTrainState,
     GaussianMLPEnsemble,
-    train_ensemble,
     store_checkpoint,
+    train_ensemble,
 )
 
 
@@ -114,7 +114,9 @@ class ModelPredictiveControl:
         self.key = jax.random.PRNGKey(seed)
 
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
-        self.avg_act = jnp.asarray(0.5 * (self.action_space.high + self.action_space.low))
+        self.avg_act = jnp.asarray(
+            0.5 * (self.action_space.high + self.action_space.low)
+        )
         self.start_episode()
         self.init_var = jnp.vstack(
             [
@@ -145,8 +147,7 @@ class ModelPredictiveControl:
                 alpha=0.1,
             )
         )
-        self._ts_inf = make_ts_inf(self.dynamics_model.model)
-        self._model_state = None
+        self._ts_inf = make_ts_inf()
 
     def start_episode(self):
         self.prev_plan = jnp.vstack(
@@ -190,14 +191,19 @@ class ModelPredictiveControl:
             mean = jnp.broadcast_to(self.avg_act, self.prev_plan.shape)
         var = jnp.copy(self.init_var)
         for i in range(self.n_opt_iter):
-            mean, var, best_plan, best_return, expected_returns = self._cem_iter(
-                obs, model_indices, mean, var, best_plan, best_return)
+            mean, var, best_plan, best_return, expected_returns = (
+                self._cem_iter(
+                    obs, model_indices, mean, var, best_plan, best_return
+                )
+            )
 
             if self.verbose >= 20:
                 print(
                     f"[PETS/MPC] it #{i + 1}, "
-                    f"return [{expected_returns.min()}, {expected_returns.max()}], "
-                    f"{jnp.mean(expected_returns)} +- {jnp.std(expected_returns)}"
+                    f"return [{expected_returns.min()}, "
+                    f"{expected_returns.max()}], "
+                    f"{jnp.mean(expected_returns)} +- "
+                    f"{jnp.std(expected_returns)}"
                 )
             if self.verbose >= 10:
                 print(f"[PETS/MPC] it #{i + 1}, best return [{best_return}]")
@@ -216,9 +222,7 @@ class ModelPredictiveControl:
         particle_keys = jax.random.split(
             particle_key, (self.n_samples, self.n_particles)
         )
-        chex.assert_shape(
-            particle_keys, (self.n_samples, self.n_particles, 2)
-        )
+        chex.assert_shape(particle_keys, (self.n_samples, self.n_particles, 2))
         chex.assert_shape(model_indices, (self.n_particles,))
         chex.assert_shape(
             actions,
@@ -226,7 +230,11 @@ class ModelPredictiveControl:
         )
         chex.assert_shape(obs, (obs.shape[0],))
         trajectories = self._ts_inf(
-            particle_keys, model_indices, actions, obs, self._model_state
+            particle_keys,
+            model_indices,
+            actions,
+            obs,
+            self.dynamics_model.model,
         )
         chex.assert_shape(
             trajectories,
@@ -285,7 +293,6 @@ class ModelPredictiveControl:
             batch_size=self.dynamics_model.batch_size,
             key=train_key,
         )
-        _, self._model_state = nnx.split(self.dynamics_model.model)
         if self.verbose >= 5:
             print(f"[PETS/MPC] training done; {loss=}")
 
@@ -297,8 +304,7 @@ def ts_inf(
     model_idx: int,
     acts: jnp.ndarray,
     obs: jnp.ndarray,
-    dynamics_model_state: nnx.GraphState,
-    dynamics_model_graphdef: nnx.GraphDef[GaussianMLPEnsemble],
+    dynamics_model: GaussianMLPEnsemble,
 ):
     """Trajectory sampling infinity (TSinf).
 
@@ -316,10 +322,9 @@ def ts_inf(
         Observation at time t.
     dynamics_model_state
         State of the probabilistic ensemble.
-    dynamics_model_graphdef
-        Graph definition of probabilistic ensemble.
+    dynamics_model
+        Probabilistic ensemble.
     """
-    dynamics_model = nnx.merge(dynamics_model_graphdef, dynamics_model_state)
     key, sampling_key = jax.random.split(key, 2)
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = [obs]
@@ -338,8 +343,9 @@ def ts_inf(
     return jnp.vstack(observations)
 
 
-def make_ts_inf(dynamics_model: GaussianMLPEnsemble) -> Callable[
-    [jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray
+def make_ts_inf() -> Callable[
+    [jnp.ndarray, int, jnp.ndarray, jnp.ndarray, GaussianMLPEnsemble],
+    jnp.ndarray,
 ]:
     """JIT-compile and vmap trajectory sampler TSinf.
 
@@ -373,7 +379,7 @@ def make_ts_inf(dynamics_model: GaussianMLPEnsemble) -> Callable[
     >>> n_samples = 400
     >>> n_particles = 20
     >>> task_horizon = 100
-    >>> ts_inf = make_ts_inf(model)
+    >>> ts_inf = make_ts_inf()
     >>> key = jax.random.key(0)
     >>> key, samp_key, model_key, act_key, obs_key = jax.random.split(key, 5)
     >>> sampling_keys = jax.random.split(samp_key, (n_samples, n_particles))
@@ -381,23 +387,18 @@ def make_ts_inf(dynamics_model: GaussianMLPEnsemble) -> Callable[
     ...     model_key, (n_particles,), 0, model.n_ensemble)
     >>> acts = jax.random.normal(act_key, (n_samples, task_horizon, 1))
     >>> obs = jax.random.normal(obs_key, (3,))
-    >>> _, state = nnx.split(model)
-    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs, state)
+    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs, model)
     >>> chex.assert_shape(
     ...     trajectories, (n_samples, n_particles, task_horizon, 3))
     """
-    graphdef, _ = nnx.split(dynamics_model)
-    return jax.jit(
+    return nnx.jit(
         jax.vmap(  # over samples for CEM
             jax.vmap(  # over particles for estimation of return
-                partial(
-                    ts_inf,
-                    dynamics_model_graphdef=graphdef,
-                ),
-                # key, model_idx, acts, obs, dynamics_model_state
+                ts_inf,
+                # key, model_idx, acts, obs, dynamics_model
                 in_axes=(0, 0, None, None, None),
             ),
-            # key, model_idx, acts, obs, dynamics_model_state
+            # key, model_idx, acts, obs, dynamics_model
             in_axes=(0, None, 0, None, None),
         )
     )
@@ -415,7 +416,9 @@ def evaluate_plans(
     actions : array, shape (n_samples, task_horizon) + action_space.shape
         Action sequences (plans).
 
-    trajectories : array, shape (n_samples, n_particles, task_horizon + 1) + observation_space.shape
+    trajectories : array,
+            shape (n_samples, n_particles, task_horizon + 1)
+            + observation_space.shape
         Sequences of observations sampled with plans.
 
     reward_model : callable
@@ -591,7 +594,7 @@ def train_pets(
     action = None
 
     for t in range(total_timesteps):
-        if verbose >= 5 and t % 10 == 0:
+        if verbose >= 5 and t % 50 == 0:
             print(f"[PETS] {t=}, mean rewards={rb.mean_reward(10)}")
         if (
             t >= learning_starts
