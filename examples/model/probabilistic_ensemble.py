@@ -58,7 +58,7 @@ n_samples = 200
 batch_size = 40
 n_epochs = 1_000
 train_size = 0.7
-regularization = 0.0
+regularization = 0.001
 plot_base_models = True
 
 key = jax.random.key(seed)

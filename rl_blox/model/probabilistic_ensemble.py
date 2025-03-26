@@ -119,7 +119,6 @@ class GaussianMLPEnsemble(nnx.Module):
     """
 
     ensemble: GaussianMLP
-    base_model: GaussianMLP
     n_ensemble: int
     n_outputs: int
 
@@ -147,16 +146,6 @@ class GaussianMLPEnsemble(nnx.Module):
             )
 
         self.ensemble = make_model(rngs)
-
-        self.base_model = GaussianMLP(
-            shared_head=shared_head,
-            n_features=n_features,
-            n_outputs=n_outputs,
-            hidden_nodes=hidden_nodes,
-            rngs=nnx.Rngs(
-                jax.random.PRNGKey(0)
-            ),  # Dummy rng, since we'll replace params
-        )
 
         # TODO move safe_log_var to nnx.Module
         def safe_log_var(log_var, min_log_var, max_log_var):
@@ -332,9 +321,7 @@ def bootstrap(
 
 def l2_regularization_loss(model: GaussianMLPEnsemble) -> jnp.ndarray:
     l2_reg_los = 0.0
-    for layer in (
-        model.base_model.hidden_layers + model.base_model.output_layers
-    ):
+    for layer in model.ensemble.hidden_layers + model.ensemble.output_layers:
         l2_reg_los = l2_reg_los + (layer.kernel**2).sum()
     return 0.5 * l2_reg_los
 
