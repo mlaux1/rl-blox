@@ -208,7 +208,7 @@ class ModelPredictiveControl:
             if self.verbose >= 10:
                 print(f"[PETS/MPC] it #{i + 1}, best return [{best_return}]")
 
-        return best_plan
+        return mean
 
     def _cem_iter(self, obs, model_indices, mean, var, best_plan, best_return):
         self.key, sampling_key = jax.random.split(self.key, 2)
