@@ -467,6 +467,7 @@ def train_pets(
     n_steps_per_iteration: int = 100,
     gradient_steps: int = 10,
     save_checkpoints: bool = False,
+    checkpoint_path_prefix: str = "/tmp",
     verbose: int = 0,
 ) -> ModelPredictiveControl:
     r"""Probabilistic Ensemble - Trajectory Sampling (PE-TS).
@@ -545,6 +546,11 @@ def train_pets(
         Number of gradient steps during one training phase.
     save_checkpoints
         Save checkpoint each time we update the model.
+    checkpoint_path_prefix
+        Prefix of path at which we store checkpoints after each model update.
+        Note that the path has to be absolute. '/tmp/' is recommended and used
+        as default. Model checkpoints will be stored in
+        '/tmp/pets_dynamics_model_iteration' in this case.
     verbose
         Verbosity level.
 
@@ -608,7 +614,7 @@ def train_pets(
             n_epochs = gradient_steps
             if save_checkpoints:
                 store_checkpoint(
-                    f"/tmp/pets_dynamics_model_{t}",
+                    f"{checkpoint_path_prefix}/pets_dynamics_model_{t}",
                     mpc.dynamics_model.model,
                 )
 
