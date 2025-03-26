@@ -3,6 +3,7 @@ import numpy as np
 
 from rl_blox.algorithms.model_free.ddpg import train_ddpg, DeterministicMlpPolicyNetwork, MlpQNetwork
 
+
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
 seed = 1
