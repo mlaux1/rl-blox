@@ -23,10 +23,10 @@ model = GaussianMLPEnsemble(  # TODO refactor initialization
 )
 dynamics_model = EnsembleTrainState(
     model=model,
-    optimizer=nnx.Optimizer(model, optax.adam(learning_rate=1e-3)),
+    optimizer=nnx.Optimizer(model, optax.adamw(learning_rate=1e-3, weight_decay=0.05)),
     train_size=0.7,
     batch_size=32,
-    regularization=10.0,
+    regularization=0.0,
 )
 mpc = train_pets(
     env,
