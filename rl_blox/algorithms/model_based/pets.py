@@ -157,12 +157,9 @@ class ModelPredictiveControl:
             [self.avg_act for _ in range(self.task_horizon)]
         )
 
-    def action(self, last_act: ArrayLike, obs: ArrayLike) -> jnp.ndarray:
+    def action(self, obs: ArrayLike) -> jnp.ndarray:
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L194
-        last_act = jnp.asarray(last_act)
         obs = jnp.asarray(obs)
-
-        assert last_act.ndim == 1
         assert obs.ndim == 1
 
         if self.verbose >= 5:
@@ -598,7 +595,6 @@ def train_pets(
     env.action_space.seed(seed)
 
     obs, _ = env.reset(seed=seed)
-    action = None
 
     for t in range(total_timesteps):
         if verbose >= 5 and t % 50 == 0:
@@ -621,8 +617,7 @@ def train_pets(
         if t < learning_starts:
             action = action_space.sample()
         else:
-            assert action is not None
-            action = mpc.action(action, obs)
+            action = mpc.action(obs)
 
         next_obs, reward, termination, truncation, info = env.step(action)
 
