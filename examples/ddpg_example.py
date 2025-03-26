@@ -1,11 +1,7 @@
 import gymnasium as gym
 import numpy as np
 
-from rl_blox.algorithms.model_free.ddpg import (
-    DeterministicMlpPolicyNetwork,
-    MlpQNetwork,
-    train_ddpg,
-)
+from rl_blox.algorithms.model_free.ddpg import train_ddpg, DeterministicMlpPolicyNetwork, MlpQNetwork
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -22,7 +18,7 @@ policy, policy_params, q, q_params = train_ddpg(
     gradient_steps=1,
     seed=seed,
     total_timesteps=31_000,
-    verbose=1,
+    verbose=1
 )
 envs.close()
 
