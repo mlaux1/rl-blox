@@ -55,6 +55,9 @@ class ReplayBuffer:
             jnp.hstack([self.buffer[i][2] for i in np.arange(-n_steps, 0)])
         )
 
+    def __len__(self):
+        return len(self.buffer)
+
 
 class ModelPredictiveControl:
     """Model-Predictive Control (MPC).
@@ -461,7 +464,6 @@ def train_pets(
     total_timesteps: int = 1_000_000,
     learning_starts: int = 100,
     learning_starts_gradient_steps: int = 100,
-    batch_size: int = 256,
     n_steps_per_iteration: int = 100,
     gradient_steps: int = 10,
     save_checkpoints: bool = False,
@@ -536,8 +538,6 @@ def train_pets(
         episode.
     learning_start_gradient_steps
         Number of gradient steps used after learning_starts steps.
-    batch_size
-        Size of a batch during gradient computation.
     n_steps_per_iteration
         Number of steps to take in the environment before we refine the model.
         Should correspond to the expected number of steps in one episode.
@@ -601,11 +601,10 @@ def train_pets(
             t >= learning_starts
             and (t - learning_starts) % n_steps_per_iteration == 0
         ):
-            for _ in range(n_epochs):
-                D_obs, D_acts, D_rews, D_next_obs, D_dones = rb.sample_batch(
-                    batch_size, rng
-                )
-                mpc.fit(D_obs, D_acts, D_next_obs, n_epochs=1)
+            D_obs, D_acts, D_rews, D_next_obs, D_dones = rb.sample_batch(
+                len(rb), rng
+            )
+            mpc.fit(D_obs, D_acts, D_next_obs, n_epochs=n_epochs)
             n_epochs = gradient_steps
             if save_checkpoints:
                 store_checkpoint(
