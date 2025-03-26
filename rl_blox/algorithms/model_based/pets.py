@@ -533,7 +533,7 @@ def train_pets(
         Size of dataset for training of dynamics model.
     total_timesteps, optional
         Number of steps to execute in the environment.
-    learning_starts
+    learning_starts, optional
         Learning starts after this number of random steps was taken in the
         environment. Should correspond to the expected number of steps in one
         episode.
@@ -542,16 +542,16 @@ def train_pets(
     n_steps_per_iteration
         Number of steps to take in the environment before we refine the model.
         Should correspond to the expected number of steps in one episode.
-    gradient_steps
+    gradient_steps, optional
         Number of gradient steps during one training phase.
-    save_checkpoints
+    save_checkpoints, optional
         Save checkpoint each time we update the model.
-    checkpoint_path_prefix
+    checkpoint_path_prefix, optional
         Prefix of path at which we store checkpoints after each model update.
         Note that the path has to be absolute. '/tmp/' is recommended and used
         as default. Model checkpoints will be stored in
         '/tmp/pets_dynamics_model_iteration' in this case.
-    verbose
+    verbose, optional
         Verbosity level.
 
     Returns
