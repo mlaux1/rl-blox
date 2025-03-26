@@ -6,8 +6,8 @@ from flax import nnx
 
 from rl_blox.model.probabilistic_ensemble import (
     GaussianMLPEnsemble,
-    train_ensemble,
     l2_regularization_loss,
+    train_ensemble,
 )
 
 

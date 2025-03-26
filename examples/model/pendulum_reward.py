@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from rl_blox.algorithms.model_based.pets_reward_models import (
-    pendulum_reward,
     PENDULUM_MAX_TORQUE,
+    pendulum_reward,
 )
 
 n_samples = 101
@@ -21,7 +21,7 @@ actions = np.linspace(-PENDULUM_MAX_TORQUE, PENDULUM_MAX_TORQUE, n_actions)[
 ]
 
 fig, axes = plt.subplots(n_actions // 3, 3)
-for act, ax in zip(actions, axes.ravel()):
+for act, ax in zip(actions, axes.ravel(), strict=False):
     ax.set_title(f"torque = {act[0]}")
     rews = pendulum_reward(act, obs_grid)
     contour = ax.contourf(angles, speed, rews, vmin=-10, vmax=0)

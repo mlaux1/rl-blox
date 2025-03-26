@@ -9,7 +9,6 @@ from rl_blox.model.probabilistic_ensemble import (
     GaussianMLPEnsemble,
 )
 
-
 env_name = "Pendulum-v1"
 env = gym.make(env_name, render_mode="human")
 seed = 1
@@ -23,7 +22,9 @@ model = GaussianMLPEnsemble(  # TODO refactor initialization
 )
 dynamics_model = EnsembleTrainState(
     model=model,
-    optimizer=nnx.Optimizer(model, optax.adamw(learning_rate=1e-3, weight_decay=0.001)),
+    optimizer=nnx.Optimizer(
+        model, optax.adamw(learning_rate=1e-3, weight_decay=0.001)
+    ),
     train_size=0.7,
     batch_size=32,
     regularization=0.0,
