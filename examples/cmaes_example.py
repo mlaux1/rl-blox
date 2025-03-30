@@ -14,11 +14,11 @@ policy = MLPPolicy(env, [20, 20], nnx.Rngs(seed))
 policy = train_cmaes(
     env,
     policy,
-    2000,
+    5000,
     seed,
     n_samples_per_update=40,
     variance=2.0,
-    verbose=1,
+    verbose=2,
 )
 env.close()
 
