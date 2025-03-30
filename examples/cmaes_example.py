@@ -1,10 +1,9 @@
 import gymnasium as gym
-from flax import nnx
 import jax.numpy as jnp
 import numpy as np
+from flax import nnx
 
-from rl_blox.algorithms.model_free.cmaes import train_cmaes, MLPPolicy
-
+from rl_blox.algorithms.model_free.cmaes import MLPPolicy, train_cmaes
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -15,8 +14,8 @@ policy = MLPPolicy(env, [32], nnx.Rngs(seed))
 policy = train_cmaes(
     env,
     policy,
-    20,
-    seed
+    2000,
+    seed,
 )
 env.close()
 
