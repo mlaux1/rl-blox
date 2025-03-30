@@ -93,9 +93,9 @@ class CMAES:
 
     def __init__(
         self,
-        initial_params: jnp.ndarray | None = None,
+        initial_params: ArrayLike | None = None,
         variance: float = 1.0,
-        covariance: jnp.ndarray | None = None,
+        covariance: ArrayLike | None = None,
         n_samples_per_update: int | None = None,
         active: bool = False,
         bounds: jnp.ndarray | None = None,
@@ -494,7 +494,44 @@ def set_params(policy, params):
     return nnx.merge(graphdef, state)
 
 
-def train_cmaes(env, policy, total_episodes: int, seed: int):
+def train_cmaes(
+    env,
+    policy,
+    total_episodes: int,
+    seed: int,
+    variance: float = 1.0,
+    covariance: ArrayLike | None = None,
+    n_samples_per_update: int | None = None,
+    active: bool = False,
+):
+    """Train a policy using CMA-ES.
+
+    Parameters
+    ----------
+    env : gymnasium.Env
+        Environment.
+
+    total_episodes : int
+        Total number of episodes.
+
+    seed : int
+        Random seed.
+
+    variance : float, optional (default: 1.0)
+        Initial exploration variance.
+
+    covariance : array-like, optional (default: None)
+        Either a diagonal (with shape (n_params,)) or a full covariance matrix
+        (with shape (n_params, n_params)). A full covariance can contain
+        information about the correlation of variables.
+
+    n_samples_per_update : integer, optional (default: 4+int(3*log(n_params)))
+        Number of roll-outs that are required for a parameter update.
+
+    active : bool, optional (default: False)
+        Active CMA-ES (aCMA-ES) with negative weighted covariance matrix
+        update
+    """
     action_scale = jnp.array(
         0.5 * (env.action_space.high - env.action_space.low)
     )
@@ -503,11 +540,15 @@ def train_cmaes(env, policy, total_episodes: int, seed: int):
     )
 
     init_params = policy.flat_params()
+    key = jax.random.key(seed)
     opt = CMAES(
         initial_params=init_params,
-        variance=0.1,
-        n_samples_per_update=10,
+        variance=variance,
+        covariance=covariance,
+        n_samples_per_update=n_samples_per_update,
+        active=active,
         maximize=True,
+        key=key,
     )
     opt.init(len(init_params))
     policy = set_params(policy, opt.get_best_parameters())
@@ -535,4 +576,5 @@ def train_cmaes(env, policy, total_episodes: int, seed: int):
         obs, _ = env.reset()
         opt.set_evaluation_feedback(ret)
 
-    return set_params(policy, opt.get_best_parameters())
+    print(f"{opt.best_fitness=}")
+    return set_params(policy, opt.get_best_parameters(method="mean"))
