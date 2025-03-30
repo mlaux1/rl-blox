@@ -1,5 +1,7 @@
 import gymnasium as gym
 from flax import nnx
+import jax.numpy as jnp
+import numpy as np
 
 from rl_blox.algorithms.model_free.cmaes import train_cmaes, MLPPolicy
 
@@ -13,7 +15,24 @@ policy = MLPPolicy(env, [32], nnx.Rngs(seed))
 policy = train_cmaes(
     env,
     policy,
-    300,
+    20,
     seed
 )
 env.close()
+
+# Evaluation
+env = gym.make(env_name, render_mode="human")
+env = gym.wrappers.RecordEpisodeStatistics(env)
+while True:
+    done = False
+    infos = {}
+    obs, _ = env.reset()
+    while not done:
+        action = np.asarray(policy(jnp.asarray(obs)))
+        next_obs, reward, termination, truncation, infos = env.step(action)
+        done = termination or truncation
+        obs = np.asarray(next_obs)
+    if "final_info" in infos:
+        for info in infos["final_info"]:
+            print(f"episodic_return={info['episode']['r']}")
+            break
