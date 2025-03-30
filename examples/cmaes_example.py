@@ -16,6 +16,7 @@ policy = train_cmaes(
     policy,
     2000,
     seed,
+    verbose=1,
 )
 env.close()
 
