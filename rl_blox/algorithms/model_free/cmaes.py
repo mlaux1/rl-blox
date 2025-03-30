@@ -169,6 +169,8 @@ class CMAES:
 
         if self.n_samples_per_update is None:
             self.n_samples_per_update = 4 + int(3 * math.log(self.n_params))
+            if self.verbose:
+                print(f"[CMA-ES] {self.n_samples_per_update=}")
 
         if self.bounds is not None:
             self.bounds = jnp.asarray(self.bounds)
@@ -278,8 +280,8 @@ class CMAES:
         self.it += 1
 
         if self.verbose >= 2:
-            print(f"Iteration #{self.it}, fitness: {fitness_k}")
-            print(f"Variance {self.var}")
+            print(f"[CMA-ES] Iteration #{self.it}, fitness: {fitness_k}, "
+                  f"variance {self.var}")
 
         if (self.it - self.initial_it) % self.n_samples_per_update == 0:
             self._update(self.samples, jnp.asarray(self.fitness), self.it)
@@ -393,7 +395,7 @@ class CMAES:
             and jnp.isfinite(self.var)
         ):
             if self.verbose:
-                print("Stopping: infs or nans")
+                print("[CMA-ES] Stopping: infs or nans")
             return True
 
         if (
@@ -401,13 +403,13 @@ class CMAES:
             and jnp.max(jnp.diag(self.cov)) * self.var <= self.min_variance
         ):
             if self.verbose:
-                print(f"Stopping: {self.var} < min_variance")
+                print(f"[CMA-ES] Stopping: {self.var} < min_variance")
             return True
 
         max_dist = jnp.max(pdist(self.fitness[:, jnp.newaxis]))
         if max_dist < self.min_fitness_dist:
             if self.verbose:
-                print(f"Stopping: {max_dist} < min_fitness_dist")
+                print(f"[CMA-ES] Stopping: {max_dist} < min_fitness_dist")
             return True
 
         cov_diag = jnp.diag(self.cov)
@@ -416,8 +418,8 @@ class CMAES:
         ) > self.max_condition * jnp.min(cov_diag):
             if self.verbose:
                 print(
-                    f"Stopping: {jnp.max(cov_diag)} / {jnp.min(cov_diag)} "
-                    f"> max_condition"
+                    f"[CMA-ES] Stopping: "
+                    f"{jnp.max(cov_diag)} / {jnp.min(cov_diag)} > max_condition"
                 )
             return True
 
@@ -590,5 +592,5 @@ def train_cmaes(
         obs, _ = env.reset()
         opt.set_evaluation_feedback(ret)
 
-    print(f"{opt.best_fitness=}")
-    return set_params(policy, opt.get_best_parameters(method="best"))
+    print(f"[CMA-ES] {opt.best_fitness=}")
+    return set_params(policy, opt.get_best_parameters(method="mean"))
