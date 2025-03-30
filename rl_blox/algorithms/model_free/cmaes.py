@@ -1,12 +1,13 @@
 # Author: Alexander Fabisch <afabisch@informatik.uni-bremen.de>
 
 import math
-import jax.numpy as jnp
+
 import jax
-from jax.typing import ArrayLike
-from flax import nnx
-from scipy.spatial.distance import pdist
+import jax.numpy as jnp
 import numpy as np
+from flax import nnx
+from jax.typing import ArrayLike
+from scipy.spatial.distance import pdist
 
 
 def inv_sqrt(cov):
@@ -84,6 +85,9 @@ class CMAES:
     random_state : int or RandomState, optional (default: None)
         Seed for the random number generator or RandomState object.
 
+    verbose : int, optional (default: 0)
+        Verbosity level.
+
     References
     ----------
     .. [1] Hansen, N.; Ostermeier, A. Completely Derandomized Self-Adaptation
@@ -104,6 +108,7 @@ class CMAES:
         min_fitness_dist: float = 2 * jnp.finfo(float).eps,
         max_condition: float = 1e7,
         key: jnp.ndarray | None = None,
+        verbose: int = 0,
     ):
         self.initial_params = initial_params
         self.variance = variance
@@ -116,6 +121,7 @@ class CMAES:
         self.min_fitness_dist = min_fitness_dist
         self.max_condition = max_condition
         self.key = key
+        self.verbose = verbose
 
     def init(self, n_params):
         """Initialize the behavior search.
@@ -138,9 +144,8 @@ class CMAES:
             self.initial_params = jnp.asarray(self.initial_params).copy()
         if n_params != len(self.initial_params):
             raise ValueError(
-                "Number of dimensions (%d) does not match "
-                "number of initial parameters (%d)."
-                % (n_params, len(self.initial_params))
+                f"Number of dimensions ({n_params}) does not match "
+                f"number of initial parameters ({len(self.initial_params)})."
             )
 
         if self.covariance is None:
@@ -272,8 +277,9 @@ class CMAES:
 
         self.it += 1
 
-        print("Iteration #%d, fitness: %g" % (self.it, fitness_k))
-        print("Variance %g" % self.var)
+        if self.verbose >= 2:
+            print(f"Iteration #{self.it}, fitness: {fitness_k}")
+            print(f"Variance {self.var}")
 
         if (self.it - self.initial_it) % self.n_samples_per_update == 0:
             self._update(self.samples, jnp.asarray(self.fitness), self.it)
@@ -386,29 +392,33 @@ class CMAES:
             and jnp.all(jnp.isfinite(self.mean))
             and jnp.isfinite(self.var)
         ):
-            print("Stopping: infs or nans" % self.var)
+            if self.verbose:
+                print("Stopping: infs or nans")
             return True
 
         if (
             self.min_variance is not None
             and jnp.max(jnp.diag(self.cov)) * self.var <= self.min_variance
         ):
-            print("Stopping: %g < min_variance" % self.var)
+            if self.verbose:
+                print(f"Stopping: {self.var} < min_variance")
             return True
 
         max_dist = jnp.max(pdist(self.fitness[:, jnp.newaxis]))
         if max_dist < self.min_fitness_dist:
-            print("Stopping: %g < min_fitness_dist" % max_dist)
+            if self.verbose:
+                print(f"Stopping: {max_dist} < min_fitness_dist")
             return True
 
         cov_diag = jnp.diag(self.cov)
         if self.max_condition is not None and jnp.max(
             cov_diag
         ) > self.max_condition * jnp.min(cov_diag):
-            print(
-                "Stopping: %g / %g > max_condition"
-                % (jnp.max(cov_diag), jnp.min(cov_diag))
-            )
+            if self.verbose:
+                print(
+                    f"Stopping: {jnp.max(cov_diag)} / {jnp.min(cov_diag)} "
+                    f"> max_condition"
+                )
             return True
 
         return False
@@ -503,6 +513,7 @@ def train_cmaes(
     covariance: ArrayLike | None = None,
     n_samples_per_update: int | None = None,
     active: bool = False,
+    verbose: int = 0,
 ):
     """Train a policy using CMA-ES.
 
@@ -531,6 +542,9 @@ def train_cmaes(
     active : bool, optional (default: False)
         Active CMA-ES (aCMA-ES) with negative weighted covariance matrix
         update
+
+    verbose : int, optional (default: 0)
+        Verbosity level.
     """
     action_scale = jnp.array(
         0.5 * (env.action_space.high - env.action_space.low)
@@ -549,6 +563,7 @@ def train_cmaes(
         active=active,
         maximize=True,
         key=key,
+        verbose=verbose,
     )
     opt.init(len(init_params))
     policy = set_params(policy, opt.get_best_parameters())
@@ -557,7 +572,6 @@ def train_cmaes(
 
     for ep in range(total_episodes):
         policy = set_params(policy, opt.get_next_parameters())
-        t = 0
         ret = 0.0
         done = False
         while not done:  # episode
@@ -567,10 +581,10 @@ def train_cmaes(
             obs = next_obs
             ret += reward
             done = termination or truncation
-            t += 1
 
         print(
-            f"{t=}, length={info['episode']['l']}, return={info['episode']['r']}"
+            f"{ep=}, length={info['episode']['l']}, "
+            f"return={info['episode']['r']}"
         )
 
         obs, _ = env.reset()
