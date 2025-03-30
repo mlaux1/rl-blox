@@ -591,4 +591,4 @@ def train_cmaes(
         opt.set_evaluation_feedback(ret)
 
     print(f"{opt.best_fitness=}")
-    return set_params(policy, opt.get_best_parameters(method="mean"))
+    return set_params(policy, opt.get_best_parameters(method="best"))
