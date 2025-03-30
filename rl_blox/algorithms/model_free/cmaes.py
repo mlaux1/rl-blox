@@ -1,9 +1,12 @@
 # Author: Alexander Fabisch <afabisch@informatik.uni-bremen.de>
 
+import math
 import jax.numpy as jnp
 import jax
 from jax.typing import ArrayLike
+from flax import nnx
 from scipy.spatial.distance import pdist
+import numpy as np
 
 
 def inv_sqrt(cov):
@@ -16,7 +19,7 @@ def inv_sqrt(cov):
     return B.dot(jnp.diag(1.0 / D)).dot(B.T), B, D
 
 
-class CMAESOptimizer:
+class CMAES:
     """Covariance Matrix Adaptation Evolution Strategy.
 
     See `Wikipedia <http://en.wikipedia.org/wiki/CMA-ES>`_ for details.
@@ -160,88 +163,92 @@ class CMAESOptimizer:
         self.var = self.variance
 
         if self.n_samples_per_update is None:
-            self.n_samples_per_update = 4 + int(3 * jnp.log(self.n_params))
+            self.n_samples_per_update = 4 + int(3 * math.log(self.n_params))
 
         if self.bounds is not None:
             self.bounds = jnp.asarray(self.bounds)
 
-        self.mean = self.initial_params.copy()
-        self.cov = self.covariance.copy()
+        self.mean: jnp.ndarray = self.initial_params.copy()
+        self.cov: jnp.ndarray = self.covariance.copy()
 
-        self.samples = self._sample(self.n_samples_per_update)
-        self.fitness = []
+        self.samples: jnp.ndarray = self._sample(self.n_samples_per_update)
+        self.fitness: list[float] = []
 
         # Sample weights for mean recombination
-        self.mu = self.n_samples_per_update / 2.0
-        self.weights = jnp.log(self.mu + 0.5) - jnp.log1p(
+        self.mu: float = self.n_samples_per_update / 2.0
+        self.weights: jnp.ndarray = math.log(self.mu + 0.5) - jnp.log1p(
             jnp.arange(int(self.mu))
         )
-        self.mu = int(self.mu)
-        self.weights = self.weights / jnp.sum(self.weights)
-        self.mueff = 1.0 / jnp.sum(self.weights**2)
+        self.mu: int = int(self.mu)
+        self.weights: jnp.ndarray = self.weights / jnp.sum(self.weights)
+        self.mueff = 1.0 / float(jnp.sum(self.weights**2))
 
         # Time constant for cumulation of the covariance
-        self.cc = (4 + self.mueff / self.n_params) / (
+        self.cc: float = (4 + self.mueff / self.n_params) / (
             self.n_params + 4 + 2 * self.mueff / self.n_params
         )
         # Time constant for cumulation for sigma control
-        self.cs = (self.mueff + 2) / (self.n_params + self.mueff + 5)
+        self.cs: float = (self.mueff + 2) / (self.n_params + self.mueff + 5)
         # Learning rate for rank-one update
-        self.c1 = 2 / ((self.n_params + 1.3) ** 2 + self.mueff)
+        self.c1: float = 2 / ((self.n_params + 1.3) ** 2 + self.mueff)
         # Learning rate for rank-mu update
-        self.cmu = jnp.min(
-            (1 - self.c1, 2 * self.mueff - 2 + 1.0 / self.mueff)
+        self.cmu: float = min(
+            1 - self.c1, 2 * self.mueff - 2 + 1.0 / self.mueff
         ) / ((self.n_params + 2) ** 2 + self.mueff)
         # Damping for sigma
-        self.damps = (
+        self.damps: float = (
             1
             + 2
-            * jnp.max((0, jnp.sqrt((self.mueff - 1) / (self.n_params + 1)) - 1))
+            * max(0.0, math.sqrt((self.mueff - 1) / (self.n_params + 1)) - 1)
             + self.cs
         )
 
         # Misc constants
-        self.ps_update_weight = jnp.sqrt(self.cs * (2 - self.cs) * self.mueff)
-        self.hsig_threshold = 2 + 4.0 / (self.n_params + 1)
-        self.eigen_update_freq = self.n_samples_per_update / (
-            (self.c1 + self.cmu) * self.n_params * 10
+        self.ps_update_weight: float = math.sqrt(
+            self.cs * (2 - self.cs) * self.mueff
+        )
+        self.hsig_threshold: float = 2 + 4.0 / (self.n_params + 1)
+        self.eigen_update_freq: int = int(
+            self.n_samples_per_update
+            / ((self.c1 + self.cmu) * self.n_params * 10)
         )
 
         # Evolution path for covariance
-        self.pc = jnp.zeros(self.n_params)
+        self.pc: jnp.ndarray = jnp.zeros(self.n_params)
         # Evolution path for sigma
-        self.ps = jnp.zeros(self.n_params)
+        self.ps: jnp.ndarray = jnp.zeros(self.n_params)
 
         if self.active:
-            self.alpha_old = 0.5
-            self.neg_cmu = (
+            self.alpha_old: float = 0.5
+            self.neg_cmu: float = (
                 (1.0 - self.cmu)
                 * 0.25
                 * self.mueff
                 / ((self.n_params + 2) ** 1.5 + 2.0 * self.mueff)
             )
 
-        self.invsqrtC = inv_sqrt(self.cov)[0]
-        self.eigen_decomp_updated = self.it
+        self.invsqrtC: jnp.ndarray = inv_sqrt(self.cov)[0]
+        self.eigen_decomp_updated: int = self.it
 
     def _sample(self, n_samples):
         self.key, sampling_key = jax.random.split(self.key, 2)
         samples = jax.random.multivariate_normal(
-            sampling_key, self.mean, self.var * self.cov, (n_samples,))
+            sampling_key, self.mean, self.var * self.cov, (n_samples,)
+        )
         if self.bounds is not None:
             samples = jnp.clip(samples, self.bounds[:, 0], self.bounds[:, 1])
         return samples
 
-    def get_next_parameters(self, params):
+    def get_next_parameters(self):
         """Get next individual/parameter vector for evaluation.
 
-        Parameters
-        ----------
-        params : array_like, shape (n_params,)
-            Parameter vector, will be modified
+        Returns
+        -------
+        params : array, shape (n_params,)
+            Parameter vector
         """
         k = self.it % self.n_samples_per_update
-        params[:] = self.samples[k]
+        return self.samples[k]
 
     def set_evaluation_feedback(self, feedback: ArrayLike):
         """Set feedbacks for the parameter vector.
@@ -252,7 +259,7 @@ class CMAESOptimizer:
             feedbacks for each step or for the episode, depends on the problem
         """
         k = self.it % self.n_samples_per_update
-        fitness_k = jnp.sum(feedback)
+        fitness_k = float(jnp.sum(feedback))
         if self.maximize:
             fitness_k = -fitness_k
 
@@ -265,11 +272,8 @@ class CMAESOptimizer:
 
         self.it += 1
 
-        if self.log_to_stdout or self.log_to_file:
-            self.logger.info(
-                "Iteration #%d, fitness: %g" % (self.it, fitness_k)
-            )
-            self.logger.info("Variance %g" % self.var)
+        print("Iteration #%d, fitness: %g" % (self.it, fitness_k))
+        print("Variance %g" % self.var)
 
         if (self.it - self.initial_it) % self.n_samples_per_update == 0:
             self._update(self.samples, jnp.asarray(self.fitness), self.it)
@@ -353,7 +357,7 @@ class CMAESOptimizer:
         #                           1.0 / (21 * self.n_params ** 2))
         # instead of self.n_params, in this case cs / damps is correct
         # Adapt step size with factor <= exp(0.6)
-        self.var = self.var * jnp.exp(jnp.min((0.6, log_step_size_update))) ** 2
+        self.var = self.var * jnp.exp(min((0.6, log_step_size_update))) ** 2
 
         if it - self.eigen_decomp_updated > self.eigen_update_freq:
             self.invsqrtC = inv_sqrt(self.cov)[0]
@@ -442,3 +446,93 @@ class CMAESOptimizer:
             return -self.best_fitness
         else:
             return self.best_fitness
+
+
+class MLPPolicy(nnx.Module):
+    def __init__(
+        self,
+        env,
+        hidden_nodes: list[int],
+        rngs: nnx.Rngs,
+    ):
+        self.layers = []
+        if len(env.observation_space.shape) > 1:
+            raise ValueError("TODO update MLP to accept nd inputs")
+        n_in = env.observation_space.shape[0]
+        for n_out in hidden_nodes:
+            self.layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            n_in = n_out
+        n_out = env.action_space.shape[0]
+        self.output_layer = nnx.Linear(n_in, n_out, rngs=rngs)
+
+    def __call__(self, x):
+        for layer in self.layers:
+            x = nnx.relu(layer(x))
+        return nnx.tanh(self.output_layer(x))  # range [-1, 1]
+
+    def flat_params(self):
+        _, state = nnx.split(self)
+        leaves = jax.tree_util.tree_leaves(state)
+        flat_leaves = list(map(lambda x: x.ravel(), leaves))
+        return jnp.concatenate(flat_leaves, axis=0)
+
+
+def set_params(policy, params):
+    graphdef, state = nnx.split(policy)
+    leaves = jax.tree_util.tree_leaves(state)
+    treedef = jax.tree_util.tree_structure(state)
+    n_params_set = 0
+    new_leaves = []
+    for leaf in leaves:
+        n_params_leaf = np.prod(leaf.shape)
+        new_leaf = params[n_params_set : n_params_set + n_params_leaf].reshape(
+            leaf.shape
+        )
+        new_leaves.append(new_leaf)
+        n_params_set += n_params_leaf
+    state = jax.tree_util.tree_unflatten(treedef, new_leaves)
+    return nnx.merge(graphdef, state)
+
+
+def train_cmaes(env, policy, total_episodes: int, seed: int):
+    action_scale = jnp.array(
+        0.5 * (env.action_space.high - env.action_space.low)
+    )
+    action_bias = jnp.array(
+        0.5 * (env.action_space.high + env.action_space.low)
+    )
+
+    init_params = policy.flat_params()
+    opt = CMAES(
+        initial_params=init_params,
+        variance=0.1,
+        n_samples_per_update=10,
+        maximize=True,
+    )
+    opt.init(len(init_params))
+    policy = set_params(policy, opt.get_best_parameters())
+
+    obs, _ = env.reset(seed=seed)
+
+    for ep in range(total_episodes):
+        policy = set_params(policy, opt.get_next_parameters())
+        t = 0
+        ret = 0.0
+        done = False
+        while not done:  # episode
+            action = policy(jnp.asarray(obs)) * action_scale + action_bias
+
+            next_obs, reward, termination, truncation, info = env.step(action)
+            obs = next_obs
+            ret += reward
+            done = termination or truncation
+            t += 1
+
+        print(
+            f"{t=}, length={info['episode']['l']}, return={info['episode']['r']}"
+        )
+
+        obs, _ = env.reset()
+        opt.set_evaluation_feedback(ret)
+
+    return set_params(policy, opt.get_best_parameters())
