@@ -43,6 +43,11 @@ dynamic = ["version", "readme"]
 dev = ["pytest", "pre-commit", "flake8", "black", "isort"]
 examples = ["gymnasium[classic-control,toy-text,mujoco]"]
 all = ["rl_blox[dev,examples]"]
+doc = [
+    "sphinx",
+    "pydata-sphinx-theme",
+    "numpydoc",
+]
 
 [project.urls]
 Homepage = "https://github.com/mlaux1/rl-blox"
