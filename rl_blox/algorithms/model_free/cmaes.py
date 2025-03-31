@@ -460,6 +460,18 @@ class CMAES:
             return self.best_fitness
 
 
+class PolicyScaler:
+    """Scales the output of a policy network."""
+
+    def __init__(self, net, action_scale, action_bias):
+        self.net = net
+        self.action_scale = action_scale
+        self.action_bias = action_bias
+
+    def __call__(self, x):
+        return self.net(x) * self.action_scale + self.action_bias
+
+
 class MLPPolicy(nnx.Module):
     def __init__(
         self,
@@ -544,6 +556,10 @@ def train_cmaes(
     env : gymnasium.Env
         Environment.
 
+    policy : nnx.Module
+        The policy network should map observations to actions. The output
+        should be in the range [-1, 1] and will be scaled to the action range.
+
     total_episodes : int
         Total number of episodes.
 
@@ -571,7 +587,7 @@ def train_cmaes(
     Returns
     -------
     policy
-        Trained policy network.
+        Trained policy network. Automatically scales outputs to action range.
 
     References
     ----------
@@ -579,14 +595,13 @@ def train_cmaes(
         in Evolution Strategies. In: Evolutionary Computation, 9(2), pp.
         159-195. https://www.lri.fr/~hansen/cmaartic.pdf
     """
-    action_scale = jnp.array(
-        0.5 * (env.action_space.high - env.action_space.low)
-    )
-    action_bias = jnp.array(
-        0.5 * (env.action_space.high + env.action_space.low)
+    policy = PolicyScaler(
+        policy,
+        0.5 * (env.action_space.high - env.action_space.low),
+        0.5 * (env.action_space.high + env.action_space.low),
     )
 
-    init_params = flat_params(policy)
+    init_params = flat_params(policy.net)
     key = jax.random.key(seed)
     opt = CMAES(
         initial_params=init_params,
@@ -599,16 +614,15 @@ def train_cmaes(
         verbose=verbose,
     )
     opt.init(len(init_params))
-    policy = set_params(policy, opt.get_best_parameters())
 
     obs, _ = env.reset(seed=seed)
 
     for ep in range(total_episodes):
-        policy = set_params(policy, opt.get_next_parameters())
+        policy.net = set_params(policy.net, opt.get_next_parameters())
         ret = 0.0
         done = False
         while not done:  # episode
-            action = policy(jnp.asarray(obs)) * action_scale + action_bias
+            action = np.asarray(policy(jnp.asarray(obs)))
 
             next_obs, reward, termination, truncation, info = env.step(action)
             obs = next_obs
@@ -624,4 +638,5 @@ def train_cmaes(
         opt.set_evaluation_feedback(ret)
 
     print(f"[CMA-ES] {opt.best_fitness=}")
-    return set_params(policy, opt.get_best_parameters(method="mean"))
+    policy.net = set_params(policy.net, opt.get_best_parameters(method="mean"))
+    return policy

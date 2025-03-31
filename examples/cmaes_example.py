@@ -10,10 +10,10 @@ env = gym.make(env_name)
 seed = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
-policy = MLPPolicy(env, [32, 32], nnx.Rngs(seed))
+policy_net = MLPPolicy(env, [32, 32], nnx.Rngs(seed))
 policy = train_cmaes(
     env,
-    policy,
+    policy_net,
     10000,
     seed,
     n_samples_per_update=40,
@@ -24,13 +24,6 @@ policy = train_cmaes(
 env.close()
 
 # Evaluation
-# TODO this should be part of the policy!
-action_scale = jnp.array(
-    0.5 * (env.action_space.high - env.action_space.low)
-)
-action_bias = jnp.array(
-    0.5 * (env.action_space.high + env.action_space.low)
-)
 env = gym.make(env_name, render_mode="human")
 env = gym.wrappers.RecordEpisodeStatistics(env)
 while True:
@@ -38,7 +31,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy(jnp.asarray(obs)) * action_scale + action_bias)
+        action = np.asarray(policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
