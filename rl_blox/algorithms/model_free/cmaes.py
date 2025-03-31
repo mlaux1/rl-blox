@@ -14,7 +14,7 @@ def inv_sqrt(cov):
     """Compute inverse square root of a covariance matrix."""
     cov = jnp.triu(cov) + jnp.triu(cov, 1).T
     D, B = jnp.linalg.eigh(cov)
-    # HACK: avoid numerical problems
+    # avoid numerical problems
     D = jnp.maximum(D, jnp.finfo(float).eps)
     D = jnp.sqrt(D)
     return B.dot(jnp.diag(1.0 / D)).dot(B.T), B, D
@@ -22,8 +22,6 @@ def inv_sqrt(cov):
 
 class CMAES:
     """Covariance Matrix Adaptation Evolution Strategy.
-
-    See `Wikipedia <http://en.wikipedia.org/wiki/CMA-ES>`_ for details.
 
     Plain CMA-ES [1]_ is considered to be useful for
 
@@ -280,8 +278,10 @@ class CMAES:
         self.it += 1
 
         if self.verbose >= 2:
-            print(f"[CMA-ES] Iteration #{self.it}, fitness: {fitness_k}, "
-                  f"variance {self.var}")
+            print(
+                f"[CMA-ES] Iteration #{self.it}, fitness: {fitness_k}, "
+                f"variance {self.var}"
+            )
 
         if (self.it - self.initial_it) % self.n_samples_per_update == 0:
             self._update(self.samples, jnp.asarray(self.fitness), self.it)
@@ -482,15 +482,16 @@ class MLPPolicy(nnx.Module):
             x = nnx.tanh(layer(x))
         return nnx.tanh(self.output_layer(x))  # range [-1, 1]
 
-    def flat_params(self):
-        _, state = nnx.split(self)
-        leaves = jax.tree_util.tree_leaves(state)
-        flat_leaves = list(map(lambda x: x.ravel(), leaves))
-        return jnp.concatenate(flat_leaves, axis=0)
+
+def flat_params(net):
+    _, state = nnx.split(net)
+    leaves = jax.tree_util.tree_leaves(state)
+    flat_leaves = list(map(lambda x: x.ravel(), leaves))
+    return jnp.concatenate(flat_leaves, axis=0)
 
 
-def set_params(policy, params):
-    graphdef, state = nnx.split(policy)
+def set_params(net, params):
+    graphdef, state = nnx.split(net)
     leaves = jax.tree_util.tree_leaves(state)
     treedef = jax.tree_util.tree_structure(state)
     n_params_set = 0
@@ -517,7 +518,26 @@ def train_cmaes(
     active: bool = False,
     verbose: int = 0,
 ):
-    """Train a policy using CMA-ES.
+    """Train policy using Covariance Matrix Adaptation Evolution Strategy.
+
+    Covariance Matrix Adaptation Evolution Strategy (CMA-ES) is a black-box
+    optimizer. We learn after each episode by accumulating the rewards and
+    using this return as a fitness value that we maximize with CMA-ES by
+    changing the parameters of a deterministic policy network that maps
+    observations to actions. Since CMA-ES learns only after
+    `n_samples_per_update` episodes, it is supposed to learn slower than
+    reinforcement learning algorithms. However, it is a robust algorithm that
+    provides a good baseline to compare against.
+
+    See `Wikipedia <http://en.wikipedia.org/wiki/CMA-ES>`_ for details about the
+    optimizer. CMA-ES [1]_ is considered to be useful for
+
+    * non-convex,
+    * non-separable,
+    * ill-conditioned,
+    * or noisy
+
+    objective functions.
 
     Parameters
     ----------
@@ -547,6 +567,17 @@ def train_cmaes(
 
     verbose : int, optional (default: 0)
         Verbosity level.
+
+    Returns
+    -------
+    policy
+        Trained policy network.
+
+    References
+    ----------
+    .. [1] Hansen, N.; Ostermeier, A. Completely Derandomized Self-Adaptation
+        in Evolution Strategies. In: Evolutionary Computation, 9(2), pp.
+        159-195. https://www.lri.fr/~hansen/cmaartic.pdf
     """
     action_scale = jnp.array(
         0.5 * (env.action_space.high - env.action_space.low)
@@ -555,7 +586,7 @@ def train_cmaes(
         0.5 * (env.action_space.high + env.action_space.low)
     )
 
-    init_params = policy.flat_params()
+    init_params = flat_params(policy)
     key = jax.random.key(seed)
     opt = CMAES(
         initial_params=init_params,
