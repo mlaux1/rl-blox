@@ -24,6 +24,13 @@ policy = train_cmaes(
 env.close()
 
 # Evaluation
+# TODO this should be part of the policy!
+action_scale = jnp.array(
+    0.5 * (env.action_space.high - env.action_space.low)
+)
+action_bias = jnp.array(
+    0.5 * (env.action_space.high + env.action_space.low)
+)
 env = gym.make(env_name, render_mode="human")
 env = gym.wrappers.RecordEpisodeStatistics(env)
 while True:
@@ -31,7 +38,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy(jnp.asarray(obs)))
+        action = np.asarray(policy(jnp.asarray(obs)) * action_scale + action_bias)
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
