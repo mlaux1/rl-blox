@@ -479,7 +479,7 @@ class MLPPolicy(nnx.Module):
 
     def __call__(self, x):
         for layer in self.layers:
-            x = nnx.relu(layer(x))
+            x = nnx.tanh(layer(x))
         return nnx.tanh(self.output_layer(x))  # range [-1, 1]
 
     def flat_params(self):
