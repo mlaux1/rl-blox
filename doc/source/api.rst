@@ -14,4 +14,17 @@ API Documentation
 .. autosummary::
    :toctree: _apidoc/
 
+   ~q_learning.q_learning
+   ~reinforce.train_reinforce_epoch
+   ~reinforce.reinforce_gradient
+   ~reinforce.softmax_policy_gradient_pseudo_loss
+   ~reinforce.gaussian_policy_gradient_pseudo_loss
+   ~reinforce.value_loss
+   ~actor_critic.ac_policy_gradient
+   ~actor_critic.train_ac_epoch
    ~ddpg.train_ddpg
+   ~sac.train_sac
+   ~sac.sac_exploration_loss
+   ~sac.sac_actor_loss
+   ~sac.sample_actions
+   ~double_q_learning.double_q_learning
