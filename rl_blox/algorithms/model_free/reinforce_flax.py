@@ -327,12 +327,34 @@ def reinforce_gradient_continuous(
     .. math::
 
         \nabla_{\theta}J(\theta)
-        \propto \mathbb{E}_{s \sim \mu(s)}\left[ \sum_a q_{\pi_{\theta}}(s, a) \nabla_{\theta} \pi_{\theta} (a|s) \right]
-        = \mathbb{E}_{s \sim \mu(s)}\left[ \sum_a \textcolor{darkgreen}{\pi_{\theta} (a|s)} q_{\pi_{\theta}}(s, a) \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\textcolor{darkgreen}{\pi_{\theta} (a|s)}} \right]
-        = \mathbb{E}_{s \sim \mu(s), \textcolor{darkgreen}{a \sim \pi_{\theta}}}\left[ q_{\pi_{\theta}}(s, a) \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\pi_{\theta} (a|s)} \right]
-        = \mathbb{E}_{s \sim \mu(s), a \sim \pi_{\theta}}\left[ \textcolor{darkgreen}{R} \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\pi_{\theta} (a|s)} \right]
-        = \mathbb{E}_{s \sim \mu(s), a \sim \pi_{\theta}}\left[ \underline{R} \textcolor{darkgreen}{\nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})} \right]
-        \approx \textcolor{darkgreen}{\frac{1}{N}\sum_{(s, a, R)}}\underline{R} \nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})
+        \propto
+        \mathbb{E}_{s \sim \mu(s)}
+        \left[
+        \sum_a q_{\pi_{\theta}}(s, a) \nabla_{\theta} \pi_{\theta} (a|s)
+        \right]
+        =
+        \mathbb{E}_{s \sim \mu(s)}
+        \left[
+        \sum_a \textcolor{darkgreen}{\pi_{\theta} (a|s)} q_{\pi_{\theta}}(s, a)
+        \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\textcolor{darkgreen}{\pi_{\theta} (a|s)}}
+        \right]
+        =
+        \mathbb{E}_{s \sim \mu(s), \textcolor{darkgreen}{a \sim \pi_{\theta}}}
+        \left[
+        q_{\pi_{\theta}}(s, a) \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\pi_{\theta} (a|s)}
+        \right]
+        =
+        \mathbb{E}_{s \sim \mu(s), a \sim \pi_{\theta}}
+        \left[
+        \textcolor{darkgreen}{R} \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\pi_{\theta} (a|s)}
+        \right]
+        =
+        \mathbb{E}_{s \sim \mu(s), a \sim \pi_{\theta}}
+        \left[
+        \underline{R} \textcolor{darkgreen}{\nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})}
+        \right]
+        \approx
+        \textcolor{darkgreen}{\frac{1}{N}\sum_{(s, a, R)}}\underline{R} \nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})
 
     So we can estimate the policy gradient with N sampled states, actions, and
     returns.
@@ -343,7 +365,11 @@ def reinforce_gradient_continuous(
 
     .. math::
 
-        \mathbb{E}_{a_t \sim \pi_{\theta}} \left[\nabla_{\theta} \log \pi_{\theta} (a_t | s_t) b(s_t) \right] = 0
+        \mathbb{E}_{a_t \sim \pi_{\theta}}
+        \left[
+        \nabla_{\theta} \log \pi_{\theta} (a_t | s_t) b(s_t)
+        \right]
+        = 0
 
     This allows us to add or subtract any number of terms from the policy
     gradient without changing it in expectation. Any function b used in this
