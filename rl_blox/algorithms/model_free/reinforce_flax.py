@@ -1,4 +1,3 @@
-from typing import Callable
 import jax.numpy as jnp
 import numpy as np
 import gymnasium as gym
@@ -23,13 +22,13 @@ class EpisodeDataset:
 
     def add_sample(
         self,
-        state: jnp.ndarray,
+        observation: jnp.ndarray,
         action: jnp.ndarray,
-        next_state: jnp.ndarray,
+        next_observation: jnp.ndarray,
         reward: float,
     ):
         assert len(self.episodes) > 0
-        self.episodes[-1].append((state, action, next_state, reward))
+        self.episodes[-1].append((observation, action, next_observation, reward))
 
     def _indices(self) -> list[int]:
         indices = []
@@ -37,11 +36,11 @@ class EpisodeDataset:
             indices.extend([t for t in range(len(episode))])
         return indices
 
-    def _states(self) -> np.ndarray:
-        states = []
+    def _observations(self) -> np.ndarray:
+        observations = []
         for episode in self.episodes:
-            states.extend([s for s, _, _, _ in episode])
-        return np.vstack(states)
+            observations.extend([o for o, _, _, _ in episode])
+        return np.vstack(observations)
 
     def _actions(self) -> np.ndarray:
         actions = []
@@ -49,11 +48,11 @@ class EpisodeDataset:
             actions.extend([a for _, a, _, _ in episode])
         return np.stack(actions)
 
-    def _next_states(self) -> np.ndarray:
-        next_states = []
+    def _nest_observations(self) -> np.ndarray:
+        next_observations = []
         for episode in self.episodes:
-            next_states.extend([s for _, _, s, _ in episode])
-        return np.vstack(next_states)
+            next_observations.extend([s for _, _, s, _ in episode])
+        return np.vstack(next_observations)
 
     def _rewards(self) -> list[list[float]]:
         rewards = []
@@ -72,16 +71,16 @@ class EpisodeDataset:
     def prepare_policy_gradient_dataset(
         self, action_space: gym.spaces.Space, gamma: float
     ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        states = jnp.array(self._states())
+        observations = jnp.array(self._observations())
         actions = jnp.array(self._actions())
-        next_states = jnp.array(self._next_states())
+        next_observations = jnp.array(self._nest_observations())
         if isinstance(action_space, gym.spaces.Discrete):
             actions -= action_space.start
         returns = jnp.hstack(
             [discounted_reward_to_go(R, gamma) for R in self._rewards()]
         )
         gamma_discount = gamma ** jnp.hstack(self._indices())
-        return states, actions, next_states, returns, gamma_discount
+        return observations, actions, next_observations, returns, gamma_discount
 
 
 def discounted_reward_to_go(rewards, gamma):
@@ -105,7 +104,7 @@ class PolicyTrainer:
     ):
         self.policy = policy
         self.n_train_iters_per_update = n_train_iters_per_update
-        self.solver = nnx.Optimizer(policy, optimizer)
+        self.optimizer = nnx.Optimizer(policy, optimizer)
 
     def update(
         self,
@@ -115,10 +114,10 @@ class PolicyTrainer:
         **kwargs,
     ):
         for _ in range(self.n_train_iters_per_update):
-            theta_grad = policy_gradient_func(
+            policy_grad = policy_gradient_func(
                 self.policy, value_function, *args, **kwargs
             )
-            self.solver.update(theta_grad)
+            self.optimizer.update(policy_grad)
 
 
 class MLP(nnx.Module):
@@ -262,24 +261,43 @@ class GaussianMLP(nnx.Module):
         )
 
 
+@nnx.jit
 def value_loss(
-    states: jax.Array,
-    returns: jax.Array,
+    observations: jnp.ndarray,
+    returns: jnp.ndarray,
     value_function: nnx.Module,
 ) -> jnp.ndarray:
-    """Value error as loss for the value function network."""
-    values = value_function(states).squeeze()  # squeeze Nx1-D -> N-D
+    """Value error as loss for the value function network.
+
+    Parameters
+    ----------
+    observations : array, shape (n_samples, n_observation_features)
+        Observations.
+
+    returns : array, shape (n_samples,)
+        Target values, obtained, e.g., through Monte Carlo sampling.
+
+    value_function : nnx.Module
+        Value function that maps observations to expected returns.
+
+    Returns
+    -------
+    loss : float
+        Value function loss.
+    """
+    values = value_function(observations).squeeze()  # squeeze Nx1-D -> N-D
     chex.assert_equal_shape((values, returns))
     return optax.l2_loss(predictions=values, targets=returns).mean()
 
 
+@nnx.jit
 def gaussian_policy_gradient_pseudo_loss(
-    states: jax.Array,
-    actions: jax.Array,
-    weights: jax.Array,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    weights: jnp.ndarray,
     policy: GaussianMLP,
-) -> jnp.float32:
-    logp = policy.log_probability(states, actions)
+) -> jnp.ndarray:
+    logp = policy.log_probability(observations, actions)
     return -jnp.mean(
         weights * logp
     )  # - to perform gradient ascent with a minimizer
@@ -288,7 +306,7 @@ def gaussian_policy_gradient_pseudo_loss(
 def reinforce_gradient_continuous(
     policy: nnx.Module,
     value_function: nnx.Module | None,
-    states: jnp.ndarray,
+    observations: jnp.ndarray,
     actions: jnp.ndarray,
     returns: jnp.ndarray,
     gamma_discount: jnp.ndarray | None = None,
@@ -385,7 +403,7 @@ def reinforce_gradient_continuous(
     ----------
     policy : Policy that we want to update and has been used for exploration.
     value_function : Estimated value function.
-    states : Samples that were collected with the policy.
+    observations : Samples that were collected with the policy.
     actions : Samples that were collected with the policy.
     returns : Samples that were collected with the policy.
     gamma_discount : Discounting for individual steps of the episode.
@@ -397,7 +415,7 @@ def reinforce_gradient_continuous(
     """
     if value_function is not None:
         # state-value function as baseline, weights are advantages
-        baseline = value_function(states)
+        baseline = value_function(observations)
     else:
         # no baseline, weights are MC returns
         baseline = jnp.zeros_like(returns)
@@ -406,15 +424,15 @@ def reinforce_gradient_continuous(
         weights *= gamma_discount
 
     return nnx.grad(
-        partial(gaussian_policy_gradient_pseudo_loss, states, actions, weights)
+        partial(gaussian_policy_gradient_pseudo_loss, observations, actions, weights)
     )(policy)
 
 
 def train_reinforce_epoch(
     env: gym.Env,
-    policy: nnx.Module,
+    policy: GaussianMLP,
     policy_trainer: PolicyTrainer,
-    value_function: nnx.Module | None,
+    value_function: MLP | None,
     value_function_optimizer: nnx.Optimizer | None,
     batch_size: int,
     gamma: float,
@@ -446,19 +464,21 @@ def train_reinforce_epoch(
 
     print(f"{dataset.average_return()=}")
 
-    states, actions, _, returns, gamma_discount = (
+    observations, actions, _, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
 
     policy_trainer.update(
         reinforce_gradient_continuous,
         value_function,
-        states,
+        observations,
         actions,
         returns,
         gamma_discount,
     )
 
     if value_function is not None:
-        v_grad = nnx.grad(value_loss)(states, returns, value_function)
+        assert value_function_optimizer is not None
+        v_error, v_grad = nnx.value_and_grad(partial(value_loss, observations, returns))(value_function)
+        print(f"{v_error=}")
         value_function_optimizer.update(v_grad)

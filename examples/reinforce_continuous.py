@@ -29,7 +29,6 @@ value_function = MLP(
     rngs=nnx.Rngs(44),
 )
 v_opt = nnx.Optimizer(value_function, optax.adamw(learning_rate=1e-2))
-value_function = None
 
 policy_trainer = PolicyTrainer(policy, optimizer=optax.adamw(learning_rate=1e-4))
 
