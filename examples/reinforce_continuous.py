@@ -44,7 +44,7 @@ for i in range(n_epochs):
         p_opt,
         value_function,
         v_opt,
-        batch_size=1000,
+        total_steps=1000,
         gamma=0.99,
         train_after_episode=False,
     )

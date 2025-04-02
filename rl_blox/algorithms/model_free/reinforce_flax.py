@@ -414,7 +414,7 @@ def train_reinforce_epoch(
     policy_optimizer: nnx.Optimizer,
     value_function: MLP | None = None,
     value_function_optimizer: nnx.Optimizer | None = None,
-    batch_size: int = 1000,
+    total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
 ):
@@ -432,17 +432,22 @@ def train_reinforce_epoch(
     policy_optimizer : nnx.Optimizer
         Optimizer for policy network.
 
-    value_function : nnx.Module or None
+    value_function : nnx.Module or None, optional
         Policy network. Maps observations to expected returns.
 
-    batch_size : int
-        Number of samples to collect before updating the policy.
+    value_function_optimizer : nnx.Optimizer or None, optional
+        Optimizer for value function network.
 
-    gamma : float
+    total_steps : int, optional
+        Number of samples to collect before updating the policy. Alternatively
+        you can train after each episode.
+
+    gamma : float, optional
         Discount factor for rewards.
 
-    train_after_episode : bool
-        Train after each episode.
+    train_after_episode : bool, optional
+        Train after each episode. Alternatively you can train after collecting
+        a certain number of samples.
     """
     dataset = EpisodeDataset()
 
@@ -462,7 +467,7 @@ def train_reinforce_epoch(
         observation = next_observation
 
         if done:
-            if train_after_episode or len(dataset) >= batch_size:
+            if train_after_episode or len(dataset) >= total_steps:
                 break
 
             observation, _ = env.reset()
