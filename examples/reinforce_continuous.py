@@ -25,7 +25,7 @@ reinforce_state = create_reinforce_continuous_state(
     seed=42,
 )
 
-n_epochs = 5000
+n_epochs = 50
 for i in range(n_epochs):
     print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
@@ -34,8 +34,8 @@ for i in range(n_epochs):
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
         reinforce_state.value_function_optimizer,
-        policy_gradient_steps=100,
-        value_gradient_steps=100,
+        policy_gradient_steps=50,
+        value_gradient_steps=50,
         total_steps=1000,
         gamma=0.99,
         train_after_episode=False,

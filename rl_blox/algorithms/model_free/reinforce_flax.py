@@ -573,20 +573,26 @@ def train_reinforce_epoch(
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
 
+    total_p_loss = 0.0
     for _ in range(policy_gradient_steps):
         p_loss, p_grad = reinforce_gradient_continuous(
             policy, value_function, observations, actions, returns, gamma_discount
         )
-        if verbose >= 2:
-            print(f"[REINFORCE] Policy loss: {p_loss:.3f}")
+        total_p_loss += p_loss
         policy_optimizer.update(p_grad)
+    if verbose >= 2:
+        print(f"[REINFORCE] Policy loss: "
+              f"{total_p_loss / policy_gradient_steps:.3f}")
 
     if value_function is not None:
         assert value_function_optimizer is not None
+        total_v_loss = 0.0
         for _ in range(value_gradient_steps):
             v_loss, v_grad = nnx.value_and_grad(value_loss, argnums=2)(
                 observations, returns, value_function
             )
-            if verbose >= 2:
-                print(f"[REINFORCE] Value function loss: {v_loss:.3f}")
+            total_v_loss += v_loss
             value_function_optimizer.update(v_grad)
+        if verbose >= 2:
+            print(f"[REINFORCE] Value function loss: "
+                  f"{total_v_loss / value_gradient_steps:.3f}")
