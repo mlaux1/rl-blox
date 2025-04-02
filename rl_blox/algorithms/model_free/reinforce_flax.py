@@ -492,6 +492,8 @@ def train_reinforce_epoch(
     policy_optimizer: nnx.Optimizer,
     value_function: MLP | None = None,
     value_function_optimizer: nnx.Optimizer | None = None,
+    policy_gradient_steps: int = 1,
+    value_gradient_steps: int = 1,
     total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
@@ -516,6 +518,12 @@ def train_reinforce_epoch(
 
     value_function_optimizer : nnx.Optimizer or None, optional
         Optimizer for value function network.
+
+    policy_gradient_steps : int, optional
+        Number of gradient descent steps for the policy network.
+
+    value_gradient_steps : int, optional
+        Number of gradient descent steps for the value network.
 
     total_steps : int, optional
         Number of samples to collect before updating the policy. Alternatively
@@ -565,18 +573,20 @@ def train_reinforce_epoch(
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
 
-    p_loss, p_grad = reinforce_gradient_continuous(
-        policy, value_function, observations, actions, returns, gamma_discount
-    )
-    if verbose >= 2:
-        print(f"[REINFORCE] Policy loss: {p_loss:.3f}")
-    policy_optimizer.update(p_grad)
+    for _ in range(policy_gradient_steps):
+        p_loss, p_grad = reinforce_gradient_continuous(
+            policy, value_function, observations, actions, returns, gamma_discount
+        )
+        if verbose >= 2:
+            print(f"[REINFORCE] Policy loss: {p_loss:.3f}")
+        policy_optimizer.update(p_grad)
 
     if value_function is not None:
         assert value_function_optimizer is not None
-        v_loss, v_grad = nnx.value_and_grad(value_loss, argnums=2)(
-            observations, returns, value_function
-        )
-        if verbose >= 2:
-            print(f"[REINFORCE] Value function loss: {v_loss:.3f}")
-        value_function_optimizer.update(v_grad)
+        for _ in range(value_gradient_steps):
+            v_loss, v_grad = nnx.value_and_grad(value_loss, argnums=2)(
+                observations, returns, value_function
+            )
+            if verbose >= 2:
+                print(f"[REINFORCE] Value function loss: {v_loss:.3f}")
+            value_function_optimizer.update(v_grad)

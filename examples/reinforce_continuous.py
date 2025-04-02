@@ -34,6 +34,8 @@ for i in range(n_epochs):
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
         reinforce_state.value_function_optimizer,
+        policy_gradient_steps=100,
+        value_gradient_steps=100,
         total_steps=1000,
         gamma=0.99,
         train_after_episode=False,
