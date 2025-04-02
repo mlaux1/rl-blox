@@ -1,4 +1,4 @@
-from functools import partial
+from collections import namedtuple
 
 import chex
 import distrax
@@ -439,6 +439,51 @@ def reinforce_gradient_continuous(
     return nnx.value_and_grad(gaussian_policy_gradient_pseudo_loss, argnums=3)(
         observations, actions, weights, policy
     )
+
+
+def create_reinforce_continuous_state(
+    env: gym.Env,
+    policy_shared_head: bool = True,
+    policy_hidden_nodes: list[int] | tuple[int] = (32,),
+    policy_learning_rate: float = 1e-4,
+    value_network_hidden_nodes: list[int] | tuple[int] = (50, 50),
+    value_network_learning_rate: float = 1e-2,
+    seed: int = 0,
+):
+    observation_space = env.observation_space
+    if len(observation_space.shape) > 1:
+        raise ValueError("Only flat observation spaces are supported.")
+    action_space = env.action_space
+    if len(action_space.shape) > 1:
+        raise ValueError("Only flat action spaces are supported.")
+
+    policy = GaussianMLP(
+        shared_head=policy_shared_head,
+        n_features=observation_space.shape[0],
+        n_outputs=action_space.shape[0],
+        hidden_nodes=list(policy_hidden_nodes),
+        rngs=nnx.Rngs(seed),
+    )
+    policy_optimizer = nnx.Optimizer(policy, optax.adamw(policy_learning_rate))
+
+    value_function = MLP(
+        n_features=observation_space.shape[0],
+        n_outputs=1,
+        hidden_nodes=list(value_network_hidden_nodes),
+        rngs=nnx.Rngs(seed),
+    )
+    value_function_optimizer = nnx.Optimizer(
+        value_function, optax.adamw(value_network_learning_rate)
+    )
+    return namedtuple(
+        "REINFORCE",
+        [
+            "policy",
+            "policy_optimizer",
+            "value_function",
+            "value_function_optimizer",
+        ],
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
 def train_reinforce_epoch(

@@ -5,8 +5,7 @@ import optax
 from flax import nnx
 
 from rl_blox.algorithms.model_free.reinforce_flax import (
-    MLP,
-    GaussianMLP,
+    create_reinforce_continuous_state,
     train_reinforce_epoch,
 )
 
@@ -16,34 +15,25 @@ env_name = "InvertedPendulum-v5"
 env = gym.make(env_name)
 env.reset(seed=43)
 
-observation_space = env.observation_space
-action_space = env.action_space
-policy = GaussianMLP(
-    shared_head=True,
-    n_features=observation_space.shape[0],
-    n_outputs=action_space.shape[0],
-    hidden_nodes=[16, 32],
-    rngs=nnx.Rngs(43),
+reinforce_state = create_reinforce_continuous_state(
+    env,
+    policy_shared_head=True,
+    policy_hidden_nodes=[16, 32],
+    policy_learning_rate=1e-4,
+    value_network_hidden_nodes=[50, 50],
+    value_network_learning_rate=1e-2,
+    seed=42,
 )
-p_opt = nnx.Optimizer(policy, optax.adamw(learning_rate=1e-4))
-
-value_function = MLP(
-    n_features=observation_space.shape[0],
-    n_outputs=1,
-    hidden_nodes=[50, 50],
-    rngs=nnx.Rngs(44),
-)
-v_opt = nnx.Optimizer(value_function, optax.adamw(learning_rate=1e-2))
 
 n_epochs = 5000
 for i in range(n_epochs):
     print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
         env,
-        policy,
-        p_opt,
-        value_function,
-        v_opt,
+        reinforce_state.policy,
+        reinforce_state.policy_optimizer,
+        reinforce_state.value_function,
+        reinforce_state.value_function_optimizer,
         total_steps=1000,
         gamma=0.99,
         train_after_episode=False,
@@ -58,7 +48,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        mean_action, _ = policy(jnp.asarray(obs))
+        mean_action, _ = reinforce_state.policy(jnp.asarray(obs))
         action = np.asarray(mean_action)
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
