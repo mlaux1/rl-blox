@@ -1,12 +1,13 @@
-import jax.numpy as jnp
-import numpy as np
-import gymnasium as gym
-import optax
-from flax import nnx
-import jax
+from functools import partial
+
 import chex
 import distrax
-from functools import partial
+import gymnasium as gym
+import jax
+import jax.numpy as jnp
+import numpy as np
+import optax
+from flax import nnx
 
 
 class EpisodeDataset:
@@ -28,7 +29,9 @@ class EpisodeDataset:
         reward: float,
     ):
         assert len(self.episodes) > 0
-        self.episodes[-1].append((observation, action, next_observation, reward))
+        self.episodes[-1].append(
+            (observation, action, next_observation, reward)
+        )
 
     def _indices(self) -> list[int]:
         indices = []
@@ -91,33 +94,6 @@ def discounted_reward_to_go(rewards, gamma):
         accumulated_return += r
         discounted_returns.append(accumulated_return)
     return np.array(list(reversed(discounted_returns)))
-
-
-class PolicyTrainer:
-    """Contains the state of the policy optimizer."""
-
-    def __init__(
-        self,
-        policy: nnx.Module,
-        optimizer=optax.adam(1e-3),
-        n_train_iters_per_update: int = 1,
-    ):
-        self.policy = policy
-        self.n_train_iters_per_update = n_train_iters_per_update
-        self.optimizer = nnx.Optimizer(policy, optimizer)
-
-    def update(
-        self,
-        policy_gradient_func,
-        value_function: nnx.Module | None,
-        *args,
-        **kwargs,
-    ):
-        for _ in range(self.n_train_iters_per_update):
-            policy_grad = policy_gradient_func(
-                self.policy, value_function, *args, **kwargs
-            )
-            self.optimizer.update(policy_grad)
 
 
 class MLP(nnx.Module):
@@ -244,9 +220,11 @@ class GaussianMLP(nnx.Module):
 
     def sample(self, x):
         mean, log_var = self(x)
-        return jax.random.normal(self.rngs.params(), mean.shape) * jnp.exp(
-            jnp.clip(0.5 * log_var, -20.0, 2.0)
-        ) + mean
+        return (
+            jax.random.normal(self.rngs.params(), mean.shape)
+            * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
+            + mean
+        )
 
     def log_probability(
         self,
@@ -256,9 +234,9 @@ class GaussianMLP(nnx.Module):
         mean, log_var = self(x)
         log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
         std = jnp.exp(log_std)
-        return distrax.MultivariateNormalDiag(loc=mean, scale_diag=std).log_prob(
-            y
-        )
+        return distrax.MultivariateNormalDiag(
+            loc=mean, scale_diag=std
+        ).log_prob(y)
 
 
 @nnx.jit
@@ -424,14 +402,16 @@ def reinforce_gradient_continuous(
         weights *= gamma_discount
 
     return nnx.grad(
-        partial(gaussian_policy_gradient_pseudo_loss, observations, actions, weights)
+        partial(
+            gaussian_policy_gradient_pseudo_loss, observations, actions, weights
+        )
     )(policy)
 
 
 def train_reinforce_epoch(
     env: gym.Env,
     policy: GaussianMLP,
-    policy_trainer: PolicyTrainer,
+    policy_optimizer: nnx.Optimizer,
     value_function: MLP | None,
     value_function_optimizer: nnx.Optimizer | None,
     batch_size: int,
@@ -468,17 +448,15 @@ def train_reinforce_epoch(
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
 
-    policy_trainer.update(
-        reinforce_gradient_continuous,
-        value_function,
-        observations,
-        actions,
-        returns,
-        gamma_discount,
+    p_grad = reinforce_gradient_continuous(
+        policy, value_function, observations, actions, returns, gamma_discount
     )
+    policy_optimizer.update(p_grad)
 
     if value_function is not None:
         assert value_function_optimizer is not None
-        v_error, v_grad = nnx.value_and_grad(partial(value_loss, observations, returns))(value_function)
+        v_error, v_grad = nnx.value_and_grad(
+            partial(value_loss, observations, returns)
+        )(value_function)
         print(f"{v_error=}")
         value_function_optimizer.update(v_grad)

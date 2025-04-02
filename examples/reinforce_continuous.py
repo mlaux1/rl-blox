@@ -1,10 +1,14 @@
 import gymnasium as gym
+import jax.numpy as jnp
 import numpy as np
 import optax
-import jax.numpy as jnp
 from flax import nnx
 
-from rl_blox.algorithms.model_free.reinforce_flax import PolicyTrainer, GaussianMLP, MLP, train_reinforce_epoch
+from rl_blox.algorithms.model_free.reinforce_flax import (
+    MLP,
+    GaussianMLP,
+    train_reinforce_epoch,
+)
 
 # env_name = "Pendulum-v1"
 # env_name = "HalfCheetah-v4"
@@ -21,6 +25,7 @@ policy = GaussianMLP(
     hidden_nodes=[16, 32],
     rngs=nnx.Rngs(43),
 )
+p_opt = nnx.Optimizer(policy, optax.adamw(learning_rate=1e-4))
 
 value_function = MLP(
     n_features=observation_space.shape[0],
@@ -30,15 +35,13 @@ value_function = MLP(
 )
 v_opt = nnx.Optimizer(value_function, optax.adamw(learning_rate=1e-2))
 
-policy_trainer = PolicyTrainer(policy, optimizer=optax.adamw(learning_rate=1e-4))
-
 n_epochs = 5000
 for i in range(n_epochs):
     print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
         env,
         policy,
-        policy_trainer,
+        p_opt,
         value_function,
         v_opt,
         batch_size=1000,
