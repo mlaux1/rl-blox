@@ -268,7 +268,6 @@ def value_loss(
     return optax.l2_loss(predictions=values, targets=returns).mean()
 
 
-@nnx.jit
 def gaussian_policy_gradient_pseudo_loss(
     observations: jnp.ndarray,
     actions: jnp.ndarray,
@@ -281,6 +280,7 @@ def gaussian_policy_gradient_pseudo_loss(
     )  # - to perform gradient ascent with a minimizer
 
 
+@nnx.jit
 def reinforce_gradient_continuous(
     policy: nnx.Module,
     value_function: nnx.Module | None,
@@ -288,7 +288,7 @@ def reinforce_gradient_continuous(
     actions: jnp.ndarray,
     returns: jnp.ndarray,
     gamma_discount: jnp.ndarray | None = None,
-) -> jnp.ndarray:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     r"""REINFORCE policy gradient update.
 
     REINFORCE is an abbreviation for *Reward Increment = Non-negative Factor x
@@ -308,8 +308,8 @@ def reinforce_gradient_continuous(
     We use the policy gradient theorem to compute the policy gradient, which
     is the derivative of J with respect to the parameters of the policy.
 
-    Policy Gradient Theorem
-    -----------------------
+    **Policy Gradient Theorem**
+
     .. math::
 
         \nabla_{\theta}J(\theta)
@@ -337,8 +337,8 @@ def reinforce_gradient_continuous(
     So we can estimate the policy gradient with N sampled states, actions, and
     returns.
 
-    REINFORCE With Baseline
-    -----------------------
+    **REINFORCE With Baseline**
+
     For any function b which only depends on the state,
 
     .. math::
@@ -355,13 +355,13 @@ def reinforce_gradient_continuous(
 
     References
     ----------
-    [1] Williams, R.J. (1992). Simple statistical gradient-following algorithms
-        for connectionist reinforcement learning. Mach Learn 8, 229–256.
-        https://doi.org/10.1007/BF00992696
-    [2] Sutton, R.S., McAllester, D., Singh, S., Mansour, Y. (1999). Policy
-        Gradient Methods for Reinforcement Learning with Function Approximation.
-        In Advances in Neural Information Processing Systems 12 (NIPS 1999).
-        https://papers.nips.cc/paper_files/paper/1999/hash/464d828b85b0bed98e80ade0a5c43b0f-Abstract.html
+    .. [1] Williams, R.J. (1992). Simple statistical gradient-following algorithms
+       for connectionist reinforcement learning. Mach Learn 8, 229–256.
+       https://doi.org/10.1007/BF00992696
+    .. [2] Sutton, R.S., McAllester, D., Singh, S., Mansour, Y. (1999). Policy
+       Gradient Methods for Reinforcement Learning with Function Approximation.
+       In Advances in Neural Information Processing Systems 12 (NIPS 1999).
+       https://papers.nips.cc/paper_files/paper/1999/hash/464d828b85b0bed98e80ade0a5c43b0f-Abstract.html
 
     Further resources:
 
@@ -379,15 +379,24 @@ def reinforce_gradient_continuous(
 
     Parameters
     ----------
-    policy : Policy that we want to update and has been used for exploration.
-    value_function : Estimated value function.
-    observations : Samples that were collected with the policy.
-    actions : Samples that were collected with the policy.
-    returns : Samples that were collected with the policy.
-    gamma_discount : Discounting for individual steps of the episode.
+    policy
+        Probabilistic policy that we want to update and has been used for
+        exploration.
+    value_function
+        Estimated value function.
+    observations
+        Samples that were collected with the policy.
+    actions
+        Samples that were collected with the policy.
+    returns
+        Samples that were collected with the policy.
+    gamma_discount
+        Discounting for individual steps of the episode.
 
     Returns
     -------
+    loss
+        REINFORCE pseudo loss.
     grad
         REINFORCE policy gradient.
     """
@@ -401,11 +410,9 @@ def reinforce_gradient_continuous(
     if gamma_discount is not None:
         weights *= gamma_discount
 
-    return nnx.grad(
-        partial(
-            gaussian_policy_gradient_pseudo_loss, observations, actions, weights
-        )
-    )(policy)
+    return nnx.value_and_grad(gaussian_policy_gradient_pseudo_loss, argnums=3)(
+        observations, actions, weights, policy
+    )
 
 
 def train_reinforce_epoch(
@@ -417,6 +424,7 @@ def train_reinforce_epoch(
     total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
+    verbose: int = 0,
 ):
     """Train with REINFORCE for one epoch.
 
@@ -448,6 +456,9 @@ def train_reinforce_epoch(
     train_after_episode : bool, optional
         Train after each episode. Alternatively you can train after collecting
         a certain number of samples.
+
+    verbose : int, optional
+        Verbosity level.
     """
     dataset = EpisodeDataset()
 
@@ -473,21 +484,28 @@ def train_reinforce_epoch(
             observation, _ = env.reset()
             dataset.start_episode()
 
-    print(f"{dataset.average_return()=}")
+    if verbose:
+        print(
+            f"[REINFORCE] Average return in sampled "
+            f"dataset: {dataset.average_return():.3f}"
+        )
 
     observations, actions, _, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
 
-    p_grad = reinforce_gradient_continuous(
+    p_loss, p_grad = reinforce_gradient_continuous(
         policy, value_function, observations, actions, returns, gamma_discount
     )
+    if verbose >= 2:
+        print(f"[REINFORCE] Policy loss: {p_loss:.3f}")
     policy_optimizer.update(p_grad)
 
     if value_function is not None:
         assert value_function_optimizer is not None
-        v_error, v_grad = nnx.value_and_grad(
-            partial(value_loss, observations, returns)
-        )(value_function)
-        print(f"{v_error=}")
+        v_loss, v_grad = nnx.value_and_grad(value_loss, argnums=2)(
+            observations, returns, value_function
+        )
+        if verbose >= 2:
+            print(f"[REINFORCE] Value function loss: {v_loss:.3f}")
         value_function_optimizer.update(v_grad)

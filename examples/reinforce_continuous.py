@@ -47,6 +47,7 @@ for i in range(n_epochs):
         total_steps=1000,
         gamma=0.99,
         train_after_episode=False,
+        verbose=2,
     )
 
 # Evaluation
