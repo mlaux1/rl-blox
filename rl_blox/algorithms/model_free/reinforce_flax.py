@@ -412,12 +412,38 @@ def train_reinforce_epoch(
     env: gym.Env,
     policy: GaussianMLP,
     policy_optimizer: nnx.Optimizer,
-    value_function: MLP | None,
-    value_function_optimizer: nnx.Optimizer | None,
-    batch_size: int,
-    gamma: float,
+    value_function: MLP | None = None,
+    value_function_optimizer: nnx.Optimizer | None = None,
+    batch_size: int = 1000,
+    gamma: float = 1.0,
     train_after_episode: bool = False,
 ):
+    """Train with REINFORCE for one epoch.
+
+    Parameters
+    ----------
+    env : gym.Env
+        Environment.
+
+    policy : nnx.Module
+        Probabilistic policy network. Maps observations to probability
+        distribution over actions.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy network.
+
+    value_function : nnx.Module or None
+        Policy network. Maps observations to expected returns.
+
+    batch_size : int
+        Number of samples to collect before updating the policy.
+
+    gamma : float
+        Discount factor for rewards.
+
+    train_after_episode : bool
+        Train after each episode.
+    """
     dataset = EpisodeDataset()
 
     dataset.start_episode()
