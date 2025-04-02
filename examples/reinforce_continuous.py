@@ -1,48 +1,66 @@
 import gymnasium as gym
-import jax
+import numpy as np
 import optax
-from rl_blox.algorithms.model_free.reinforce import (
-    PolicyTrainer,
-    ValueFunctionApproximation,
-    train_reinforce_epoch,
-)
-from rl_blox.policy.differentiable import GaussianNNPolicy
+import jax.numpy as jnp
+from flax import nnx
+
+from rl_blox.algorithms.model_free.reinforce_flax import PolicyTrainer, GaussianMLP, MLP, train_reinforce_epoch
 
 # env_name = "Pendulum-v1"
 # env_name = "HalfCheetah-v4"
 env_name = "InvertedPendulum-v5"
-train_env = gym.make(env_name)
-train_env.reset(seed=43)
-# render_env = gym.make(env_name, render_mode="human")
-render_env = None
+env = gym.make(env_name)
+env.reset(seed=43)
 
-observation_space = train_env.observation_space
-action_space = train_env.action_space
-policy = GaussianNNPolicy(
-    observation_space, action_space, [16, 32], jax.random.PRNGKey(42)
+observation_space = env.observation_space
+action_space = env.action_space
+policy = GaussianMLP(
+    shared_head=True,
+    n_features=observation_space.shape[0],
+    n_outputs=action_space.shape[0],
+    hidden_nodes=[16, 32],
+    rngs=nnx.Rngs(43),
 )
 
-value_function = ValueFunctionApproximation(
-    observation_space,
-    [50, 50],
-    jax.random.PRNGKey(43),
-    n_train_iters_per_update=1,
+value_function = MLP(
+    n_features=observation_space.shape[0],
+    n_outputs=1,
+    hidden_nodes=[50, 50],
+    rngs=nnx.Rngs(44),
 )
+v_opt = nnx.Optimizer(value_function, optax.adamw(learning_rate=1e-2))
+value_function = None
 
-policy_trainer = PolicyTrainer(
-    policy, optimizer=optax.adamw, learning_rate=1e-4
-)
+policy_trainer = PolicyTrainer(policy, optimizer=optax.adamw(learning_rate=1e-4))
 
 n_epochs = 5000
 for i in range(n_epochs):
     print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
-        train_env,
+        env,
         policy,
         policy_trainer,
-        render_env,
         value_function,
+        v_opt,
         batch_size=1000,
         gamma=0.99,
         train_after_episode=False,
     )
+
+# Evaluation
+env = gym.make(env_name, render_mode="human")
+env = gym.wrappers.RecordEpisodeStatistics(env)
+while True:
+    done = False
+    infos = {}
+    obs, _ = env.reset()
+    while not done:
+        mean_action, _ = policy(jnp.asarray(obs))
+        action = np.asarray(mean_action)
+        next_obs, reward, termination, truncation, infos = env.step(action)
+        done = termination or truncation
+        obs = np.asarray(next_obs)
+    if "final_info" in infos:
+        for info in infos["final_info"]:
+            print(f"episodic_return={info['episode']['r']}")
+            break
