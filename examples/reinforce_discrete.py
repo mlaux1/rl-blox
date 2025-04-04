@@ -21,7 +21,7 @@ reinforce_state = create_reinforce_discrete_state(
     seed=42,
 )
 
-n_epochs = 50
+n_epochs = 100
 for i in range(n_epochs):
     print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
