@@ -219,8 +219,8 @@ class GaussianMLP(nnx.Module):
         return mean, log_var
 
 
-class PolicyBase(nnx.Module):
-    """Base class for policies."""
+class ProbabilisticPolicyBase(nnx.Module):
+    """Base class for probabilistic policies."""
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         """Compute action probabilities for given observation."""
@@ -241,7 +241,7 @@ class PolicyBase(nnx.Module):
         )
 
 
-class GaussianPolicy(PolicyBase):
+class GaussianPolicy(ProbabilisticPolicyBase):
     """Gaussian policy.
 
     Wraps a Gaussian neural network that maps observations to a Gaussian
@@ -294,7 +294,7 @@ class GaussianPolicy(PolicyBase):
         # return -jnp.log(std) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * ((action - mean) / std) ** 2
 
 
-class SoftmaxPolicy(PolicyBase):
+class SoftmaxPolicy(ProbabilisticPolicyBase):
     r"""Softmax policy.
 
     Wraps a softmax neural network that maps observations to the logits of each
@@ -404,7 +404,7 @@ def policy_gradient_pseudo_loss(
 
 @nnx.jit
 def reinforce_gradient(
-    policy: PolicyBase,
+    policy: ProbabilisticPolicyBase,
     value_function: nnx.Module | None,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
@@ -655,7 +655,7 @@ def create_policy_gradient_discrete_state(
 
 def train_reinforce_epoch(
     env: gym.Env,
-    policy: PolicyBase,
+    policy: ProbabilisticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP | None = None,
     value_function_optimizer: nnx.Optimizer | None = None,

@@ -6,7 +6,7 @@ from flax import nnx
 from .reinforce import (
     MLP,
     EpisodeDataset,
-    PolicyBase,
+    ProbabilisticPolicyBase,
     policy_gradient_pseudo_loss,
     train_value_function,
 )
@@ -14,7 +14,7 @@ from .reinforce import (
 
 @nnx.jit
 def actor_critic_policy_gradient(
-    policy: PolicyBase,
+    policy: ProbabilisticPolicyBase,
     value_function: nnx.Module,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
@@ -60,7 +60,7 @@ def actor_critic_policy_gradient(
 
 def train_ac_epoch(
     env: gym.Env,
-    policy: PolicyBase,
+    policy: ProbabilisticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP,
     value_function_optimizer: nnx.Optimizer,
