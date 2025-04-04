@@ -2,7 +2,7 @@ import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
 
-from rl_blox.algorithms.model_free.reinforce_flax import (
+from rl_blox.algorithms.model_free.reinforce import (
     create_reinforce_discrete_state,
     train_reinforce_epoch,
 )
