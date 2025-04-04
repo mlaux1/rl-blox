@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rl_blox.algorithms.model_free.reinforce import (
-    create_reinforce_continuous_state,
+    create_policy_gradient_continuous_state,
     train_reinforce_epoch,
 )
 
@@ -13,7 +13,7 @@ env_name = "InvertedPendulum-v5"
 env = gym.make(env_name)
 env.reset(seed=43)
 
-reinforce_state = create_reinforce_continuous_state(
+reinforce_state = create_policy_gradient_continuous_state(
     env,
     policy_shared_head=True,
     policy_hidden_nodes=[32, 32],

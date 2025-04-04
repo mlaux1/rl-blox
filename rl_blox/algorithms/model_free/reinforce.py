@@ -563,7 +563,7 @@ def reinforce_gradient(
     )
 
 
-def create_reinforce_continuous_state(
+def create_policy_gradient_continuous_state(
     env: gym.Env,
     policy_shared_head: bool = True,
     policy_hidden_nodes: list[int] | tuple[int] = (32,),
@@ -599,7 +599,7 @@ def create_reinforce_continuous_state(
         value_function, optax.adamw(value_network_learning_rate)
     )
     return namedtuple(
-        "REINFORCE",
+        "PolicyGradientState",
         [
             "policy",
             "policy_optimizer",
@@ -609,7 +609,7 @@ def create_reinforce_continuous_state(
     )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
-def create_reinforce_discrete_state(
+def create_policy_gradient_discrete_state(
     env: gym.Env,
     policy_hidden_nodes: list[int] | tuple[int] = (32,),
     policy_learning_rate: float = 1e-4,
@@ -643,7 +643,7 @@ def create_reinforce_discrete_state(
         value_function, optax.adamw(value_network_learning_rate)
     )
     return namedtuple(
-        "REINFORCE",
+        "PolicyGradientState",
         [
             "policy",
             "policy_optimizer",

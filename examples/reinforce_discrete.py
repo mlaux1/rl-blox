@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rl_blox.algorithms.model_free.reinforce import (
-    create_reinforce_discrete_state,
+    create_policy_gradient_discrete_state,
     train_reinforce_epoch,
 )
 
@@ -12,7 +12,7 @@ env_name = "CartPole-v1"
 env = gym.make(env_name)
 env.reset(seed=42)
 
-reinforce_state = create_reinforce_discrete_state(
+reinforce_state = create_policy_gradient_discrete_state(
     env,
     policy_hidden_nodes=[32],
     policy_learning_rate=1e-4,

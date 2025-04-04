@@ -1,69 +1,98 @@
-from functools import partial
-
-import jax
 import jax.numpy as jnp
 import numpy as np
+from flax import nnx
+import gymnasium as gym
 
-from ...policy.differentiable import GaussianNNPolicy, NeuralNetwork
 from .reinforce import (
     EpisodeDataset,
-    ValueFunctionApproximation,
-    gaussian_policy_gradient_pseudo_loss,
-    softmax_policy_gradient_pseudo_loss,
+    PolicyBase,
+    MLP,
+    policy_gradient_pseudo_loss,
+    train_value_function,
 )
 
 
-def ac_policy_gradient(
-    policy: NeuralNetwork,
-    value_function: ValueFunctionApproximation,
-    states: jax.Array,
-    actions: jax.Array,
-    next_states: jax.Array,
-    rewards: jax.Array,
-    gamma_discount: jax.Array,
+@nnx.jit
+def actor_critic_policy_gradient(
+    policy: PolicyBase,
+    value_function: nnx.Module,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    next_observations: jnp.ndarray,
+    rewards: jnp.ndarray,
+    gamma_discount: jnp.ndarray,
     gamma: float,
-) -> jax.Array:
-    V = value_function.predict(states)
-    V_next = value_function.predict(next_states)
-    TD_bootstrap_estimate = rewards + gamma * V_next - V
-    weights = gamma_discount * TD_bootstrap_estimate
+) -> jnp.ndarray:
+    V = value_function(observations)
+    V_next = value_function(next_observations)
+    td_bootstrap_estimate = rewards + gamma * V_next - V
+    weights = gamma_discount * td_bootstrap_estimate
 
-    if isinstance(
-        policy, GaussianNNPolicy
-    ):  # TODO find another way without if-else
-        return jax.grad(
-            partial(
-                gaussian_policy_gradient_pseudo_loss, states, actions, weights
-            )
-        )(policy.theta)
-    else:
-        return jax.grad(
-            partial(
-                softmax_policy_gradient_pseudo_loss, states, actions, weights
-            )
-        )(policy.theta)
+    return nnx.value_and_grad(policy_gradient_pseudo_loss, argnums=3)(
+        observations, actions, weights, policy
+    )
 
 
 def train_ac_epoch(
-    train_env,
-    policy,
-    policy_trainer,
-    render_env,
-    value_function,
-    batch_size,
-    gamma,
-    train_after_episode=False,
+    env: gym.Env,
+    policy: PolicyBase,
+    policy_optimizer: nnx.Optimizer,
+    value_function: MLP,
+    value_function_optimizer: nnx.Optimizer,
+    policy_gradient_steps: int = 1,
+    value_gradient_steps: int = 1,
+    total_steps: int = 1000,
+    gamma: float = 1.0,
+    train_after_episode: bool = False,
+    verbose: int = 0,
 ):
+    """Train with actor-critic for one epoch.
+
+    Parameters
+    ----------
+    env : gym.Env
+        Environment.
+
+    policy : nnx.Module
+        Probabilistic policy network. Maps observations to probability
+        distribution over actions.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy network.
+
+    value_function : nnx.Module or None, optional
+        Policy network. Maps observations to expected returns.
+
+    value_function_optimizer : nnx.Optimizer or None, optional
+        Optimizer for value function network.
+
+    policy_gradient_steps : int, optional
+        Number of gradient descent steps for the policy network.
+
+    value_gradient_steps : int, optional
+        Number of gradient descent steps for the value network.
+
+    total_steps : int, optional
+        Number of samples to collect before updating the policy. Alternatively
+        you can train after each episode.
+
+    gamma : float, optional
+        Discount factor for rewards.
+
+    train_after_episode : bool, optional
+        Train after each episode. Alternatively you can train after collecting
+        a certain number of samples.
+
+    verbose : int, optional
+        Verbosity level.
+    """
     dataset = EpisodeDataset()
-    if render_env is not None:
-        env = render_env
-    else:
-        env = train_env
 
     dataset.start_episode()
     observation, _ = env.reset()
     while True:
         action = policy.sample(jnp.array(observation))
+
         next_observation, reward, terminated, truncated, _ = env.step(
             np.asarray(action)
         )
@@ -75,16 +104,20 @@ def train_ac_epoch(
         observation = next_observation
 
         if done:
-            if train_after_episode or len(dataset) >= batch_size:
+            if train_after_episode or len(dataset) >= total_steps:
                 break
 
-            env = train_env
+            env = env
             observation, _ = env.reset()
             dataset.start_episode()
 
-    print(f"{dataset.average_return()=}")
+    if verbose:
+        print(
+            f"[Actor-Critic] Average return in sampled "
+            f"dataset: {dataset.average_return():.3f}"
+        )
 
-    states, actions, next_states, returns, gamma_discount = (
+    observations, actions, next_observations, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
     rewards = jnp.hstack(
@@ -94,16 +127,57 @@ def train_ac_epoch(
         ]
     )
 
-    policy_trainer.update(
-        ac_policy_gradient,
+    p_loss = train_policy_actor_critic(
+        policy,
+        policy_optimizer,
+        policy_gradient_steps,
         value_function,
-        states,
+        observations,
         actions,
-        next_states,
+        next_observations,
         rewards,
         gamma_discount,
         gamma,
     )
+    if verbose >= 2:
+        print(f"[Actor-Critic] Policy loss: {p_loss:.3f}")
 
     if value_function is not None:
-        value_function.update(states, returns)
+        assert value_function_optimizer is not None
+        v_loss = train_value_function(
+            value_function,
+            value_function_optimizer,
+            value_gradient_steps,
+            observations,
+            returns,
+        )
+        if verbose >= 2:
+            print(f"[Actor-Critic] Value function loss: {v_loss:.3f}")
+
+
+def train_policy_actor_critic(
+    policy,
+    policy_optimizer,
+    policy_gradient_steps,
+    value_function,
+    observations,
+    actions,
+    next_observations,
+    rewards,
+    gamma_discount,
+    gamma,
+):
+    p_loss = 0.0
+    for _ in range(policy_gradient_steps):
+        p_loss, p_grad = actor_critic_policy_gradient(
+            policy,
+            value_function,
+            observations,
+            actions,
+            next_observations,
+            rewards,
+            gamma_discount,
+            gamma,
+        )
+        policy_optimizer.update(p_grad)
+    return p_loss
