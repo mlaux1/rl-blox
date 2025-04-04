@@ -48,8 +48,8 @@ def actor_critic_policy_gradient(
     grad
         Actor-critic policy gradient.
     """
-    v = value_function(observations)
-    v_next = value_function(next_observations)
+    v = value_function(observations).squeeze()
+    v_next = value_function(next_observations).squeeze()
     td_bootstrap_estimate = rewards + gamma * v_next - v
     weights = gamma_discount * td_bootstrap_estimate
 

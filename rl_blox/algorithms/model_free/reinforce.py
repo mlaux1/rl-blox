@@ -397,6 +397,7 @@ def policy_gradient_pseudo_loss(
         Pseudo loss for the policy gradient.
     """
     logp = policy.log_probability(observations, actions)
+    chex.assert_equal_shape((weights, logp))
     return -jnp.mean(
         weights * logp
     )  # - to perform gradient ascent with a minimizer
@@ -550,7 +551,7 @@ def reinforce_gradient(
     """
     if value_function is not None:
         # state-value function as baseline, weights are advantages
-        baseline = value_function(observations)
+        baseline = value_function(observations).squeeze()
     else:
         # no baseline, weights are MC returns
         baseline = jnp.zeros_like(returns)
