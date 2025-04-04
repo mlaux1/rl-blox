@@ -365,7 +365,7 @@ def policy_gradient_pseudo_loss(
 
 
 @nnx.jit
-def reinforce_gradient_continuous(
+def reinforce_gradient(
     policy: nnx.Module,
     value_function: nnx.Module | None,
     observations: jnp.ndarray,
@@ -615,7 +615,7 @@ def create_reinforce_discrete_state(
 
 def train_reinforce_epoch(
     env: gym.Env,
-    policy: GaussianMLP,
+    policy: nnx.Module,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP | None = None,
     value_function_optimizer: nnx.Optimizer | None = None,
@@ -761,7 +761,7 @@ def train_policy_reinforce(
 ):
     total_p_loss = 0.0
     for _ in range(policy_gradient_steps):
-        p_loss, p_grad = reinforce_gradient_continuous(
+        p_loss, p_grad = reinforce_gradient(
             policy,
             value_function,
             observations,

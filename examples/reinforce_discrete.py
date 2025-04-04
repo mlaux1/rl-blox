@@ -22,15 +22,16 @@ reinforce_state = create_reinforce_discrete_state(
 )
 
 n_epochs = 50
-for _ in range(n_epochs):
+for i in range(n_epochs):
+    print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
         env,
         reinforce_state.policy,
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
         reinforce_state.value_function_optimizer,
-        policy_gradient_steps=1,
-        value_gradient_steps=5,
+        policy_gradient_steps=10,
+        value_gradient_steps=10,
         total_steps=5000,
         gamma=1.0,
         train_after_episode=False,
