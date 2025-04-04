@@ -25,7 +25,7 @@ reinforce_state = create_policy_gradient_continuous_state(
     seed=42,
 )
 
-n_epochs = 300
+n_epochs = 500
 for i in range(n_epochs):
     print(f"Epoch #{i + 1}")
     train_ac_epoch(
@@ -34,9 +34,9 @@ for i in range(n_epochs):
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
         reinforce_state.value_function_optimizer,
-        policy_gradient_steps=10,
-        value_gradient_steps=50,
-        total_steps=500,
+        policy_gradient_steps=1,
+        value_gradient_steps=1,
+        total_steps=1000,
         gamma=0.99,
         train_after_episode=False,
         verbose=2,
