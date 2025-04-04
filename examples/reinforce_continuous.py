@@ -48,8 +48,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        mean_action, _ = reinforce_state.policy(jnp.asarray(obs))
-        action = np.asarray(mean_action)
+        action = np.asarray(reinforce_state.policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)

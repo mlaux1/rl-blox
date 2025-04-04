@@ -218,8 +218,61 @@ class GaussianMLP(nnx.Module):
 
         return mean, log_var
 
-    def sample(self, x):
-        mean, log_var = self(x)
+
+class PolicyBase(nnx.Module):
+    """Base class for policies."""
+
+    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
+        """Compute action probabilities for given observation."""
+        raise NotImplementedError("Subclasses must implement __call__ method.")
+
+    def sample(self, observation: jnp.ndarray) -> jnp.ndarray:
+        """Sample action from policy given observation."""
+        raise NotImplementedError("Subclasses must implement sample method.")
+
+    def log_probability(
+        self,
+        observation: jnp.ndarray,
+        action: jnp.ndarray,
+    ) -> jnp.ndarray:
+        """Compute log probability of action given observation."""
+        raise NotImplementedError(
+            "Subclasses must implement log_probability method."
+        )
+
+
+class GaussianPolicy(PolicyBase):
+    """Gaussian policy.
+
+    Wraps a Gaussian neural network that maps observations to a Gaussian
+    distribution over actions, i.e., mean vector and log variance vector.
+
+    Parameters
+    ----------
+    net : nnx.Module
+        Gaussian neural network.
+
+    rngs
+        Random number generator.
+    """
+
+    net: nnx.Module
+    rngs: nnx.Rngs
+
+    def __init__(
+        self,
+        net: nnx.Module,
+        rngs: nnx.Rngs,
+    ):
+        self.net = net
+        self.rngs = rngs
+
+    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
+        return self.net(observation)[0]
+
+    def sample(self, observation):
+        """Sample action from Gaussian distribution."""
+        mean, log_var = self.net(observation)
         return (
             jax.random.normal(self.rngs.params(), mean.shape)
             * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
@@ -228,78 +281,62 @@ class GaussianMLP(nnx.Module):
 
     def log_probability(
         self,
-        x: jnp.ndarray,
-        y: jnp.ndarray,
+        observation: jnp.ndarray,
+        action: jnp.ndarray,
     ) -> jnp.ndarray:
-        mean, log_var = self(x)
+        """Compute log probability of action given observation."""
+        mean, log_var = self.net(observation)
         log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
         std = jnp.exp(log_std)
         return distrax.MultivariateNormalDiag(
             loc=mean, scale_diag=std
-        ).log_prob(y)
+        ).log_prob(action)
 
 
-class SoftmaxMLP(nnx.Module):
-    r"""Probabilistic neural network that predicts a softmax distribution.
+class SoftmaxPolicy(PolicyBase):
+    r"""Softmax policy.
+
+    Wraps a softmax neural network that maps observations to the logits of each
+    action.
 
     Parameters
     ----------
-    n_features
-        Number of features.
-
-    n_outputs
-        Number of output components.
-
-    hidden_nodes
-        Numbers of hidden nodes of the MLP.
+    net : nnx.Module
+        Gaussian neural network.
 
     rngs
         Random number generator.
     """
 
-    n_outputs: int
-    hidden_layers: list[nnx.Linear]
-    output_layer: nnx.Linear
+    net: nnx.Module
     rngs: nnx.Rngs
 
     def __init__(
         self,
-        n_features: int,
-        n_outputs: int,
-        hidden_nodes: list[int],
+        net: nnx.Module,
         rngs: nnx.Rngs,
     ):
-        chex.assert_scalar_positive(n_features)
-        chex.assert_scalar_positive(n_outputs)
-
-        self.n_outputs = n_outputs
-
-        self.hidden_layers = []
-        n_in = n_features
-        for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
-            n_in = n_out
-
-        self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
-
+        self.net = net
         self.rngs = rngs
 
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return nnx.softmax(self.logits(x))
+    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
+        return nnx.softmax(self.logits(observation))
 
-    def logits(self, x: jnp.ndarray) -> jnp.ndarray:
-        for layer in self.hidden_layers:
-            x = nnx.swish(layer(x))
-        return self.output_layer(x)
+    def logits(self, observation: jnp.ndarray) -> jnp.ndarray:
+        return self.net(observation)
 
-    def sample(self, x: jnp.ndarray) -> jnp.ndarray:
-        return distrax.Categorical(logits=self.logits(x)).sample(
+    def sample(self, observation: jnp.ndarray) -> jnp.ndarray:
+        return distrax.Categorical(logits=self.logits(observation)).sample(
             seed=self.rngs.params(),
             sample_shape=(),
         )
 
-    def log_probability(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        return distrax.Categorical(logits=self.logits(x)).log_prob(y)
+    def log_probability(
+        self, observation: jnp.ndarray, action: jnp.ndarray
+    ) -> jnp.ndarray:
+        return distrax.Categorical(logits=self.logits(observation)).log_prob(
+            action
+        )
 
 
 @nnx.jit
@@ -366,7 +403,7 @@ def policy_gradient_pseudo_loss(
 
 @nnx.jit
 def reinforce_gradient(
-    policy: nnx.Module,
+    policy: PolicyBase,
     value_function: nnx.Module | None,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
@@ -541,14 +578,17 @@ def create_reinforce_continuous_state(
     if len(action_space.shape) > 1:
         raise ValueError("Only flat action spaces are supported.")
 
-    policy = GaussianMLP(
+    policy_net = GaussianMLP(
         shared_head=policy_shared_head,
         n_features=observation_space.shape[0],
         n_outputs=action_space.shape[0],
         hidden_nodes=list(policy_hidden_nodes),
         rngs=nnx.Rngs(seed),
     )
-    policy_optimizer = nnx.Optimizer(policy, optax.adamw(policy_learning_rate))
+    policy = GaussianPolicy(policy_net, rngs=policy_net.rngs)
+    policy_optimizer = nnx.Optimizer(
+        policy, optax.adamw(policy_learning_rate)
+    )
 
     value_function = MLP(
         n_features=observation_space.shape[0],
@@ -585,13 +625,16 @@ def create_reinforce_discrete_state(
     if action_space.start != 0:
         raise ValueError("We assume that the minimum action is 0!")
 
-    policy = SoftmaxMLP(
+    policy_net = MLP(
         n_features=observation_space.shape[0],
         n_outputs=int(action_space.n),
         hidden_nodes=list(policy_hidden_nodes),
         rngs=nnx.Rngs(seed),
     )
-    policy_optimizer = nnx.Optimizer(policy, optax.adamw(policy_learning_rate))
+    policy = SoftmaxPolicy(policy_net, rngs=policy_net.rngs)
+    policy_optimizer = nnx.Optimizer(
+        policy, optax.adamw(policy_learning_rate)
+    )
 
     value_function = MLP(
         n_features=observation_space.shape[0],
@@ -615,7 +658,7 @@ def create_reinforce_discrete_state(
 
 def train_reinforce_epoch(
     env: gym.Env,
-    policy: nnx.Module,
+    policy: PolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP | None = None,
     value_function_optimizer: nnx.Optimizer | None = None,
