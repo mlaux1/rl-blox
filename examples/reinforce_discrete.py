@@ -30,9 +30,9 @@ for i in range(n_epochs):
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
         reinforce_state.value_function_optimizer,
-        policy_gradient_steps=10,
-        value_gradient_steps=10,
-        total_steps=5000,
+        policy_gradient_steps=20,
+        value_gradient_steps=20,
+        total_steps=1000,
         gamma=1.0,
         train_after_episode=False,
         verbose=2,
@@ -46,8 +46,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        mean_action, _ = reinforce_state.policy(jnp.asarray(obs))
-        action = np.asarray(mean_action)
+        action = np.argmax(np.asarray(reinforce_state.policy(jnp.asarray(obs))))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
