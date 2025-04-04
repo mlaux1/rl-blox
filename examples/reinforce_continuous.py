@@ -16,14 +16,14 @@ env.reset(seed=43)
 reinforce_state = create_reinforce_continuous_state(
     env,
     policy_shared_head=True,
-    policy_hidden_nodes=[16, 32],
+    policy_hidden_nodes=[32, 32],
     policy_learning_rate=1e-4,
     value_network_hidden_nodes=[50, 50],
     value_network_learning_rate=1e-2,
     seed=42,
 )
 
-n_epochs = 5000
+n_epochs = 300
 for i in range(n_epochs):
     print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
@@ -32,9 +32,9 @@ for i in range(n_epochs):
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
         reinforce_state.value_function_optimizer,
-        policy_gradient_steps=1,
-        value_gradient_steps=1,
-        total_steps=1000,
+        policy_gradient_steps=10,
+        value_gradient_steps=10,
+        total_steps=500,
         gamma=0.99,
         train_after_episode=False,
         verbose=2,

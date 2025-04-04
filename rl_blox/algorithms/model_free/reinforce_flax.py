@@ -291,6 +291,7 @@ class GaussianPolicy(PolicyBase):
         return distrax.MultivariateNormalDiag(
             loc=mean, scale_diag=std
         ).log_prob(action)
+        # return -jnp.log(std) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * ((action - mean) / std) ** 2
 
 
 class SoftmaxPolicy(PolicyBase):
@@ -586,9 +587,7 @@ def create_reinforce_continuous_state(
         rngs=nnx.Rngs(seed),
     )
     policy = GaussianPolicy(policy_net, rngs=policy_net.rngs)
-    policy_optimizer = nnx.Optimizer(
-        policy, optax.adamw(policy_learning_rate)
-    )
+    policy_optimizer = nnx.Optimizer(policy, optax.adamw(policy_learning_rate))
 
     value_function = MLP(
         n_features=observation_space.shape[0],
@@ -632,9 +631,7 @@ def create_reinforce_discrete_state(
         rngs=nnx.Rngs(seed),
     )
     policy = SoftmaxPolicy(policy_net, rngs=policy_net.rngs)
-    policy_optimizer = nnx.Optimizer(
-        policy, optax.adamw(policy_learning_rate)
-    )
+    policy_optimizer = nnx.Optimizer(policy, optax.adamw(policy_learning_rate))
 
     value_function = MLP(
         n_features=observation_space.shape[0],
