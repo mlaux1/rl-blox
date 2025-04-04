@@ -23,9 +23,34 @@ def actor_critic_policy_gradient(
     gamma_discount: jnp.ndarray,
     gamma: float,
 ) -> jnp.ndarray:
-    V = value_function(observations)
-    V_next = value_function(next_observations)
-    td_bootstrap_estimate = rewards + gamma * V_next - V
+    r"""Actor-critic policy gradient.
+
+    Parameters
+    ----------
+    policy
+        Probabilistic policy that we want to update and has been used for
+        exploration.
+    value_function
+        Estimated value function.
+    observations
+        Samples that were collected with the policy.
+    actions
+        Samples that were collected with the policy.
+    returns
+        Samples that were collected with the policy.
+    gamma_discount
+        Discounting for individual steps of the episode.
+
+    Returns
+    -------
+    loss
+        Actor-critic policy gradient pseudo loss.
+    grad
+        Actor-critic policy gradient.
+    """
+    v = value_function(observations)
+    v_next = value_function(next_observations)
+    td_bootstrap_estimate = rewards + gamma * v_next - v
     weights = gamma_discount * td_bootstrap_estimate
 
     return nnx.value_and_grad(policy_gradient_pseudo_loss, argnums=3)(

@@ -411,7 +411,7 @@ def reinforce_gradient(
     returns: jnp.ndarray,
     gamma_discount: jnp.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    r"""REINFORCE policy gradient update.
+    r"""REINFORCE policy gradient.
 
     REINFORCE is an abbreviation for *Reward Increment = Non-negative Factor x
     Offset Reinforcement x Characteristic Eligibility*. It is a policy gradient
