@@ -2,11 +2,11 @@ import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
 
-from rl_blox.algorithms.model_free.reinforce import (
-    create_policy_gradient_continuous_state,
-)
 from rl_blox.algorithms.model_free.actor_critic import (
     train_ac_epoch,
+)
+from rl_blox.algorithms.model_free.reinforce import (
+    create_policy_gradient_continuous_state,
 )
 
 # env_name = "Pendulum-v1"

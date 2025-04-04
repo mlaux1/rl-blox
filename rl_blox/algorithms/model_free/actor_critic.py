@@ -1,12 +1,12 @@
+import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-import gymnasium as gym
 
 from .reinforce import (
+    MLP,
     EpisodeDataset,
     PolicyBase,
-    MLP,
     policy_gradient_pseudo_loss,
     train_value_function,
 )
