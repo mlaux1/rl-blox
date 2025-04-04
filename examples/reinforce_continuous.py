@@ -1,8 +1,6 @@
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
-import optax
-from flax import nnx
 
 from rl_blox.algorithms.model_free.reinforce_flax import (
     create_reinforce_continuous_state,

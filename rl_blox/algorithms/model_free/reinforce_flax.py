@@ -230,13 +230,76 @@ class GaussianMLP(nnx.Module):
         self,
         x: jnp.ndarray,
         y: jnp.ndarray,
-    ) -> jnp.float32:
+    ) -> jnp.ndarray:
         mean, log_var = self(x)
         log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
         std = jnp.exp(log_std)
         return distrax.MultivariateNormalDiag(
             loc=mean, scale_diag=std
         ).log_prob(y)
+
+
+class SoftmaxMLP(nnx.Module):
+    r"""Probabilistic neural network that predicts a softmax distribution.
+
+    Parameters
+    ----------
+    n_features
+        Number of features.
+
+    n_outputs
+        Number of output components.
+
+    hidden_nodes
+        Numbers of hidden nodes of the MLP.
+
+    rngs
+        Random number generator.
+    """
+
+    n_outputs: int
+    hidden_layers: list[nnx.Linear]
+    output_layer: nnx.Linear
+    rngs: nnx.Rngs
+
+    def __init__(
+        self,
+        n_features: int,
+        n_outputs: int,
+        hidden_nodes: list[int],
+        rngs: nnx.Rngs,
+    ):
+        chex.assert_scalar_positive(n_features)
+        chex.assert_scalar_positive(n_outputs)
+
+        self.n_outputs = n_outputs
+
+        self.hidden_layers = []
+        n_in = n_features
+        for n_out in hidden_nodes:
+            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            n_in = n_out
+
+        self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
+
+        self.rngs = rngs
+
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        return nnx.softmax(self.logits(x))
+
+    def logits(self, x: jnp.ndarray) -> jnp.ndarray:
+        for layer in self.hidden_layers:
+            x = nnx.swish(layer(x))
+        return self.output_layer(x)
+
+    def sample(self, x: jnp.ndarray) -> jnp.ndarray:
+        return distrax.Categorical(logits=self.logits(x)).sample(
+            seed=self.rngs.params(),
+            sample_shape=(),
+        )
+
+    def log_probability(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+        return distrax.Categorical(logits=self.logits(x)).log_prob(y)
 
 
 @nnx.jit
@@ -268,12 +331,33 @@ def value_loss(
     return optax.l2_loss(predictions=values, targets=returns).mean()
 
 
-def gaussian_policy_gradient_pseudo_loss(
+def policy_gradient_pseudo_loss(
     observations: jnp.ndarray,
     actions: jnp.ndarray,
     weights: jnp.ndarray,
-    policy: GaussianMLP,
+    policy: nnx.Module,
 ) -> jnp.ndarray:
+    """Pseudo loss for the policy gradient.
+
+    Parameters
+    ----------
+    observations : array, shape (n_samples, n_observation_features)
+        Observations.
+
+    actions : array, shape (n_samples, n_action_features)
+        Actions.
+
+    weights : array, shape (n_samples,)
+        Weights for the policy gradient.
+
+    policy : nnx.Module
+        Policy.
+
+    Returns
+    -------
+    loss : float
+        Pseudo loss for the policy gradient.
+    """
     logp = policy.log_probability(observations, actions)
     return -jnp.mean(
         weights * logp
@@ -436,7 +520,7 @@ def reinforce_gradient_continuous(
     if gamma_discount is not None:
         weights *= gamma_discount
 
-    return nnx.value_and_grad(gaussian_policy_gradient_pseudo_loss, argnums=3)(
+    return nnx.value_and_grad(policy_gradient_pseudo_loss, argnums=3)(
         observations, actions, weights, policy
     )
 
@@ -450,10 +534,10 @@ def create_reinforce_continuous_state(
     value_network_learning_rate: float = 1e-2,
     seed: int = 0,
 ):
-    observation_space = env.observation_space
+    observation_space: gym.spaces.Box = env.observation_space
     if len(observation_space.shape) > 1:
         raise ValueError("Only flat observation spaces are supported.")
-    action_space = env.action_space
+    action_space: gym.spaces.Box = env.action_space
     if len(action_space.shape) > 1:
         raise ValueError("Only flat action spaces are supported.")
 
@@ -461,6 +545,49 @@ def create_reinforce_continuous_state(
         shared_head=policy_shared_head,
         n_features=observation_space.shape[0],
         n_outputs=action_space.shape[0],
+        hidden_nodes=list(policy_hidden_nodes),
+        rngs=nnx.Rngs(seed),
+    )
+    policy_optimizer = nnx.Optimizer(policy, optax.adamw(policy_learning_rate))
+
+    value_function = MLP(
+        n_features=observation_space.shape[0],
+        n_outputs=1,
+        hidden_nodes=list(value_network_hidden_nodes),
+        rngs=nnx.Rngs(seed),
+    )
+    value_function_optimizer = nnx.Optimizer(
+        value_function, optax.adamw(value_network_learning_rate)
+    )
+    return namedtuple(
+        "REINFORCE",
+        [
+            "policy",
+            "policy_optimizer",
+            "value_function",
+            "value_function_optimizer",
+        ],
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
+
+
+def create_reinforce_discrete_state(
+    env: gym.Env,
+    policy_hidden_nodes: list[int] | tuple[int] = (32,),
+    policy_learning_rate: float = 1e-4,
+    value_network_hidden_nodes: list[int] | tuple[int] = (50, 50),
+    value_network_learning_rate: float = 1e-2,
+    seed: int = 0,
+):
+    observation_space: gym.spaces.Box = env.observation_space
+    if len(observation_space.shape) > 1:
+        raise ValueError("Only flat observation spaces are supported.")
+    action_space: gym.spaces.Discrete = env.action_space
+    if action_space.start != 0:
+        raise ValueError("We assume that the minimum action is 0!")
+
+    policy = SoftmaxMLP(
+        n_features=observation_space.shape[0],
+        n_outputs=int(action_space.n),
         hidden_nodes=list(policy_hidden_nodes),
         rngs=nnx.Rngs(seed),
     )
@@ -573,26 +700,75 @@ def train_reinforce_epoch(
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
 
-    total_p_loss = 0.0
-    for _ in range(policy_gradient_steps):
-        p_loss, p_grad = reinforce_gradient_continuous(
-            policy, value_function, observations, actions, returns, gamma_discount
-        )
-        total_p_loss += p_loss
-        policy_optimizer.update(p_grad)
+    total_p_loss = train_policy_reinforce(
+        policy,
+        policy_optimizer,
+        policy_gradient_steps,
+        value_function,
+        observations,
+        actions,
+        returns,
+        gamma_discount,
+    )
     if verbose >= 2:
-        print(f"[REINFORCE] Policy loss: "
-              f"{total_p_loss / policy_gradient_steps:.3f}")
+        print(
+            f"[REINFORCE] Policy loss: "
+            f"{total_p_loss / policy_gradient_steps:.3f}"
+        )
 
     if value_function is not None:
         assert value_function_optimizer is not None
-        total_v_loss = 0.0
-        for _ in range(value_gradient_steps):
-            v_loss, v_grad = nnx.value_and_grad(value_loss, argnums=2)(
-                observations, returns, value_function
-            )
-            total_v_loss += v_loss
-            value_function_optimizer.update(v_grad)
+        total_v_loss = train_value_function(
+            value_function,
+            value_function_optimizer,
+            value_gradient_steps,
+            observations,
+            returns,
+        )
         if verbose >= 2:
-            print(f"[REINFORCE] Value function loss: "
-                  f"{total_v_loss / value_gradient_steps:.3f}")
+            print(
+                f"[REINFORCE] Value function loss: "
+                f"{total_v_loss / value_gradient_steps:.3f}"
+            )
+
+
+def train_value_function(
+    value_function,
+    value_function_optimizer,
+    value_gradient_steps,
+    observations,
+    returns,
+):
+    total_v_loss = 0.0
+    for _ in range(value_gradient_steps):
+        v_loss, v_grad = nnx.value_and_grad(value_loss, argnums=2)(
+            observations, returns, value_function
+        )
+        total_v_loss += v_loss
+        value_function_optimizer.update(v_grad)
+    return total_v_loss
+
+
+def train_policy_reinforce(
+    policy,
+    policy_optimizer,
+    policy_gradient_steps,
+    value_function,
+    observations,
+    actions,
+    returns,
+    gamma_discount,
+):
+    total_p_loss = 0.0
+    for _ in range(policy_gradient_steps):
+        p_loss, p_grad = reinforce_gradient_continuous(
+            policy,
+            value_function,
+            observations,
+            actions,
+            returns,
+            gamma_discount,
+        )
+        total_p_loss += p_loss
+        policy_optimizer.update(p_grad)
+    return total_p_loss
