@@ -19,8 +19,8 @@ API Documentation
    ~reinforce.reinforce_gradient
    ~reinforce.policy_gradient_pseudo_loss
    ~reinforce.mse_value_loss
-   ~actor_critic.actor_critic_policy_gradient
    ~actor_critic.train_ac_epoch
+   ~actor_critic.actor_critic_policy_gradient
    ~ddpg.train_ddpg
    ~sac.train_sac
    ~sac.sac_exploration_loss
