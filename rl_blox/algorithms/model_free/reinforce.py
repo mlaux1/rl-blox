@@ -341,12 +341,12 @@ class SoftmaxPolicy(ProbabilisticPolicyBase):
 
 
 @nnx.jit
-def value_loss(
+def mse_value_loss(
     observations: jnp.ndarray,
     returns: jnp.ndarray,
     value_function: nnx.Module,
 ) -> jnp.ndarray:
-    """Value error as loss for the value function network.
+    """Mean squared error as loss for a value function network.
 
     Parameters
     ----------
@@ -776,7 +776,7 @@ def train_value_function(
 ):
     v_loss = 0.0
     for _ in range(value_gradient_steps):
-        v_loss, v_grad = nnx.value_and_grad(value_loss, argnums=2)(
+        v_loss, v_grad = nnx.value_and_grad(mse_value_loss, argnums=2)(
             observations, returns, value_function
         )
         value_function_optimizer.update(v_grad)

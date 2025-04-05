@@ -17,10 +17,9 @@ API Documentation
    ~q_learning.q_learning
    ~reinforce.train_reinforce_epoch
    ~reinforce.reinforce_gradient
-   ~reinforce.softmax_policy_gradient_pseudo_loss
-   ~reinforce.gaussian_policy_gradient_pseudo_loss
-   ~reinforce.value_loss
-   ~actor_critic.ac_policy_gradient
+   ~reinforce.policy_gradient_pseudo_loss
+   ~reinforce.mse_value_loss
+   ~actor_critic.actor_critic_policy_gradient
    ~actor_critic.train_ac_epoch
    ~ddpg.train_ddpg
    ~sac.train_sac
