@@ -1,6 +1,7 @@
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
+import optax
 
 from rl_blox.algorithms.model_free.actor_critic import (
     train_ac_epoch,
@@ -19,7 +20,8 @@ reinforce_state = create_policy_gradient_continuous_state(
     env,
     policy_shared_head=True,
     policy_hidden_nodes=[32, 32],
-    policy_learning_rate=1e-4,
+    policy_learning_rate=3e-4,
+    policy_optimizer=optax.adam,
     value_network_hidden_nodes=[50, 50],
     value_network_learning_rate=1e-2,
     seed=42,

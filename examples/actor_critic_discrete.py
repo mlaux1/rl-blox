@@ -1,6 +1,7 @@
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
+import optax
 
 from rl_blox.algorithms.model_free.actor_critic import (
     train_ac_epoch,
@@ -17,7 +18,8 @@ env.reset(seed=42)
 ac_state = create_policy_gradient_discrete_state(
     env,
     policy_hidden_nodes=[32],
-    policy_learning_rate=1e-4,
+    policy_learning_rate=3e-4,
+    policy_optimizer=optax.adam,
     value_network_hidden_nodes=[100, 100],
     value_network_learning_rate=1e-2,
     seed=42,

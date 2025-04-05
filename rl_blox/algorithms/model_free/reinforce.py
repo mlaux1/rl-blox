@@ -1,4 +1,5 @@
 from collections import namedtuple
+from typing import Callable
 
 import chex
 import distrax
@@ -613,8 +614,10 @@ def create_policy_gradient_continuous_state(
     policy_shared_head: bool = True,
     policy_hidden_nodes: list[int] | tuple[int] = (32,),
     policy_learning_rate: float = 1e-4,
+    policy_optimizer: Callable = optax.adamw,
     value_network_hidden_nodes: list[int] | tuple[int] = (50, 50),
     value_network_learning_rate: float = 1e-2,
+    value_network_optimizer: Callable = optax.adamw,
     seed: int = 0,
 ):
     observation_space: gym.spaces.Box = env.observation_space
@@ -632,7 +635,7 @@ def create_policy_gradient_continuous_state(
         rngs=nnx.Rngs(seed),
     )
     policy = GaussianPolicy(policy_net, rngs=policy_net.rngs)
-    policy_optimizer = nnx.Optimizer(policy, optax.adamw(policy_learning_rate))
+    policy_optimizer = nnx.Optimizer(policy, policy_optimizer(policy_learning_rate))
 
     value_function = MLP(
         n_features=observation_space.shape[0],
@@ -641,7 +644,7 @@ def create_policy_gradient_continuous_state(
         rngs=nnx.Rngs(seed),
     )
     value_function_optimizer = nnx.Optimizer(
-        value_function, optax.adamw(value_network_learning_rate)
+        value_function, value_network_optimizer(value_network_learning_rate)
     )
     return namedtuple(
         "PolicyGradientState",
@@ -658,8 +661,10 @@ def create_policy_gradient_discrete_state(
     env: gym.Env,
     policy_hidden_nodes: list[int] | tuple[int] = (32,),
     policy_learning_rate: float = 1e-4,
+    policy_optimizer: Callable = optax.adamw,
     value_network_hidden_nodes: list[int] | tuple[int] = (50, 50),
     value_network_learning_rate: float = 1e-2,
+    value_network_optimizer: Callable = optax.adamw,
     seed: int = 0,
 ):
     observation_space: gym.spaces.Box = env.observation_space
@@ -676,7 +681,7 @@ def create_policy_gradient_discrete_state(
         rngs=nnx.Rngs(seed),
     )
     policy = SoftmaxPolicy(policy_net, rngs=policy_net.rngs)
-    policy_optimizer = nnx.Optimizer(policy, optax.adamw(policy_learning_rate))
+    policy_optimizer = nnx.Optimizer(policy, policy_optimizer(policy_learning_rate))
 
     value_function = MLP(
         n_features=observation_space.shape[0],
@@ -685,7 +690,7 @@ def create_policy_gradient_discrete_state(
         rngs=nnx.Rngs(seed),
     )
     value_function_optimizer = nnx.Optimizer(
-        value_function, optax.adamw(value_network_learning_rate)
+        value_function, value_network_optimizer(value_network_learning_rate)
     )
     return namedtuple(
         "PolicyGradientState",
