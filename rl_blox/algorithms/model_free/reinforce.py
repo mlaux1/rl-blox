@@ -346,7 +346,16 @@ def mse_value_loss(
     returns: jnp.ndarray,
     value_function: nnx.Module,
 ) -> jnp.ndarray:
-    """Mean squared error as loss for a value function network.
+    r"""Mean squared error as loss for a value function network.
+
+    For a given value function :math:`v(o)` and target values :math:`R(o)`, the
+    loss is defined as
+
+    .. math::
+
+        \mathcal{L}(v) = \frac{1}{2 N} \sum_{i=1}^{N} (v(o_i) - R(o_i))^2.
+
+    :math:`R(o)` could be the Monte Carlo return.
 
     Parameters
     ----------
