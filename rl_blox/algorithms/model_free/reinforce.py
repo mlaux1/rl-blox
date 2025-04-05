@@ -375,7 +375,21 @@ def policy_gradient_pseudo_loss(
     weights: jnp.ndarray,
     policy: nnx.Module,
 ) -> jnp.ndarray:
-    """Pseudo loss for the policy gradient.
+    r"""Pseudo loss for the policy gradient.
+
+    For a given probabilistic policy network :math:`\pi(a|o)`,
+    observations :math:`o_i`, actions :math:`a_i`, and corresponding weights
+    :math:`w_i`, the pseudo loss is defined as
+
+    .. math::
+
+        \mathcal{L}(\pi)
+        =
+        -\frac{1}{N} \sum_{i=1}^{N} w_i \log \pi(a_i|o_i).
+
+    The calculation of weights depends on the specific algorithm. We take the
+    negative value of the pseudo loss, because we want to perform gradient
+    ascent with the policy gradient, but we use a gradient descent optimizer.
 
     Parameters
     ----------
@@ -389,12 +403,22 @@ def policy_gradient_pseudo_loss(
         Weights for the policy gradient.
 
     policy : nnx.Module
-        Policy.
+        Policy :math:`\pi(a|o)`. We have to be able to compute
+        :math:`\log \pi(a|o)` with
+        `policy.log_probability(observations, actions)`.
 
     Returns
     -------
     loss : float
         Pseudo loss for the policy gradient.
+
+    See also
+    --------
+    reinforce_gradient
+        Uses this function to calculate the REINFORCE policy gradient.
+
+    .actor_critic.actor_critic_policy_gradient
+        Uses this function to calculate the actor-critic policy gradient.
     """
     logp = policy.log_probability(observations, actions)
     chex.assert_equal_shape((weights, logp))
