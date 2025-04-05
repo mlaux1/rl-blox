@@ -36,10 +36,14 @@ def actor_critic_policy_gradient(
         Samples that were collected with the policy.
     actions
         Samples that were collected with the policy.
-    returns
+    next_observations
+        Samples that were collected with the policy.
+    rewards
         Samples that were collected with the policy.
     gamma_discount
         Discounting for individual steps of the episode.
+    gamma
+        Discount factor.
 
     Returns
     -------
