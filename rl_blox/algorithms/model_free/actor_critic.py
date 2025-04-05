@@ -51,6 +51,14 @@ def actor_critic_policy_gradient(
         Actor-critic policy gradient pseudo loss.
     grad
         Actor-critic policy gradient.
+
+    See also
+    --------
+    .reinforce.policy_gradient_pseudo_loss
+        The pseudo loss that is used to compute the policy gradient. As
+        weights for the pseudo loss we use the TD error bootstrap estimate
+        :math:`r_t + \gamma v(o_{t+1}) - v(o_t)` multiplied by the discounting
+        factor for the step of the episode.
     """
     v = value_function(observations).squeeze()
     v_next = value_function(next_observations).squeeze()
