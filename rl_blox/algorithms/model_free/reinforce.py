@@ -556,7 +556,8 @@ def reinforce_gradient(
         Probabilistic policy that we want to update and has been used for
         exploration.
     value_function
-        Estimated value function.
+        Estimated value function that should be used as a baseline. Set it to
+        None if you do not want to use a baseline.
     observations
         Samples that were collected with the policy.
     actions
@@ -572,6 +573,16 @@ def reinforce_gradient(
         REINFORCE pseudo loss.
     grad
         REINFORCE policy gradient.
+
+    See also
+    --------
+    policy_gradient_pseudo_loss
+        The pseudo loss that is used to compute the REINFORCE gradient. As
+        weights for the pseudo loss we use R(o), the Monte Carlo return for the
+        observation o. If a value function is provided, we use the difference
+        between the Monte Carlo return and the value function as weights. If
+        gamma_discount is provided, we multiply the weights with the
+        discounting factor for each step of the episode.
     """
     if value_function is not None:
         # state-value function as baseline, weights are advantages
