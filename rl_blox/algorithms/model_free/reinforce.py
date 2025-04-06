@@ -637,7 +637,9 @@ def create_policy_gradient_continuous_state(
         rngs=nnx.Rngs(seed),
     )
     policy = GaussianPolicy(policy_net, rngs=policy_net.rngs)
-    policy_optimizer = nnx.Optimizer(policy, policy_optimizer(policy_learning_rate))
+    policy_optimizer = nnx.Optimizer(
+        policy, policy_optimizer(policy_learning_rate)
+    )
 
     value_function = MLP(
         n_features=observation_space.shape[0],
@@ -683,7 +685,9 @@ def create_policy_gradient_discrete_state(
         rngs=nnx.Rngs(seed),
     )
     policy = SoftmaxPolicy(policy_net, rngs=policy_net.rngs)
-    policy_optimizer = nnx.Optimizer(policy, policy_optimizer(policy_learning_rate))
+    policy_optimizer = nnx.Optimizer(
+        policy, policy_optimizer(policy_learning_rate)
+    )
 
     value_function = MLP(
         n_features=observation_space.shape[0],

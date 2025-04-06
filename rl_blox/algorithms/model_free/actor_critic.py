@@ -10,6 +10,7 @@ from .reinforce import (
     policy_gradient_pseudo_loss,
     train_value_function,
 )
+from ...logging import logger
 
 
 @nnx.jit
@@ -81,7 +82,7 @@ def train_ac_epoch(
     total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
-    verbose: int = 0,
+    logger: logger.Logger | None = None,
 ):
     """Train with actor-critic for one epoch.
 
@@ -120,13 +121,16 @@ def train_ac_epoch(
         Train after each episode. Alternatively you can train after collecting
         a certain number of samples.
 
-    verbose : int, optional
-        Verbosity level.
+    logger : logger.Logger, optional
+        Experiment logger.
     """
     dataset = EpisodeDataset()
 
     dataset.start_episode()
+    if logger is not None:
+        logger.start_new_episode()
     observation, _ = env.reset()
+    t = 0
     while True:
         action = policy.sample(jnp.array(observation))
 
@@ -134,6 +138,7 @@ def train_ac_epoch(
             np.asarray(action)
         )
 
+        t += 1
         done = terminated or truncated
 
         dataset.add_sample(observation, action, next_observation, reward)
@@ -147,12 +152,13 @@ def train_ac_epoch(
             env = env
             observation, _ = env.reset()
             dataset.start_episode()
+            if logger is not None:
+                logger.increment_step_count(t)
+                logger.start_new_episode()
+            t = 0
 
-    if verbose:
-        print(
-            f"[Actor-Critic] Average return in sampled "
-            f"dataset: {dataset.average_return():.3f}"
-        )
+    if logger is not None:
+        logger.record_stat("average return", dataset.average_return())
 
     observations, actions, next_observations, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
@@ -176,20 +182,18 @@ def train_ac_epoch(
         gamma_discount,
         gamma,
     )
-    if verbose >= 2:
-        print(f"[Actor-Critic] Policy loss: {p_loss:.3f}")
+    if logger is not None:
+        logger.record_stat("policy loss", p_loss)
 
-    if value_function is not None:
-        assert value_function_optimizer is not None
-        v_loss = train_value_function(
-            value_function,
-            value_function_optimizer,
-            value_gradient_steps,
-            observations,
-            returns,
-        )
-        if verbose >= 2:
-            print(f"[Actor-Critic] Value function loss: {v_loss:.3f}")
+    v_loss = train_value_function(
+        value_function,
+        value_function_optimizer,
+        value_gradient_steps,
+        observations,
+        returns,
+    )
+    if logger is not None:
+        logger.record_stat("value function loss", v_loss)
 
 
 def train_policy_actor_critic(

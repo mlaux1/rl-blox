@@ -9,11 +9,15 @@ from rl_blox.algorithms.model_free.actor_critic import (
 from rl_blox.algorithms.model_free.reinforce import (
     create_policy_gradient_discrete_state,
 )
+from rl_blox.logging import logger
 
 env_name = "CartPole-v1"
 # env_name = "MountainCar-v0"  # never reaches the goal -> never learns
 env = gym.make(env_name)
 env.reset(seed=42)
+
+logger = logger.Logger(verbose=2)
+logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
 
 ac_state = create_policy_gradient_discrete_state(
     env,
@@ -39,7 +43,7 @@ for i in range(n_epochs):
         total_steps=500,
         gamma=1.0,
         train_after_episode=False,
-        verbose=2,
+        logger=logger,
     )
 
 # Evaluation
