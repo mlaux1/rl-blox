@@ -818,6 +818,7 @@ def train_reinforce_epoch(
     )
     if logger is not None:
         logger.record_stat("policy loss", p_loss, episode=logger.n_episodes - 1)
+        logger.record_epoch("policy", policy)
 
     if value_function is not None:
         assert value_function_optimizer is not None
@@ -832,6 +833,7 @@ def train_reinforce_epoch(
             logger.record_stat(
                 "value function loss", v_loss, episode=logger.n_episodes - 1
             )
+            logger.record_epoch("value function", value_function)
 
 
 def train_value_function(

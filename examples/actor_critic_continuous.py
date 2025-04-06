@@ -33,7 +33,6 @@ reinforce_state = create_policy_gradient_continuous_state(
 
 n_epochs = 500
 for i in range(n_epochs):
-    print(f"Epoch #{i + 1}")
     train_ac_epoch(
         env,
         reinforce_state.policy,

@@ -31,7 +31,6 @@ ac_state = create_policy_gradient_discrete_state(
 
 n_epochs = 100
 for i in range(n_epochs):
-    print(f"Epoch #{i + 1}")
     train_ac_epoch(
         env,
         ac_state.policy,

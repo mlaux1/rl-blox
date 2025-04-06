@@ -188,6 +188,7 @@ def train_ac_epoch(
     )
     if logger is not None:
         logger.record_stat("policy loss", p_loss, episode=logger.n_episodes - 1)
+        logger.record_epoch("policy", policy)
 
     v_loss = train_value_function(
         value_function,
@@ -200,6 +201,7 @@ def train_ac_epoch(
         logger.record_stat(
             "value function loss", v_loss, episode=logger.n_episodes - 1
         )
+        logger.record_epoch("value function", value_function)
 
 
 def train_policy_actor_critic(
