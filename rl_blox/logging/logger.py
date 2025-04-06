@@ -1,4 +1,9 @@
+import os
+import time
 from typing import Any
+
+import orbax.checkpoint as ocp
+from flax import nnx
 
 
 class Logger:
@@ -9,9 +14,11 @@ class Logger:
     TODO save checkpoints with orbax
     """
 
+    checkpoint_dir: str
     verbose: int
     env_name: str | None
     algorithm_name: str | None
+    start_time: float
     n_episodes: int
     n_steps: int
     stats_loc: dict[str, list[tuple[int | None, int | None]]]
@@ -19,16 +26,21 @@ class Logger:
     epoch_loc: dict[str, list[tuple[int | None, int | None]]]
     epoch: dict[str, int]
     checkpoint_frequencies: dict[str, int]
-    checkpoint_path: dict[str, list[int]]
+    checkpoint_path: dict[str, list[str]]
 
-    def __init__(self, verbose=0):
+    def __init__(self, checkpoint_dir="/tmp/rl-blox/", verbose=0):
+        self.checkpoint_dir = checkpoint_dir
         self.verbose = verbose
+
+        self.env_name = None
+        self.algorithm_name = None
         self.stats_loc = {}
         self.stats = {}
         self.epoch_loc = {}
         self.epoch = {}
         self.checkpoint_frequencies = {}
         self.checkpoint_path = {}
+        self.start_time = 0.0
         self.n_episodes = 0
         self.n_steps = 0
         self.define_experiment()
@@ -54,9 +66,10 @@ class Logger:
         """
         self.env_name = env_name
         self.algorithm_name = algorithm_name
+        self.start_time = time.time()
 
-    def register_checkpoint_frequency(self, key: str, frequency: int):
-        """Register the checkpoint frequency for a function approximator.
+    def define_checkpoint_frequency(self, key: str, frequency: int):
+        """Define the checkpoint frequency for a function approximator.
 
         Parameters
         ----------
@@ -144,14 +157,28 @@ class Logger:
                 f"[{self.env_name}|{self.algorithm_name}] "
                 f"({episode}|{step}) {key}: {self.epoch[key]} epochs trained"
             )
-        if key in self.checkpoint_frequencies:
-            if self.epoch[key] % self.checkpoint_frequencies[key] == 0:
-                checkpoint_path = "TBD"
-                self.checkpoint_path[key].append(checkpoint_path)
-                if self.verbose >= 2:
-                    print(
-                        f"[{self.env_name}|{self.algorithm_name}] "
-                        f"({episode}|{step}) {key}: "
-                        f"checkpoint saved at {checkpoint_path}"
-                    )
-                raise NotImplementedError("Checkpointing not implemented yet.")
+
+        if (
+            key in self.checkpoint_frequencies
+            and self.epoch[key] % self.checkpoint_frequencies[key] == 0
+        ):
+            checkpoint_path = (
+                f"{self.checkpoint_dir}"
+                f"{self.start_time}_{self.env_name}_{self.algorithm_name}_"
+                f"{key}_{self.epoch[key]}/"
+            )
+
+            if os.path.exists(checkpoint_path):
+                os.removedirs(checkpoint_path)
+            os.makedirs(checkpoint_path)
+
+            checkpointer = ocp.StandardCheckpointer()
+            _, state = nnx.split(value)
+            checkpointer.save(f"{checkpoint_path}/state", state)
+            self.checkpoint_path[key].append(checkpoint_path)
+            if self.verbose:
+                print(
+                    f"[{self.env_name}|{self.algorithm_name}] "
+                    f"({episode}|{step}) {key}: "
+                    f"checkpoint saved at {checkpoint_path}"
+                )

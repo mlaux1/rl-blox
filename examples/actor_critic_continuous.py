@@ -19,6 +19,7 @@ env.reset(seed=43)
 
 logger = logger.Logger(verbose=2)
 logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
+logger.define_checkpoint_frequency("value_function", 1)
 
 reinforce_state = create_policy_gradient_continuous_state(
     env,
