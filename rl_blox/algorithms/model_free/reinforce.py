@@ -768,7 +768,7 @@ def train_reinforce_epoch(
     if logger is not None:
         logger.start_new_episode()
     observation, _ = env.reset()
-    t = 0
+    steps_per_episode = 0
     while True:
         action = policy.sample(jnp.array(observation))
 
@@ -776,7 +776,7 @@ def train_reinforce_epoch(
             np.asarray(action)
         )
 
-        t += 1
+        steps_per_episode += 1
         done = terminated or truncated
 
         dataset.add_sample(observation, action, next_observation, reward)
@@ -784,18 +784,23 @@ def train_reinforce_epoch(
         observation = next_observation
 
         if done:
+            if logger is not None:
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+            steps_per_episode = 0
+
             if train_after_episode or len(dataset) >= total_steps:
                 break
 
             observation, _ = env.reset()
             dataset.start_episode()
-            if logger is not None:
-                logger.increment_step_count(t)
-                logger.start_new_episode()
-            t = 0
 
     if logger is not None:
-        logger.record_stat("average return", dataset.average_return())
+        logger.record_stat(
+            "average return",
+            dataset.average_return(),
+            episode=logger.n_episodes - 1,
+        )
 
     observations, actions, _, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
@@ -812,7 +817,7 @@ def train_reinforce_epoch(
         gamma_discount,
     )
     if logger is not None:
-        logger.record_stat("policy loss", p_loss)
+        logger.record_stat("policy loss", p_loss, episode=logger.n_episodes - 1)
 
     if value_function is not None:
         assert value_function_optimizer is not None
@@ -824,7 +829,9 @@ def train_reinforce_epoch(
             returns,
         )
         if logger is not None:
-            logger.record_stat("value function loss", v_loss)
+            logger.record_stat(
+                "value function loss", v_loss, episode=logger.n_episodes - 1
+            )
 
 
 def train_value_function(

@@ -28,8 +28,8 @@ class Logger:
     def start_new_episode(self):
         self.n_episodes += 1
 
-    def increment_step_count(self, n_steps):
-        self.n_steps += n_steps
+    def stop_episode(self, total_steps):
+        self.n_steps += total_steps
 
     def define_experiment(
         self, env_name: str | None = None, algorithm_name: str | None = None
@@ -73,15 +73,14 @@ class Logger:
         if key not in self.stats:
             self.location_info[key] = []
             self.stats[key] = []
+        if episode is None:
+            episode = self.n_episodes
+        if step is None:
+            step = self.n_steps
+        self.location_info[key].append((episode, step))
         self.stats[key].append(value)
-        if episode is not None:
-            self.n_episodes = episode
-        if step is not None:
-            self.n_steps = step
-        self.location_info[key].append((self.n_episodes, self.n_steps))
         if self.verbose:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
-                f"({self.n_episodes}|{self.n_steps}) "
-                f"{key}: {value}"
+                f"({episode}|{step}) {key}: {value}"
             )
