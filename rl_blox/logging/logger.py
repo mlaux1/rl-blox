@@ -25,6 +25,7 @@ class Logger:
     stats: dict[str, list[Any]]
     epoch_loc: dict[str, list[tuple[int | None, int | None]]]
     epoch: dict[str, int]
+    checkpointer: ocp.StandardCheckpointer | None
     checkpoint_frequencies: dict[str, int]
     checkpoint_path: dict[str, list[str]]
 
@@ -38,6 +39,7 @@ class Logger:
         self.stats = {}
         self.epoch_loc = {}
         self.epoch = {}
+        self.checkpointer = None
         self.checkpoint_frequencies = {}
         self.checkpoint_path = {}
         self.start_time = 0.0
@@ -79,8 +81,17 @@ class Logger:
         frequency : int
             Frequency at which the function approximator should be saved.
         """
+        if self.checkpointer is None:
+            self._init_checkpointer()
+
         self.checkpoint_frequencies[key] = frequency
         self.checkpoint_path[key] = []
+
+    def _init_checkpointer(self):
+        self.checkpointer = ocp.StandardCheckpointer()
+        if os.path.exists(self.checkpoint_dir):
+            os.removedirs(self.checkpoint_dir)
+        os.makedirs(self.checkpoint_dir)
 
     def record_stat(
         self,
@@ -167,14 +178,8 @@ class Logger:
                 f"{self.start_time}_{self.env_name}_{self.algorithm_name}_"
                 f"{key}_{self.epoch[key]}/"
             )
-
-            if os.path.exists(checkpoint_path):
-                os.removedirs(checkpoint_path)
-            os.makedirs(checkpoint_path)
-
-            checkpointer = ocp.StandardCheckpointer()
             _, state = nnx.split(value)
-            checkpointer.save(f"{checkpoint_path}/state", state)
+            self.checkpointer.save(f"{checkpoint_path}", state)
             self.checkpoint_path[key].append(checkpoint_path)
             if self.verbose:
                 print(
