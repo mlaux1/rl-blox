@@ -10,6 +10,8 @@ import numpy as np
 import optax
 from flax import nnx
 
+from ...logging import logger
+
 
 class EpisodeDataset:
     """Collects samples batched in episodes."""
@@ -714,7 +716,7 @@ def train_reinforce_epoch(
     total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
-    verbose: int = 0,
+    logger: logger.Logger | None = None,
 ):
     """Train with REINFORCE for one epoch.
 
@@ -753,13 +755,16 @@ def train_reinforce_epoch(
         Train after each episode. Alternatively you can train after collecting
         a certain number of samples.
 
-    verbose : int, optional
-        Verbosity level.
+    logger : logger.Logger, optional
+        Experiment logger.
     """
     dataset = EpisodeDataset()
 
     dataset.start_episode()
+    if logger is not None:
+        logger.start_new_episode()
     observation, _ = env.reset()
+    t = 0
     while True:
         action = policy.sample(jnp.array(observation))
 
@@ -767,6 +772,7 @@ def train_reinforce_epoch(
             np.asarray(action)
         )
 
+        t += 1
         done = terminated or truncated
 
         dataset.add_sample(observation, action, next_observation, reward)
@@ -779,12 +785,13 @@ def train_reinforce_epoch(
 
             observation, _ = env.reset()
             dataset.start_episode()
+            if logger is not None:
+                logger.increment_step_count(t)
+                logger.start_new_episode()
+            t = 0
 
-    if verbose:
-        print(
-            f"[REINFORCE] Average return in sampled "
-            f"dataset: {dataset.average_return():.3f}"
-        )
+    if logger is not None:
+        logger.record_stat("average return", dataset.average_return())
 
     observations, actions, _, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
@@ -800,8 +807,8 @@ def train_reinforce_epoch(
         returns,
         gamma_discount,
     )
-    if verbose >= 2:
-        print(f"[REINFORCE] Policy loss: {p_loss:.3f}")
+    if logger is not None:
+        logger.record_stat("policy loss", p_loss)
 
     if value_function is not None:
         assert value_function_optimizer is not None
@@ -812,8 +819,8 @@ def train_reinforce_epoch(
             observations,
             returns,
         )
-        if verbose >= 2:
-            print(f"[REINFORCE] Value function loss: {v_loss:.3f}")
+        if logger is not None:
+            logger.record_stat("value function loss", v_loss)
 
 
 def train_value_function(

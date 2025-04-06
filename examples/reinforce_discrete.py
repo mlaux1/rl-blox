@@ -6,6 +6,7 @@ from rl_blox.algorithms.model_free.reinforce import (
     create_policy_gradient_discrete_state,
     train_reinforce_epoch,
 )
+from rl_blox.logging import logger
 
 env_name = "CartPole-v1"
 # env_name = "MountainCar-v0"  # never reaches the goal -> never learns
@@ -21,9 +22,11 @@ reinforce_state = create_policy_gradient_discrete_state(
     seed=42,
 )
 
+logger = logger.Logger(verbose=2)
+logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
+
 n_epochs = 100
 for i in range(n_epochs):
-    print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
         env,
         reinforce_state.policy,
@@ -35,7 +38,7 @@ for i in range(n_epochs):
         total_steps=1000,
         gamma=1.0,
         train_after_episode=False,
-        verbose=2,
+        logger=logger,
     )
 
 # Evaluation

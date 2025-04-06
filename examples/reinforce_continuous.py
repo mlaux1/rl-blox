@@ -6,12 +6,16 @@ from rl_blox.algorithms.model_free.reinforce import (
     create_policy_gradient_continuous_state,
     train_reinforce_epoch,
 )
+from rl_blox.logging import logger
 
 # env_name = "Pendulum-v1"
 # env_name = "HalfCheetah-v4"
 env_name = "InvertedPendulum-v5"
 env = gym.make(env_name)
 env.reset(seed=43)
+
+logger = logger.Logger(verbose=2)
+logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
 
 reinforce_state = create_policy_gradient_continuous_state(
     env,
@@ -25,7 +29,6 @@ reinforce_state = create_policy_gradient_continuous_state(
 
 n_epochs = 300
 for i in range(n_epochs):
-    print(f"Epoch #{i + 1}")
     train_reinforce_epoch(
         env,
         reinforce_state.policy,
@@ -37,7 +40,7 @@ for i in range(n_epochs):
         total_steps=500,
         gamma=0.99,
         train_after_episode=False,
-        verbose=2,
+        logger=logger,
     )
 
 # Evaluation
