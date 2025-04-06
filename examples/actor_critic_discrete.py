@@ -1,4 +1,5 @@
 import gymnasium as gym
+import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -30,7 +31,9 @@ ac_state = create_policy_gradient_discrete_state(
 )
 
 n_epochs = 100
+key = ac_state.key
 for i in range(n_epochs):
+    key, subkey = jax.random.split(key, 2)
     train_ac_epoch(
         env,
         ac_state.policy,
@@ -42,6 +45,7 @@ for i in range(n_epochs):
         total_steps=500,
         gamma=1.0,
         train_after_episode=False,
+        key=subkey,
         logger=logger,
     )
 

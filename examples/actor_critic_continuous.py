@@ -1,4 +1,5 @@
 import gymnasium as gym
+import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -21,7 +22,7 @@ logger = logger.Logger(verbose=2)
 logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
 logger.define_checkpoint_frequency("value_function", 1)
 
-reinforce_state = create_policy_gradient_continuous_state(
+ac_state = create_policy_gradient_continuous_state(
     env,
     policy_shared_head=True,
     policy_hidden_nodes=[32, 32],
@@ -33,18 +34,21 @@ reinforce_state = create_policy_gradient_continuous_state(
 )
 
 n_epochs = 500
+key = ac_state.key
 for i in range(n_epochs):
+    key, subkey = jax.random.split(key, 2)
     train_ac_epoch(
         env,
-        reinforce_state.policy,
-        reinforce_state.policy_optimizer,
-        reinforce_state.value_function,
-        reinforce_state.value_function_optimizer,
+        ac_state.policy,
+        ac_state.policy_optimizer,
+        ac_state.value_function,
+        ac_state.value_function_optimizer,
         policy_gradient_steps=10,
         value_gradient_steps=10,
         total_steps=1000,
         gamma=0.99,
         train_after_episode=False,
+        key=subkey,
         logger=logger,
     )
 

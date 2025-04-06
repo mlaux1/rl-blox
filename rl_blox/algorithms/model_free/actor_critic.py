@@ -1,4 +1,5 @@
 import gymnasium as gym
+import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
@@ -82,6 +83,7 @@ def train_ac_epoch(
     total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
+    key: jnp.ndarray = jax.random.key(0),
     logger: logger.Logger | None = None,
 ):
     """Train with actor-critic for one epoch.
@@ -121,6 +123,9 @@ def train_ac_epoch(
         Train after each episode. Alternatively you can train after collecting
         a certain number of samples.
 
+    key : jnp.ndarray, optional
+        Pseudo random number generator key for action sampling.
+
     logger : logger.Logger, optional
         Experiment logger.
     """
@@ -132,7 +137,8 @@ def train_ac_epoch(
     observation, _ = env.reset()
     steps_per_episode = 0
     while True:
-        action = policy.sample(jnp.array(observation))
+        key, subkey = jax.random.split(key)
+        action = policy.sample(jnp.array(observation), subkey)
 
         next_observation, reward, terminated, truncated, _ = env.step(
             np.asarray(action)

@@ -1,4 +1,5 @@
 import gymnasium as gym
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -28,7 +29,9 @@ reinforce_state = create_policy_gradient_continuous_state(
 )
 
 n_epochs = 300
+key = reinforce_state.key
 for i in range(n_epochs):
+    key, subkey = jax.random.split(key, 2)
     train_reinforce_epoch(
         env,
         reinforce_state.policy,
@@ -40,6 +43,7 @@ for i in range(n_epochs):
         total_steps=500,
         gamma=0.99,
         train_after_episode=False,
+        key=subkey,
         logger=logger,
     )
 

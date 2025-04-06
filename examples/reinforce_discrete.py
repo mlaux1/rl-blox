@@ -1,4 +1,5 @@
 import gymnasium as gym
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -26,7 +27,9 @@ logger = logger.Logger(verbose=2)
 logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
 
 n_epochs = 100
+key = reinforce_state.key
 for i in range(n_epochs):
+    key, subkey = jax.random.split(key, 2)
     train_reinforce_epoch(
         env,
         reinforce_state.policy,
@@ -38,6 +41,7 @@ for i in range(n_epochs):
         total_steps=1000,
         gamma=1.0,
         train_after_episode=False,
+        key=subkey,
         logger=logger,
     )
 

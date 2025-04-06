@@ -120,7 +120,6 @@ class MLP(nnx.Module):
     n_outputs: int
     hidden_layers: list[nnx.Linear]
     output_layer: nnx.Linear
-    rngs: nnx.Rngs
 
     def __init__(
         self,
@@ -141,8 +140,6 @@ class MLP(nnx.Module):
             n_in = n_out
 
         self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
-
-        self.rngs = rngs
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         for layer in self.hidden_layers:
@@ -175,7 +172,6 @@ class GaussianMLP(nnx.Module):
     n_outputs: int
     hidden_layers: list[nnx.Linear]
     output_layers: list[nnx.Linear]
-    rngs: nnx.Rngs
 
     def __init__(
         self,
@@ -206,8 +202,6 @@ class GaussianMLP(nnx.Module):
             self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
             self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
 
-        self.rngs = rngs
-
     def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         for layer in self.hidden_layers:
             x = nnx.swish(layer(x))
@@ -229,7 +223,7 @@ class ProbabilisticPolicyBase(nnx.Module):
         """Compute action probabilities for given observation."""
         raise NotImplementedError("Subclasses must implement __call__ method.")
 
-    def sample(self, observation: jnp.ndarray) -> jnp.ndarray:
+    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from policy given observation."""
         raise NotImplementedError("Subclasses must implement sample method.")
 
@@ -260,24 +254,18 @@ class GaussianPolicy(ProbabilisticPolicyBase):
     """
 
     net: nnx.Module
-    rngs: nnx.Rngs
 
-    def __init__(
-        self,
-        net: nnx.Module,
-        rngs: nnx.Rngs,
-    ):
+    def __init__(self, net: nnx.Module):
         self.net = net
-        self.rngs = rngs
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         return self.net(observation)[0]
 
-    def sample(self, observation):
+    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from Gaussian distribution."""
         mean, log_var = self.net(observation)
         return (
-            jax.random.normal(self.rngs.params(), mean.shape)
+            jax.random.normal(key, mean.shape)
             * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
             + mean
         )
@@ -313,15 +301,9 @@ class SoftmaxPolicy(ProbabilisticPolicyBase):
     """
 
     net: nnx.Module
-    rngs: nnx.Rngs
 
-    def __init__(
-        self,
-        net: nnx.Module,
-        rngs: nnx.Rngs,
-    ):
+    def __init__(self, net: nnx.Module):
         self.net = net
-        self.rngs = rngs
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         return nnx.softmax(self.logits(observation))
@@ -329,9 +311,9 @@ class SoftmaxPolicy(ProbabilisticPolicyBase):
     def logits(self, observation: jnp.ndarray) -> jnp.ndarray:
         return self.net(observation)
 
-    def sample(self, observation: jnp.ndarray) -> jnp.ndarray:
+    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         return distrax.Categorical(logits=self.logits(observation)).sample(
-            seed=self.rngs.params(),
+            seed=key,
             sample_shape=(),
         )
 
@@ -636,7 +618,7 @@ def create_policy_gradient_continuous_state(
         hidden_nodes=list(policy_hidden_nodes),
         rngs=nnx.Rngs(seed),
     )
-    policy = GaussianPolicy(policy_net, rngs=policy_net.rngs)
+    policy = GaussianPolicy(policy_net)
     policy_optimizer = nnx.Optimizer(
         policy, policy_optimizer(policy_learning_rate)
     )
@@ -650,6 +632,9 @@ def create_policy_gradient_continuous_state(
     value_function_optimizer = nnx.Optimizer(
         value_function, value_network_optimizer(value_network_learning_rate)
     )
+
+    key = jax.random.key(seed)
+
     return namedtuple(
         "PolicyGradientState",
         [
@@ -657,8 +642,9 @@ def create_policy_gradient_continuous_state(
             "policy_optimizer",
             "value_function",
             "value_function_optimizer",
+            "key",
         ],
-    )(policy, policy_optimizer, value_function, value_function_optimizer)
+    )(policy, policy_optimizer, value_function, value_function_optimizer, key)
 
 
 def create_policy_gradient_discrete_state(
@@ -684,7 +670,7 @@ def create_policy_gradient_discrete_state(
         hidden_nodes=list(policy_hidden_nodes),
         rngs=nnx.Rngs(seed),
     )
-    policy = SoftmaxPolicy(policy_net, rngs=policy_net.rngs)
+    policy = SoftmaxPolicy(policy_net)
     policy_optimizer = nnx.Optimizer(
         policy, policy_optimizer(policy_learning_rate)
     )
@@ -698,6 +684,9 @@ def create_policy_gradient_discrete_state(
     value_function_optimizer = nnx.Optimizer(
         value_function, value_network_optimizer(value_network_learning_rate)
     )
+
+    key = jax.random.key(seed)
+
     return namedtuple(
         "PolicyGradientState",
         [
@@ -705,8 +694,9 @@ def create_policy_gradient_discrete_state(
             "policy_optimizer",
             "value_function",
             "value_function_optimizer",
+            "key",
         ],
-    )(policy, policy_optimizer, value_function, value_function_optimizer)
+    )(policy, policy_optimizer, value_function, value_function_optimizer, key)
 
 
 def train_reinforce_epoch(
@@ -720,6 +710,7 @@ def train_reinforce_epoch(
     total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
+    key: jnp.ndarray = jax.random.key(0),
     logger: logger.Logger | None = None,
 ):
     """Train with REINFORCE for one epoch.
@@ -759,6 +750,9 @@ def train_reinforce_epoch(
         Train after each episode. Alternatively you can train after collecting
         a certain number of samples.
 
+    key : jnp.ndarray, optional
+        Pseudo random number generator key for action sampling.
+
     logger : logger.Logger, optional
         Experiment logger.
     """
@@ -770,7 +764,8 @@ def train_reinforce_epoch(
     observation, _ = env.reset()
     steps_per_episode = 0
     while True:
-        action = policy.sample(jnp.array(observation))
+        key, subkey = jax.random.split(key)
+        action = policy.sample(jnp.array(observation), subkey)
 
         next_observation, reward, terminated, truncated, _ = env.step(
             np.asarray(action)
