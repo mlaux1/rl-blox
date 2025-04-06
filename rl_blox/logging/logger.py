@@ -1,6 +1,7 @@
 import os
 import time
 from typing import Any
+import shutil
 
 import orbax.checkpoint as ocp
 from flax import nnx
@@ -9,9 +10,17 @@ from flax import nnx
 class Logger:
     """Logger class to record experiment statistics.
 
-    What to track? - https://www.reddit.com/r/reinforcementlearning/comments/j6lp7v/i_asked_rlexpert_what_and_why_he_logstracks_in/
+    What to track?
+    https://www.reddit.com/r/reinforcementlearning/comments/j6lp7v/i_asked_rlexpert_what_and_why_he_logstracks_in/
 
-    TODO save checkpoints with orbax
+    Parameters
+    ----------
+    checkpoint_dir : str, optional
+        Directory in which we store checkpoints. This directory will be deleted
+        before the experiment starts!
+
+    verbose : int, optional
+        Verbosity level.
     """
 
     checkpoint_dir: str
@@ -90,7 +99,7 @@ class Logger:
     def _init_checkpointer(self):
         self.checkpointer = ocp.StandardCheckpointer()
         if os.path.exists(self.checkpoint_dir):
-            os.removedirs(self.checkpoint_dir)
+            shutil.rmtree(self.checkpoint_dir)
         os.makedirs(self.checkpoint_dir)
 
     def record_stat(
@@ -183,7 +192,6 @@ class Logger:
             self.checkpoint_path[key].append(checkpoint_path)
             if self.verbose:
                 print(
-                    f"[{self.env_name}|{self.algorithm_name}] "
-                    f"({episode}|{step}) {key}: "
+                    f"[{self.env_name}|{self.algorithm_name}] {key}: "
                     f"checkpoint saved at {checkpoint_path}"
                 )
