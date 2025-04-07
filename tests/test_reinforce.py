@@ -1,6 +1,7 @@
 import gymnasium as gym
 import jax
 from flax import nnx
+from numpy.testing import assert_array_equal
 
 from rl_blox.algorithms.model_free.reinforce import (
     MLP,
@@ -8,6 +9,7 @@ from rl_blox.algorithms.model_free.reinforce import (
     GaussianPolicy,
     SoftmaxPolicy,
     collect_samples,
+    discounted_reward_to_go,
 )
 
 
@@ -24,6 +26,7 @@ def test_data_collection_discrete():
             nnx.Rngs(42),
         )
     )
+    env.close()
     total_steps = 100
     dataset = collect_samples(env, policy, key, None, False, total_steps)
     assert len(dataset) >= total_steps
@@ -45,8 +48,15 @@ def test_data_collection_continuous():
             nnx.Rngs(42),
         )
     )
+    env.close()
     total_steps = 100
     dataset = collect_samples(env, policy, key, None, False, total_steps)
     assert len(dataset) >= total_steps
     # regression test:
     assert dataset.average_return() == 5.8
+
+
+def test_discounted_reward_to_go():
+    assert_array_equal(
+        discounted_reward_to_go([1.0, 2.0, 3.0], 0.9), [5.23, 4.7, 3.0]
+    )

@@ -89,7 +89,22 @@ class EpisodeDataset:
         return observations, actions, next_observations, returns, gamma_discount
 
 
-def discounted_reward_to_go(rewards, gamma):
+def discounted_reward_to_go(rewards: list[float], gamma: float) -> np.ndarray:
+    """Computes the discounted return for each step.
+
+    Parameters
+    ----------
+    rewards : list
+        Rewards of one episode.
+
+    gamma : float
+        Discount factor.
+
+    Returns
+    -------
+    discounted_returns : array
+        Discounted return until the end of the episode.
+    """
     discounted_returns = []
     accumulated_return = 0.0
     for r in reversed(rewards):
