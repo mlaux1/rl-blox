@@ -1,22 +1,20 @@
 import gymnasium as gym
-import jax
 import jax.numpy as jnp
-import numpy as np
 from flax import nnx
 
+from ...logging import logger
 from .reinforce import (
     MLP,
-    EpisodeDataset,
-    ProbabilisticPolicyBase,
+    StochasticPolicyBase,
+    collect_samples,
     policy_gradient_pseudo_loss,
     train_value_function,
 )
-from ...logging import logger
 
 
 @nnx.jit
 def actor_critic_policy_gradient(
-    policy: ProbabilisticPolicyBase,
+    policy: StochasticPolicyBase,
     value_function: nnx.Module,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
@@ -74,7 +72,7 @@ def actor_critic_policy_gradient(
 
 def train_ac_epoch(
     env: gym.Env,
-    policy: ProbabilisticPolicyBase,
+    policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP,
     value_function_optimizer: nnx.Optimizer,
@@ -83,7 +81,7 @@ def train_ac_epoch(
     total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
-    key: jnp.ndarray = jax.random.key(0),
+    key: jnp.ndarray | None = None,
     logger: logger.Logger | None = None,
 ):
     """Train with actor-critic for one epoch.
@@ -129,46 +127,9 @@ def train_ac_epoch(
     logger : logger.Logger, optional
         Experiment logger.
     """
-    dataset = EpisodeDataset()
-
-    dataset.start_episode()
-    if logger is not None:
-        logger.start_new_episode()
-    observation, _ = env.reset()
-    steps_per_episode = 0
-    while True:
-        key, subkey = jax.random.split(key)
-        action = policy.sample(jnp.array(observation), subkey)
-
-        next_observation, reward, terminated, truncated, _ = env.step(
-            np.asarray(action)
-        )
-
-        steps_per_episode += 1
-        done = terminated or truncated
-
-        dataset.add_sample(observation, action, next_observation, reward)
-
-        observation = next_observation
-
-        if done:
-            if logger is not None:
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
-            steps_per_episode = 0
-
-            if train_after_episode or len(dataset) >= total_steps:
-                break
-
-            observation, _ = env.reset()
-            dataset.start_episode()
-
-    if logger is not None:
-        logger.record_stat(
-            "average return",
-            dataset.average_return(),
-            episode=logger.n_episodes - 1,
-        )
+    dataset = collect_samples(
+        env, policy, key, logger, train_after_episode, total_steps
+    )
 
     observations, actions, next_observations, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)

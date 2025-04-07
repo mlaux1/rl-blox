@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import Callable
+from collections.abc import Callable
 
 import chex
 import distrax
@@ -216,7 +216,7 @@ class GaussianMLP(nnx.Module):
         return mean, log_var
 
 
-class ProbabilisticPolicyBase(nnx.Module):
+class StochasticPolicyBase(nnx.Module):
     """Base class for probabilistic policies."""
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
@@ -238,7 +238,7 @@ class ProbabilisticPolicyBase(nnx.Module):
         )
 
 
-class GaussianPolicy(ProbabilisticPolicyBase):
+class GaussianPolicy(StochasticPolicyBase):
     """Gaussian policy.
 
     Wraps a Gaussian neural network that maps observations to a Gaussian
@@ -279,13 +279,16 @@ class GaussianPolicy(ProbabilisticPolicyBase):
         mean, log_var = self.net(observation)
         log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
         std = jnp.exp(log_std)
+        # same as
+        # -jnp.log(std)
+        # - 0.5 * jnp.log(2.0 * jnp.pi)
+        # - 0.5 * ((action - mean) / std) ** 2
         return distrax.MultivariateNormalDiag(
             loc=mean, scale_diag=std
         ).log_prob(action)
-        # return -jnp.log(std) - 0.5 * jnp.log(2.0 * jnp.pi) - 0.5 * ((action - mean) / std) ** 2
 
 
-class SoftmaxPolicy(ProbabilisticPolicyBase):
+class SoftmaxPolicy(StochasticPolicyBase):
     r"""Softmax policy.
 
     Wraps a softmax neural network that maps observations to the logits of each
@@ -423,7 +426,7 @@ def policy_gradient_pseudo_loss(
 
 @nnx.jit
 def reinforce_gradient(
-    policy: ProbabilisticPolicyBase,
+    policy: StochasticPolicyBase,
     value_function: nnx.Module | None,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
@@ -454,8 +457,14 @@ def reinforce_gradient(
     .. math::
 
         \nabla_{\theta}J(\theta)
-        \propto \sum_s \mu(s) \sum_a Q_{\pi_{\theta}} (s, a) \nabla_{\theta} \pi_{\theta}(a|s)
-        = \mathbb{E}_{s \sim \mu(s)}\left[ \sum_a Q_{\pi_{\theta}}(s, a) \nabla_{\theta} \pi_{\theta} (a|s) \right],
+        & \propto
+        \sum_s \mu(s) \sum_a Q_{\pi_{\theta}} (s, a)
+        \nabla_{\theta} \pi_{\theta}(a|s)\\
+        &=
+        \mathbb{E}_{s \sim \mu(s)}
+        \left[
+        \sum_a Q_{\pi_{\theta}}(s, a) \nabla_{\theta} \pi_{\theta} (a|s)
+        \right],
 
     where
 
@@ -468,34 +477,39 @@ def reinforce_gradient(
     .. math::
 
         \nabla_{\theta}J(\theta)
-        \propto
+        &\propto
         \mathbb{E}_{s \sim \mu(s)}
         \left[
         \sum_a q_{\pi_{\theta}}(s, a) \nabla_{\theta} \pi_{\theta} (a|s)
-        \right]
-        =
+        \right]\\
+        &=
         \mathbb{E}_{s \sim \mu(s)}
         \left[
         \sum_a \textcolor{darkgreen}{\pi_{\theta} (a|s)} q_{\pi_{\theta}}(s, a)
-        \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\textcolor{darkgreen}{\pi_{\theta} (a|s)}}
-        \right]
-        =
+        \frac{\nabla_{\theta} \pi_{\theta} (a|s)}
+        {\textcolor{darkgreen}{\pi_{\theta} (a|s)}}
+        \right]\\
+        &=
         \mathbb{E}_{s \sim \mu(s), \textcolor{darkgreen}{a \sim \pi_{\theta}}}
         \left[
-        q_{\pi_{\theta}}(s, a) \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\pi_{\theta} (a|s)}
-        \right]
-        =
+        q_{\pi_{\theta}}(s, a) \frac{\nabla_{\theta} \pi_{\theta} (a|s)}
+        {\pi_{\theta} (a|s)}
+        \right]\\
+        &=
         \mathbb{E}_{s \sim \mu(s), a \sim \pi_{\theta}}
         \left[
-        \textcolor{darkgreen}{R} \frac{\nabla_{\theta} \pi_{\theta} (a|s)}{\pi_{\theta} (a|s)}
-        \right]
-        =
+        \textcolor{darkgreen}{R} \frac{\nabla_{\theta} \pi_{\theta} (a|s)}
+        {\pi_{\theta} (a|s)}
+        \right]\\
+        &=
         \mathbb{E}_{s \sim \mu(s), a \sim \pi_{\theta}}
         \left[
-        \underline{R} \textcolor{darkgreen}{\nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})}
-        \right]
-        \approx
-        \textcolor{darkgreen}{\frac{1}{N}\sum_{(s, a, R)}}\underline{R} \nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})
+        \underline{R} \textcolor{darkgreen}{\nabla_{\theta}
+        \ln \pi_{\theta} (\underline{a}|\underline{s})}
+        \right]\\
+        &\approx
+        \textcolor{darkgreen}{\frac{1}{N}\sum_{(s, a, R)}}\underline{R}
+        \nabla_{\theta} \ln \pi_{\theta} (\underline{a}|\underline{s})
 
     So we can estimate the policy gradient with N sampled states, actions, and
     returns.
@@ -522,9 +536,9 @@ def reinforce_gradient(
 
     References
     ----------
-    .. [1] Williams, R.J. (1992). Simple statistical gradient-following algorithms
-       for connectionist reinforcement learning. Mach Learn 8, 229–256.
-       https://doi.org/10.1007/BF00992696
+    .. [1] Williams, R.J. (1992). Simple statistical gradient-following
+       algorithms for connectionist reinforcement learning. Mach Learn 8,
+       229–256. https://doi.org/10.1007/BF00992696
     .. [2] Sutton, R.S., McAllester, D., Singh, S., Mansour, Y. (1999). Policy
        Gradient Methods for Reinforcement Learning with Function Approximation.
        In Advances in Neural Information Processing Systems 12 (NIPS 1999).
@@ -701,7 +715,7 @@ def create_policy_gradient_discrete_state(
 
 def train_reinforce_epoch(
     env: gym.Env,
-    policy: ProbabilisticPolicyBase,
+    policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP | None = None,
     value_function_optimizer: nnx.Optimizer | None = None,
@@ -710,7 +724,7 @@ def train_reinforce_epoch(
     total_steps: int = 1000,
     gamma: float = 1.0,
     train_after_episode: bool = False,
-    key: jnp.ndarray = jax.random.key(0),
+    key: jnp.ndarray | None = None,
     logger: logger.Logger | None = None,
 ):
     """Train with REINFORCE for one epoch.
@@ -756,46 +770,9 @@ def train_reinforce_epoch(
     logger : logger.Logger, optional
         Experiment logger.
     """
-    dataset = EpisodeDataset()
-
-    dataset.start_episode()
-    if logger is not None:
-        logger.start_new_episode()
-    observation, _ = env.reset()
-    steps_per_episode = 0
-    while True:
-        key, subkey = jax.random.split(key)
-        action = policy.sample(jnp.array(observation), subkey)
-
-        next_observation, reward, terminated, truncated, _ = env.step(
-            np.asarray(action)
-        )
-
-        steps_per_episode += 1
-        done = terminated or truncated
-
-        dataset.add_sample(observation, action, next_observation, reward)
-
-        observation = next_observation
-
-        if done:
-            if logger is not None:
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
-            steps_per_episode = 0
-
-            if train_after_episode or len(dataset) >= total_steps:
-                break
-
-            observation, _ = env.reset()
-            dataset.start_episode()
-
-    if logger is not None:
-        logger.record_stat(
-            "average return",
-            dataset.average_return(),
-            episode=logger.n_episodes - 1,
-        )
+    dataset = collect_samples(
+        env, policy, key, logger, train_after_episode, total_steps
+    )
 
     observations, actions, _, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
@@ -829,6 +806,86 @@ def train_reinforce_epoch(
                 "value function loss", v_loss, episode=logger.n_episodes - 1
             )
             logger.record_epoch("value_function", value_function)
+
+
+def collect_samples(
+    env: gym.Env,
+    policy: StochasticPolicyBase,
+    key: jnp.ndarray,
+    logger: logger.Logger,
+    train_after_episode: bool,
+    total_steps: int,
+) -> EpisodeDataset:
+    """Collect samples with stochastic policy.
+
+    Parameters
+    ----------
+    env : gym.Env
+        Environment in which we collect samples.
+
+    policy : StochasticPolicyBase
+        Policy from which we sample actions.
+
+    key : array
+        Pseudo random number generator key for action sampling.
+
+    logger : Logger
+        Logs average return.
+
+    train_after_episode : bool
+        Collect exactly one episode of samples.
+
+    total_steps : int
+        Collect a minimum of total_steps, but continues to the end of the
+        episode.
+
+    Returns
+    -------
+    dataset : EpisodeDataset
+        Collected samples organized in episodes.
+    """
+    if key is None:
+        key = jax.random.key(0)
+
+    dataset = EpisodeDataset()
+    dataset.start_episode()
+
+    if logger is not None:
+        logger.start_new_episode()
+
+    steps_per_episode = 0
+    observation, _ = env.reset()
+    while True:
+        key, subkey = jax.random.split(key)
+        action = np.asarray(policy.sample(jnp.array(observation), subkey))
+
+        next_observation, reward, terminated, truncated, _ = env.step(action)
+
+        steps_per_episode += 1
+        done = terminated or truncated
+
+        dataset.add_sample(observation, action, next_observation, reward)
+
+        observation = next_observation
+
+        if done:
+            if logger is not None:
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+            steps_per_episode = 0
+
+            if train_after_episode or len(dataset) >= total_steps:
+                break
+
+            observation, _ = env.reset()
+            dataset.start_episode()
+    if logger is not None:
+        logger.record_stat(
+            "average return",
+            dataset.average_return(),
+            episode=logger.n_episodes - 1,
+        )
+    return dataset
 
 
 def train_value_function(
