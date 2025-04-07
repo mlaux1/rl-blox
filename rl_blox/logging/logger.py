@@ -57,10 +57,19 @@ class Logger:
         self.define_experiment()
 
     def start_new_episode(self):
+        """Increase episode counter."""
         self.n_episodes += 1
 
     def stop_episode(self, total_steps):
+        """Increase step counter and records 'episode_length'.
+
+        Parameters
+        ----------
+        total_steps : int
+            Total number of steps in the episode that just terminated.
+        """
         self.n_steps += total_steps
+        self.record_stat("episode_length", total_steps, verbose=0)
 
     def define_experiment(
         self, env_name: str | None = None, algorithm_name: str | None = None
@@ -108,6 +117,7 @@ class Logger:
         value: Any,
         episode: int | None = None,
         step: int | None = None,
+        verbose: int | None = None,
     ):
         """Record statistics.
 
@@ -124,6 +134,9 @@ class Logger:
 
         step : int, optional
             Step at which we record the statistic.
+
+        verbose : int, optional
+            Overwrite verbosity level.
         """
         if key not in self.stats:
             self.stats_loc[key] = []
@@ -134,7 +147,8 @@ class Logger:
             step = self.n_steps
         self.stats_loc[key].append((episode, step))
         self.stats[key].append(value)
-        if self.verbose:
+        verbose = self.verbose if verbose is None else verbose
+        if verbose:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
                 f"({episode}|{step}) {key}: {value}"
