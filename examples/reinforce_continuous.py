@@ -22,13 +22,13 @@ reinforce_state = create_policy_gradient_continuous_state(
     env,
     policy_shared_head=True,
     policy_hidden_nodes=[32, 32],
-    policy_learning_rate=1e-4,
+    policy_learning_rate=3e-4,
     value_network_hidden_nodes=[50, 50],
     value_network_learning_rate=1e-2,
     seed=42,
 )
 
-n_epochs = 300
+n_epochs = 500
 key = reinforce_state.key
 for i in range(n_epochs):
     key, subkey = jax.random.split(key, 2)
@@ -38,9 +38,9 @@ for i in range(n_epochs):
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
         reinforce_state.value_function_optimizer,
-        policy_gradient_steps=10,
-        value_gradient_steps=10,
-        total_steps=500,
+        policy_gradient_steps=5,
+        value_gradient_steps=5,
+        total_steps=5000,
         gamma=0.99,
         train_after_episode=False,
         key=subkey,

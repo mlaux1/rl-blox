@@ -1,8 +1,9 @@
 import os
+import shutil
 import time
 from typing import Any
-import shutil
 
+import numpy as np
 import orbax.checkpoint as ocp
 from flax import nnx
 
@@ -153,6 +154,33 @@ class Logger:
                 f"[{self.env_name}|{self.algorithm_name}] "
                 f"({episode}|{step}) {key}: {value}"
             )
+
+    def get_stat(self, key: str, x_key="episode"):
+        """Get statistics.
+
+        Parameters
+        ----------
+        key : str
+            The name of the statistic.
+
+        x_key : str in ['episode', 'step'], optional
+            x-values.
+
+        Returns
+        -------
+        x : array, shape (n_measurements,)
+            Either episodes or steps at recorded value.
+
+        y : array, shape (n_measurements,)
+            Requested statistics.
+        """
+        assert key in self.stats
+        X_KEYS = ["episode", "step"]
+        assert x_key in X_KEYS
+        x_idx = X_KEYS.index(x_key)
+        x = np.asarray(list(map(lambda x: x[x_idx], self.stats_loc[key])))
+        y = np.asarray(self.stats[key])
+        return x, y
 
     def record_epoch(
         self,

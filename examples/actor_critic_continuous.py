@@ -20,7 +20,7 @@ env.reset(seed=43)
 
 logger = logger.Logger(verbose=2)
 logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
-logger.define_checkpoint_frequency("value_function", 1)
+logger.define_checkpoint_frequency("value_function", 10)
 
 ac_state = create_policy_gradient_continuous_state(
     env,
@@ -33,7 +33,7 @@ ac_state = create_policy_gradient_continuous_state(
     seed=42,
 )
 
-n_epochs = 300
+n_epochs = 500
 key = ac_state.key
 for i in range(n_epochs):
     key, subkey = jax.random.split(key, 2)
@@ -43,9 +43,9 @@ for i in range(n_epochs):
         ac_state.policy_optimizer,
         ac_state.value_function,
         ac_state.value_function_optimizer,
-        policy_gradient_steps=10,
-        value_gradient_steps=10,
-        total_steps=1000,
+        policy_gradient_steps=5,
+        value_gradient_steps=5,
+        total_steps=5000,
         gamma=0.99,
         train_after_episode=False,
         key=subkey,
@@ -60,7 +60,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(reinforce_state.policy(jnp.asarray(obs)))
+        action = np.asarray(ac_state.policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
