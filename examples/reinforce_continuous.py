@@ -28,7 +28,7 @@ reinforce_state = create_policy_gradient_continuous_state(
     seed=42,
 )
 
-n_epochs = 500
+n_epochs = 375
 key = reinforce_state.key
 for i in range(n_epochs):
     key, subkey = jax.random.split(key, 2)
