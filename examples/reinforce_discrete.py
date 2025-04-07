@@ -14,6 +14,9 @@ env_name = "CartPole-v1"
 env = gym.make(env_name)
 env.reset(seed=42)
 
+logger = logger.Logger(verbose=2)
+logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
+
 reinforce_state = create_policy_gradient_discrete_state(
     env,
     policy_hidden_nodes=[32],
@@ -22,9 +25,6 @@ reinforce_state = create_policy_gradient_discrete_state(
     value_network_learning_rate=1e-2,
     seed=42,
 )
-
-logger = logger.Logger(verbose=2)
-logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
 
 n_epochs = 100
 key = reinforce_state.key
