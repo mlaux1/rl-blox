@@ -27,3 +27,17 @@ API Documentation
    ~sac.sac_actor_loss
    ~sac.sample_actions
    ~double_q_learning.double_q_learning
+
+
+:mod:`rl_blox.logging`
+======================
+
+.. automodule:: rl_blox.logging
+    :no-members:
+    :no-inherited-members:
+
+.. autosummary::
+   :toctree: _apidoc/
+   :template: class.rst
+
+   ~logger.Logger

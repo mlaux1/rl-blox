@@ -17,8 +17,11 @@ class Logger:
     Parameters
     ----------
     checkpoint_dir : str, optional
-        Directory in which we store checkpoints. This directory will be deleted
-        before the experiment starts!
+        Directory in which we store checkpoints.
+
+        .. warning::
+
+            This directory will be deleted before the experiment starts!
 
     verbose : int, optional
         Verbosity level.
@@ -224,16 +227,19 @@ class Logger:
             key in self.checkpoint_frequencies
             and self.epoch[key] % self.checkpoint_frequencies[key] == 0
         ):
-            checkpoint_path = (
-                f"{self.checkpoint_dir}"
-                f"{self.start_time}_{self.env_name}_{self.algorithm_name}_"
-                f"{key}_{self.epoch[key]}/"
+            self._save_checkpoint(key, value)
+
+    def _save_checkpoint(self, key: str, value: Any):
+        checkpoint_path = (
+            f"{self.checkpoint_dir}"
+            f"{self.start_time}_{self.env_name}_{self.algorithm_name}_"
+            f"{key}_{self.epoch[key]}/"
+        )
+        _, state = nnx.split(value)
+        self.checkpointer.save(f"{checkpoint_path}", state)
+        self.checkpoint_path[key].append(checkpoint_path)
+        if self.verbose:
+            print(
+                f"[{self.env_name}|{self.algorithm_name}] {key}: "
+                f"checkpoint saved at {checkpoint_path}"
             )
-            _, state = nnx.split(value)
-            self.checkpointer.save(f"{checkpoint_path}", state)
-            self.checkpoint_path[key].append(checkpoint_path)
-            if self.verbose:
-                print(
-                    f"[{self.env_name}|{self.algorithm_name}] {key}: "
-                    f"checkpoint saved at {checkpoint_path}"
-                )
