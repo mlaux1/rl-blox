@@ -23,6 +23,16 @@ The implementation of this project follows the following principles:
 2. Algorithms are implemented in single files.
 3. Policies and values functions are data containers.
 
+### Dependencies
+
+1. Our environment interface is Gymnasium.
+2. We use JAX for everything.
+3. We use Chex to write reliable code.
+4. For optimization algorithms we use Orbax.
+5. For probability distributions we use Distrax.
+6. For all neural networks we use Flax.
+7. To save checkpoints we use Orbax.
+
 ## Installation
 
 ```bash
