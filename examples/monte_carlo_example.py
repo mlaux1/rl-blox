@@ -8,6 +8,6 @@ train_env = gym.make(
 qmc = MonteCarlo(train_env, 0.1, "first_visit")
 qmc.train(10)
 
-print(qmc.target_policy.q_table)
+print(qmc.target_policy.value_function.values)
 
 train_env.close()
