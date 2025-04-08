@@ -41,7 +41,7 @@ dynamic = ["version", "readme"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pre-commit", "flake8", "black", "isort"]
-examples = ["gymnasium[classic-control,toy-text,mujoco]"]
+examples = ["gymnasium[classic-control,toy-text,mujoco]", "matplotlib"]
 all = ["rl_blox[dev,examples]"]
 doc = [
     "sphinx",
