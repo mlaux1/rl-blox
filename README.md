@@ -9,6 +9,13 @@
 This project contains modular implementations of various model-free and model-based RL algorithms and consists of deep neural network-based as well as tabular representation of Q-Values, policies, etc. which can be used interchangeably.
 The goal of this project is for the authors to learn by reimplementing various RL algorithms and to eventually provide an algorithmic toolbox for research purposes.
 
+> [!CAUTION]
+> This library is still experimental and under development. Using it will not
+> result in a good user experience. It is not well-documented, it is buggy,
+> its interface is not clearly defined, its most interesting features are in
+> feature branches. We recommend not to use it now. If you are an RL developer
+> and want to collaborate, feel free to contact us.
+
 ## Design Principles
 
 The implementation of this project follows the following principles:
