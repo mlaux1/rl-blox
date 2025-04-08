@@ -13,8 +13,16 @@ def make_q_table(env: gymnasium.Env) -> Array:
     :param env: Environment.
     :return: Q-table.
     """
+    if (
+        isinstance(env.observation_space, gymnasium.spaces.Tuple)
+        and isinstance(env.observation_space[0], gymnasium.spaces.Discrete)
+    ):
+        obs_shape = tuple([space.n for space in env.observation_space])
+    else:
+        obs_shape = (flatdim(env.observation_space),)
+    act_shape = (flatdim(env.action_space),)
     q_table = jnp.zeros(
-        shape=(flatdim(env.observation_space), flatdim(env.action_space)),
+        shape=obs_shape + act_shape,
         dtype=jnp.float32,
     )
     return q_table
