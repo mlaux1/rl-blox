@@ -32,6 +32,45 @@ To be able to run the provided examples use `pip install -e ".[examples]"`.
 To install development dependencies, please use `pip install -e ".[dev]"`.
 You can install all optional dependencies using `pip install -e ".[all]"`.
 
+## Getting Started
+
+RL-BLOX relies on gymnasium's environment interface. This is an example with
+the SAC RL algorithm.
+
+```python
+import gymnasium as gym
+
+from rl_blox.algorithms.model_free.sac import (
+    GaussianMlpPolicyNetwork,
+    SoftMlpQNetwork,
+    train_sac,
+)
+
+env_name = "Pendulum-v1"
+env = gym.make(env_name)
+seed = 1
+env = gym.wrappers.RecordEpisodeStatistics(env)
+env.action_space.seed(seed)
+envs = gym.vector.SyncVectorEnv([lambda: env])
+
+policy = GaussianMlpPolicyNetwork.create([256, 256], envs)
+q = SoftMlpQNetwork(hidden_nodes=[256, 256])
+
+policy, policy_params, q, q1_params, q2_params = train_sac(
+    envs,
+    policy,
+    q,
+    seed=seed,
+    total_timesteps=8_000,
+    buffer_size=1_000_000,
+    gamma=0.99,
+    learning_starts=5_000,
+)
+envs.close()
+
+# Do something with the trained policy...
+```
+
 ## Contributing
 
 If you wish to report bugs, please use the [issue tracker](https://github.com/mlaux1/rl-blox/issues). If you would like to contribute to RL-BLOX, just open an issue or a
