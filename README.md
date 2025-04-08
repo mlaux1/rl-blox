@@ -101,6 +101,15 @@ It is forbidden to directly push to the main branch.
 Each new version has its own development branch from which a pull request will be opened to the main branch.
 Only the maintainers of the software are allowed to merge a development branch to the main branch.
 
+## Testing
+
+Run the tests with
+
+```bash
+pip install -e .[dev]
+pytest tests/
+```
+
 ## Releases
 
 ### Semantic Versioning
