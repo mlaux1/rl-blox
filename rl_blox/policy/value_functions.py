@@ -8,6 +8,7 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 
 from ..policy.base_model import NeuralNetwork, ReplayBuffer, Transition
+from ..tools import gymtools
 
 
 class ValueFunction(abc.ABC):
@@ -60,9 +61,10 @@ class TabularQFunction(QFunction):
         action_space: Discrete,
         initial_value: float = 0.0,
     ):
+        obs_shape = gymtools.space_shape(observation_space)
+        act_shape = (flatdim(action_space),)
         self.values = np.full(
-            shape=(flatdim(observation_space), flatdim(action_space)),
-            fill_value=initial_value,
+            shape=obs_shape + act_shape, fill_value=initial_value
         )
 
     def get_action_value(
@@ -70,8 +72,8 @@ class TabularQFunction(QFunction):
     ) -> npt.ArrayLike:
         return self.values[observation, action]
 
-    def update(self, observations, actions, step) -> None:
-        self.values[observations, actions] += step
+    def update(self, observations, actions, step):
+        self.values[observations][actions] += step
 
         logging.debug(f"Updating Q Table: {observations=}, {actions=}, {step=}")
         logging.debug(f"New Q table: {self.values}")

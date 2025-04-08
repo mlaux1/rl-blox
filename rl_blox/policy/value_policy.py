@@ -5,6 +5,8 @@ from jax import Array, jit, random
 from jax.random import PRNGKey
 from jax.typing import ArrayLike
 
+from ..tools import gymtools
+
 
 def make_q_table(env: gymnasium.Env) -> Array:
     """
@@ -13,13 +15,7 @@ def make_q_table(env: gymnasium.Env) -> Array:
     :param env: Environment.
     :return: Q-table.
     """
-    if (
-        isinstance(env.observation_space, gymnasium.spaces.Tuple)
-        and isinstance(env.observation_space[0], gymnasium.spaces.Discrete)
-    ):
-        obs_shape = tuple([space.n for space in env.observation_space])
-    else:
-        obs_shape = (flatdim(env.observation_space),)
+    obs_shape = gymtools.space_shape(env.observation_space)
     act_shape = (flatdim(env.action_space),)
     q_table = jnp.zeros(
         shape=obs_shape + act_shape,
