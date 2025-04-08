@@ -71,6 +71,18 @@ envs.close()
 # Do something with the trained policy...
 ```
 
+## API Documentation
+
+You can build the sphinx documentation with
+
+```bash
+pip install -e .[doc]
+cd doc
+make html
+```
+
+The HTML documentation will be available under `doc/build/html/index.html`.
+
 ## Contributing
 
 If you wish to report bugs, please use the [issue tracker](https://github.com/mlaux1/rl-blox/issues). If you would like to contribute to RL-BLOX, just open an issue or a
