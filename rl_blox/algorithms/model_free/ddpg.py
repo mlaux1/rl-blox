@@ -244,11 +244,11 @@ def sample_actions(
 def train_ddpg(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: nnx.Module,
+    policy_optimizer: nnx.Optimizer,
     q: nnx.Module,
+    q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
-    actor_learning_rate: float = 3e-4,
-    q_learning_rate: float = 3e-4,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     tau: float = 0.005,
@@ -271,7 +271,9 @@ def train_ddpg(
     ----------
     env: Vectorized Gymnasium environments.
     policy: Deterministic policy network.
+    policy_optimizer: Optimizer for the policy network.
     q: Q network.
+    q_optimizer: Optimizer for the Q network.
     seed: Seed for random number generators in Jax and NumPy.
     total_timesteps: Number of steps to execute in the environment.
     actor_learning_rate: Learning rate of the actor.
@@ -299,11 +301,18 @@ def train_ddpg(
     -------
     policy
         Final policy.
+    policy_target
+        Target policy.
+    policy_optimizer
+        Policy optimizer.
     q
         Final state-action value function.
+    q_target
+        Target network.
+    q_optimizer
+        Optimizer for Q network.
     """
     rng = np.random.default_rng(seed)
-    key = jax.random.PRNGKey(seed)
 
     assert isinstance(
         env.action_space, gym.spaces.Box
@@ -318,10 +327,6 @@ def train_ddpg(
     q_target = nnx.clone(q)
 
     # TODO user should pass the optimizers
-    policy_optimizer = nnx.Optimizer(
-        policy, optax.adam(learning_rate=actor_learning_rate)
-    )
-    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
 
     update_actor = nnx.jit(ddpg_update_actor)
 

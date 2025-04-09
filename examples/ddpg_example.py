@@ -2,6 +2,7 @@ import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
+import optax
 
 from rl_blox.algorithms.model_free.ddpg import (
     MLP,
@@ -12,6 +13,8 @@ from rl_blox.algorithms.model_free.ddpg import (
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
 seed = 1
+actor_learning_rate = 3e-4
+q_learning_rate = 3e-4
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 policy_net = MLP(
@@ -21,20 +24,26 @@ policy_net = MLP(
     nnx.Rngs(seed),
 )
 policy = DeterministicPolicy(policy_net, env.action_space)
+policy_optimizer = nnx.Optimizer(
+    policy, optax.adam(learning_rate=actor_learning_rate)
+)
 q = MLP(
     env.observation_space.shape[0] + env.action_space.shape[0],
     1,
     [256, 256],
     nnx.Rngs(seed),
 )
+q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
 policy, policy_target, policy_optimizer, q, q_target, q_optimizer = train_ddpg(
     env,
     policy,
+    policy_optimizer,
     q,
+    q_optimizer,
     gradient_steps=1,
     seed=seed,
     total_timesteps=31_000,
-    verbose=2,
+    verbose=1,
 )
 env.close()
 
