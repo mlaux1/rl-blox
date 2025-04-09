@@ -306,7 +306,7 @@ def train_sac(
         if any(terminations) or any(truncations):
             print(f"{global_step=}, episodic_return={infos['episode']['r']}")
 
-        rb.add_samples(obs, actions, rewards, next_obs, terminations)
+        rb.add_sample(obs, actions, rewards, next_obs, terminations)
 
         obs = next_obs
 
