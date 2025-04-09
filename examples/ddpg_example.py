@@ -34,7 +34,7 @@ policy, policy_target, policy_optimizer, q, q_target, q_optimizer = train_ddpg(
     gradient_steps=1,
     seed=seed,
     total_timesteps=31_000,
-    verbose=1,
+    verbose=2,
 )
 env.close()
 

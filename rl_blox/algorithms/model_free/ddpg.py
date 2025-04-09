@@ -179,9 +179,11 @@ def deterministic_policy_value_loss(
     return -q(jnp.concatenate((observations, policy(observations)), axis=-1)).mean()
 
 
+@nnx.jit
 def ddpg_update_critic(
-    policy: nnx.Module,
+    policy_target: nnx.Module,
     q: nnx.Module,
+    q_target: nnx.Module,
     q_optimizer: nnx.Optimizer,
     gamma: float,
     observations: jnp.ndarray,
@@ -197,11 +199,11 @@ def ddpg_update_critic(
     chex.assert_equal_shape_prefix((observations, dones), prefix_len=1)
 
     # TODO why was it clipped to [-1, 1] before?
-    next_actions = policy(next_observations)
-    q_next = q(
+    next_actions = policy_target(next_observations)
+    q_target_next = q_target(
         jnp.concatenate((next_observations, next_actions), axis=-1)
     ).squeeze()
-    q_bootstrap = (rewards + (1 - dones) * gamma * q_next).reshape(-1)
+    q_bootstrap = (rewards + (1 - dones) * gamma * q_target_next).reshape(-1)
 
     loss = partial(critic_loss, observations, actions, q_bootstrap)
     q_loss_value, grads = nnx.value_and_grad(loss)(q)
@@ -322,7 +324,6 @@ def train_ddpg(
     )
     q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
 
-    update_critic = nnx.jit(ddpg_update_critic)
     update_actor = nnx.jit(ddpg_update_actor)
 
     for t in range(total_timesteps):
@@ -356,9 +357,10 @@ def train_ddpg(
                     rb.sample_batch(batch_size, rng)
                 )
 
-                q_loss_value = update_critic(
-                    policy,
+                q_loss_value = ddpg_update_critic(
+                    policy_target,
                     q,
+                    q_target,
                     q_optimizer,
                     gamma,
                     observations,
@@ -367,6 +369,8 @@ def train_ddpg(
                     rewards,
                     dones,
                 )
+                if verbose >= 2:
+                    print(f"{q_loss_value=}")
                 if t % policy_frequency == 0:
                     actor_loss_value = update_actor(
                         policy, policy_optimizer, q, observations
@@ -380,5 +384,7 @@ def train_ddpg(
                     q_graphdef, qt_params = nnx.split(q_target)
                     qt_params = optax.incremental_update(q_params, qt_params, tau)
                     q_target = nnx.merge(q_graphdef, qt_params)
+                    if verbose >= 2:
+                        print(f"{actor_loss_value=}")
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
