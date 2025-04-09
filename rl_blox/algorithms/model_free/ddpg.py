@@ -312,6 +312,9 @@ def train_ddpg(
     The critic approximates the action-value function. The actor will maximize
     action values based on the approximation of the action-value function.
 
+    DDPG [2]_ extends Deterministic Policy Gradients [1]_ to use neural
+    networks as function approximators with target networks.
+
     Parameters
     ----------
     env: Vectorized Gymnasium environments.
@@ -363,6 +366,19 @@ def train_ddpg(
         Target network.
     q_optimizer
         Optimizer for Q network.
+
+    References
+    ----------
+    .. [1] Silver, D., Lever, G., Heess, N., Degris, T., Wierstra, D. &
+       Riedmiller, M. (2014). Deterministic Policy Gradient Algorithms.
+       In Proceedings of the 31st International Conference on Machine Learning,
+       PMLR 32(1):387-395. https://proceedings.mlr.press/v32/silver14.html
+
+    .. [2] Lillicrap, T.P., Hunt, J.J., Pritzel, A., Heess, N., Erez, T.,
+       Tassa, Y., Silver, D. & Wierstra, D. (2016). Continuous control with
+       deep reinforcement learning. In 4th International Conference on Learning
+       Representations, {ICLR} 2016, San Juan, Puerto Rico, May 2-4, 2016,
+       Conference Track Proceedings. http://arxiv.org/abs/1509.02971
     """
     rng = np.random.default_rng(seed)
 
