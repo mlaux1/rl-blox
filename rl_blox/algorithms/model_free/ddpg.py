@@ -374,16 +374,18 @@ def train_ddpg(
                     actor_loss_value = update_actor(
                         policy, policy_optimizer, q, observations
                     )
+                    if verbose >= 2:
+                        print(f"{actor_loss_value=}")
+
                     _, p_params = nnx.split(policy)
                     p_graphdef, pt_params = nnx.split(policy_target)
                     pt_params = optax.incremental_update(p_params, pt_params, tau)
                     policy_target = nnx.merge(p_graphdef, pt_params)
 
+                    # TODO why is it updated less often than q?
                     _, q_params = nnx.split(q)
                     q_graphdef, qt_params = nnx.split(q_target)
                     qt_params = optax.incremental_update(q_params, qt_params, tau)
                     q_target = nnx.merge(q_graphdef, qt_params)
-                    if verbose >= 2:
-                        print(f"{actor_loss_value=}")
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
