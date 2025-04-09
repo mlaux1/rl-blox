@@ -314,7 +314,6 @@ def train_ddpg(
 
     obs, _ = env.reset(seed=seed)
 
-    # TODO find out where they should be used
     policy_target = nnx.clone(policy)
     q_target = nnx.clone(q)
 
