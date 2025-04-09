@@ -300,6 +300,8 @@ def train_ddpg(
     exploration_noise: float = 0.1,
     learning_starts: int = 25_000,
     policy_frequency: int = 2,
+    policy_target: nnx.Optimizer | None = None,
+    q_target: nnx.Optimizer | None = None,
     verbose: int = 0,
 ) -> tuple[
     nn.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer
@@ -339,6 +341,12 @@ def train_ddpg(
         The policy will only be updated after this number of steps. Target
         policy and value function will be updated with the same frequency. The
         value function will be updated after every step.
+    policy_optimizer
+        Policy optimizer. Only has to be set if we want to continue training
+        from an old state.
+    q_target
+        Target network. Only has to be set if we want to continue training
+        from an old state.
     verbose: Verbosity level.
 
     Returns
@@ -367,8 +375,10 @@ def train_ddpg(
 
     obs, _ = env.reset(seed=seed)
 
-    policy_target = nnx.clone(policy)
-    q_target = nnx.clone(q)
+    if policy_target is None:
+        policy_target = nnx.clone(policy)
+    if q_target is None:
+        q_target = nnx.clone(q)
 
     update_actor = nnx.jit(ddpg_update_actor)
 
