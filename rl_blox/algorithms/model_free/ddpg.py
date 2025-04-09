@@ -1,4 +1,4 @@
-from collections import deque
+from collections import deque, namedtuple
 from functools import partial
 
 import chex
@@ -241,6 +241,47 @@ def sample_actions(
     return np.clip(exploring_action, action_space.low, action_space.high)
 
 
+def create_ddpg_state(
+    env: gym.Env[gym.spaces.Box, gym.spaces.Box],
+    policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    policy_learning_rate: float = 3e-4,
+    q_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    q_learning_rate: float = 3e-4,
+    seed: int = 0,
+):
+    env = gym.wrappers.RecordEpisodeStatistics(env)
+    env.action_space.seed(seed)
+
+    policy_net = MLP(
+        env.observation_space.shape[0],
+        env.action_space.shape[0],
+        policy_hidden_nodes,
+        nnx.Rngs(seed),
+    )
+    policy = DeterministicPolicy(policy_net, env.action_space)
+    policy_optimizer = nnx.Optimizer(
+        policy, optax.adam(learning_rate=policy_learning_rate)
+    )
+
+    q = MLP(
+        env.observation_space.shape[0] + env.action_space.shape[0],
+        1,
+        q_hidden_nodes,
+        nnx.Rngs(seed),
+    )
+    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
+
+    return namedtuple(
+        "DDPGState",
+        [
+            "policy",
+            "policy_optimizer",
+            "q",
+            "q_optimizer",
+        ],
+    )(policy, policy_optimizer, q, q_optimizer)
+
+
 def train_ddpg(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: nnx.Module,
@@ -325,8 +366,6 @@ def train_ddpg(
 
     policy_target = nnx.clone(policy)
     q_target = nnx.clone(q)
-
-    # TODO user should pass the optimizers
 
     update_actor = nnx.jit(ddpg_update_actor)
 
