@@ -4,7 +4,6 @@ from functools import partial
 import chex
 import flax.linen as nn
 import gymnasium as gym
-import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -174,9 +173,12 @@ def deterministic_policy_value_loss(
     Returns
     -------
     loss
-        Negative value of the actions selected by the policy for the given observations.
+        Negative value of the actions selected by the policy for the given
+        observations.
     """
-    return -q(jnp.concatenate((observations, policy(observations)), axis=-1)).mean()
+    return -q(
+        jnp.concatenate((observations, policy(observations)), axis=-1)
+    ).mean()
 
 
 @nnx.jit
@@ -328,14 +330,15 @@ def train_ddpg(
     gradient_steps
         Number of gradient steps during one training phase.
     exploration_noise
-        Exploration noise in action space. Will be scaled by half of the range of the
-        action space.
+        Exploration noise in action space. Will be scaled by half of the range
+        of the action space.
     learning_starts
-        Learning starts after this number of random steps was taken in the environment.
+        Learning starts after this number of random steps was taken in the
+        environment.
     policy_frequency
-        The policy will only be updated after this number of steps. Target policy and
-        value function will be updated with the same frequency. The value function will
-        be updated after every step.
+        The policy will only be updated after this number of steps. Target
+        policy and value function will be updated with the same frequency. The
+        value function will be updated after every step.
     verbose: Verbosity level.
 
     Returns
@@ -423,13 +426,17 @@ def train_ddpg(
 
                     _, p_params = nnx.split(policy)
                     p_graphdef, pt_params = nnx.split(policy_target)
-                    pt_params = optax.incremental_update(p_params, pt_params, tau)
+                    pt_params = optax.incremental_update(
+                        p_params, pt_params, tau
+                    )
                     policy_target = nnx.merge(p_graphdef, pt_params)
 
                     # TODO why is it updated less often than q?
                     _, q_params = nnx.split(q)
                     q_graphdef, qt_params = nnx.split(q_target)
-                    qt_params = optax.incremental_update(q_params, qt_params, tau)
+                    qt_params = optax.incremental_update(
+                        q_params, qt_params, tau
+                    )
                     q_target = nnx.merge(q_graphdef, qt_params)
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
