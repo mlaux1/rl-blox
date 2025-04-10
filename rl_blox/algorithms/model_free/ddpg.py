@@ -228,7 +228,7 @@ def ddpg_update_actor(
 
 
 def sample_actions(
-    policy: DeterministicPolicy,  # TODO what if not an MLP?
+    policy: DeterministicPolicy,
     action_space: gym.spaces.Box,
     obs: np.ndarray,
     exploration_noise: float,
