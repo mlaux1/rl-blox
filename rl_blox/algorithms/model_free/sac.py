@@ -327,7 +327,22 @@ def train_sac(
     nnx.Optimizer,
     EntropyControl,
 ]:
-    """Soft actor-critic.
+    r"""Soft actor-critic (SAC).
+
+    Soft actor-critic [1]_ [2]_ is a maximum entropy algorithm, i.e., it
+    optimizes (for :math:`\gamma=1`)
+
+    .. math::
+
+        \pi^*
+        =
+        \arg\max_{\pi} \sum_t \mathbb{E}_{(s_t, a_t) \sim \rho_{\pi}}
+        \left[
+        r(s_t, a_t) + \alpha \mathcal{H}(\pi(\cdot|s_t))
+        \right],
+
+    where :math:`\alpha` is the temperature parameter that determines the
+    relative importance of the optimal policy.
 
     Parameters
     ----------
@@ -335,8 +350,10 @@ def train_sac(
         Gymnasium environment.
     policy
         Stochastic policy.
-    q
-        Soft Q network.
+    q1
+        First soft Q network.
+    q2
+        Second soft Q network.
     seed : int
         Seed for random number generation.
     total_timesteps
@@ -368,21 +385,43 @@ def train_sac(
     q2_target
         Target network for q2.
     entropy_control
-        State of entropy optimizer.
+        State of entropy tuning.
     verbose
         Verbosity level.
 
     Returns
     -------
     policy
+        Final policy.
     policy_optimizer
+        Policy optimizer.
     q1
+        First soft Q network.
     q1_target
+        Target network of q1.
     q1_optimizer
+        Optimizer of q1.
     q2
+        Second soft Q network.
     q2_target
+        Target network of q2.
     q2_optimizer
+        Optimizer of q2.
     entropy_control
+        State of entropy tuning.
+
+    References
+    ----------
+    .. [1] Haarnoja, T., Zhou, A., Abbeel, P. & Levine, P. (2018).
+       Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement
+       Learning with a Stochastic Actor. In Proceedings of the 35th
+       International Conference on Machine Learning, PMLR 80:1861-1870.
+       https://proceedings.mlr.press/v80/haarnoja18b
+
+    .. [2] Haarnoja, T., Zhou, A., Hartikainen, K., Tucker, G., Ha, S.,
+       Tan, J., Kumar, V., Zhu, H., Gupta, A., Abbeel, P. & Levine, P. (2018).
+       Soft Actor-Critic Algorithms and Applications. arXiv.
+       http://arxiv.org/abs/1812.05905
     """
     assert isinstance(
         env.action_space, gym.spaces.Box

@@ -26,7 +26,6 @@ API Documentation
    ~sac.train_sac
    ~sac.sac_exploration_loss
    ~sac.sac_actor_loss
-   ~sac.sample_actions
    ~double_q_learning.double_q_learning
 
 
