@@ -93,19 +93,19 @@ class DeterministicPolicy(nnx.Module):
     policy_net: nnx.Module
     """Underlying MLP."""
 
-    action_scale: nnx.Param[jnp.ndarray]
+    action_scale: nnx.Variable[jnp.ndarray]
     """Scales for each component of the action."""
 
-    action_bias: nnx.Param[jnp.ndarray]
+    action_bias: nnx.Variable[jnp.ndarray]
     """Offset for each component of the action."""
 
     def __init__(self, policy_net: nnx.Module, action_space: gym.spaces.Box):
         self.policy_net = policy_net
-        self.action_scale = nnx.Param(
-            jnp.array((action_space.high - action_space.low) / 2.0), train=False
+        self.action_scale = nnx.Variable(
+            jnp.array((action_space.high - action_space.low) / 2.0)
         )
-        self.action_bias = nnx.Param(
-            jnp.array((action_space.high + action_space.low) / 2.0), train=False
+        self.action_bias = nnx.Variable(
+            jnp.array((action_space.high + action_space.low) / 2.0)
         )
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
@@ -411,6 +411,7 @@ def train_ddpg(
         done = terminated or truncated
         if done:
             if verbose:
+                # TODO implement logging here
                 print(
                     f"{t=}, length={info['episode']['l']}, "
                     f"return={info['episode']['r']}"
@@ -441,12 +442,17 @@ def train_ddpg(
                 )
                 if verbose >= 2:
                     print(f"{q_loss_value=}")
+                    # TODO implement logging here
+                    # TODO implement checkpointing here
+
                 if t % policy_frequency == 0:
                     actor_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q, observations
                     )
                     if verbose >= 2:
                         print(f"{actor_loss_value=}")
+                        # TODO implement logging here
+                        # TODO implement checkpointing here
 
                     _, p_params = nnx.split(policy)
                     p_graphdef, pt_params = nnx.split(policy_target)
