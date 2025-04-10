@@ -2,7 +2,6 @@ from collections import deque, namedtuple
 from functools import partial
 
 import chex
-import flax.linen as nn
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
@@ -111,7 +110,7 @@ class DeterministicPolicy(nnx.Module):
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         y = self.policy_net(observation)
-        return nn.tanh(y) * jnp.broadcast_to(
+        return nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
@@ -214,6 +213,7 @@ def ddpg_update_critic(
     return q_loss_value
 
 
+@nnx.jit
 def ddpg_update_actor(
     policy: nnx.Module,
     policy_optimizer: nnx.Optimizer,
@@ -304,7 +304,7 @@ def train_ddpg(
     q_target: nnx.Optimizer | None = None,
     verbose: int = 0,
 ) -> tuple[
-    nn.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer
+    nnx.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer
 ]:
     """Deep Deterministic Policy Gradients (DDPG).
 
@@ -396,8 +396,6 @@ def train_ddpg(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    update_actor = nnx.jit(ddpg_update_actor)
-
     for t in range(total_timesteps):
         if t < learning_starts:
             action = env.action_space.sample()
@@ -444,7 +442,7 @@ def train_ddpg(
                 if verbose >= 2:
                     print(f"{q_loss_value=}")
                 if t % policy_frequency == 0:
-                    actor_loss_value = update_actor(
+                    actor_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q, observations
                     )
                     if verbose >= 2:
