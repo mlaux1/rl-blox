@@ -1,10 +1,12 @@
 import gymnasium as gym
 import numpy as np
 from flax import nnx
+import jax.numpy as jnp
 
 from rl_blox.algorithms.model_free.ddpg import MLP
 from rl_blox.algorithms.model_free.sac import (
-    GaussianMlpPolicyNetwork,
+    GaussianMLP,
+    GaussianPolicy,
     mean_action,
     train_sac,
 )
@@ -15,9 +17,21 @@ seed = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
-policy = GaussianMlpPolicyNetwork.create([256, 256], env)
-q = MLP(env.observation_space.shape[0] + env.action_space.shape[0], 1, [256, 256], nnx.Rngs(seed))
-policy, policy_params, q, q1_params, q2_params = train_sac(
+policy_net = GaussianMLP(
+    False,
+    env.observation_space.shape[0] + env.action_space.shape[0],
+    env.action_space.shape[0],
+    [256, 256],
+    nnx.Rngs(seed),
+)
+policy = GaussianPolicy(policy_net, env.action_space)
+q = MLP(
+    env.observation_space.shape[0] + env.action_space.shape[0],
+    1,
+    [256, 256],
+    nnx.Rngs(seed),
+)
+policy, q1, q2 = train_sac(
     env,
     policy,
     q,
@@ -37,11 +51,11 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(mean_action(policy, policy_params, obs)[0])
+        action = np.asarray(mean_action(policy, obs)[0])
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
-        q1_value = q.apply(q1_params, obs, action)
-        q2_value = q.apply(q2_params, obs, action)
+        q1_value = q1(jnp.concatenate((obs, action), axis=-1))
+        q2_value = q2(jnp.concatenate((obs, action), axis=-1))
         q_value = np.minimum(q1_value, q2_value)
         print(f"{q_value=}")
         obs = np.asarray(next_obs)

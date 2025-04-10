@@ -1,5 +1,6 @@
 from functools import partial
 
+import chex
 import distrax
 import flax
 from flax import nnx
@@ -12,52 +13,105 @@ import optax
 from .ddpg import ReplayBuffer, critic_loss
 
 
-LOG_STD_MAX = 2
-LOG_STD_MIN = -5
+class GaussianMLP(nnx.Module):
+    """Probabilistic neural network that predicts a Gaussian distribution.
+
+    Parameters
+    ----------
+    shared_head
+        All nodes of the last hidden layer are connected to mean AND log_std.
+
+    n_features
+        Number of features.
+
+    n_outputs
+        Number of output components.
+
+    hidden_nodes
+        Numbers of hidden nodes of the MLP.
+
+    rngs
+        Random number generator.
+    """
+
+    shared_head: bool
+    n_outputs: int
+    hidden_layers: list[nnx.Linear]
+    output_layers: list[nnx.Linear]
+
+    def __init__(
+        self,
+        shared_head: bool,
+        n_features: int,
+        n_outputs: int,
+        hidden_nodes: list[int],
+        rngs: nnx.Rngs,
+    ):
+        chex.assert_scalar_positive(n_features)
+        chex.assert_scalar_positive(n_outputs)
+
+        self.shared_head = shared_head
+        self.n_outputs = n_outputs
+
+        self.hidden_layers = []
+        n_in = n_features
+        for n_out in hidden_nodes:
+            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            n_in = n_out
+
+        self.output_layers = []
+        if shared_head:
+            self.output_layers.append(
+                nnx.Linear(n_in, 2 * n_outputs, rngs=rngs)
+            )
+        else:
+            self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
+            self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
+
+    def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+        for layer in self.hidden_layers:
+            x = nnx.swish(layer(x))
+
+        if self.shared_head:
+            y = self.output_layers[0](x)
+            mean, log_var = jnp.split(y, (self.n_outputs,), axis=-1)
+        else:
+            mean = self.output_layers[0](x)
+            log_var = self.output_layers[1](x)
+
+        return mean, log_var
 
 
-class GaussianMlpPolicyNetwork(nn.Module):
-    """Gaussian policy represented by multilayer perceptron (MLP)."""
+class GaussianPolicy(nnx.Module):
+    r"""Gaussian policy represented with a function approximator.
 
-    hidden_nodes: list[int]
-    """Numbers of hidden nodes of the MLP."""
+    The gaussian policy maps observations to mean and log variance of an
+    action, hence, represents the distribution :math:`\pi(a|o)`.
+    """
 
-    action_dim: int
-    """Dimension of the action space."""
+    policy_net: nnx.Module
+    """Underlying function approximator."""
 
-    action_scale: jnp.ndarray
+    action_scale: nnx.Variable[jnp.ndarray]
     """Scales for each component of the action."""
 
-    action_bias: jnp.ndarray
+    action_bias: nnx.Variable[jnp.ndarray]
     """Offset for each component of the action."""
 
-    @nn.compact
-    def __call__(self, x: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        for n_nodes in self.hidden_nodes:
-            x = nn.Dense(n_nodes)(x)
-            x = nn.relu(x)
-        mean = nn.Dense(self.action_dim)(x)
-        log_std = nn.Dense(self.action_dim)(x)
-        log_std = nn.tanh(log_std)
-        log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (
-            log_std + 1
-        )  # From SpinUp / Denis Yarats
-        return mean, log_std
-
-    @staticmethod
-    def create(
-        actor_hidden_nodes: List[int], envs: gym.Env
-    ) -> "GaussianMlpPolicyNetwork":
-        return GaussianMlpPolicyNetwork(
-            hidden_nodes=actor_hidden_nodes,
-            action_dim=np.prod(envs.action_space.shape),
-            action_scale=jnp.array(
-                (envs.action_space.high - envs.action_space.low) / 2.0
-            ),
-            action_bias=jnp.array(
-                (envs.action_space.high + envs.action_space.low) / 2.0
-            ),
+    def __init__(self, policy_net: nnx.Module, action_space: gym.spaces.Box):
+        self.policy_net = policy_net
+        self.action_scale = nnx.Variable(
+            jnp.array((action_space.high - action_space.low) / 2.0)
         )
+        self.action_bias = nnx.Variable(
+            jnp.array((action_space.high + action_space.low) / 2.0)
+        )
+
+    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
+        y = self.policy_net(observation)
+        return nnx.tanh(y) * jnp.broadcast_to(
+            self.action_scale.value, y.shape
+        ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
 
 def sample_actions(
@@ -70,7 +124,7 @@ def sample_actions(
     normal = distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)
     # for reparameterization trick (mean + std * N(0,1))
     x_t = normal.sample(seed=key, sample_shape=())
-    y_t = jnp.tanh(x_t)
+    y_t = nnx.tanh(x_t)
     action = y_t * policy.action_scale + policy.action_bias
     log_prob = normal.log_prob(x_t)
     log_prob = log_prob.reshape(-1, 1)
@@ -104,16 +158,13 @@ def sac_actor_loss(
 
 
 def sac_exploration_loss(
-    policy: nn.Module,
+    policy: nnx.Module,
     target_entropy: float,
-    policy_state: TrainState,
-    action_key: jax.random.PRNGKey,
+    action_key: jnp.ndarray,
     observations: jnp.ndarray,
     log_alpha: dict,
 ) -> jnp.ndarray:
-    _, log_prob = sample_actions(
-        policy, policy_state.params, observations, action_key
-    )
+    _, log_prob = sample_actions(policy, observations, action_key)
     alpha_loss = (
         -jnp.exp(log_alpha["log_alpha"]) * (log_prob + target_entropy)
     ).mean()
@@ -183,11 +234,9 @@ def train_sac(
     alpha: float = 0.2,
     autotune: bool = True,
 ) -> tuple[
-    GaussianMlpPolicyNetwork,
-    flax.core.FrozenDict,
     nnx.Module,
-    flax.core.FrozenDict,
-    flax.core.FrozenDict,
+    nnx.Module,
+    nnx.Module,
 ]:
     """Soft actor-critic.
 
@@ -227,7 +276,9 @@ def train_sac(
 
     obs, _ = env.reset(seed=seed)
 
-    policy_optimizer = nnx.Optimizer(policy, optax.adam(learning_rate=policy_lr))
+    policy_optimizer = nnx.Optimizer(
+        policy, optax.adam(learning_rate=policy_lr)
+    )
     policy_target = nnx.clone(policy)
     q1 = q
     q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_lr))
@@ -263,17 +314,20 @@ def train_sac(
             )
 
             key, action_key = jax.random.split(key, 2)
-            q1_loss_value, q1_state, q2_loss_value, q2_state = sac_update_critic(
-                q1_state,
-                q2_state,
-                policy_state,
-                observations,
-                actions,
-                rewards,
-                next_observations,
-                dones,
-                action_key,
-                entropy_control.alpha,
+            q1_loss_value, q1_state, q2_loss_value, q2_state = (
+                sac_update_critic(
+                    q1,
+                    q2,
+                    policy,
+                    gamma,
+                    observations,
+                    actions,
+                    rewards,
+                    next_observations,
+                    dones,
+                    action_key,
+                    entropy_control.alpha,
+                )
             )
 
             if (
@@ -283,9 +337,9 @@ def train_sac(
                 for _ in range(policy_frequency):
                     key, action_key = jax.random.split(key, 2)
                     actor_loss_value, policy_state = sac_update_actor(
-                        policy_state,
-                        q1_state,
-                        q2_state,
+                        policy,
+                        q1,
+                        q2,
                         action_key,
                         observations,
                         entropy_control.alpha,
@@ -319,18 +373,23 @@ def train_sac(
                         "losses/alpha_loss", exploration_loss_value, global_step
                     )
 
-    return policy, policy_state.params, q, q1_state.params, q2_state.params
+    # TODO return optimizers and state of entropy
+    return policy, q1, q2
 
 
 def sac_update_actor(
-    policy, q, policy_state, q1_state, q2_state, action_key, observations, alpha
+    policy: nnx.Module,
+    q1: nnx.Module,
+    q2: nnx.Module,
+    action_key: jnp.ndarray,
+    observations: jnp.ndarray,
+    alpha: jnp.ndarray,
 ):
     actor_loss = partial(
         sac_actor_loss,
         policy,
-        q,
-        q1_state,
-        q2_state,
+        q1,
+        q2,
         alpha,
         action_key,
         observations,
@@ -343,7 +402,8 @@ def sac_update_actor(
 
 
 def sac_update_critic(
-    q,
+    q1,
+    q2,
     policy,
     gamma,
     q1_state,
@@ -360,16 +420,14 @@ def sac_update_critic(
     next_state_actions, next_state_log_pi = sample_actions(
         policy, policy_state.params, next_observations, action_key
     )
-    q1_next_target = q.apply(
-        q1_state.target_params, next_observations, next_state_actions
-    ).squeeze()
-    q2_next_target = q.apply(
-        q2_state.target_params, next_observations, next_state_actions
-    ).squeeze()
+    obs_act = jnp.concatenate((next_observations, next_state_actions), axis=-1)
+    q1_next_target = q1(obs_act).squeeze()
+    q2_next_target = q2(obs_act).squeeze()
     min_q_next_target = (
         jnp.minimum(q1_next_target, q2_next_target) - alpha * next_state_log_pi
     )
     next_q_value = rewards + (1 - dones) * gamma * min_q_next_target
+
     q_loss = partial(critic_loss, q, observations, actions, next_q_value)
     q1_loss_value, q1_grads = jax.value_and_grad(q_loss)(q1_state.params)
     q1_state = q1_state.apply_gradients(grads=q1_grads)
