@@ -1,12 +1,9 @@
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
-from flax import nnx
 
-from rl_blox.algorithms.model_free.ddpg import MLP
 from rl_blox.algorithms.model_free.sac import (
-    GaussianMLP,
-    GaussianPolicy,
+    create_sac_state,
     train_sac,
 )
 
@@ -14,33 +11,31 @@ env_name = "Pendulum-v1"
 env = gym.make(env_name)
 seed = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
-env.action_space.seed(seed)
 
-policy_net = GaussianMLP(
-    False,
-    env.observation_space.shape[0],
-    env.action_space.shape[0],
-    [256, 256],
-    nnx.Rngs(seed),
-)
-policy = GaussianPolicy(policy_net, env.action_space)
-q = MLP(
-    env.observation_space.shape[0] + env.action_space.shape[0],
-    1,
-    [256, 256],
-    nnx.Rngs(seed),
-)
-policy, q1, q2 = train_sac(
+sac_state = create_sac_state(
     env,
-    policy,
-    q,
+    policy_hidden_nodes=[256, 256],
+    policy_learning_rate=3e-4,
+    q_hidden_nodes=[256, 256],
+    q_learning_rate=1e-3,
     seed=seed,
-    total_timesteps=8_500,
+)
+sac_result = train_sac(
+    env,
+    sac_state.policy,
+    sac_state.policy_optimizer,
+    sac_state.q1,
+    sac_state.q1_optimizer,
+    sac_state.q2,
+    sac_state.q2_optimizer,
+    total_timesteps=10_000,
     buffer_size=1_000_000,
     gamma=0.99,
     learning_starts=5_000,
     verbose=1,
 )
+policy, _, q1, _, _, q2, _, _, _ = sac_result
+
 env.close()
 
 # Evaluation
@@ -51,7 +46,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy(jnp.asarray(obs)[jnp.newaxis])[0])
+        action = np.asarray(policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         q1_value = q1(jnp.concatenate((obs, action), axis=-1))

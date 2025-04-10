@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import chex
 import distrax
 import gymnasium as gym
@@ -7,7 +9,7 @@ import numpy as np
 import optax
 from flax import nnx
 
-from .ddpg import ReplayBuffer, action_value_loss, update_target
+from .ddpg import MLP, ReplayBuffer, action_value_loss, update_target
 
 
 class GaussianMLP(nnx.Module):
@@ -212,10 +214,10 @@ class EntropyControl:
     optimizer: optax.adam
     optimizer_state: optax.OptState
 
-    def __init__(self, envs, alpha, autotune, learning_rate):
+    def __init__(self, env, alpha, autotune, learning_rate):
         self.autotune = autotune
         if self.autotune:
-            self.target_entropy = -jnp.prod(jnp.array(envs.action_space.shape))
+            self.target_entropy = -jnp.prod(jnp.array(env.action_space.shape))
             self.log_alpha = {"log_alpha": jnp.zeros(1)}
             self.alpha = jnp.exp(self.log_alpha["log_alpha"])
             self.optimizer = optax.adam(learning_rate=learning_rate)
@@ -238,10 +240,66 @@ class EntropyControl:
         return exploration_loss
 
 
+def create_sac_state(
+    env: gym.Env[gym.spaces.Box, gym.spaces.Box],
+    policy_shared_head: bool = False,
+    policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    policy_learning_rate: float = 3e-4,
+    q_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    q_learning_rate: float = 1e-3,
+    seed: int = 0,
+):
+    env.action_space.seed(seed)
+
+    policy_net = GaussianMLP(
+        policy_shared_head,
+        env.observation_space.shape[0],
+        env.action_space.shape[0],
+        policy_hidden_nodes,
+        nnx.Rngs(seed),
+    )
+    policy = GaussianPolicy(policy_net, env.action_space)
+    policy_optimizer = nnx.Optimizer(
+        policy, optax.adam(learning_rate=policy_learning_rate)
+    )
+
+    q1 = MLP(
+        env.observation_space.shape[0] + env.action_space.shape[0],
+        1,
+        q_hidden_nodes,
+        nnx.Rngs(seed),
+    )
+    q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_learning_rate))
+
+    q2 = MLP(
+        env.observation_space.shape[0] + env.action_space.shape[0],
+        1,
+        q_hidden_nodes,
+        nnx.Rngs(seed + 1),
+    )
+    q2_optimizer = nnx.Optimizer(q2, optax.adam(learning_rate=q_learning_rate))
+
+    return namedtuple(
+        "SACState",
+        [
+            "policy",
+            "policy_optimizer",
+            "q1",
+            "q1_optimizer",
+            "q2",
+            "q2_optimizer",
+        ],
+    )(policy, policy_optimizer, q1, q1_optimizer, q2, q2_optimizer)
+
+
 def train_sac(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: StochasticPolicyBase,
-    q: nnx.Module,
+    policy_optimizer: nnx.Optimizer,
+    q1: nnx.Module,
+    q1_optimizer: nnx.Optimizer,
+    q2: nnx.Module,
+    q2_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
@@ -249,17 +307,25 @@ def train_sac(
     tau: float = 0.005,
     batch_size: int = 256,
     learning_starts: float = 5_000,
-    policy_lr: float = 3e-4,
-    q_lr: float = 1e-3,
+    entropy_learning_rate: float = 1e-3,
     policy_frequency: int = 2,
     target_network_frequency: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
+    q1_target: nnx.Module | None = None,
+    q2_target: nnx.Module | None = None,
+    entropy_control: EntropyControl | None = None,
     verbose: int = 0,
 ) -> tuple[
     nnx.Module,
+    nnx.Optimizer,
     nnx.Module,
     nnx.Module,
+    nnx.Optimizer,
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
+    EntropyControl,
 ]:
     """Soft actor-critic.
 
@@ -287,7 +353,7 @@ def train_sac(
         Timestep to start learning.
     policy_lr
         The learning rate of the policy network optimizer.
-    q_lr
+    entropy_learning_rate
         The learning rate of the Q network optimizer.
     policy_frequency
         Frequency of training policy (delayed).
@@ -297,14 +363,26 @@ def train_sac(
         Entropy regularization coefficient.
     autotune
         Automatic tuning of the entropy coefficient.
+    q1_target
+        Target network for q1.
+    q2_target
+        Target network for q2.
+    entropy_control
+        State of entropy optimizer.
     verbose
         Verbosity level.
 
     Returns
     -------
     policy
+    policy_optimizer
     q1
+    q1_target
+    q1_optimizer
     q2
+    q2_target
+    q2_optimizer
+    entropy_control
     """
     assert isinstance(
         env.action_space, gym.spaces.Box
@@ -315,18 +393,15 @@ def train_sac(
 
     obs, _ = env.reset(seed=seed)
 
-    q1 = q
-    q1_target = nnx.clone(q1)
-    q2 = nnx.clone(q)
-    q2_target = nnx.clone(q2)
+    if q1_target is None:
+        q1_target = nnx.clone(q1)
+    if q2_target is None:
+        q2_target = nnx.clone(q2)
 
-    q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_lr))
-    q2_optimizer = nnx.Optimizer(q2, optax.adam(learning_rate=q_lr))
-    policy_optimizer = nnx.Optimizer(
-        policy, optax.adam(learning_rate=policy_lr)
-    )
-
-    entropy_control = EntropyControl(env, alpha, autotune, q_lr)
+    if entropy_control is None:
+        entropy_control = EntropyControl(
+            env, alpha, autotune, entropy_learning_rate
+        )
 
     env.observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)
@@ -339,14 +414,13 @@ def train_sac(
             key, action_key = jax.random.split(key, 2)
             action = np.asarray(policy.sample(jnp.asarray(obs), action_key))
 
-        next_obs, reward, termination, truncation, infos = env.step(action)
+        next_obs, reward, termination, truncation, info = env.step(action)
 
         done = termination or truncation
         if done:
-            if verbose:
-                print(
-                    f"{global_step=}, episodic_return={infos['episode']['r']}"
-                )
+            if verbose and "episode" in info:
+                # TODO implement logging here
+                print(f"{global_step=}, episodic_return={info['episode']['r']}")
 
             obs, _ = env.reset()
 
@@ -402,7 +476,7 @@ def train_sac(
                 q2_target = update_target(q2, q2_target, tau)
 
             if verbose and global_step % 1_000 == 0:
-                # TODO proper logging
+                # TODO implement logging here
                 print("losses/q1_loss", q1_loss_value, global_step)
                 print("losses/q2_loss", q2_loss_value, global_step)
                 print("losses/policy_loss", actor_loss_value, global_step)
@@ -412,8 +486,17 @@ def train_sac(
                         "losses/alpha_loss", exploration_loss_value, global_step
                     )
 
-    # TODO return optimizers, target nets, and state of entropy
-    return policy, q1, q2
+    return (
+        policy,
+        policy_optimizer,
+        q1,
+        q1_target,
+        q1_optimizer,
+        q2,
+        q2_target,
+        q2_optimizer,
+        entropy_control,
+    )
 
 
 @nnx.jit

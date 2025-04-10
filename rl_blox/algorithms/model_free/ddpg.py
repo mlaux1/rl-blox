@@ -267,7 +267,6 @@ def create_ddpg_state(
     q_learning_rate: float = 3e-4,
     seed: int = 0,
 ):
-    env = gym.wrappers.RecordEpisodeStatistics(env)
     env.action_space.seed(seed)
 
     policy_net = MLP(
@@ -426,7 +425,7 @@ def train_ddpg(
 
         done = terminated or truncated
         if done:
-            if verbose:
+            if verbose and "episode" in info:
                 # TODO implement logging here
                 print(
                     f"{t=}, length={info['episode']['l']}, "
