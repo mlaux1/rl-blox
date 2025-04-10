@@ -232,6 +232,17 @@ def ddpg_update_actor(
     return actor_loss_value
 
 
+@nnx.jit
+def update_target(net, target_net, tau):
+    _, q1_params = nnx.split(net)
+    q1_graphdef, q1_target_params = nnx.split(target_net)
+    q1_target_params = optax.incremental_update(
+        q1_params, q1_target_params, tau
+    )
+    target_net = nnx.merge(q1_graphdef, q1_target_params)
+    return target_net
+
+
 def sample_actions(
     policy: DeterministicPolicy,
     action_space: gym.spaces.Box,
@@ -287,17 +298,6 @@ def create_ddpg_state(
             "q_optimizer",
         ],
     )(policy, policy_optimizer, q, q_optimizer)
-
-
-@nnx.jit
-def update_target(net, target_net, tau):
-    _, q1_params = nnx.split(net)
-    q1_graphdef, q1_target_params = nnx.split(target_net)
-    q1_target_params = optax.incremental_update(
-        q1_params, q1_target_params, tau
-    )
-    target_net = nnx.merge(q1_graphdef, q1_target_params)
-    return target_net
 
 
 def train_ddpg(
