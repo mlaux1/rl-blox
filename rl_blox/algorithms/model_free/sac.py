@@ -1,4 +1,3 @@
-
 import chex
 import distrax
 import gymnasium as gym
@@ -8,7 +7,7 @@ import numpy as np
 import optax
 from flax import nnx
 
-from .ddpg import ReplayBuffer, critic_loss
+from .ddpg import ReplayBuffer, action_value_loss
 
 
 class GaussianMLP(nnx.Module):
@@ -459,11 +458,11 @@ def sac_update_critic(
     )
     next_q_value = rewards + (1 - dones) * gamma * min_q_next_target
 
-    q1_loss_value, q1_grads = nnx.value_and_grad(critic_loss, argnums=3)(
+    q1_loss_value, q1_grads = nnx.value_and_grad(action_value_loss, argnums=3)(
         observations, actions, next_q_value, q1
     )
     q1_optimizer.update(q1_grads)
-    q2_loss_value, q2_grads = nnx.value_and_grad(critic_loss, argnums=3)(
+    q2_loss_value, q2_grads = nnx.value_and_grad(action_value_loss, argnums=3)(
         observations, actions, next_q_value, q2
     )
     q2_optimizer.update(q2_grads)

@@ -115,13 +115,13 @@ class DeterministicPolicy(nnx.Module):
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
 
-def critic_loss(
+def action_value_loss(
     observations: jnp.ndarray,
     actions: jnp.ndarray,
-    q_target: jnp.ndarray,
+    q_target_values: jnp.ndarray,
     q: nnx.Module,
 ) -> jnp.ndarray:
-    """Loss function for action-value function of the critic.
+    """Loss function for action-value function.
 
     Parameters
     ----------
@@ -131,7 +131,7 @@ def critic_loss(
     actions : array, shape (n_samples, n_action_dims)
         Batch of selected actions.
 
-    q_target : array, shape (n_samples,)
+    q_target_values : array, shape (n_samples,)
         Actual action values that should be approximated.
 
     q : nnx.Module
@@ -143,12 +143,17 @@ def critic_loss(
         Mean squared distance between predicted and actual action values.
     """
     chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
-    chex.assert_equal_shape_prefix((observations, q_target), prefix_len=1)
+    chex.assert_equal_shape_prefix(
+        (observations, q_target_values), prefix_len=1
+    )
 
     q_predicted = q(jnp.concatenate((observations, actions), axis=-1)).squeeze()
-    chex.assert_equal_shape((q_predicted, q_target))
+    chex.assert_equal_shape((q_predicted, q_target_values))
 
-    return 2.0 * optax.l2_loss(predictions=q_predicted, targets=q_target).mean()
+    return (
+        2.0
+        * optax.l2_loss(predictions=q_predicted, targets=q_target_values).mean()
+    )
 
 
 def deterministic_policy_value_loss(
@@ -206,7 +211,7 @@ def ddpg_update_critic(
     ).squeeze()
     q_bootstrap = (rewards + (1 - dones) * gamma * q_target_next).reshape(-1)
 
-    loss = partial(critic_loss, observations, actions, q_bootstrap)
+    loss = partial(action_value_loss, observations, actions, q_bootstrap)
     q_loss_value, grads = nnx.value_and_grad(loss)(q)
     q_optimizer.update(grads)
 
