@@ -344,6 +344,11 @@ def train_sac(
     where :math:`\alpha` is the temperature parameter that determines the
     relative importance of the optimal policy.
 
+    In addition, this implementation allows to automatically tune the
+    temperature :math:`\alpha.`, uses double Q learning [3]_, and uses target
+    networks [4]_ for both Q networks. In total, there are four action-value
+    networks q1, q1_target, q2, and q2_target as well as one policy network.
+
     Parameters
     ----------
     env
@@ -422,6 +427,14 @@ def train_sac(
        Tan, J., Kumar, V., Zhu, H., Gupta, A., Abbeel, P. & Levine, P. (2018).
        Soft Actor-Critic Algorithms and Applications. arXiv.
        http://arxiv.org/abs/1812.05905
+
+    .. [3] Hasselt, H. (2010). Double Q-learning. In Advances in Neural
+       Information Processing Systems 23.
+       https://papers.nips.cc/paper_files/paper/2010/hash/091d584fced301b442654dd8c23b3fc9-Abstract.html
+
+    .. [4] Mnih, V., Kavukcuoglu, K., Silver, D. et al. (2015). Human-level
+       control through deep reinforcement learning. Nature 518, 529–533.
+       https://doi.org/10.1038/nature14236
     """
     assert isinstance(
         env.action_space, gym.spaces.Box
