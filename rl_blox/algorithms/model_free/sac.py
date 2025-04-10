@@ -381,7 +381,7 @@ def train_sac(
     return policy, q1, q2
 
 
-# TODO nnx.jit
+@nnx.jit
 def update_target(net, target_net, tau):  # TODO reuse for DDPG
     _, q1_params = nnx.split(net)
     q1_graphdef, q1_target_params = nnx.split(target_net)
@@ -392,7 +392,7 @@ def update_target(net, target_net, tau):  # TODO reuse for DDPG
     return target_net
 
 
-# TODO nnx.jit
+@nnx.jit
 def sac_update_actor(
     policy: nnx.Module,
     policy_optimizer: nnx.Optimizer,
@@ -402,14 +402,14 @@ def sac_update_actor(
     observations: jnp.ndarray,
     alpha: jnp.ndarray,
 ) -> float:
-    loss, grads = nnx.value_and_grad(sac_actor_loss)(
+    loss, grads = nnx.value_and_grad(sac_actor_loss, argnums=0)(
         policy, q1, q2, alpha, action_key, observations
     )
     policy_optimizer.update(grads)
     return loss
 
 
-# TODO nnx.jit
+@nnx.jit
 def sac_update_critic(
     q1: nnx.Module,
     q1_target: nnx.Module,
