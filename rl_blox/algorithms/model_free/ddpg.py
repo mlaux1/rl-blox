@@ -84,14 +84,14 @@ class MLP(nnx.Module):
 
 
 class DeterministicPolicy(nnx.Module):
-    r"""Deterministic policy represented by multilayer perceptron (MLP).
+    r"""Deterministic policy represented with a function approximator.
 
-    The MLP directly maps observations to actions, hence, represents the
-    function :math:`\pi(o) = a`.
+    The deterministic policy directly maps observations to actions, hence,
+    represents the function :math:`\pi(o) = a`.
     """
 
     policy_net: nnx.Module
-    """Underlying MLP."""
+    """Underlying function approximator."""
 
     action_scale: nnx.Variable[jnp.ndarray]
     """Scales for each component of the action."""
