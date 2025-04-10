@@ -36,7 +36,7 @@ policy, q1, q2 = train_sac(
     policy,
     q,
     seed=seed,
-    total_timesteps=8_000,
+    total_timesteps=8_500,
     buffer_size=1_000_000,
     gamma=0.99,
     learning_starts=5_000,
@@ -52,7 +52,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy(jnp.asarray(obs)[jnp.newaxis]).squeeze())
+        action = np.asarray(policy(jnp.asarray(obs)[jnp.newaxis])[0])
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         q1_value = q1(jnp.concatenate((obs, action), axis=-1))
