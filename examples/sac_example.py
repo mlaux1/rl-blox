@@ -52,7 +52,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(mean_action(policy, obs)[0])
+        action = np.asarray(policy(jnp.asarray(obs)[jnp.newaxis]).squeeze())
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         q1_value = q1(jnp.concatenate((obs, action), axis=-1))

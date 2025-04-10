@@ -81,7 +81,30 @@ class GaussianMLP(nnx.Module):
 
 
 # TODO merge with Gaussian policy from REINFORCE branch
-class GaussianPolicy(nnx.Module):
+class StochasticPolicyBase(nnx.Module):
+    """Base class for probabilistic policies."""
+
+    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
+        """Compute action probabilities for given observation."""
+        raise NotImplementedError("Subclasses must implement __call__ method.")
+
+    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
+        """Sample action from policy given observation."""
+        raise NotImplementedError("Subclasses must implement sample method.")
+
+    def log_probability(
+        self,
+        observation: jnp.ndarray,
+        action: jnp.ndarray,
+    ) -> jnp.ndarray:
+        """Compute log probability of action given observation."""
+        raise NotImplementedError(
+            "Subclasses must implement log_probability method."
+        )
+
+
+# TODO merge with Gaussian policy from REINFORCE branch
+class GaussianPolicy(StochasticPolicyBase):
     r"""Gaussian policy represented with a function approximator.
 
     The gaussian policy maps observations to mean and log variance of an
@@ -107,14 +130,17 @@ class GaussianPolicy(nnx.Module):
         )
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        y, log_var = self.net(observation)
+        y, _ = self.net(observation)
         return nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from Gaussian distribution."""
-        mean, log_var = self.net(observation)
+        y, log_var = self.net(observation)
+        mean = nnx.tanh(y) * jnp.broadcast_to(
+            self.action_scale.value, y.shape
+        ) + jnp.broadcast_to(self.action_bias.value, y.shape)
         return (
             jax.random.normal(key, mean.shape)
             # TODO compare to alternative approach from previous implementation
@@ -128,7 +154,10 @@ class GaussianPolicy(nnx.Module):
         action: jnp.ndarray,
     ) -> jnp.ndarray:
         """Compute log probability of action given observation."""
-        mean, log_var = self.net(observation)
+        y, log_var = self.net(observation)
+        mean = nnx.tanh(y) * jnp.broadcast_to(
+            self.action_scale.value, y.shape
+        ) + jnp.broadcast_to(self.action_bias.value, y.shape)
         # TODO compare to alternative approach from previous implementation
         log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
         std = jnp.exp(log_std)
@@ -149,7 +178,7 @@ def mean_action(policy: nnx.Module, obs: jnp.ndarray) -> jnp.ndarray:
 
 
 def sac_actor_loss(
-    policy: GaussianPolicy,  # TODO common base class
+    policy: StochasticPolicyBase,
     q1: nnx.Module,
     q2: nnx.Module,
     alpha: float,
@@ -167,7 +196,7 @@ def sac_actor_loss(
 
 
 def sac_exploration_loss(
-    policy: GaussianPolicy,  # TODO common base class
+    policy: StochasticPolicyBase,
     target_entropy: float,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
@@ -219,7 +248,7 @@ class EntropyControl:
 
 def train_sac(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    policy: GaussianPolicy,  # TODO common base class
+    policy: StochasticPolicyBase,
     q: nnx.Module,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
@@ -417,7 +446,7 @@ def sac_update_critic(
     q2: nnx.Module,
     q2_target: nnx.Module,
     q2_optimizer: nnx.Optimizer,
-    policy: GaussianPolicy,  # TODO common base class
+    policy: StochasticPolicyBase,
     gamma: float,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
