@@ -1,14 +1,12 @@
-from functools import partial
 
 import chex
 import distrax
-import flax
-from flax import nnx
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+from flax import nnx
 
 from .ddpg import ReplayBuffer, critic_loss
 
@@ -110,9 +108,6 @@ class GaussianPolicy(nnx.Module):
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         y, log_var = self.net(observation)
-        # TODO compare to alternative approach from previous implementation
-        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
-        std = jnp.exp(log_std)
         return nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
@@ -122,6 +117,7 @@ class GaussianPolicy(nnx.Module):
         mean, log_var = self.net(observation)
         return (
             jax.random.normal(key, mean.shape)
+            # TODO compare to alternative approach from previous implementation
             * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
             + mean
         )
@@ -133,6 +129,7 @@ class GaussianPolicy(nnx.Module):
     ) -> jnp.ndarray:
         """Compute log probability of action given observation."""
         mean, log_var = self.net(observation)
+        # TODO compare to alternative approach from previous implementation
         log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
         std = jnp.exp(log_std)
         # same as
@@ -197,9 +194,7 @@ class EntropyControl:
     def __init__(self, envs, alpha, autotune, learning_rate):
         self.autotune = autotune
         if self.autotune:
-            self.target_entropy = -jnp.prod(
-                jnp.array(envs.action_space.shape)
-            )
+            self.target_entropy = -jnp.prod(jnp.array(envs.action_space.shape))
             self.log_alpha = {"log_alpha": jnp.zeros(1)}
             self.alpha = jnp.exp(self.log_alpha["log_alpha"])
             self.optimizer = optax.adam(learning_rate=learning_rate)
@@ -311,7 +306,9 @@ def train_sac(
         done = termination or truncation
         if done:
             if verbose:
-                print(f"{global_step=}, episodic_return={infos['episode']['r']}")
+                print(
+                    f"{global_step=}, episodic_return={infos['episode']['r']}"
+                )
 
             obs, _ = env.reset()
 
@@ -440,9 +437,13 @@ def sac_update_critic(
     )
     next_q_value = rewards + (1 - dones) * gamma * min_q_next_target
 
-    q1_loss_value, q1_grads = nnx.value_and_grad(critic_loss, argnums=3)(observations, actions, next_q_value, q1)
+    q1_loss_value, q1_grads = nnx.value_and_grad(critic_loss, argnums=3)(
+        observations, actions, next_q_value, q1
+    )
     q1_optimizer.update(q1_grads)
-    q2_loss_value, q2_grads = nnx.value_and_grad(critic_loss, argnums=3)(observations, actions, next_q_value, q2)
+    q2_loss_value, q2_grads = nnx.value_and_grad(critic_loss, argnums=3)(
+        observations, actions, next_q_value, q2
+    )
     q2_optimizer.update(q2_grads)
 
     return q1_loss_value, q2_loss_value

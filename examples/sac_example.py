@@ -1,7 +1,7 @@
 import gymnasium as gym
+import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-import jax.numpy as jnp
 
 from rl_blox.algorithms.model_free.ddpg import MLP
 from rl_blox.algorithms.model_free.sac import (
