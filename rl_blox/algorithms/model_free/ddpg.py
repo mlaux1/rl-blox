@@ -344,8 +344,8 @@ def train_ddpg(
         The policy will only be updated after this number of steps. Target
         policy and value function will be updated with the same frequency. The
         value function will be updated after every step.
-    policy_optimizer
-        Policy optimizer. Only has to be set if we want to continue training
+    policy_target
+        Target policy. Only has to be set if we want to continue training
         from an old state.
     q_target
         Target network. Only has to be set if we want to continue training
