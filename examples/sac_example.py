@@ -1,10 +1,11 @@
 import gymnasium as gym
 import numpy as np
+from flax import nnx
 
+from rl_blox.algorithms.model_free.ddpg import MLP
 from rl_blox.algorithms.model_free.sac import (
     GaussianMlpPolicyNetwork,
-    SoftMlpQNetwork,
-    mean_actions,
+    mean_action,
     train_sac,
 )
 
@@ -13,11 +14,11 @@ env = gym.make(env_name)
 seed = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
-envs = gym.vector.SyncVectorEnv([lambda: env])
-policy = GaussianMlpPolicyNetwork.create([256, 256], envs)
-q = SoftMlpQNetwork(hidden_nodes=[256, 256])
+
+policy = GaussianMlpPolicyNetwork.create([256, 256], env)
+q = MLP(env.observation_space.shape[0] + env.action_space.shape[0], 1, [256, 256], nnx.Rngs(seed))
 policy, policy_params, q, q1_params, q2_params = train_sac(
-    envs,
+    env,
     policy,
     q,
     seed=seed,
@@ -26,7 +27,7 @@ policy, policy_params, q, q1_params, q2_params = train_sac(
     gamma=0.99,
     learning_starts=5_000,
 )
-envs.close()
+env.close()
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")
@@ -36,7 +37,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(mean_actions(policy, policy_params, obs)[0])
+        action = np.asarray(mean_action(policy, policy_params, obs)[0])
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         q1_value = q.apply(q1_params, obs, action)

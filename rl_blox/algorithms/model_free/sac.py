@@ -1,33 +1,15 @@
 from functools import partial
-from typing import List, Tuple
 
 import distrax
 import flax
-import flax.linen as nn
+from flax import nnx
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from flax.training.train_state import TrainState
 
 from .ddpg import ReplayBuffer, critic_loss
-
-
-class SoftMlpQNetwork(nn.Module):
-    """Soft Q network represented by multilayer perceptron."""
-
-    hidden_nodes: List[int]
-    """Numbers of hidden nodes of the MLP."""
-
-    @nn.compact
-    def __call__(self, obs: jnp.ndarray, act: jnp.ndarray):
-        x = jnp.concatenate([obs, act], -1)
-        for n_nodes in self.hidden_nodes:
-            x = nn.Dense(n_nodes)(x)
-            x = nn.relu(x)
-        x = nn.Dense(1)(x)
-        return x
 
 
 LOG_STD_MAX = 2
@@ -37,7 +19,7 @@ LOG_STD_MIN = -5
 class GaussianMlpPolicyNetwork(nn.Module):
     """Gaussian policy represented by multilayer perceptron (MLP)."""
 
-    hidden_nodes: List[int]
+    hidden_nodes: list[int]
     """Numbers of hidden nodes of the MLP."""
 
     action_dim: int
@@ -64,11 +46,11 @@ class GaussianMlpPolicyNetwork(nn.Module):
 
     @staticmethod
     def create(
-        actor_hidden_nodes: List[int], envs: gym.vector.SyncVectorEnv
+        actor_hidden_nodes: List[int], envs: gym.Env
     ) -> "GaussianMlpPolicyNetwork":
         return GaussianMlpPolicyNetwork(
             hidden_nodes=actor_hidden_nodes,
-            action_dim=np.prod(envs.single_action_space.shape),
+            action_dim=np.prod(envs.action_space.shape),
             action_scale=jnp.array(
                 (envs.action_space.high - envs.action_space.low) / 2.0
             ),
@@ -79,17 +61,15 @@ class GaussianMlpPolicyNetwork(nn.Module):
 
 
 def sample_actions(
-    policy: nn.Module,
-    params: flax.core.FrozenDict,
+    policy: nnx.Module,
     obs: jnp.ndarray,
     key: jax.random.PRNGKey,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    mean, log_std = policy.apply(params, obs)
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    mean, log_std = policy(obs)
     std = jnp.exp(log_std)
     normal = distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)
-    x_t = normal.sample(
-        seed=key, sample_shape=()
-    )  # for reparameterization trick (mean + std * N(0,1))
+    # for reparameterization trick (mean + std * N(0,1))
+    x_t = normal.sample(seed=key, sample_shape=())
     y_t = jnp.tanh(x_t)
     action = y_t * policy.action_scale + policy.action_bias
     log_prob = normal.log_prob(x_t)
@@ -100,39 +80,24 @@ def sample_actions(
     return action, log_prob
 
 
-def mean_actions(
-    policy, params: flax.core.FrozenDict, obs: jnp.ndarray
-) -> jnp.ndarray:
-    mean, log_std = policy.apply(params, obs)
-    std = jnp.exp(log_std)
-    y_t = jnp.tanh(mean)
+def mean_action(policy: nnx.Module, obs: jnp.ndarray) -> jnp.ndarray:
+    mean, _ = policy(obs)
+    y_t = nnx.tanh(mean)
     action = y_t * policy.action_scale + policy.action_bias
     return action
 
 
-class TargetTrainState(TrainState):
-    """TrainState with additional target parameters.
-
-    Target parameters are supposed to be more stable and will be updated by
-    Polyak averaging.
-    """
-
-    target_params: flax.core.FrozenDict
-
-
 def sac_actor_loss(
-    policy: nn.Module,
-    q: nn.Module,
-    q1_state: TargetTrainState,
-    q2_state: TargetTrainState,
+    policy: nnx.Module,
+    q1: nnx.Module,
+    q2: nnx.Module,
     alpha: float,
-    action_key: jax.random.PRNGKey,
+    action_key: jnp.ndarray,
     observations: jnp.ndarray,
-    params: flax.core.FrozenDict,
 ) -> jnp.ndarray:
-    action, log_prob = sample_actions(policy, params, observations, action_key)
-    qf1_pi = q.apply(q1_state.params, observations, action).squeeze()
-    qf2_pi = q.apply(q2_state.params, observations, action).squeeze()
+    action, log_prob = sample_actions(policy, observations, action_key)
+    qf1_pi = q1(observations, action).squeeze()
+    qf2_pi = q2(observations, action).squeeze()
     min_qf_pi = jnp.minimum(qf1_pi, qf2_pi)
     actor_loss = (alpha * log_prob - min_qf_pi).mean()
     return actor_loss
@@ -201,9 +166,9 @@ class EntropyControl:
 
 
 def train_sac(
-    envs,
-    policy: nn.Module,
-    q: nn.Module,
+    env,
+    policy: nnx.Module,
+    q: nnx.Module,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
@@ -217,96 +182,78 @@ def train_sac(
     target_network_frequency: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
-) -> Tuple[
+) -> tuple[
     GaussianMlpPolicyNetwork,
     flax.core.FrozenDict,
-    nn.Module,
+    nnx.Module,
     flax.core.FrozenDict,
     flax.core.FrozenDict,
 ]:
     """Soft actor-critic.
 
-    :param envs: Vectorized Gymnasium environments.
-    :param policy: Gaussian policy network.
-    :param q: Soft Q network.
-    :param seed: Seed for random number generation.
-    :param total_timesteps: Total timesteps of the experiments
-    :param buffer_size: The replay memory buffer size
-    :param gamma: The discount factor gamma
-    :param tau: Target smoothing coefficient (default: 0.005)
-    :param batch_size: The batch size of sample from the reply memory
-    :param learning_starts: Timestep to start learning
-    :param policy_lr: The learning rate of the policy network optimizer
-    :param q_lr: The learning rate of the Q network optimizer
-    :param policy_frequency: Frequency of training policy (delayed)
-    :param target_network_frequency: The frequency of updates for the target networks
-    :param alpha: Entropy regularization coefficient.
-    :param autotune: Automatic tuning of the entropy coefficient
-    :returns: A tuple of the policy, policy parameters, Q network,
-              Q1 parameters, and Q2 parameters.
+    Parameters
+    ----------
+    env: Vectorized Gymnasium environments.
+    policy: Gaussian policy network.
+    q: Soft Q network.
+    seed: Seed for random number generation.
+    total_timesteps: Total timesteps of the experiments
+    buffer_size: The replay memory buffer size
+    gamma: The discount factor gamma
+    tau: Target smoothing coefficient (default: 0.005)
+    batch_size: The batch size of sample from the reply memory
+    learning_starts: Timestep to start learning
+    policy_lr: The learning rate of the policy network optimizer
+    q_lr: The learning rate of the Q network optimizer
+    policy_frequency: Frequency of training policy (delayed)
+    target_network_frequency: The frequency of updates for the target networks
+    alpha: Entropy regularization coefficient.
+    autotune: Automatic tuning of the entropy coefficient
+
+    Returns
+    -------
+    policy
+    policy parameters
+    Q network
+    Q1 parameters
+    Q2 parameters
     """
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
 
     assert isinstance(
-        envs.single_action_space, gym.spaces.Box
+        env.single_action_space, gym.spaces.Box
     ), "only continuous action space is supported"
-    action_space: gym.spaces.Box = envs.action_space
 
-    obs, _ = envs.reset(seed=seed)
-    action = action_space.sample()
+    obs, _ = env.reset(seed=seed)
 
-    key, actor_key, q1_key, q2_key = jax.random.split(key, 4)
-    policy_state = TrainState.create(
-        apply_fn=policy.apply,
-        params=policy.init(actor_key, obs),
-        tx=optax.adam(learning_rate=policy_lr),
-    )
-    q1_state = TargetTrainState.create(
-        apply_fn=q.apply,
-        params=q.init(q1_key, obs, action),
-        target_params=q.init(q1_key, obs, action),
-        tx=optax.adam(learning_rate=q_lr),
-    )
-    q2_state = TargetTrainState.create(
-        apply_fn=q.apply,
-        params=q.init(q2_key, obs, action),
-        target_params=q.init(q2_key, obs, action),
-        tx=optax.adam(learning_rate=q_lr),
-    )
-    policy.apply = jax.jit(policy.apply)
-    q.apply = jax.jit(q.apply)
+    policy_optimizer = nnx.Optimizer(policy, optax.adam(learning_rate=policy_lr))
+    policy_target = nnx.clone(policy)
+    q1 = q
+    q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_lr))
+    q2 = nnx.clone(q)
+    q2_optimizer = nnx.Optimizer(q2, optax.adam(learning_rate=q_lr))
 
-    update_critic = jax.jit(partial(sac_update_critic, q, policy, gamma))
-    update_actor = jax.jit(partial(sac_update_actor, policy, q))
+    entropy_control = EntropyControl(env, alpha, autotune, q_lr)
 
-    entropy_control = EntropyControl(envs, alpha, autotune, q_lr)
-
-    envs.single_observation_space.dtype = np.float32
+    env.single_observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)
 
-    obs, _ = envs.reset(seed=seed)
+    obs, _ = env.reset(seed=seed)
     for global_step in range(total_timesteps):
         if global_step < learning_starts:
-            actions = np.array(
-                [
-                    envs.single_action_space.sample()
-                    for _ in range(envs.num_envs)
-                ]
-            )
+            action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            actions, _ = sample_actions(
-                policy, policy_state.params, obs, action_key
-            )
-            actions = jax.device_get(actions)
+            action, _ = sample_actions(policy, obs, action_key)
+            action = np.asarray(action)
 
-        next_obs, rewards, terminations, truncations, infos = envs.step(actions)
+        next_obs, reward, termination, truncation, infos = env.step(action)
 
-        if any(terminations) or any(truncations):
+        if termination or truncation:
             print(f"{global_step=}, episodic_return={infos['episode']['r']}")
 
-        rb.add_samples(obs, actions, rewards, next_obs, terminations)
+        rb.add_sample(obs, action, reward, next_obs, termination)
 
         obs = next_obs
 
@@ -316,7 +263,7 @@ def train_sac(
             )
 
             key, action_key = jax.random.split(key, 2)
-            q1_loss_value, q1_state, q2_loss_value, q2_state = update_critic(
+            q1_loss_value, q1_state, q2_loss_value, q2_state = sac_update_critic(
                 q1_state,
                 q2_state,
                 policy_state,
@@ -335,7 +282,7 @@ def train_sac(
                 # compensate for the delay by doing 'policy_frequency' updates instead of 1
                 for _ in range(policy_frequency):
                     key, action_key = jax.random.split(key, 2)
-                    actor_loss_value, policy_state = update_actor(
+                    actor_loss_value, policy_state = sac_update_actor(
                         policy_state,
                         q1_state,
                         q2_state,
