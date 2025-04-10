@@ -7,7 +7,6 @@ from rl_blox.algorithms.model_free.ddpg import MLP
 from rl_blox.algorithms.model_free.sac import (
     GaussianMLP,
     GaussianPolicy,
-    mean_action,
     train_sac,
 )
 

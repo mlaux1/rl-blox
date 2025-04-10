@@ -170,13 +170,6 @@ class GaussianPolicy(StochasticPolicyBase):
         ).log_prob(action)
 
 
-def mean_action(policy: nnx.Module, obs: jnp.ndarray) -> jnp.ndarray:
-    mean, _ = policy(obs)
-    y_t = nnx.tanh(mean)
-    action = y_t * policy.action_scale + policy.action_bias
-    return action
-
-
 def sac_actor_loss(
     policy: StochasticPolicyBase,
     q1: nnx.Module,
