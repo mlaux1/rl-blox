@@ -82,6 +82,7 @@ class GaussianMLP(nnx.Module):
         return mean, log_var
 
 
+# TODO merge with Gaussian policy from REINFORCE branch
 class GaussianPolicy(nnx.Module):
     r"""Gaussian policy represented with a function approximator.
 
@@ -89,7 +90,7 @@ class GaussianPolicy(nnx.Module):
     action, hence, represents the distribution :math:`\pi(a|o)`.
     """
 
-    policy_net: nnx.Module
+    net: nnx.Module
     """Underlying function approximator."""
 
     action_scale: nnx.Variable[jnp.ndarray]
@@ -99,7 +100,7 @@ class GaussianPolicy(nnx.Module):
     """Offset for each component of the action."""
 
     def __init__(self, policy_net: nnx.Module, action_space: gym.spaces.Box):
-        self.policy_net = policy_net
+        self.net = policy_net
         self.action_scale = nnx.Variable(
             jnp.array((action_space.high - action_space.low) / 2.0)
         )
@@ -108,30 +109,39 @@ class GaussianPolicy(nnx.Module):
         )
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        y = self.policy_net(observation)
+        y, log_var = self.net(observation)
+        # TODO compare to alternative approach from previous implementation
+        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
+        std = jnp.exp(log_std)
         return nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
+    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
+        """Sample action from Gaussian distribution."""
+        mean, log_var = self.net(observation)
+        return (
+            jax.random.normal(key, mean.shape)
+            * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
+            + mean
+        )
 
-def sample_actions(
-    policy: nnx.Module,
-    obs: jnp.ndarray,
-    key: jax.random.PRNGKey,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    mean, log_std = policy(obs)
-    std = jnp.exp(log_std)
-    normal = distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)
-    # for reparameterization trick (mean + std * N(0,1))
-    x_t = normal.sample(seed=key, sample_shape=())
-    y_t = nnx.tanh(x_t)
-    action = y_t * policy.action_scale + policy.action_bias
-    log_prob = normal.log_prob(x_t)
-    log_prob = log_prob.reshape(-1, 1)
-    # Enforcing Action Bound
-    log_prob -= jnp.log(policy.action_scale * (1 - y_t**2) + 1e-6)
-    log_prob = log_prob.sum(1)
-    return action, log_prob
+    def log_probability(
+        self,
+        observation: jnp.ndarray,
+        action: jnp.ndarray,
+    ) -> jnp.ndarray:
+        """Compute log probability of action given observation."""
+        mean, log_var = self.net(observation)
+        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
+        std = jnp.exp(log_std)
+        # same as
+        # -jnp.log(std)
+        # - 0.5 * jnp.log(2.0 * jnp.pi)
+        # - 0.5 * ((action - mean) / std) ** 2
+        return distrax.MultivariateNormalDiag(
+            loc=mean, scale_diag=std
+        ).log_prob(action)
 
 
 def mean_action(policy: nnx.Module, obs: jnp.ndarray) -> jnp.ndarray:
@@ -142,29 +152,32 @@ def mean_action(policy: nnx.Module, obs: jnp.ndarray) -> jnp.ndarray:
 
 
 def sac_actor_loss(
-    policy: nnx.Module,
+    policy: GaussianPolicy,  # TODO common base class
     q1: nnx.Module,
     q2: nnx.Module,
     alpha: float,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
 ) -> jnp.ndarray:
-    action, log_prob = sample_actions(policy, observations, action_key)
-    qf1_pi = q1(observations, action).squeeze()
-    qf2_pi = q2(observations, action).squeeze()
+    actions = policy.sample(observations, action_key)
+    log_prob = policy.log_probability(observations, actions)
+    obs_act = jnp.concatenate((observations, actions), axis=-1)
+    qf1_pi = q1(obs_act).squeeze()
+    qf2_pi = q2(obs_act).squeeze()
     min_qf_pi = jnp.minimum(qf1_pi, qf2_pi)
     actor_loss = (alpha * log_prob - min_qf_pi).mean()
     return actor_loss
 
 
 def sac_exploration_loss(
-    policy: nnx.Module,
+    policy: GaussianPolicy,  # TODO common base class
     target_entropy: float,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
     log_alpha: dict,
 ) -> jnp.ndarray:
-    _, log_prob = sample_actions(policy, observations, action_key)
+    actions = policy.sample(observations, action_key)
+    log_prob = policy.log_probability(observations, actions)
     alpha_loss = (
         -jnp.exp(log_alpha["log_alpha"]) * (log_prob + target_entropy)
     ).mean()
@@ -177,7 +190,7 @@ class EntropyControl:
     alpha: jnp.ndarray
     autotune: bool
     target_entropy: jnp.ndarray
-    log_alpha: dict
+    log_alpha: dict[str, jnp.ndarray]
     optimizer: optax.adam
     optimizer_state: optax.OptState
 
@@ -185,7 +198,7 @@ class EntropyControl:
         self.autotune = autotune
         if self.autotune:
             self.target_entropy = -jnp.prod(
-                jnp.array(envs.single_action_space.shape)
+                jnp.array(envs.action_space.shape)
             )
             self.log_alpha = {"log_alpha": jnp.zeros(1)}
             self.alpha = jnp.exp(self.log_alpha["log_alpha"])
@@ -194,31 +207,24 @@ class EntropyControl:
         else:
             self.alpha = alpha
 
-    def update(self, policy, policy_state, observations, action_key):
+    def update(self, policy, observations, action_key):
         if not self.autotune:
             return 0.0
-        exploration_loss = partial(
-            sac_exploration_loss,
-            policy,
-            self.target_entropy,
-            policy_state,
-            action_key,
-            observations,
-        )
-        exploration_loss_value, alpha_grads = jax.value_and_grad(
-            exploration_loss
-        )(self.log_alpha)
+
+        exploration_loss, grad = jax.value_and_grad(
+            sac_exploration_loss, argnums=4
+        )(policy, self.target_entropy, action_key, observations, self.log_alpha)
         updates, self.optimizer_state = self.optimizer.update(
-            alpha_grads, self.optimizer_state
+            grad, self.optimizer_state
         )
         self.log_alpha = optax.apply_updates(self.log_alpha, updates)
         self.alpha = jnp.exp(self.log_alpha["log_alpha"])
-        return exploration_loss_value
+        return exploration_loss
 
 
 def train_sac(
-    env,
-    policy: nnx.Module,
+    env: gym.Env[gym.spaces.Box, gym.spaces.Box],
+    policy: GaussianPolicy,  # TODO common base class
     q: nnx.Module,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
@@ -233,6 +239,7 @@ def train_sac(
     target_network_frequency: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
+    verbose: int = 0,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -258,36 +265,37 @@ def train_sac(
     target_network_frequency: The frequency of updates for the target networks
     alpha: Entropy regularization coefficient.
     autotune: Automatic tuning of the entropy coefficient
+    verbose: Verbosity level
 
     Returns
     -------
     policy
-    policy parameters
-    Q network
-    Q1 parameters
-    Q2 parameters
+    q1
+    q2
     """
+    assert isinstance(
+        env.action_space, gym.spaces.Box
+    ), "only continuous action space is supported"
+
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
 
-    assert isinstance(
-        env.single_action_space, gym.spaces.Box
-    ), "only continuous action space is supported"
-
     obs, _ = env.reset(seed=seed)
 
+    q1 = q
+    q1_target = nnx.clone(q1)
+    q2 = nnx.clone(q)
+    q2_target = nnx.clone(q2)
+
+    q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_lr))
+    q2_optimizer = nnx.Optimizer(q2, optax.adam(learning_rate=q_lr))
     policy_optimizer = nnx.Optimizer(
         policy, optax.adam(learning_rate=policy_lr)
     )
-    policy_target = nnx.clone(policy)
-    q1 = q
-    q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_lr))
-    q2 = nnx.clone(q)
-    q2_optimizer = nnx.Optimizer(q2, optax.adam(learning_rate=q_lr))
 
     entropy_control = EntropyControl(env, alpha, autotune, q_lr)
 
-    env.single_observation_space.dtype = np.float32
+    env.observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)
 
     obs, _ = env.reset(seed=seed)
@@ -296,13 +304,16 @@ def train_sac(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action, _ = sample_actions(policy, obs, action_key)
-            action = np.asarray(action)
+            action = np.asarray(policy.sample(jnp.asarray(obs), action_key))
 
         next_obs, reward, termination, truncation, infos = env.step(action)
 
-        if termination or truncation:
-            print(f"{global_step=}, episodic_return={infos['episode']['r']}")
+        done = termination or truncation
+        if done:
+            if verbose:
+                print(f"{global_step=}, episodic_return={infos['episode']['r']}")
+
+            obs, _ = env.reset()
 
         rb.add_sample(obs, action, reward, next_obs, termination)
 
@@ -314,20 +325,22 @@ def train_sac(
             )
 
             key, action_key = jax.random.split(key, 2)
-            q1_loss_value, q1_state, q2_loss_value, q2_state = (
-                sac_update_critic(
-                    q1,
-                    q2,
-                    policy,
-                    gamma,
-                    observations,
-                    actions,
-                    rewards,
-                    next_observations,
-                    dones,
-                    action_key,
-                    entropy_control.alpha,
-                )
+            q1_loss_value, q2_loss_value = sac_update_critic(
+                q1,
+                q1_target,
+                q1_optimizer,
+                q2,
+                q2_target,
+                q2_optimizer,
+                policy,
+                gamma,
+                observations,
+                actions,
+                rewards,
+                next_observations,
+                dones,
+                action_key,
+                entropy_control.alpha,
             )
 
             if (
@@ -336,8 +349,9 @@ def train_sac(
                 # compensate for the delay by doing 'policy_frequency' updates instead of 1
                 for _ in range(policy_frequency):
                     key, action_key = jax.random.split(key, 2)
-                    actor_loss_value, policy_state = sac_update_actor(
+                    actor_loss_value = sac_update_actor(
                         policy,
+                        policy_optimizer,
                         q1,
                         q2,
                         action_key,
@@ -347,90 +361,88 @@ def train_sac(
                     if autotune:
                         key, action_key = jax.random.split(key, 2)
                         exploration_loss_value = entropy_control.update(
-                            policy, policy_state, observations, key
+                            policy, observations, key
                         )
 
             # update the target networks
             if global_step % target_network_frequency == 0:
-                q1_state = q1_state.replace(
-                    target_params=optax.incremental_update(
-                        q1_state.params, q1_state.target_params, tau
-                    )
-                )
-                q2_state = q2_state.replace(
-                    target_params=optax.incremental_update(
-                        q2_state.params, q2_state.target_params, tau
-                    )
-                )
+                q1_target = update_target(q1, q1_target, tau)
+                q2_target = update_target(q2, q2_target, tau)
 
-            if global_step % 1_000_000 == 0:
-                print("losses/qf1_loss", q1_loss_value, global_step)
-                print("losses/qf2_loss", q2_loss_value, global_step)
-                print("losses/actor_loss", actor_loss_value, global_step)
+            if verbose and global_step % 1_000 == 0:
+                # TODO proper logging
+                print("losses/q1_loss", q1_loss_value, global_step)
+                print("losses/q2_loss", q2_loss_value, global_step)
+                print("losses/policy_loss", actor_loss_value, global_step)
                 print("losses/alpha", entropy_control.alpha, global_step)
                 if autotune:
                     print(
                         "losses/alpha_loss", exploration_loss_value, global_step
                     )
 
-    # TODO return optimizers and state of entropy
+    # TODO return optimizers, target nets, and state of entropy
     return policy, q1, q2
 
 
+# TODO nnx.jit
+def update_target(net, target_net, tau):  # TODO reuse for DDPG
+    _, q1_params = nnx.split(net)
+    q1_graphdef, q1_target_params = nnx.split(target_net)
+    q1_target_params = optax.incremental_update(
+        q1_params, q1_target_params, tau
+    )
+    target_net = nnx.merge(q1_graphdef, q1_target_params)
+    return target_net
+
+
+# TODO nnx.jit
 def sac_update_actor(
     policy: nnx.Module,
+    policy_optimizer: nnx.Optimizer,
     q1: nnx.Module,
     q2: nnx.Module,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
     alpha: jnp.ndarray,
-):
-    actor_loss = partial(
-        sac_actor_loss,
-        policy,
-        q1,
-        q2,
-        alpha,
-        action_key,
-        observations,
+) -> float:
+    loss, grads = nnx.value_and_grad(sac_actor_loss)(
+        policy, q1, q2, alpha, action_key, observations
     )
-    actor_loss_value, actor_grads = jax.value_and_grad(actor_loss)(
-        policy_state.params
-    )
-    policy_state = policy_state.apply_gradients(grads=actor_grads)
-    return actor_loss_value, policy_state
+    policy_optimizer.update(grads)
+    return loss
 
 
+# TODO nnx.jit
 def sac_update_critic(
-    q1,
-    q2,
-    policy,
-    gamma,
-    q1_state,
-    q2_state,
-    policy_state,
-    observations,
-    actions,
-    rewards,
-    next_observations,
-    dones,
-    action_key,
-    alpha,
-):
-    next_state_actions, next_state_log_pi = sample_actions(
-        policy, policy_state.params, next_observations, action_key
-    )
-    obs_act = jnp.concatenate((next_observations, next_state_actions), axis=-1)
-    q1_next_target = q1(obs_act).squeeze()
-    q2_next_target = q2(obs_act).squeeze()
+    q1: nnx.Module,
+    q1_target: nnx.Module,
+    q1_optimizer: nnx.Optimizer,
+    q2: nnx.Module,
+    q2_target: nnx.Module,
+    q2_optimizer: nnx.Optimizer,
+    policy: GaussianPolicy,  # TODO common base class
+    gamma: float,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    rewards: jnp.ndarray,
+    next_observations: jnp.ndarray,
+    dones: jnp.ndarray,
+    action_key: jnp.ndarray,
+    alpha: jnp.ndarray,
+) -> tuple[float, float]:
+    next_actions = policy.sample(next_observations, action_key)
+    next_log_pi = policy.log_probability(next_observations, next_actions)
+    next_obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
+    q1_next_target = q1_target(next_obs_act).squeeze()
+    q2_next_target = q2_target(next_obs_act).squeeze()
     min_q_next_target = (
-        jnp.minimum(q1_next_target, q2_next_target) - alpha * next_state_log_pi
+        jnp.minimum(q1_next_target, q2_next_target) - alpha * next_log_pi
     )
     next_q_value = rewards + (1 - dones) * gamma * min_q_next_target
 
-    q_loss = partial(critic_loss, q, observations, actions, next_q_value)
-    q1_loss_value, q1_grads = jax.value_and_grad(q_loss)(q1_state.params)
-    q1_state = q1_state.apply_gradients(grads=q1_grads)
-    q2_loss_value, q2_grads = jax.value_and_grad(q_loss)(q2_state.params)
-    q2_state = q2_state.apply_gradients(grads=q2_grads)
-    return q1_loss_value, q1_state, q2_loss_value, q2_state
+    q1_loss_value, q1_grads = nnx.value_and_grad(critic_loss, argnums=3)(observations, actions, next_q_value, q1)
+    q1_optimizer.update(q1_grads)
+    q2_loss_value, q2_grads = nnx.value_and_grad(critic_loss, argnums=3)(observations, actions, next_q_value, q2)
+    q2_optimizer.update(q2_grads)
+
+    return q1_loss_value, q2_loss_value

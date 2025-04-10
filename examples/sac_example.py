@@ -19,7 +19,7 @@ env.action_space.seed(seed)
 
 policy_net = GaussianMLP(
     False,
-    env.observation_space.shape[0] + env.action_space.shape[0],
+    env.observation_space.shape[0],
     env.action_space.shape[0],
     [256, 256],
     nnx.Rngs(seed),
@@ -40,6 +40,7 @@ policy, q1, q2 = train_sac(
     buffer_size=1_000_000,
     gamma=0.99,
     learning_starts=5_000,
+    verbose=1,
 )
 env.close()
 
