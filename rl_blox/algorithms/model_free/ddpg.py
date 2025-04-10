@@ -289,6 +289,17 @@ def create_ddpg_state(
     )(policy, policy_optimizer, q, q_optimizer)
 
 
+@nnx.jit
+def update_target(net, target_net, tau):
+    _, q1_params = nnx.split(net)
+    q1_graphdef, q1_target_params = nnx.split(target_net)
+    q1_target_params = optax.incremental_update(
+        q1_params, q1_target_params, tau
+    )
+    target_net = nnx.merge(q1_graphdef, q1_target_params)
+    return target_net
+
+
 def train_ddpg(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: nnx.Module,
@@ -459,19 +470,8 @@ def train_ddpg(
                         # TODO implement logging here
                         # TODO implement checkpointing here
 
-                    _, p_params = nnx.split(policy)
-                    p_graphdef, pt_params = nnx.split(policy_target)
-                    pt_params = optax.incremental_update(
-                        p_params, pt_params, tau
-                    )
-                    policy_target = nnx.merge(p_graphdef, pt_params)
-
+                    policy_target = update_target(policy, policy_target, tau)
                     # TODO why is it updated less often than q?
-                    _, q_params = nnx.split(q)
-                    q_graphdef, qt_params = nnx.split(q_target)
-                    qt_params = optax.incremental_update(
-                        q_params, qt_params, tau
-                    )
-                    q_target = nnx.merge(q_graphdef, qt_params)
+                    q_target = update_target(q, q_target, tau)
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer

@@ -7,7 +7,7 @@ import numpy as np
 import optax
 from flax import nnx
 
-from .ddpg import ReplayBuffer, action_value_loss
+from .ddpg import ReplayBuffer, action_value_loss, update_target
 
 
 class GaussianMLP(nnx.Module):
@@ -265,23 +265,40 @@ def train_sac(
 
     Parameters
     ----------
-    env: Vectorized Gymnasium environments.
-    policy: Gaussian policy network.
-    q: Soft Q network.
-    seed: Seed for random number generation.
-    total_timesteps: Total timesteps of the experiments
-    buffer_size: The replay memory buffer size
-    gamma: The discount factor gamma
-    tau: Target smoothing coefficient (default: 0.005)
-    batch_size: The batch size of sample from the reply memory
-    learning_starts: Timestep to start learning
-    policy_lr: The learning rate of the policy network optimizer
-    q_lr: The learning rate of the Q network optimizer
-    policy_frequency: Frequency of training policy (delayed)
-    target_network_frequency: The frequency of updates for the target networks
-    alpha: Entropy regularization coefficient.
-    autotune: Automatic tuning of the entropy coefficient
-    verbose: Verbosity level
+    env
+        Gymnasium environment.
+    policy
+        Stochastic policy.
+    q
+        Soft Q network.
+    seed : int
+        Seed for random number generation.
+    total_timesteps
+        Total timesteps of the experiments.
+    buffer_size
+        The replay memory buffer size.
+    gamma
+        The discount factor gamma.
+    tau : float, optional (default: 0.005)
+        Target smoothing coefficient.
+    batch_size
+        The batch size of sample from the reply memory.
+    learning_starts
+        Timestep to start learning.
+    policy_lr
+        The learning rate of the policy network optimizer.
+    q_lr
+        The learning rate of the Q network optimizer.
+    policy_frequency
+        Frequency of training policy (delayed).
+    target_network_frequency
+        The frequency of updates for the target networks.
+    alpha
+        Entropy regularization coefficient.
+    autotune
+        Automatic tuning of the entropy coefficient.
+    verbose
+        Verbosity level.
 
     Returns
     -------
@@ -361,10 +378,8 @@ def train_sac(
                 entropy_control.alpha,
             )
 
-            if (
-                global_step % policy_frequency == 0
-            ):  # TD 3 Delayed update support
-                # compensate for the delay by doing 'policy_frequency' updates instead of 1
+            if global_step % policy_frequency == 0:
+                # compensate for delay by doing 'policy_frequency' updates
                 for _ in range(policy_frequency):
                     key, action_key = jax.random.split(key, 2)
                     actor_loss_value = sac_update_actor(
@@ -382,7 +397,6 @@ def train_sac(
                             policy, observations, key
                         )
 
-            # update the target networks
             if global_step % target_network_frequency == 0:
                 q1_target = update_target(q1, q1_target, tau)
                 q2_target = update_target(q2, q2_target, tau)
@@ -400,17 +414,6 @@ def train_sac(
 
     # TODO return optimizers, target nets, and state of entropy
     return policy, q1, q2
-
-
-@nnx.jit
-def update_target(net, target_net, tau):  # TODO reuse for DDPG
-    _, q1_params = nnx.split(net)
-    q1_graphdef, q1_target_params = nnx.split(target_net)
-    q1_target_params = optax.incremental_update(
-        q1_params, q1_target_params, tau
-    )
-    target_net = nnx.merge(q1_graphdef, q1_target_params)
-    return target_net
 
 
 @nnx.jit
