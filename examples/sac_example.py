@@ -10,6 +10,7 @@ from rl_blox.algorithms.model_free.sac import (
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
 seed = 1
+verbose = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 
 sac_state = create_sac_state(
@@ -32,29 +33,26 @@ sac_result = train_sac(
     buffer_size=1_000_000,
     gamma=0.99,
     learning_starts=5_000,
-    verbose=1,
+    verbose=verbose,
 )
+env.close()
 policy, _, q1, _, _, q2, _, _, _ = sac_result
 
-env.close()
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")
 env = gym.wrappers.RecordEpisodeStatistics(env)
 while True:
     done = False
-    infos = {}
     obs, _ = env.reset()
     while not done:
         action = np.asarray(policy(jnp.asarray(obs)))
-        next_obs, reward, termination, truncation, infos = env.step(action)
+        next_obs, reward, termination, truncation, info = env.step(action)
         done = termination or truncation
-        q1_value = q1(jnp.concatenate((obs, action), axis=-1))
-        q2_value = q2(jnp.concatenate((obs, action), axis=-1))
-        q_value = np.minimum(q1_value, q2_value)
-        print(f"{q_value=}")
         obs = np.asarray(next_obs)
-    if "final_info" in infos:
-        for info in infos["final_info"]:
-            print(f"episodic_return={info['episode']['r']}")
-            break
+
+        if verbose >= 2:
+            q1_value = float(q1(jnp.concatenate((obs, action), axis=-1)).squeeze())
+            q2_value = float(q2(jnp.concatenate((obs, action), axis=-1)).squeeze())
+            q_value = min(q1_value, q2_value)
+            print(f"{q_value=:.3f} {q1_value=:.3f} {q2_value=:.3f}")
