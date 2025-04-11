@@ -1,0 +1,13 @@
+[paths]
+source =
+    rl_blox
+
+[run]
+branch = true
+parallel = true
+source =
+    rl_blox
+
+[report]
+show_missing = true
+precision = 1
