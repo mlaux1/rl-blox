@@ -53,6 +53,9 @@ doc = [
 Homepage = "https://github.com/mlaux1/rl-blox"
 Issues = "https://github.com/mlaux1/rl-blox/issues"
 
+[tool.setuptools]
+packages = ["rl_blox"]
+
 [tool.setuptools.dynamic]
 version = {attr = "rl_blox.__version__"}
 readme = {file = ["README.md"]}
