@@ -124,7 +124,7 @@ Run the tests with
 
 ```bash
 pip install -e .[dev]
-pytest tests/
+pytest
 ```
 
 ## Releases
