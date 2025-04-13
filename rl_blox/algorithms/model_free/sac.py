@@ -594,14 +594,14 @@ def sac_update_critic(
     min_q_next_target = (
         jnp.minimum(q1_next_target, q2_next_target) - alpha * next_log_pi
     )
-    next_q_value = rewards + (1 - dones) * gamma * min_q_next_target
+    q_target_value = rewards + (1 - dones) * gamma * min_q_next_target
 
     q1_loss_value, q1_grads = nnx.value_and_grad(action_value_loss, argnums=3)(
-        observations, actions, next_q_value, q1
+        observations, actions, q_target_value, q1
     )
     q1_optimizer.update(q1_grads)
     q2_loss_value, q2_grads = nnx.value_and_grad(action_value_loss, argnums=3)(
-        observations, actions, next_q_value, q2
+        observations, actions, q_target_value, q2
     )
     q2_optimizer.update(q2_grads)
 
