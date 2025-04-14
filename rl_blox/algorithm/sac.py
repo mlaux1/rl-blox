@@ -458,6 +458,45 @@ class NormalizeObservationStreamX(NormalizeObservationBase):
         )
 
 
+class NormalizeObservationSimBa(NormalizeObservationBase):
+    t: int
+    mean: jnp.ndarray | None
+    var: jnp.ndarray | None
+
+    def __init__(self):
+        self.t = 0
+        self.mean = None
+        self.var = None
+
+    def add_sample(self, obs: ArrayLike):
+        obs = jnp.asarray(obs)
+
+        if self.t == 0:
+            self.mean = jnp.zeros_like(obs)
+            self.var = jnp.zeros_like(obs)
+
+        self.t += 1
+
+        delta = obs - self.mean
+        self.mean = self.mean + delta / self.t
+        self.var = (self.t - 1) / self.t * (self.var + delta ** 2 / self.t)
+
+    def transform(self, obs: ArrayLike) -> jnp.ndarray:
+        obs = jnp.asarray(obs)
+        return (
+            obs - jnp.broadcast_to(self.mean, obs.shape)
+        ) / jnp.broadcast_to(
+            jnp.sqrt(self.var + jnp.finfo(obs.dtype).eps),
+            obs.shape,
+        )
+
+    def __repr__(self):
+        return (
+            f"NormalizeObservationSimBa("
+            f"t={self.t}, mean={self.mean}, var={self.var})"
+        )
+
+
 class ScaleRewardBase:
     def add_sample(self, r: ArrayLike, terminal: bool):
         raise NotImplementedError(

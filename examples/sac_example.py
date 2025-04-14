@@ -6,6 +6,7 @@ from rl_blox.algorithm.sac import (
     create_sac_state,
     train_sac,
     NormalizeObservationStreamX,
+    NormalizeObservationSimBa,
 )
 from rl_blox.logging.logger import AIMLogger
 
@@ -51,7 +52,7 @@ sac_result = train_sac(
     sac_state.q1_optimizer,
     sac_state.q2,
     sac_state.q2_optimizer,
-    observation_normalizer=NormalizeObservationStreamX(),
+    observation_normalizer=NormalizeObservationSimBa(),
     logger=logger,
     **hparams_algorithm,
 )
