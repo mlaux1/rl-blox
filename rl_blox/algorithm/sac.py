@@ -9,6 +9,7 @@ import numpy as np
 import optax
 import tqdm
 from flax import nnx
+from jax.typing import ArrayLike
 
 from ..logging.logger import LoggerBase
 from .ddpg import MLP, ReplayBuffer, mse_action_value_loss, update_target
@@ -385,6 +386,112 @@ def create_sac_state(
     )(policy, policy_optimizer, q1, q1_optimizer, q2, q2_optimizer)
 
 
+class SampleMeanVarStreamX:
+    n: int
+    mean: jnp.ndarray | None
+    p: jnp.ndarray | None
+    var: jnp.ndarray | None
+
+    def __init__(self):
+        self.n = 0
+        self.mean = None
+        self.p = None
+        self.var = None
+
+    def add_sample(self, x: ArrayLike, last_mean: jnp.ndarray | None = None):
+        x = jnp.asarray(x)
+
+        if self.n == 0:
+            self.mean = jnp.zeros_like(x)
+            self.p = jnp.zeros_like(x)
+
+        self.n += 1
+        if last_mean is None:
+            last_mean = self.mean
+        self.mean = self.mean + (x - self.mean) / self.n
+        self.p = self.p + (x - last_mean) * (x - self.mean)
+        if self.n >= 2:
+            self.var = self.p / (self.n - 1)
+        else:
+            self.var = jnp.ones_like(x)
+
+    def __repr__(self):
+        return (
+            f"SampleMeanVarStreamX("
+            f"n={self.n}, "
+            f"mean={self.mean}, "
+            f"var={self.var})"
+        )
+
+
+class NormalizeObservationBase:
+    def add_sample(self, x: ArrayLike):
+        raise NotImplementedError(
+            "Subclasses must implement add_sample method."
+        )
+
+    def transform(self, x: ArrayLike) -> jnp.ndarray:
+        raise NotImplementedError("Subclasses must implement transform method.")
+
+
+class NormalizeObservationStreamX(NormalizeObservationBase):
+    running_stats: SampleMeanVarStreamX
+
+    def __init__(self):
+        self.running_stats = SampleMeanVarStreamX()
+
+    def add_sample(self, obs: ArrayLike):
+        self.running_stats.add_sample(obs)
+
+    def transform(self, obs: ArrayLike) -> jnp.ndarray:
+        obs = jnp.asarray(obs)
+        return (
+            obs - jnp.broadcast_to(self.running_stats.mean, obs.shape)
+        ) / jnp.broadcast_to(
+            jnp.sqrt(self.running_stats.var + jnp.finfo(obs.dtype).eps),
+            obs.shape,
+        )
+
+    def __repr__(self):
+        return (
+            f"NormalizeObservationStreamX(running_stats={self.running_stats})"
+        )
+
+
+class ScaleRewardBase:
+    def add_sample(self, r: ArrayLike, terminal: bool):
+        raise NotImplementedError(
+            "Subclasses must implement add_sample method."
+        )
+
+    def transform(self, r: ArrayLike) -> jnp.ndarray:
+        raise NotImplementedError("Subclasses must implement transform method.")
+
+
+class ScaleRewardStreamX(ScaleRewardBase):
+    running_stats: SampleMeanVarStreamX
+    u: jnp.ndarray | None
+    gamma: float
+
+    def __init__(self, gamma):
+        self.running_stats = SampleMeanVarStreamX()
+        self.u = None
+        self.gamma = gamma
+
+    def add_sample(self, r: ArrayLike, terminal: bool):
+        if self.u is None:
+            self.u = jnp.array(0.0)
+        self.u = self.gamma * (1.0 - float(terminal)) * self.u + jnp.asarray(r)
+        self.running_stats.add_sample(self.u, jnp.array(0.0))
+
+    def transform(self, r: ArrayLike) -> jnp.ndarray:
+        r = jnp.asarray(r)
+        return r / jnp.sqrt(self.running_stats.var + jnp.finfo(r.dtype).eps)
+
+    def __repr__(self):
+        return f"ScaleRewardStreamX(running_stats={self.running_stats})"
+
+
 def train_sac(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: StochasticPolicyBase,
@@ -409,6 +516,7 @@ def train_sac(
     q2_target: nnx.Module | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
+    observation_normalizer: NormalizeObservationBase | None = None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -486,6 +594,8 @@ def train_sac(
         State of entropy tuning.
     logger : LoggerBase, optional
         Experiment logger.
+    observation_normalizer
+        Normalize observations with running statistics.
 
     Returns
     -------
@@ -556,6 +666,8 @@ def train_sac(
     if logger is not None:
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
+    if observation_normalizer is not None:
+        observation_normalizer.add_sample(obs)
     steps_per_episode = 0
 
     for global_step in tqdm.trange(total_timesteps):
@@ -568,6 +680,8 @@ def train_sac(
             )
 
         next_obs, reward, termination, truncation, info = env.step(action)
+        if observation_normalizer is not None:
+            observation_normalizer.add_sample(obs)
         steps_per_episode += 1
 
         done = termination or truncation
@@ -577,6 +691,8 @@ def train_sac(
                 logger.start_new_episode()
                 if "episode" in info:
                     logger.record_stat("return", info["episode"]["r"])
+            if observation_normalizer is not None:
+                observation_normalizer.add_sample(next_obs)
             obs, _ = env.reset()
             steps_per_episode = 0
 
@@ -594,6 +710,11 @@ def train_sac(
             observations, actions, rewards, next_observations, terminations = (
                 rb.sample_batch(batch_size, rng)
             )
+            if observation_normalizer is not None:
+                observations = observation_normalizer.transform(observations)
+                next_observations = observation_normalizer.transform(
+                    next_observations
+                )
 
             key, action_key = jax.random.split(key, 2)
             q1_loss_value, q2_loss_value = sac_update_critic(
