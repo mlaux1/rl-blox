@@ -26,6 +26,7 @@
 
 import os
 import time
+from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 from typing import Callable, Sequence
@@ -162,7 +163,7 @@ class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
         self.set_random_seed(self.seed)
         # Make a local copy as we should not pickle
         # the environment when using HerReplayBuffer
-        replay_buffer_kwargs = self.replay_buffer_kwcopy()
+        replay_buffer_kwargs = deepcopy(self.replay_buffer_kwargs)
         if issubclass(self.replay_buffer_class, HerReplayBuffer):  # type: ignore[arg-type]
             assert self.env is not None, "You must pass an environment when using `HerReplayBuffer`"
             replay_buffer_kwargs["env"] = self.env
