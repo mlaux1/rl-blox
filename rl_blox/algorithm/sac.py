@@ -528,6 +528,8 @@ def train_sac(
     nnx.Module,
     nnx.Optimizer,
     EntropyControl,
+    NormalizeObservationBase,
+    ScaleRewardBase,
 ]:
     r"""Soft actor-critic (SAC).
 
@@ -620,6 +622,10 @@ def train_sac(
         Optimizer of q2.
     entropy_control
         State of entropy tuning.
+    observation_normalizer
+        State of observation normalizer.
+    reward_scaler
+        State of reward scaler.
 
     References
     ----------
@@ -678,8 +684,11 @@ def train_sac(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
+            obs_in = jnp.asarray(obs)
+            if observation_normalizer is not None:
+                obs_in = observation_normalizer.transform(obs_in)
             action = np.asarray(
-                _sample_action(policy, jnp.asarray(obs), action_key)
+                _sample_action(policy, jnp.asarray(obs_in), action_key)
             )
 
         next_obs, reward, termination, truncation, info = env.step(action)
@@ -800,6 +809,8 @@ def train_sac(
         q2_target,
         q2_optimizer,
         entropy_control,
+        observation_normalizer,
+        reward_scaler,
     )
 
 

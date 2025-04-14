@@ -6,6 +6,7 @@ from rl_blox.algorithm.sac import (
     create_sac_state,
     train_sac,
     NormalizeObservationStreamX,
+    ScaleRewardStreamX,
 )
 from rl_blox.logging.logger import AIMLogger
 
@@ -13,6 +14,7 @@ env_name = "Pendulum-v1"
 env = gym.make(env_name)
 seed = 1
 verbose = 1
+gamma = 0.99
 env = gym.wrappers.RecordEpisodeStatistics(env)
 
 hparams_models = dict(
@@ -25,7 +27,7 @@ hparams_models = dict(
 hparams_algorithm = dict(
     total_timesteps=11_000,
     buffer_size=11_000,
-    gamma=0.99,
+    gamma=gamma,
     learning_starts=5_000,
 )
 
@@ -51,11 +53,12 @@ sac_result = train_sac(
     sac_state.q2,
     sac_state.q2_optimizer,
     observation_normalizer=NormalizeObservationStreamX(),
+    reward_scaler=ScaleRewardStreamX(gamma),
     logger=logger,
     **hparams_algorithm,
 )
 env.close()
-policy, _, q1, _, _, q2, _, _, _ = sac_result
+policy, _, q1, _, _, q2, _, _, _, obs_norm, _ = sac_result
 
 
 # Evaluation
@@ -65,17 +68,17 @@ while True:
     done = False
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy(jnp.asarray(obs))[0])
+        obs_in = jnp.asarray(obs)
+        if obs_norm is not None:
+            obs_in = obs_norm.transform(obs_in)
+        action = np.asarray(policy(obs_in))
         next_obs, reward, termination, truncation, info = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
 
         if verbose >= 2:
-            q1_value = float(
-                q1(jnp.concatenate((obs, action), axis=-1)).squeeze()
-            )
-            q2_value = float(
-                q2(jnp.concatenate((obs, action), axis=-1)).squeeze()
-            )
+            obs_act = jnp.concatenate((obs_in, action), axis=-1)
+            q1_value = float(q1(obs_act).squeeze())
+            q2_value = float(q2(obs_act).squeeze())
             q_value = min(q1_value, q2_value)
             print(f"{q_value=:.3f} {q1_value=:.3f} {q2_value=:.3f}")
