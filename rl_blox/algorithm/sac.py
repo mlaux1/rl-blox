@@ -517,6 +517,7 @@ def train_sac(
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
     observation_normalizer: NormalizeObservationBase | None = None,
+    reward_scaler: ScaleRewardBase | None = None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -596,6 +597,8 @@ def train_sac(
         Experiment logger.
     observation_normalizer
         Normalize observations with running statistics.
+    reward_scaler
+        Scale rewards with running statistics.
 
     Returns
     -------
@@ -682,6 +685,8 @@ def train_sac(
         next_obs, reward, termination, truncation, info = env.step(action)
         if observation_normalizer is not None:
             observation_normalizer.add_sample(obs)
+        if reward_scaler is not None:
+            reward_scaler.add_sample(reward, termination)
         steps_per_episode += 1
 
         done = termination or truncation
@@ -715,6 +720,8 @@ def train_sac(
                 next_observations = observation_normalizer.transform(
                     next_observations
                 )
+            if reward_scaler is not None:
+                rewards = reward_scaler.transform(rewards)
 
             key, action_key = jax.random.split(key, 2)
             q1_loss_value, q2_loss_value = sac_update_critic(
