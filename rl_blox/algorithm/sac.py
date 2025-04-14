@@ -479,7 +479,7 @@ class NormalizeObservationSimBa(NormalizeObservationBase):
 
         delta = obs - self.mean
         self.mean = self.mean + delta / self.t
-        self.var = (self.t - 1) / self.t * (self.var + delta ** 2 / self.t)
+        self.var = (self.t - 1) / self.t * (self.var + delta**2 / self.t)
 
     def transform(self, obs: ArrayLike) -> jnp.ndarray:
         obs = jnp.asarray(obs)
