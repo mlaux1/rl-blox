@@ -1790,20 +1790,16 @@ def zero_(params):
 def train_tdmpc2(**cfg) -> TDMPC2:
     """TD-MPC2.
 
-    Most relevant args:
-            `task`: task name (or mt30/mt80 for multi-task training)
-            `model_size`: model size, must be one of `[1, 5, 19, 48, 317]` (default: 5)
-            `steps`: number of training/environment steps (default: 10M)
-            `seed`: random seed (default: 1)
-
-    See config.yaml for a full list of args.
-
-    Example usage:
-    ```
-            $ python train.py task=mt80 model_size=48
-            $ python train.py task=mt30 model_size=317
-            $ python train.py task=dog-run steps=7000000
-    ```
+    Parameters
+    ----------
+    task
+        Task name.
+    model_size
+        Model size, must be one of [1, 5, 19, 48, 317]
+    steps
+        Number of training / environment steps
+    seed
+        Random seed
     """
     assert torch.cuda.is_available()
     assert cfg["steps"] > 0, "Must train for at least 1 step."
