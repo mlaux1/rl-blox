@@ -1,5 +1,5 @@
 import gymnasium as gym
-import numpy as np
+from collections import namedtuple
 
 from rl_blox.algorithms.model_based.ext.tdmpc2 import train_tdmpc2
 
@@ -9,8 +9,8 @@ seed = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
-train_tdmpc2(
-    task="dog-run",
+config = dict(
+    task=env_name,
     obs="state",
     checkpoint="???",
     # eval
@@ -52,7 +52,7 @@ train_tdmpc2(
     vmin=-10,
     vmax=+10,
     # architecture
-    model_size="???",
+    model_size=1,  # 1, 5, 19, 48, 317
     num_enc_layers=2,
     enc_dim=256,
     num_channels=32,
@@ -69,7 +69,6 @@ train_tdmpc2(
     enable_wandb=True,
     save_csv=True,
     # misc
-    save_video=True,
     save_agent=True,
     seed=1,
     # convenience
@@ -87,4 +86,8 @@ train_tdmpc2(
     bin_size="???",
     # speedups
     compile=False,
+)
+
+train_tdmpc2(
+    namedtuple("Config", config.keys())(*config.values())
 )
