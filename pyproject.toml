@@ -40,7 +40,14 @@ dependencies = [
 dynamic = ["version", "readme"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pre-commit", "flake8", "black", "isort"]
+dev = [
+    "pytest",
+    "pre-commit",
+    "flake8",
+    "black",
+    "isort",
+    "pytest-cov",
+]
 examples = ["gymnasium[classic-control,toy-text,mujoco]", "matplotlib"]
 all = ["rl_blox[dev,examples]"]
 doc = [
