@@ -214,7 +214,6 @@ TASK_SET = {
     ],
 }
 
-
 CONSOLE_FORMAT = [
     ("iteration", "I", "int"),
     ("episode", "E", "int"),
@@ -643,7 +642,7 @@ def parse_cfg(cfg: dict) -> Any:
     Parses a Hydra config. Mostly for convenience.
     """
     # Algebraic expressions
-    for k in cfg.keys():
+    for k in cfg:
         try:
             v = cfg[k]
             if isinstance(v, str):
@@ -667,7 +666,7 @@ def parse_cfg(cfg: dict) -> Any:
     )  # Bin size for discrete regression
 
     # Model size
-    if cfg.get("model_size", None) is not None:
+    if cfg.get("model_size") is not None:
         assert (
             cfg["model_size"] in MODEL_SIZE
         ), f"Invalid model size {cfg['model_size']}. Must be one of {list(MODEL_SIZE.keys())}"
