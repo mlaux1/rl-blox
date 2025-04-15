@@ -443,41 +443,21 @@ def cfg_to_group(cfg, return_list=False):
 
 class Logger:
     """Primary logging object. Logs either locally or using wandb."""
-
     def __init__(self, cfg):
         self._log_dir = make_dir(cfg.work_dir)
         self._model_dir = make_dir(self._log_dir / "models")
         self._save_csv = cfg.save_csv
-        self._save_agent = cfg.save_agent
         self._group = cfg_to_group(cfg)
         self._seed = cfg.seed
         self._eval = []
         print_run(cfg)
-        self.project = cfg.get("wandb_project", "none")
-        self.entity = cfg.get("wandb_entity", "none")
-        if (
-            not cfg.enable_wandb
-            or self.project == "none"
-            or self.entity == "none"
-        ):
-            print(colored("Wandb disabled.", "blue", attrs=["bold"]))
-            cfg.save_agent = False
-        self._wandb = None
 
     @property
     def model_dir(self):
         return self._model_dir
 
-    def save_agent(self, agent=None, identifier="final"):
-        if self._save_agent and agent:
-            fp = self._model_dir / f"{str(identifier)}.pt"
-            agent.save(fp)
-
     def finish(self, agent=None):
-        try:
-            self.save_agent(agent)
-        except Exception as e:
-            print(colored(f"Failed to save model: {e}", "red"))
+        print(colored(f"Failed to save model: {agent}", "red"))
 
     def _format(self, key, value, ty):
         if ty == "int":

@@ -66,13 +66,8 @@ agent = train_tdmpc2(
     dropout=0.01,
     simnorm_dim=8,
     # logging
-    wandb_project="???",
-    wandb_entity="???",
-    wandb_silent=False,
-    enable_wandb=True,
     save_csv=True,
     # misc
-    save_agent=True,
     seed=seed,
     # convenience
     work_dir="???",
