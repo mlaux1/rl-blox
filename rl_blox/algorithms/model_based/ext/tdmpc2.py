@@ -617,18 +617,7 @@ def parse_cfg(cfg: dict) -> Any:
         if cfg["task"] == "mt30" and cfg["model_size"] == 19:
             cfg["latent_dim"] = 512  # This checkpoint is slightly smaller
 
-    # Multi-task
-    cfg["multitask"] = cfg["task"] in TASK_SET
-    if cfg["multitask"]:
-        cfg["task_title"] = cfg.task.upper()
-        # Account for slight inconsistency in task_dim for the mt30 experiments
-        cfg["task_dim"] = (
-            96
-            if cfg.task == "mt80" or cfg.get("model_size", 5) in {1, 317}
-            else 64
-        )
-    else:
-        cfg["task_dim"] = 0
+    cfg["task_dim"] = 0
     cfg["tasks"] = TASK_SET.get(cfg["task"], [cfg["task"]])
 
     return cfg_to_dataclass(cfg)
@@ -658,7 +647,7 @@ class Buffer:
             traj_key="episode",
             truncated_key=None,
             strict_length=True,
-            cache_values=cfg.multitask,
+            cache_values=False,
         )
         self._batch_size = cfg.batch_size * (cfg.horizon + 1)
         self._num_eps = 0
@@ -899,13 +888,7 @@ class TDMPC2(torch.nn.Module):
                 {"params": self.model._dynamics.parameters()},
                 {"params": self.model._reward.parameters()},
                 {"params": self.model._Qs.parameters()},
-                {
-                    "params": (
-                        self.model._task_emb.parameters()
-                        if self.cfg.multitask
-                        else []
-                    )
-                },
+                {"params": []},
             ],
             lr=self.cfg.lr,
             capturable=True,
@@ -921,14 +904,7 @@ class TDMPC2(torch.nn.Module):
         self.cfg.iterations += 2 * int(
             cfg.action_dim >= 20
         )  # Heuristic for large action spaces
-        self.discount = (
-            torch.tensor(
-                [self._get_discount(ep_len) for ep_len in cfg.episode_lengths],
-                device="cuda:0",
-            )
-            if self.cfg.multitask
-            else self._get_discount(cfg.episode_length)
-        )
+        self.discount = self._get_discount(cfg.episode_length)
         self._prev_mean = torch.nn.Buffer(
             torch.zeros(
                 self.cfg.horizon, self.cfg.action_dim, device=self.device
@@ -1035,11 +1011,7 @@ class TDMPC2(torch.nn.Module):
             )
             z = self.model.next(z, actions[t], task)
             G = G + discount * reward
-            discount_update = (
-                self.discount[torch.tensor(task)]
-                if self.cfg.multitask
-                else self.discount
-            )
+            discount_update = self.discount
             discount = discount * discount_update
         action, _ = self.model.pi(z, task)
         return G + discount * self.model.Q(z, action, task, return_type="avg")
@@ -1108,8 +1080,6 @@ class TDMPC2(torch.nn.Module):
             actions_sample = mean.unsqueeze(1) + std.unsqueeze(1) * r
             actions_sample = actions_sample.clamp(-1, 1)
             actions[:, self.cfg.num_pi_trajs :] = actions_sample
-            if self.cfg.multitask:
-                actions = actions * self.model._action_masks[task]
 
             # Compute elite actions
             value = self._estimate_value(z, actions, task).nan_to_num(0)
@@ -1136,9 +1106,6 @@ class TDMPC2(torch.nn.Module):
                 / (score.sum(0) + 1e-9)
             ).sqrt()
             std = std.clamp(self.cfg.min_std, self.cfg.max_std)
-            if self.cfg.multitask:
-                mean = mean * self.model._action_masks[task]
-                std = std * self.model._action_masks[task]
 
         # Select action
         rand_idx = gumbel_softmax_sample(
@@ -1207,12 +1174,7 @@ class TDMPC2(torch.nn.Module):
                 torch.Tensor: TD-target.
         """
         action, _ = self.model.pi(next_z, task)
-        discount = (
-            self.discount[task].unsqueeze(-1)
-            if self.cfg.multitask
-            else self.discount
-        )
-        return reward + discount * self.model.Q(
+        return reward + self.discount * self.model.Q(
             next_z, action, task, return_type="min", target=True
         )
 
@@ -1355,15 +1317,6 @@ class WorldModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        if cfg.multitask:
-            self._task_emb = nn.Embedding(
-                len(cfg.tasks), cfg.task_dim, max_norm=1
-            )
-            self.register_buffer(
-                "_action_masks", torch.zeros(len(cfg.tasks), cfg.action_dim)
-            )
-            for i in range(len(cfg.tasks)):
-                self._action_masks[i, : cfg.action_dims[i]] = 1.0
         self._encoder = enc(cfg)
         self._dynamics = mlp(
             cfg.latent_dim + cfg.action_dim + cfg.task_dim,
@@ -1479,8 +1432,6 @@ class WorldModel(nn.Module):
         Encodes an observation into its latent representation.
         This implementation assumes a single state-based observation.
         """
-        if self.cfg.multitask:
-            obs = self.task_emb(obs, task)
         if self.cfg.obs == "rgb" and obs.ndim == 5:
             return torch.stack([self._encoder[self.cfg.obs](o) for o in obs])
         return self._encoder[self.cfg.obs](obs)
@@ -1489,8 +1440,6 @@ class WorldModel(nn.Module):
         """
         Predicts the next latent state given the current latent state and action.
         """
-        if self.cfg.multitask:
-            z = self.task_emb(z, task)
         z = torch.cat([z, a], dim=-1)
         return self._dynamics(z)
 
@@ -1498,8 +1447,6 @@ class WorldModel(nn.Module):
         """
         Predicts instantaneous (single-step) reward.
         """
-        if self.cfg.multitask:
-            z = self.task_emb(z, task)
         z = torch.cat([z, a], dim=-1)
         return self._reward(z)
 
@@ -1509,26 +1456,15 @@ class WorldModel(nn.Module):
         The policy prior is a Gaussian distribution with
         mean and (log) std predicted by a neural network.
         """
-        if self.cfg.multitask:
-            z = self.task_emb(z, task)
-
         # Gaussian policy prior
         mean, log_std = self._pi(z).chunk(2, dim=-1)
         log_std = safe_log_std(log_std, self.log_std_min, self.log_std_dif)
         eps = torch.randn_like(mean)
 
-        if self.cfg.multitask:  # Mask out unused action dimensions
-            mean = mean * self._action_masks[task]
-            log_std = log_std * self._action_masks[task]
-            eps = eps * self._action_masks[task]
-            action_dims = self._action_masks.sum(-1)[task].unsqueeze(-1)
-        else:  # No masking
-            action_dims = None
-
         log_prob = gaussian_logprob(eps, log_std)
 
         # Scale log probability by action dimensions
-        size = eps.shape[-1] if action_dims is None else action_dims
+        size = eps.shape[-1]
         scaled_log_prob = log_prob * size
 
         # Reparameterization trick
@@ -1557,9 +1493,6 @@ class WorldModel(nn.Module):
         `target` specifies whether to use the target Q-networks or not.
         """
         assert return_type in {"min", "avg", "all"}
-
-        if self.cfg.multitask:
-            z = self.task_emb(z, task)
 
         z = torch.cat([z, a], dim=-1)
         if target:
@@ -1872,9 +1805,6 @@ def train_tdmpc2(**cfg) -> TDMPC2:
             $ python train.py task=dog-run steps=7000000
     ```
     """
-    if cfg["multitask"]:
-        raise NotImplementedError("deleted from original source")
-
     assert torch.cuda.is_available()
     assert cfg["steps"] > 0, "Must train for at least 1 step."
 
