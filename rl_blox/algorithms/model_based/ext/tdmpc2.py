@@ -464,24 +464,6 @@ class TensorWrapper(gym.Wrapper):
 		return self._obs_to_tensor(obs), torch.tensor(reward, dtype=torch.float32), termination, truncation, info
 
 
-def make_env(cfg):
-	"""Make an environment for TD-MPC2 experiments."""
-	gym.logger.min_level = 40
-	if cfg.multitask:
-		raise NotImplementedError("deleted from original source")
-	else:
-		env = gym.make(cfg.task)
-		env = TensorWrapper(env)
-	try: # Dict
-		cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
-	except: # Box
-		cfg.obs_shape = {cfg.get('obs', 'state'): env.observation_space.shape}
-	cfg.action_dim = env.action_space.shape[0]
-	cfg.episode_length = env.spec.max_episode_steps
-	cfg.seed_steps = max(1000, 5*cfg.episode_length)
-	return env
-
-
 def cfg_to_dataclass(cfg_dict, frozen=False):
 	"""
 	Converts an OmegaConf config to a dataclass object.
@@ -1546,9 +1528,24 @@ def train_tdmpc2(cfg):
 	set_seed(cfg.seed)
 	print(colored("Work dir:", "yellow", attrs=["bold"]), cfg.work_dir)
 
+	gym.logger.min_level = 40
+	if cfg.multitask:
+		raise NotImplementedError("deleted from original source")
+	else:
+		env = gym.make(cfg.task)
+		env = TensorWrapper(env)
+	try:  # Dict
+		cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
+	except:  # Box
+		cfg.obs_shape = {cfg.get('obs', 'state'): env.observation_space.shape}
+
+	cfg.action_dim = env.action_space.shape[0]
+	cfg.episode_length = env.spec.max_episode_steps
+	cfg.seed_steps = max(1000, 5 * cfg.episode_length)
+
 	trainer = OnlineTrainer(
 		cfg=cfg,
-		env=make_env(cfg),
+		env=env,
 		agent=TDMPC2(cfg),
 		buffer=Buffer(cfg),
 		logger=Logger(cfg),

@@ -15,7 +15,7 @@ config = dict(
     checkpoint="???",
     # eval
     eval_episodes=10,
-    eval_freq=1_000,
+    eval_freq=2_000,
     steps=5_000,
     # training
     batch_size=256,
