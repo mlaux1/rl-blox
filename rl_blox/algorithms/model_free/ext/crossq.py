@@ -1396,7 +1396,7 @@ class SAC(OffPolicyAlgorithmJax):
 
 
 def train_crossq(
-    training_env: gym.Env,
+    env: gym.Env,
     algo: str = "sac",
     seed: int = 1,
     log_freq: int = 300,
@@ -1416,7 +1416,14 @@ def train_crossq(
     utd: int = 1,
     total_timesteps: int = 5_000_000,
     bnstats_live_net: int = 0,  # TODO bool?
-):
+) -> SAC:
+    """CrossQ.
+
+    Parameters
+    ----------
+    env: gym.Env
+        The environment to train on.
+    """
     experiment_time = time.time()
 
     algo = algo.lower()
@@ -1437,7 +1444,7 @@ def train_crossq(
         adam_b2 = 0.999  # adam default
         policy_delay = 20
         utd = 20
-        group = f'DroQ_{training_env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
+        group = f'DroQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
     elif algo == 'redq':
         policy_q_reduce_fn = jax.numpy.mean
         n_critics = 10
@@ -1445,7 +1452,7 @@ def train_crossq(
         adam_b2 = 0.999  # adam default
         policy_delay = 20
         utd = 20
-        group = f'REDQ_{training_env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
+        group = f'REDQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
     elif algo == 'td3':
         # With the right hyperparameters, this here can run all the above algorithms
         # and ablations.
@@ -1453,14 +1460,14 @@ def train_crossq(
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
-        group = f'TD3_{training_env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
+        group = f'TD3_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
     elif algo == 'sac':
         # With the right hyperparameters, this here can run all the above algorithms
         # and ablations.
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
-        group = f'SAC_{training_env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
+        group = f'SAC_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
     elif algo == 'crossq':
         adam_b1 = 0.5
         policy_delay = 3
@@ -1471,15 +1478,15 @@ def train_crossq(
         bn_momentum = 0.99
         crossq_style = True  # with a joint forward pass
         tau = 1.0  # without target networks
-        group = f'CrossQ_{training_env}'
+        group = f'CrossQ_{env}'
     else:
         raise NotImplemented
 
     model = SAC(
         "MultiInputPolicy" if isinstance(
-            training_env.observation_space, gym.spaces.Dict
+            env.observation_space, gym.spaces.Dict
         ) else "MlpPolicy",
-        training_env,
+        env,
         policy_kwargs=dict({
             'activation_fn': activation_fn[critic_activation],
             'layer_norm': layer_norm,
@@ -1523,4 +1530,6 @@ def train_crossq(
         total_timesteps=total_timesteps,
         progress_bar=True,
     )
+
+    return model
 
