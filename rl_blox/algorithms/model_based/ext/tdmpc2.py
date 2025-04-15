@@ -1522,18 +1522,18 @@ def train_tdmpc2(cfg):
 		$ python train.py task=dog-run steps=7000000
 	```
 	"""
+	if cfg.multitask:
+		raise NotImplementedError("deleted from original source")
+
 	assert torch.cuda.is_available()
 	assert cfg.steps > 0, "Must train for at least 1 step."
+
 	cfg = parse_cfg(cfg)
 	set_seed(cfg.seed)
 	print(colored("Work dir:", "yellow", attrs=["bold"]), cfg.work_dir)
 
 	gym.logger.min_level = 40
-	if cfg.multitask:
-		raise NotImplementedError("deleted from original source")
-	else:
-		env = gym.make(cfg.task)
-		env = TensorWrapper(env)
+	env = TensorWrapper(cfg.env)
 	try:  # Dict
 		cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
 	except:  # Box
