@@ -2,7 +2,7 @@
 
 # Dependencies:
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-# pip install torchrl-nightly==2025.1.1 tensordict-nightly==2025.1.1 hydra-core
+# pip install torchrl-nightly==2025.1.1 tensordict-nightly==2025.1.1
 
 # MIT License
 #
@@ -51,7 +51,6 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from omegaconf import OmegaConf
 from tensordict import from_modules
 from tensordict.nn import TensorDictParams
 from tensordict.tensordict import TensorDict
@@ -615,7 +614,7 @@ class TensorWrapper(gym.Wrapper):
 
 def cfg_to_dataclass(cfg_dict, frozen=False):
     """
-    Converts an OmegaConf config to a dataclass object.
+    Converts an config to a dataclass object.
     This prevents graph breaks when used with torch.compile.
     """
     fields = []
@@ -639,12 +638,11 @@ def cfg_to_dataclass(cfg_dict, frozen=False):
     return dataclass()
 
 
-def parse_cfg(cfg: OmegaConf) -> OmegaConf:
+def parse_cfg(cfg: dict) -> Any:
     """
     Parses a Hydra config. Mostly for convenience.
     """
     # Algebraic expressions
-    cfg = cfg._asdict()
     for k in cfg.keys():
         try:
             v = cfg[k]
@@ -1898,7 +1896,7 @@ def zero_(params):
         p.data.fill_(0)
 
 
-def train_tdmpc2(cfg) -> TDMPC2:
+def train_tdmpc2(**cfg) -> TDMPC2:
     """TD-MPC2.
 
     Most relevant args:
@@ -1916,11 +1914,11 @@ def train_tdmpc2(cfg) -> TDMPC2:
             $ python train.py task=dog-run steps=7000000
     ```
     """
-    if cfg.multitask:
+    if cfg["multitask"]:
         raise NotImplementedError("deleted from original source")
 
     assert torch.cuda.is_available()
-    assert cfg.steps > 0, "Must train for at least 1 step."
+    assert cfg["steps"] > 0, "Must train for at least 1 step."
 
     cfg = parse_cfg(cfg)
     set_seed(cfg.seed)

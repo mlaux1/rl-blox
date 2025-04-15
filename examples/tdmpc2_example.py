@@ -11,7 +11,7 @@ seed = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
-config = dict(
+agent = train_tdmpc2(
     env=env,
     task=env_name,
     obs="state",
@@ -89,10 +89,6 @@ config = dict(
     bin_size="???",
     # speedups
     compile=False,
-)
-
-agent = train_tdmpc2(
-    namedtuple("Config", config.keys())(*config.values())
 )
 env.close()
 
