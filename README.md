@@ -30,7 +30,7 @@ The implementation of this project follows the following principles:
 3. We use Chex to write reliable code.
 4. For optimization algorithms we use Orbax.
 5. For probability distributions we use Distrax.
-6. For all neural networks we use Flax.
+6. For all neural networks we use Flax NNX.
 7. To save checkpoints we use Orbax.
 
 ## Installation
@@ -45,9 +45,9 @@ After cloning the repository, it is recommended to install the library in editab
 pip install -e .
 ```
 
-To be able to run the provided examples use `pip install -e ".[examples]"`.
-To install development dependencies, please use `pip install -e ".[dev]"`.
-You can install all optional dependencies using `pip install -e ".[all]"`.
+To be able to run the provided examples use `pip install -e '.[examples]'`.
+To install development dependencies, please use `pip install -e '.[dev]'`.
+You can install all optional dependencies using `pip install -e '.[all]'`.
 
 ## Getting Started
 
@@ -93,7 +93,7 @@ envs.close()
 You can build the sphinx documentation with
 
 ```bash
-pip install -e .[doc]
+pip install -e '.[doc]'
 cd doc
 make html
 ```
@@ -123,7 +123,7 @@ Only the maintainers of the software are allowed to merge a development branch t
 Run the tests with
 
 ```bash
-pip install -e .[dev]
+pip install -e '.[dev]'
 pytest
 ```
 
