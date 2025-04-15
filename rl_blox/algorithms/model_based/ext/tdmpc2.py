@@ -230,10 +230,10 @@ CAT_TO_COLOR = {
 }
 
 
-def soft_ce(pred, target, cfg):
+def soft_ce(pred, target, vmin, vmax, bin_size, num_bins):
     """Computes the cross entropy loss between predictions and soft targets."""
     pred = F.log_softmax(pred, dim=-1)
-    target = two_hot(target, cfg)
+    target = two_hot(target, vmin, vmax, bin_size, num_bins)
     return -(target * pred).sum(-1, keepdim=True)
 
 
@@ -283,34 +283,34 @@ def symexp(x):
     return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
 
 
-def two_hot(x, cfg):
+def two_hot(x, vmin, vmax, bin_size, num_bins):
     """Converts a batch of scalars to soft two-hot encoded targets for discrete regression."""
-    if cfg.num_bins == 0:
+    if num_bins == 0:
         return x
-    elif cfg.num_bins == 1:
+    elif num_bins == 1:
         return symlog(x)
-    x = torch.clamp(symlog(x), cfg.vmin, cfg.vmax).squeeze(1)
-    bin_idx = torch.floor((x - cfg.vmin) / cfg.bin_size)
-    bin_offset = ((x - cfg.vmin) / cfg.bin_size - bin_idx).unsqueeze(-1)
+    x = torch.clamp(symlog(x), vmin, vmax).squeeze(1)
+    bin_idx = torch.floor((x - vmin) / bin_size)
+    bin_offset = ((x - vmin) / bin_size - bin_idx).unsqueeze(-1)
     soft_two_hot = torch.zeros(
-        x.shape[0], cfg.num_bins, device=x.device, dtype=x.dtype
+        x.shape[0], num_bins, device=x.device, dtype=x.dtype
     )
     bin_idx = bin_idx.long()
     soft_two_hot = soft_two_hot.scatter(1, bin_idx.unsqueeze(1), 1 - bin_offset)
     soft_two_hot = soft_two_hot.scatter(
-        1, (bin_idx.unsqueeze(1) + 1) % cfg.num_bins, bin_offset
+        1, (bin_idx.unsqueeze(1) + 1) % num_bins, bin_offset
     )
     return soft_two_hot
 
 
-def two_hot_inv(x, cfg):
+def two_hot_inv(x, vmin, vmax, num_bins):
     """Converts a batch of soft two-hot encoded vectors to scalars."""
-    if cfg.num_bins == 0:
+    if num_bins == 0:
         return x
-    elif cfg.num_bins == 1:
+    elif num_bins == 1:
         return symexp(x)
     dreg_bins = torch.linspace(
-        cfg.vmin, cfg.vmax, cfg.num_bins, device=x.device, dtype=x.dtype
+        vmin, vmax, num_bins, device=x.device, dtype=x.dtype
     )
     x = F.softmax(x, dim=-1)
     x = torch.sum(x * dreg_bins, dim=-1, keepdim=True)
@@ -1086,7 +1086,10 @@ class TDMPC2(torch.nn.Module):
         G, discount = 0, 1
         for t in range(self.cfg.horizon):
             reward = two_hot_inv(
-                self.model.reward(z, actions[t], task), self.cfg
+                self.model.reward(z, actions[t], task),
+                self.cfg.vmin,
+                self.cfg.vmax,
+                self.cfg.num_bins,
             )
             z = self.model.next(z, actions[t], task)
             G = G + discount * reward
@@ -1322,14 +1325,26 @@ class TDMPC2(torch.nn.Module):
         ):
             reward_loss = (
                 reward_loss
-                + soft_ce(rew_pred_unbind, rew_unbind, self.cfg).mean()
+                + soft_ce(
+                    rew_pred_unbind,
+                    rew_unbind,
+                    self.cfg.vmin,
+                    self.cfg.vmax,
+                    self.cfg.bin_size,
+                    self.cfg.num_bins,
+                ).mean()
                 * self.cfg.rho**t
             )
             for _, qs_unbind_unbind in enumerate(qs_unbind.unbind(0)):
                 value_loss = (
                     value_loss
                     + soft_ce(
-                        qs_unbind_unbind, td_targets_unbind, self.cfg
+                        qs_unbind_unbind,
+                        td_targets_unbind,
+                        self.cfg.vmin,
+                        self.cfg.vmax,
+                        self.cfg.bin_size,
+                        self.cfg.num_bins,
                     ).mean()
                     * self.cfg.rho**t
                 )
@@ -1617,7 +1632,9 @@ class WorldModel(nn.Module):
             return out
 
         qidx = torch.randperm(self.cfg.num_q, device=out.device)[:2]
-        Q = two_hot_inv(out[qidx], self.cfg)
+        Q = two_hot_inv(
+            out[qidx], self.cfg.vmin, self.cfg.vmax, self.cfg.num_bins
+        )
         if return_type == "min":
             return Q.min(0).values
         return Q.sum(0) / 2
