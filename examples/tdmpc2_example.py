@@ -15,8 +15,8 @@ config = dict(
     checkpoint="???",
     # eval
     eval_episodes=10,
-    eval_freq=50000,
-    steps=10_000_000,
+    eval_freq=1_000,
+    steps=5_000,
     # training
     batch_size=256,
     reward_coef=0.1,
@@ -70,7 +70,7 @@ config = dict(
     save_csv=True,
     # misc
     save_agent=True,
-    seed=1,
+    seed=seed,
     # convenience
     work_dir="???",
     task_title="???",
