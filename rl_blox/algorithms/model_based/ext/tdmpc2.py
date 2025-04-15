@@ -150,7 +150,7 @@ def soft_ce(pred, target, cfg):
 	return -(target * pred).sum(-1, keepdim=True)
 
 
-def log_std(x, low, dif):
+def safe_log_std(x, low, dif):
 	return low + 0.5 * dif * (torch.tanh(x) + 1)
 
 
@@ -453,13 +453,13 @@ class TensorWrapper(gym.Wrapper):
 		return obs
 
 	def reset(self, task_idx=None):
-		return self._obs_to_tensor(self.env.reset())
+		return self._obs_to_tensor(self.env.reset()[0])
 
 	def step(self, action):
-		obs, reward, done, info = self.env.step(action.numpy())
+		obs, reward, termination, truncation, info = self.env.step(action.numpy())
 		info = defaultdict(float, info)
 		info['success'] = float(info['success'])
-		return self._obs_to_tensor(obs), torch.tensor(reward, dtype=torch.float32), done, info
+		return self._obs_to_tensor(obs), torch.tensor(reward, dtype=torch.float32), termination, truncation, info
 
 
 def make_env(cfg):
@@ -655,8 +655,8 @@ class Buffer():
 		return self._prepare_batch(td)
 
 
-class Trainer:
-	"""Base trainer class for TD-MPC2."""
+class OnlineTrainer:
+	"""Trainer class for single-task online TD-MPC2 training."""
 
 	def __init__(self, cfg, env, agent, buffer, logger):
 		self.cfg = cfg
@@ -665,21 +665,6 @@ class Trainer:
 		self.buffer = buffer
 		self.logger = logger
 		print('Architecture:', self.agent.model)
-
-	def eval(self):
-		"""Evaluate a TD-MPC2 agent."""
-		raise NotImplementedError
-
-	def train(self):
-		"""Train a TD-MPC2 agent."""
-		raise NotImplementedError
-
-
-class OnlineTrainer(Trainer):
-	"""Trainer class for single-task online TD-MPC2 training."""
-
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
 		self._step = 0
 		self._ep_idx = 0
 		self._start_time = time.time()
@@ -696,15 +681,17 @@ class OnlineTrainer(Trainer):
 		"""Evaluate a TD-MPC2 agent."""
 		ep_rewards, ep_successes = [], []
 		for i in range(self.cfg.eval_episodes):
-			obs, done, ep_reward, t = self.env.reset(), False, 0, 0
+			obs = self.env.reset()
+			done, ep_reward, t = False, 0, 0
 			while not done:
 				torch.compiler.cudagraph_mark_step_begin()
 				action = self.agent.act(obs, t0=t==0, eval_mode=True)
-				obs, reward, done, info = self.env.step(action)
+				obs, reward, termination, truncation, info = self.env.step(action)
+				done = termination or truncation
 				ep_reward += reward
 				t += 1
 			ep_rewards.append(ep_reward)
-			ep_successes.append(info['success'])
+			ep_successes.append(info["success"])
 		return dict(
 			episode_reward=np.nanmean(ep_rewards),
 			episode_success=np.nanmean(ep_successes),
@@ -760,7 +747,8 @@ class OnlineTrainer(Trainer):
 				action = self.agent.act(obs, t0=len(self._tds)==1)
 			else:
 				action = self.env.rand_act()
-			obs, reward, done, info = self.env.step(action)
+			obs, reward, termination, truncation, info = self.env.step(action)
+			done = termination or truncation
 			self._tds.append(self.to_td(obs, action, reward))
 
 			# Update agent
@@ -1232,7 +1220,7 @@ class WorldModel(nn.Module):
 
 		# Gaussian policy prior
 		mean, log_std = self._pi(z).chunk(2, dim=-1)
-		log_std = log_std(log_std, self.log_std_min, self.log_std_dif)
+		log_std = safe_log_std(log_std, self.log_std_min, self.log_std_dif)
 		eps = torch.randn_like(mean)
 
 		if self.cfg.multitask: # Mask out unused action dimensions
