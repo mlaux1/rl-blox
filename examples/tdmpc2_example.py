@@ -10,6 +10,7 @@ env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
 config = dict(
+    env=env,
     task=env_name,
     obs="state",
     checkpoint="???",
@@ -74,7 +75,7 @@ config = dict(
     # convenience
     work_dir="???",
     task_title="???",
-    multitask="???",
+    multitask=False,
     tasks="???",
     obs_shape="???",
     action_dim="???",
@@ -91,3 +92,4 @@ config = dict(
 train_tdmpc2(
     namedtuple("Config", config.keys())(*config.values())
 )
+env.close()
