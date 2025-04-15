@@ -1,5 +1,7 @@
-import gymnasium as gym
 from collections import namedtuple
+
+import gymnasium as gym
+import torch
 
 from rl_blox.algorithms.model_based.ext.tdmpc2 import train_tdmpc2
 
@@ -17,7 +19,7 @@ config = dict(
     # eval
     eval_episodes=10,
     eval_freq=2_000,
-    steps=5_000,
+    steps=4_000,
     # training
     batch_size=256,
     reward_coef=0.1,
@@ -89,7 +91,24 @@ config = dict(
     compile=False,
 )
 
-train_tdmpc2(
+agent = train_tdmpc2(
     namedtuple("Config", config.keys())(*config.values())
 )
 env.close()
+
+# Evaluation
+env = gym.make(env_name, render_mode="human")
+env = gym.wrappers.RecordEpisodeStatistics(env)
+while True:
+    done = False
+    infos = {}
+    obs, _ = env.reset()
+    t = 0
+    ep_return = 0.0
+    while not done:
+        action = agent.act(torch.from_numpy(obs), t0=t == 0, eval_mode=True)
+        obs, reward, termination, truncation, info = env.step(action)
+        done = termination or truncation
+        ep_return += reward
+        t += 1
+    print(f"{ep_return=}")

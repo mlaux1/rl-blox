@@ -1504,7 +1504,7 @@ def zero_(params):
 		p.data.fill_(0)
 
 
-def train_tdmpc2(cfg):
+def train_tdmpc2(cfg) -> TDMPC2:
 	"""TD-MPC2.
 
 	Most relevant args:
@@ -1552,3 +1552,4 @@ def train_tdmpc2(cfg):
 	)
 	trainer.train()
 	print("\nTraining completed successfully")
+	return trainer.agent
