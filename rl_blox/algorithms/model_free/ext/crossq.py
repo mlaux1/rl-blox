@@ -41,7 +41,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import tensorflow_probability as tfp
+import tensorflow_probability.substrates.jax as tfp
 from flax.linen.module import Module, compact, merge_param  # pylint: disable=g-multiple-import
 from flax.linen.normalization import _compute_stats, _normalize, _canonicalize_axes
 from flax.training.train_state import TrainState
