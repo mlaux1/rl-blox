@@ -66,11 +66,23 @@ minversion = "6.0"
 doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
 testpaths = ["tests"]
 addopts = [
-    "--cov-config=.coveragerc",
+    "--cov-config=pyproject.toml",
     "--cov=rl_blox",
     "--cov-report=html",
     "--doctest-modules",
 ]
+
+[tool.coverage.run]
+branch = true
+parallel = true
+source = ["rl_blox"]
+
+[tool.coverage.report]
+show_missing = true
+precision = 1
+
+[tool.coverage.paths]
+source = ["rl_blox"]
 
 [tool.setuptools]
 packages = ["rl_blox"]
