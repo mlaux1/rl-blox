@@ -41,7 +41,7 @@ dynamic = ["version", "readme"]
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
+    "pytest>=6.0",
     "pre-commit",
     "flake8",
     "black",
@@ -62,6 +62,7 @@ Issues = "https://github.com/mlaux1/rl-blox/issues"
 
 
 [tool.pytest.ini_options]
+minversion = "6.0"
 doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
 testpaths = ["tests"]
 addopts = [
