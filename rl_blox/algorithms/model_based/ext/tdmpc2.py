@@ -1792,13 +1792,88 @@ def train_tdmpc2(**cfg) -> TDMPC2:
 
     Parameters
     ----------
+    env
+        Training environment.
     task
         Task name.
+    obs : str in ["state", "rgb"]
+        Observation type.
+    checkpoint
+        TODO
+    eval_episodes : int
+        Number of evaluation episodes.
+    eval_freq : int
+        Evaluate every eval_freq steps.
+    steps : int
+        Number of training / environment steps
+    batch_size : int
+        Batch size.
+    reward_coef
+        TODO
+    value_coef
+        TODO
+    consistency_coef
+        TODO
+    rho
+        TODO
+    lr
+        Learning rate.
+    enc_lr_scale
+        Scaling for encoder learning rate.
+    grad_clip_norm
+        TODO
+    tau
+        TODO
+    discount_denom
+        TODO
+    discount_min
+        TODO
+    discount_max
+        TODO
+    buffer_size : int
+        Size of the replay buffer.
+    exp_name : str
+        Name of the experiment.
+    data_dir : str
+        TODO
+    mpc : bool
+        TODO
+    iterations : int
+        Number of iterations to optimize plan.
+    num_samples : int
+        Number of samples for MPC planning.
+    num_elites : int
+        Number of samples to use for update of search distribution in planning.
+    num_pi_trajs : int
+        Number of samples generated with policy.
+    horizon : int
+        Planning horizon.
+    min_std : float
+        TODO
+    max_std : float
+        TODO
+    temperature : float
+        TODO
+    log_std_min : float
+        Minimum of log std for actor.
+    log_std_max : float
+        Maximum of log std for actor.
+    entropy_coef : float
+        TODO
+    num_bins : float
+        TODO
+    vmin : float
+        TODO
+    vmax : float
+        TODO
     model_size
         Model size, must be one of [1, 5, 19, 48, 317]
-    steps
-        Number of training / environment steps
-    seed
+    num_enc_layers : int
+        Number of layers in encoder.
+    enc_dim : int
+        Number of nodes in encoder layers.
+    TODO
+    seed : int
         Random seed
     """
     assert torch.cuda.is_available()
