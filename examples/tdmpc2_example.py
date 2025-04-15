@@ -77,7 +77,6 @@ agent = train_tdmpc2(
     # convenience
     work_dir="???",
     task_title="???",
-    multitask=False,
     tasks="???",
     obs_shape="???",
     action_dim="???",
