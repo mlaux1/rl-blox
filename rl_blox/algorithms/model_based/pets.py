@@ -150,7 +150,6 @@ class ModelPredictiveControl:
                 alpha=0.1,
             )
         )
-        self._ts_inf = make_ts_inf()
 
     def start_episode(self) -> None:
         """Tell MPC that a new episode started."""
@@ -241,7 +240,7 @@ class ModelPredictiveControl:
             (self.n_samples, self.task_horizon) + self.action_space.shape,
         )
         chex.assert_shape(obs, (obs.shape[0],))
-        trajectories = self._ts_inf(
+        trajectories = ts_inf(
             particle_keys,
             model_indices,
             actions,
@@ -310,7 +309,17 @@ class ModelPredictiveControl:
 
         return self
 
-
+@nnx.jit
+@partial(
+    jax.vmap,  # over samples for CEM
+    # key, model_idx, acts, obs, dynamics_model
+    in_axes=(0, None, 0, None, None),
+)
+@partial(
+    jax.vmap,  # over particles for estimation of return
+    # key, model_idx, acts, obs, dynamics_model
+    in_axes=(0, 0, None, None, None),
+)
 def ts_inf(
     key: jnp.ndarray,
     model_idx: int,
@@ -324,18 +333,44 @@ def ts_inf(
 
     Parameters
     ----------
-    key
-        Random key for sampling.
-    model_idx
-        Index of the model used for sampling.
-    acts
-        Actions at times t:t+T with the task horizon T.
-    obs
+    keys : array, shape (n_samples, n_particles, 2)
+        Keys for random number generator.
+    model_idx : array, (n_particles,)
+        Each particle will use another base model for sampling.
+    acts : array, shape (n_samples, task_horizon) + action_space.shape
+        A sequence of actions to take for each sample of the optimizer.
+        Actions at times t:t+T with the horizon T.
+    obs : array, shape observation_space.shape
         Observation at time t.
-    dynamics_model_state
-        State of the probabilistic ensemble.
-    dynamics_model
-        Probabilistic ensemble.
+    dynamics_model : GaussianMLPEnsemble
+        Dynamics model.
+
+    Returns
+    -------
+    obs : array, shape (n_samples, n_particles, task_horizon + 1)
+          + observation_space.shape
+        Sequences of observations sampled with plans.
+
+    Examples
+    --------
+    >>> from flax import nnx
+    >>> import jax
+    >>> import chex
+    >>> model = GaussianMLPEnsemble(
+    ...     5, False, 4, 3, [500, 500, 500], nnx.Rngs(0))
+    >>> n_samples = 400
+    >>> n_particles = 20
+    >>> task_horizon = 100
+    >>> key = jax.random.key(0)
+    >>> key, samp_key, model_key, act_key, obs_key = jax.random.split(key, 5)
+    >>> sampling_keys = jax.random.split(samp_key, (n_samples, n_particles))
+    >>> model_indices = jax.random.randint(
+    ...     model_key, (n_particles,), 0, model.n_ensemble)
+    >>> acts = jax.random.normal(act_key, (n_samples, task_horizon, 1))
+    >>> obs = jax.random.normal(obs_key, (3,))
+    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs, model)
+    >>> chex.assert_shape(
+    ...     trajectories, (n_samples, n_particles, task_horizon + 1, 3))
     """
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = [obs]
@@ -352,67 +387,6 @@ def ts_inf(
         obs = obs + delta_obs
         observations.append(obs)
     return jnp.vstack(observations)
-
-
-def make_ts_inf() -> Callable[
-    [jnp.ndarray, int, jnp.ndarray, jnp.ndarray, GaussianMLPEnsemble],
-    jnp.ndarray,
-]:
-    """JIT-compile and vmap trajectory sampler TSinf.
-
-    The trajectory sampler will take as inputs the following arguments:
-
-    keys : array, shape (n_samples, n_particles, 2)
-        Keys for random number generator.
-
-    model_idx : array, (n_particles,)
-        Each particle will use another base model for sampling.
-
-    acts : array, shape (n_samples, task_horizon) + action_space.shape
-        A sequence of actions to take for each sample of the optimizer.
-
-    obs : array, shape observation_space.shape
-        Initial observation.
-
-    dynamics_model : GaussianMLPEnsemble
-        Dynamics model.
-
-    Returns trajectories as an array of
-    shape (n_samples, n_particles, task_horizon) + obs.shape
-
-    Examples
-    --------
-    >>> from flax import nnx
-    >>> import jax
-    >>> import chex
-    >>> model = GaussianMLPEnsemble(
-    ...     5, False, 4, 3, [500, 500, 500, nnx.Rngs(0)])
-    >>> n_samples = 400
-    >>> n_particles = 20
-    >>> task_horizon = 100
-    >>> ts_inf = make_ts_inf()
-    >>> key = jax.random.key(0)
-    >>> key, samp_key, model_key, act_key, obs_key = jax.random.split(key, 5)
-    >>> sampling_keys = jax.random.split(samp_key, (n_samples, n_particles))
-    >>> model_indices = jax.random.randint(
-    ...     model_key, (n_particles,), 0, model.n_ensemble)
-    >>> acts = jax.random.normal(act_key, (n_samples, task_horizon, 1))
-    >>> obs = jax.random.normal(obs_key, (3,))
-    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs, model)
-    >>> chex.assert_shape(
-    ...     trajectories, (n_samples, n_particles, task_horizon, 3))
-    """
-    return nnx.jit(
-        jax.vmap(  # over samples for CEM
-            jax.vmap(  # over particles for estimation of return
-                ts_inf,
-                # key, model_idx, acts, obs, dynamics_model
-                in_axes=(0, 0, None, None, None),
-            ),
-            # key, model_idx, acts, obs, dynamics_model
-            in_axes=(0, None, 0, None, None),
-        )
-    )
 
 
 def evaluate_plans(
