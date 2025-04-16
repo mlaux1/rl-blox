@@ -309,6 +309,7 @@ class ModelPredictiveControl:
 
         return self
 
+
 @nnx.jit
 @partial(
     jax.vmap,  # over samples for CEM
