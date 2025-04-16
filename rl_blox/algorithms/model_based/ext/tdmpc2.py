@@ -1851,9 +1851,24 @@ def train_tdmpc2(**cfg) -> TDMPC2:
         Number of layers in encoder.
     enc_dim : int
         Number of nodes in encoder layers.
-    TODO
+    num_channels : int
+        TODO
+    mlp_dim : int
+        TODO
+    latent_dim : int
+        TODO
+    num_q : int
+        TODO
+    dropout : float
+        TODO
+    simnorm_dim : int
+        TODO
+    save_csv : bool
+        Save results to csv.
     seed : int
         Random seed
+    compile : bool
+        TODO
     """
     assert torch.cuda.is_available()
     assert cfg["steps"] > 0, "Must train for at least 1 step."
