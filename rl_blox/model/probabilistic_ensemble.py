@@ -402,6 +402,25 @@ def train_epoch(
     indices: jnp.ndarray,
     regularization: float,
 ) -> jnp.ndarray:
+    """Train ensemble for one epoch.
+
+    Parameters
+    ----------
+    model
+        Probabilistic ensemble.
+
+    optimizer
+        Optimizer of probabilistic ensemble.
+
+    X : array, shape (n_samples, n_features)
+        Feature matrix.
+
+    Y : array, shape (n_samples, n_outputs)
+        Target values.
+
+    indices : array, shape (n_batches, n_ensemble, batch_size)
+        Data indices for each batch and individual model.
+    """
     chex.assert_equal_shape_prefix((X, Y), prefix_len=1)
     chex.assert_axis_dimension(indices, axis=1, expected=model.n_ensemble)
 
@@ -483,12 +502,12 @@ def train_ensemble(
         shuffled_indices = jax.random.permutation(
             key, bootstrap_indices, axis=1
         )
-        shuffled_indices = shuffled_indices[
-            :, : -(bootstrap_indices.shape[1] % batch_size)
-        ]
+        remaining = -(bootstrap_indices.shape[1] % batch_size)
+        if remaining:
+            shuffled_indices = shuffled_indices[:, :remaining]
         batched_indices = shuffled_indices.reshape(
             model.n_ensemble, batch_size, -1
-        ).transpose([1, 0, 2])
+        ).transpose([2, 0, 1])
         loss = train_epoch(
             model,
             optimizer,
@@ -497,7 +516,7 @@ def train_ensemble(
             batched_indices,
             regularization,
         )
-        if verbose and t % 100 == 0 or verbose >= 1 and t % 10 == 0:
+        if verbose >= 1 and t % 100 == 0 or verbose >= 2 and t % 10 == 0:
             print(f"[train_ensemble] {t=}: {loss=}")
 
     return loss

@@ -55,7 +55,7 @@ def generate_dataset3(data_key, n_samples):
 seed = 42
 learning_rate = 3e-3
 n_samples = 200
-batch_size = 40
+batch_size = 32
 n_epochs = 1_000
 train_size = 0.7
 regularization = 0.001
