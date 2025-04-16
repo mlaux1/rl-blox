@@ -162,7 +162,7 @@ class ModelPredictiveControl:
         obs = jnp.asarray(obs)
         assert obs.ndim == 1
 
-        if self.verbose >= 5:
+        if self.verbose >= 2:
             print("[PETS/MPC] sampling trajectories")
 
         best_plan = self._optimize_actions(obs)
@@ -197,7 +197,7 @@ class ModelPredictiveControl:
                 )
             )
 
-            if self.verbose >= 20:
+            if self.verbose >= 3:
                 print(
                     f"[PETS/MPC] it #{i + 1}, "
                     f"return [{expected_returns.min()}, "
@@ -205,8 +205,8 @@ class ModelPredictiveControl:
                     f"{jnp.mean(expected_returns)} +- "
                     f"{jnp.std(expected_returns)}"
                 )
-            if self.verbose >= 10:
-                print(f"[PETS/MPC] it #{i + 1}, best return [{best_return}]")
+        if self.verbose >= 1:
+            print(f"[PETS/MPC] it #{i + 1}, best return [{best_return}]")
 
         return mean
 
@@ -276,7 +276,7 @@ class ModelPredictiveControl:
             (observations.shape[0], observations.shape[1] + actions.shape[1]),
         )
 
-        if self.verbose >= 5:
+        if self.verbose >= 1:
             print("[PETS/MPC] start training")
         self.key, train_key = jax.random.split(self.key)
         loss = train_ensemble(  # TODO should we use bootstrapping?
@@ -294,7 +294,7 @@ class ModelPredictiveControl:
             regularization=self.dynamics_model.regularization,
             key=train_key,
         )
-        if self.verbose >= 5:
+        if self.verbose >= 1:
             print(f"[PETS/MPC] training done; {loss=}")
 
         return self
@@ -597,7 +597,7 @@ def train_pets(
     obs, _ = env.reset(seed=seed)
 
     for t in range(total_timesteps):
-        if verbose >= 5 and t % 50 == 0:
+        if verbose >= 2 and t % 50 == 0:
             print(f"[PETS] {t=}, mean rewards={rb.mean_reward(50)}")
         if (
             t >= learning_starts
@@ -608,7 +608,7 @@ def train_pets(
             )
             mpc.fit(D_obs, D_acts, D_next_obs, n_epochs=n_epochs)
             n_epochs = gradient_steps
-            if save_checkpoints:
+            if save_checkpoints:  # TODO use logging interface
                 store_checkpoint(
                     f"{checkpoint_path_prefix}/pets_dynamics_model_{t}",
                     mpc.dynamics_model.model,
@@ -624,7 +624,7 @@ def train_pets(
         rb.add_sample(obs, action, reward, next_obs, termination)
 
         if termination or truncation:
-            if verbose:
+            if verbose >= 1:
                 print(f"{t=}, {info=}")
             mpc.start_episode()
             obs, _ = env.reset()
