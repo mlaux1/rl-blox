@@ -61,7 +61,6 @@ agent = train_tdmpc2(
     num_channels=32,
     mlp_dim=512,
     latent_dim=512,
-    task_dim=96,
     num_q=5,
     dropout=0.01,
     simnorm_dim=8,
@@ -69,18 +68,6 @@ agent = train_tdmpc2(
     save_csv=True,
     # misc
     seed=seed,
-    # convenience
-    work_dir="???",
-    task_title="???",
-    tasks="???",
-    obs_shape="???",
-    action_dim="???",
-    episode_length="???",
-    obs_shapes="???",
-    action_dims="???",
-    episode_lengths="???",
-    seed_steps="???",
-    bin_size="???",
     # speedups
     compile=False,
 )
