@@ -333,7 +333,7 @@ def ts_inf(
         # We sample from one of the base models.
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
         key, sampling_key = jax.random.split(key, 2)
-        dist = dynamics_model.base_sample(
+        dist = dynamics_model.base_distribution(
             jnp.hstack((obs, act))[jnp.newaxis], model_idx
         )
         delta_obs = dist.sample(seed=sampling_key, sample_shape=1)[

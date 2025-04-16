@@ -42,7 +42,7 @@ class GaussianMLP(nnx.Module):
         n_outputs: int,
         hidden_nodes: list[int],
         rngs: nnx.Rngs,
-    ):
+    ) -> None:
         chex.assert_scalar_positive(n_features)
         chex.assert_scalar_positive(n_outputs)
 
@@ -130,7 +130,7 @@ class GaussianMLPEnsemble(nnx.Module):
         n_outputs: int,
         hidden_nodes: list[int],
         rngs: nnx.Rngs,
-    ):
+    ) -> None:
         self.n_ensemble = n_ensemble
         self.n_outputs = n_outputs
 
@@ -192,7 +192,25 @@ class GaussianMLPEnsemble(nnx.Module):
 
         return means, log_vars
 
-    def aggregate(self, x):
+    def aggregate(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Make predictions with ensemble and aggregate results.
+
+        Parameters
+        ----------
+        x : array, shape (n_samples, n_features)
+            Inputs.
+
+        Returns
+        -------
+        mean : array, shape (n_samples, n_outputs)
+            Prediction mean of the ensemble.
+
+        var : array, shape (n_samples, n_outputs)
+            Sum of aleatoric and epistemic variances. The aleatoric variance is
+            the mean of the individual variances of the ensemble, and the
+            epistemic variance is the variance of the individual means of the
+            ensemble.
+        """
         means, log_vars = self._forward_ensemble(self.ensemble, x)
 
         log_vars = self._safe_log_var(
@@ -205,6 +223,24 @@ class GaussianMLPEnsemble(nnx.Module):
         return mean, aleatoric_var + epistemic_var
 
     def base_predict(self, x, i):
+        """Make prediction with individual model.
+
+        Parameters
+        ----------
+        x : array, shape (n_samples, n_features)
+            Inputs.
+
+        i : int
+            Model index.
+
+        Returns
+        -------
+        mean : array, shape (n_samples, n_outputs)
+            Predicted mean.
+
+        var : array, shape (n_samples, n_outputs)
+            Predicted variance.
+        """
         graphdef, state = nnx.split(self.ensemble)
         state_i = jax.tree_map(lambda x: x[i], state)
         base_model = nnx.merge(graphdef, state_i)
@@ -214,9 +250,24 @@ class GaussianMLPEnsemble(nnx.Module):
         )
         return mean_i, jnp.exp(log_var_i)
 
-    def base_sample(
+    def base_distribution(
         self, x: jnp.ndarray, i: int
     ) -> distrax.MultivariateNormalDiag:
+        """Sample from individual model of the ensemble.
+
+        Parameters
+        ----------
+        x : array, shape (n_samples, n_features)
+            Inputs.
+
+        i : int
+            Model index.
+
+        Returns
+        -------
+        distribution : distrax.MultivariateNormalDiag
+            Predicted distribution.
+        """
         graphdef, state = nnx.split(self.ensemble)
         state_i = jax.tree_map(lambda x: x[i], state)
         base_model = nnx.merge(graphdef, state_i)
