@@ -541,8 +541,6 @@ def train_pets(
     obs, _ = env.reset(seed=seed)
 
     for t in range(total_timesteps):
-        if verbose >= 2 and t % 50 == 0:
-            print(f"[PETS] {t=}, mean rewards={rb.mean_reward(50)}")
         if (
             t >= learning_starts
             and (t - learning_starts) % n_steps_per_iteration == 0
