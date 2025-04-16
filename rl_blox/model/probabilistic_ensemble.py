@@ -345,7 +345,7 @@ def gaussian_ensemble_loss(
 @nnx.jit
 def train_epoch(
     model: GaussianMLPEnsemble,
-    optimizer: nnx.Optimizer[GaussianMLPEnsemble],
+    optimizer: nnx.Optimizer,
     X: jnp.ndarray,
     Y: jnp.ndarray,
     indices: jnp.ndarray,
@@ -370,7 +370,7 @@ def train_epoch(
 
 class EnsembleTrainState(NamedTuple):
     model: GaussianMLPEnsemble
-    optimizer: nnx.Optimizer[GaussianMLPEnsemble]
+    optimizer: nnx.Optimizer
     train_size: float
     batch_size: int
     regularization: float
@@ -378,7 +378,7 @@ class EnsembleTrainState(NamedTuple):
 
 def train_ensemble(
     model: GaussianMLPEnsemble,
-    optimizer: nnx.Optimizer[GaussianMLPEnsemble],
+    optimizer: nnx.Optimizer,
     train_size: float,
     X: jnp.ndarray,
     Y: jnp.ndarray,
