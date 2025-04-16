@@ -152,13 +152,25 @@ class ModelPredictiveControl:
         )
         self._ts_inf = make_ts_inf()
 
-    def start_episode(self):
+    def start_episode(self) -> None:
+        """Tell MPC that a new episode started."""
         self.prev_plan = jnp.vstack(
             [self.avg_act for _ in range(self.task_horizon)]
         )
 
     def action(self, obs: ArrayLike) -> jnp.ndarray:
-        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L194
+        """Plan next action.
+
+        Parameters
+        ----------
+        obs : array-like, shape (n_observation_features,)
+            Observation.
+
+        Returns
+        -------
+        action : array, shape (n_action_features,)
+            Next action to take.
+        """
         obs = jnp.asarray(obs)
         assert obs.ndim == 1
 
