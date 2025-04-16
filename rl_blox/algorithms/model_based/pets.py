@@ -337,7 +337,6 @@ def ts_inf(
     dynamics_model
         Probabilistic ensemble.
     """
-    key, sampling_key = jax.random.split(key, 2)
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = [obs]
     for act in acts:
