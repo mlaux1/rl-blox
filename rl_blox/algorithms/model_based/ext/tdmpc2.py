@@ -532,8 +532,8 @@ class TensorWrapper(gym.Wrapper):
 
 
 def cfg_to_dataclass(cfg_dict, frozen=False):
-    """
-    Converts an config to a dataclass object.
+    """Converts a config to a dataclass object.
+
     This prevents graph breaks when used with torch.compile.
     """
     fields = []
@@ -1570,8 +1570,8 @@ class PixelPreprocess(nn.Module):
 
 
 class SimNorm(nn.Module):
-    """
-    Simplicial normalization.
+    """Simplicial normalization.
+
     Adapted from https://arxiv.org/abs/2204.00616.
     """
 
@@ -1839,30 +1839,34 @@ def train_tdmpc2(**cfg) -> TDMPC2:
         TODO
     vmax : float
         TODO
-    model_size
-        Model size, must be one of [1, 5, 19, 48, 317]
+    model_size : int
+        Model size, must be one of [1, 5, 19, 48, 317]. If none, use values for
+        num_enc_layers, enc_dim, num_channels, and mlp_dim, latent_dim, and
+        num_q to define model architecture.
     num_enc_layers : int
         Number of layers in encoder.
     enc_dim : int
         Number of nodes in encoder layers.
     num_channels : int
-        TODO
+        Number of channels for convolutional encoder with raw image
+        observations.
     mlp_dim : int
-        TODO
+        Number of hidden nodes in dynamics model, reward model, policy, and Q
+        network.
     latent_dim : int
-        TODO
+        Dimensions of latent space to which the encoder projects.
     num_q : int
-        TODO
+        Number of networks in the ensemble of Q-functions.
     dropout : float
-        TODO
+        Dropout probability for Q-functions.
     simnorm_dim : int
-        TODO
+        Number of dimensions for simplicial normalization in encoder.
     save_csv : bool
         Save results to csv.
     seed : int
         Random seed
     compile : bool
-        TODO
+        Compile graphs for faster training.
     """
     assert torch.cuda.is_available()
     assert cfg["steps"] > 0, "Must train for at least 1 step."
