@@ -44,6 +44,6 @@ mpc = train_pets(
     gradient_steps=10,
     total_timesteps=2_001,
     save_checkpoints=True,
-    verbose=5,
+    verbose=2,
 )
 env.close()

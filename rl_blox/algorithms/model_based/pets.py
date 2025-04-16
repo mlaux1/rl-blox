@@ -95,7 +95,7 @@ class ModelPredictiveControl:
         self,
         action_space: gym.spaces.Box,
         reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
-        dynamics_model: EnsembleTrainState,
+        dynamics_model: GaussianMLPEnsemble,
         task_horizon: int,
         n_particles: int,
         n_samples: int,
@@ -193,7 +193,7 @@ class ModelPredictiveControl:
             bootstrap_key,
             shape=(self.n_particles,),
             minval=0,
-            maxval=self.dynamics_model.model.n_ensemble,
+            maxval=self.dynamics_model.n_ensemble,
         )
 
         if self.init_with_previous_plan:
@@ -245,7 +245,7 @@ class ModelPredictiveControl:
             model_indices,
             actions,
             obs,
-            self.dynamics_model.model,
+            self.dynamics_model,
         )
         chex.assert_shape(
             trajectories,
@@ -524,7 +524,7 @@ def train_pets(
     mpc = ModelPredictiveControl(
         action_space,
         reward_model,
-        dynamics_model,
+        dynamics_model.model,
         task_horizon,
         n_particles,
         n_samples,
