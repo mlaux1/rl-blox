@@ -555,37 +555,33 @@ def parse_cfg(cfg: dict) -> Any:
     """
     # Algebraic expressions
     for k in cfg:
-        try:
-            v = cfg[k]
-            if isinstance(v, str):
-                match = re.match(r"(\d+)([+\-*/])(\d+)", v)
-                if match:
-                    cfg[k] = eval(
-                        match.group(1) + match.group(2) + match.group(3)
-                    )
-                    if isinstance(cfg[k], float) and cfg[k].is_integer():
-                        cfg[k] = int(cfg[k])
-        except:
-            pass
+        v = cfg[k]
+        if isinstance(v, str):
+            match = re.match(r"(\d+)([+\-*/])(\d+)", v)
+            if match:
+                cfg[k] = eval(
+                    match.group(1) + match.group(2) + match.group(3)
+                )
+                if isinstance(cfg[k], float) and cfg[k].is_integer():
+                    cfg[k] = int(cfg[k])
 
     # Convenience
     cfg["work_dir"] = (
         Path(".") / "logs" / cfg["task"] / str(cfg["seed"]) / cfg["exp_name"]
     )
     cfg["task_title"] = cfg["task"].replace("-", " ").title()
-    cfg["bin_size"] = (cfg["vmax"] - cfg["vmin"]) / (
-        cfg["num_bins"] - 1
-    )  # Bin size for discrete regression
+    # Bin size for discrete regression
+    cfg["bin_size"] = (cfg["vmax"] - cfg["vmin"]) / (cfg["num_bins"] - 1)
 
     # Model size
     if cfg.get("model_size") is not None:
-        assert (
-            cfg["model_size"] in MODEL_SIZE
-        ), f"Invalid model size {cfg['model_size']}. Must be one of {list(MODEL_SIZE.keys())}"
+        if (
+            cfg["model_size"] not in MODEL_SIZE
+        ):
+            raise ValueError(f"Invalid model size {cfg['model_size']}. "
+                             f"Must be one of {list(MODEL_SIZE.keys())}")
         for k, v in MODEL_SIZE[cfg["model_size"]].items():
             cfg[k] = v
-        if cfg["task"] == "mt30" and cfg["model_size"] == 19:
-            cfg["latent_dim"] = 512  # This checkpoint is slightly smaller
 
     cfg["tasks"] = TASK_SET.get(cfg["task"], [cfg["task"]])
 
