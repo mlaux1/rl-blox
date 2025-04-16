@@ -27,7 +27,6 @@ dynamics_model = EnsembleTrainState(
     ),
     train_size=0.7,
     batch_size=32,
-    regularization=0.0,
 )
 mpc = train_pets(
     env,

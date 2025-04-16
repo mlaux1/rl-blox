@@ -279,7 +279,7 @@ class ModelPredictiveControl:
         if self.verbose >= 1:
             print("[PETS/MPC] start training")
         self.key, train_key = jax.random.split(self.key)
-        loss = train_ensemble(  # TODO should we use bootstrapping?
+        loss = train_ensemble(
             model=self.dynamics_model.model,
             optimizer=self.dynamics_model.optimizer,
             train_size=self.dynamics_model.train_size,
@@ -291,7 +291,6 @@ class ModelPredictiveControl:
             Y=next_observations - observations,
             n_epochs=n_epochs,
             batch_size=self.dynamics_model.batch_size,
-            regularization=self.dynamics_model.regularization,
             key=train_key,
         )
         if self.verbose >= 1:

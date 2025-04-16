@@ -370,27 +370,15 @@ def bootstrap(
     )
 
 
-def l2_regularization_loss(model: GaussianMLPEnsemble) -> jnp.ndarray:
-    l2_reg_los = 0.0
-    for layer in model.ensemble.hidden_layers + model.ensemble.output_layers:
-        l2_reg_los = l2_reg_los + (layer.kernel**2).sum()
-    return 0.5 * l2_reg_los
-
-
 def gaussian_ensemble_loss(
     model: GaussianMLPEnsemble,
     X: jnp.ndarray,
     Y: jnp.ndarray,
-    regularization: float,
 ) -> jnp.ndarray:
     """Sum of Gaussian NLL and penalty for log_var boundaries and weights."""
     mean, log_var = model(X)
     boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
-    return (
-        gaussian_nll(mean, log_var, Y).sum()
-        + 0.01 * boundary_loss
-        + regularization * l2_regularization_loss(model)
-    )
+    return gaussian_nll(mean, log_var, Y).sum() + 0.01 * boundary_loss
 
 
 @nnx.jit
@@ -400,7 +388,6 @@ def train_epoch(
     X: jnp.ndarray,
     Y: jnp.ndarray,
     indices: jnp.ndarray,
-    regularization: float,
 ) -> jnp.ndarray:
     """Train ensemble for one epoch.
 
@@ -433,7 +420,7 @@ def train_epoch(
     def batch_update(mod_opt, X, Y, batch):
         model, optimizer = mod_opt
         loss, grads = nnx.value_and_grad(gaussian_ensemble_loss, argnums=0)(
-            model, X[batch], Y[batch], regularization
+            model, X[batch], Y[batch]
         )
         optimizer.update(grads)
         return (model, optimizer), loss
@@ -448,7 +435,6 @@ class EnsembleTrainState(NamedTuple):
     optimizer: nnx.Optimizer
     train_size: float
     batch_size: int
-    regularization: float
 
 
 def train_ensemble(
@@ -459,7 +445,6 @@ def train_ensemble(
     Y: jnp.ndarray,
     n_epochs: int,
     batch_size: int,
-    regularization: float,
     key: jnp.ndarray,
     verbose: int = 0,
 ) -> jnp.ndarray:
@@ -479,8 +464,6 @@ def train_ensemble(
         Number of epochs to train.
     batch_size
         Batch size.
-    regularization
-        Weight for L2 regularization.
     key
         For random number generation in bootstrapping to generate individual
         training set of each model and shuffling in each episode.
@@ -519,7 +502,6 @@ def train_ensemble(
             X,
             Y,
             batched_indices,
-            regularization,
         )
         if verbose >= 1 and t % 100 == 0 or verbose >= 2 and t % 10 == 0:
             print(f"[train_ensemble] {t=}: {loss=}")
