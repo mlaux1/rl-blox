@@ -432,22 +432,12 @@ def print_run(cfg):
     print(div)
 
 
-def cfg_to_group(cfg, return_list=False):
-    """
-    Return a wandb-safe group name for logging.
-    Optionally returns group name as list.
-    """
-    lst = [cfg.task, re.sub("[^0-9a-zA-Z]+", "-", cfg.exp_name)]
-    return lst if return_list else "-".join(lst)
-
-
 class Logger:
     """Primary logging object. Logs either locally or using wandb."""
     def __init__(self, cfg):
         self._log_dir = make_dir(cfg.work_dir)
         self._model_dir = make_dir(self._log_dir / "models")
         self._save_csv = cfg.save_csv
-        self._group = cfg_to_group(cfg)
         self._seed = cfg.seed
         self._eval = []
         print_run(cfg)
