@@ -420,6 +420,11 @@ def train_epoch(
 
     indices : array, shape (n_batches, n_ensemble, batch_size)
         Data indices for each batch and individual model.
+
+    Returns
+    -------
+    loss : float
+        Mean loss of batches during the epoch.
     """
     chex.assert_equal_shape_prefix((X, Y), prefix_len=1)
     chex.assert_axis_dimension(indices, axis=1, expected=model.n_ensemble)
