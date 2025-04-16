@@ -597,7 +597,6 @@ def parse_cfg(cfg: dict) -> Any:
         if cfg["task"] == "mt30" and cfg["model_size"] == 19:
             cfg["latent_dim"] = 512  # This checkpoint is slightly smaller
 
-    cfg["task_dim"] = 0
     cfg["tasks"] = TASK_SET.get(cfg["task"], [cfg["task"]])
 
     return cfg_to_dataclass(cfg)
@@ -1299,23 +1298,23 @@ class WorldModel(nn.Module):
         self.cfg = cfg
         self._encoder = enc(cfg)
         self._dynamics = mlp(
-            cfg.latent_dim + cfg.action_dim + cfg.task_dim,
+            cfg.latent_dim + cfg.action_dim,
             2 * [cfg.mlp_dim],
             cfg.latent_dim,
             act=SimNorm(cfg),
         )
         self._reward = mlp(
-            cfg.latent_dim + cfg.action_dim + cfg.task_dim,
+            cfg.latent_dim + cfg.action_dim,
             2 * [cfg.mlp_dim],
             max(cfg.num_bins, 1),
         )
         self._pi = mlp(
-            cfg.latent_dim + cfg.task_dim, 2 * [cfg.mlp_dim], 2 * cfg.action_dim
+            cfg.latent_dim, 2 * [cfg.mlp_dim], 2 * cfg.action_dim
         )
         self._Qs = Ensemble(
             [
                 mlp(
-                    cfg.latent_dim + cfg.action_dim + cfg.task_dim,
+                    cfg.latent_dim + cfg.action_dim,
                     2 * [cfg.mlp_dim],
                     max(cfg.num_bins, 1),
                     dropout=cfg.dropout,
@@ -1676,7 +1675,7 @@ def enc(cfg, out={}):
     for k in cfg.obs_shape.keys():
         if k == "state":
             out[k] = mlp(
-                cfg.obs_shape[k][0] + cfg.task_dim,
+                cfg.obs_shape[k][0],
                 max(cfg.num_enc_layers - 1, 1) * [cfg.enc_dim],
                 cfg.latent_dim,
                 act=SimNorm(cfg),
