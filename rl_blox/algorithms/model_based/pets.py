@@ -5,10 +5,10 @@ from functools import partial
 import chex
 import gymnasium as gym
 import jax
-import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 from gymnasium.wrappers import RecordEpisodeStatistics
+from jax import numpy as jnp
 from jax.typing import ArrayLike
 
 from ...model.cross_entropy_method import cem_sample, cem_update
@@ -267,48 +267,6 @@ class ModelPredictiveControl:
             best_plan = actions[best_idx]
         return mean, var, best_plan, best_return, expected_returns
 
-    def fit(
-        self,
-        observations: ArrayLike,
-        actions: ArrayLike,
-        next_observations: ArrayLike,
-        n_epochs: int,
-    ) -> "ModelPredictiveControl":
-        observations = jnp.asarray(observations)
-        actions = jnp.asarray(actions)
-        next_observations = jnp.asarray(next_observations)
-
-        chex.assert_equal_shape((observations, next_observations))
-        chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
-
-        observations_actions = jnp.hstack((observations, actions))
-        chex.assert_shape(
-            observations_actions,
-            (observations.shape[0], observations.shape[1] + actions.shape[1]),
-        )
-
-        if self.verbose >= 1:
-            print("[PETS/MPC] start training")
-        self.key, train_key = jax.random.split(self.key)
-        loss = train_ensemble(
-            model=self.dynamics_model.model,
-            optimizer=self.dynamics_model.optimizer,
-            train_size=self.dynamics_model.train_size,
-            X=observations_actions,
-            # This is configurable in the original implementation, although it
-            # is the same for every environment used in the experiments. We
-            # assume that we are dealing with continuous state vectors and
-            # predict the delta in the transition.
-            Y=next_observations - observations,
-            n_epochs=n_epochs,
-            batch_size=self.dynamics_model.batch_size,
-            key=train_key,
-        )
-        if self.verbose >= 1:
-            print(f"[PETS/MPC] training done; {loss=}")
-
-        return self
-
 
 @nnx.jit
 @partial(
@@ -551,6 +509,7 @@ def train_pets(
            https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
     rng = np.random.default_rng(seed)
+    key = jax.random.key(seed)
 
     assert isinstance(
         env.action_space, gym.spaces.Box
@@ -588,15 +547,20 @@ def train_pets(
             t >= learning_starts
             and (t - learning_starts) % n_steps_per_iteration == 0
         ):
-            D_obs, D_acts, D_rews, D_next_obs, D_dones = rb.sample_batch(
-                len(rb), rng
+            D_obs, D_acts, _, D_next_obs, _ = rb.sample_batch(len(rb), rng)
+            if verbose >= 2:
+                print("[PETS] start training")
+            key, train_key = jax.random.split(key)
+            loss = update_dynamics_model(
+                dynamics_model, D_obs, D_acts, D_next_obs, train_key, n_epochs
             )
-            mpc.fit(D_obs, D_acts, D_next_obs, n_epochs=n_epochs)
+            if verbose >= 2:
+                print(f"[PETS] training done; {loss=}")
             n_epochs = gradient_steps
             if save_checkpoints:  # TODO use logging interface
                 store_checkpoint(
                     f"{checkpoint_path_prefix}/pets_dynamics_model_{t}",
-                    mpc.dynamics_model.model,
+                    dynamics_model.model,
                 )
 
         if t < learning_starts:
@@ -617,3 +581,43 @@ def train_pets(
         obs = next_obs
 
     return mpc
+
+
+def update_dynamics_model(
+    dynamics_model,
+    observations: ArrayLike,
+    actions: ArrayLike,
+    next_observations: ArrayLike,
+    train_key: jnp.ndarray,
+    n_epochs: int,
+) -> jnp.ndarray:
+    """Train dynamics model."""
+    observations = jnp.asarray(observations)
+    actions = jnp.asarray(actions)
+    next_observations = jnp.asarray(next_observations)
+
+    chex.assert_equal_shape((observations, next_observations))
+    chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
+
+    observations_actions = jnp.hstack((observations, actions))
+
+    chex.assert_shape(
+        observations_actions,
+        (observations.shape[0], observations.shape[1] + actions.shape[1]),
+    )
+
+    loss = train_ensemble(
+        model=dynamics_model.model,
+        optimizer=dynamics_model.optimizer,
+        train_size=dynamics_model.train_size,
+        X=observations_actions,
+        # This is configurable in the original implementation, although it
+        # is the same for every environment used in the experiments. We
+        # assume that we are dealing with continuous state vectors and
+        # predict the delta in the transition.
+        Y=next_observations - observations,
+        n_epochs=n_epochs,
+        batch_size=dynamics_model.batch_size,
+        key=train_key,
+    )
+    return loss
