@@ -127,19 +127,18 @@ class ModelPredictiveControl:
                 for _ in range(self.task_horizon)
             ]
         )
-        self.lower_bound = jnp.vstack(
+        lower_bound = jnp.vstack(
             [self.action_space.low for _ in range(self.task_horizon)]
         )
-        self.upper_bound = jnp.vstack(
+        upper_bound = jnp.vstack(
             [self.action_space.high for _ in range(self.task_horizon)]
         )
-        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L214C9-L214C76
         self._cem_sample = jax.jit(
             partial(
                 cem_sample,
                 n_population=self.n_samples,
-                lb=self.lower_bound,
-                ub=self.upper_bound,
+                lb=lower_bound,
+                ub=upper_bound,
             )
         )
         # TODO make configurable
@@ -266,128 +265,6 @@ class ModelPredictiveControl:
             best_return = expected_returns[best_idx]
             best_plan = actions[best_idx]
         return mean, var, best_plan, best_return, expected_returns
-
-
-@nnx.jit
-@partial(
-    jax.vmap,  # over samples for CEM
-    # key, model_idx, acts, obs, dynamics_model
-    in_axes=(0, None, 0, None, None),
-)
-@partial(
-    jax.vmap,  # over particles for estimation of return
-    # key, model_idx, acts, obs, dynamics_model
-    in_axes=(0, 0, None, None, None),
-)
-def ts_inf(
-    key: jnp.ndarray,
-    model_idx: int,
-    acts: jnp.ndarray,
-    obs: jnp.ndarray,
-    dynamics_model: GaussianMLPEnsemble,
-):
-    """Trajectory sampling infinity (TSinf).
-
-    Particles do never change the bootstrap during a trial.
-
-    Parameters
-    ----------
-    keys : array, shape (n_samples, n_particles)
-        Keys for random number generator.
-    model_idx : array, (n_particles,)
-        Each particle will use another base model for sampling.
-    acts : array, shape (n_samples, task_horizon) + action_space.shape
-        A sequence of actions to take for each sample of the optimizer.
-        Actions at times t:t+T with the horizon T.
-    obs : array, shape observation_space.shape
-        Observation at time t.
-    dynamics_model : GaussianMLPEnsemble
-        Dynamics model.
-
-    Returns
-    -------
-    obs : array, shape (n_samples, n_particles, task_horizon + 1)
-          + observation_space.shape
-        Sequences of observations sampled with plans.
-
-    Examples
-    --------
-    >>> from flax import nnx
-    >>> import jax
-    >>> import chex
-    >>> model = GaussianMLPEnsemble(
-    ...     5, False, 4, 3, [500, 500, 500], nnx.Rngs(0))
-    >>> n_samples = 400
-    >>> n_particles = 20
-    >>> task_horizon = 100
-    >>> key = jax.random.key(0)
-    >>> key, samp_key, model_key, act_key, obs_key = jax.random.split(key, 5)
-    >>> sampling_keys = jax.random.split(samp_key, (n_samples, n_particles))
-    >>> model_indices = jax.random.randint(
-    ...     model_key, (n_particles,), 0, model.n_ensemble)
-    >>> acts = jax.random.normal(act_key, (n_samples, task_horizon, 1))
-    >>> obs = jax.random.normal(obs_key, (3,))
-    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs, model)
-    >>> chex.assert_shape(
-    ...     trajectories, (n_samples, n_particles, task_horizon + 1, 3))
-    """
-    # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
-    observations = [obs]
-    for act in acts:
-        # We sample from one of the base models.
-        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
-        key, sampling_key = jax.random.split(key, 2)
-        dist = dynamics_model.base_distribution(
-            jnp.hstack((obs, act))[jnp.newaxis], model_idx
-        )
-        delta_obs = dist.sample(seed=sampling_key, sample_shape=1)[
-            0, 0
-        ]  # TODO why [0, 0] and not [0]?
-        obs = obs + delta_obs
-        observations.append(obs)
-    return jnp.vstack(observations)
-
-
-def evaluate_plans(
-    actions: jnp.ndarray,
-    trajectories: jnp.ndarray,
-    reward_model: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
-) -> jnp.ndarray:
-    """Evaluate plans based on sampled trajectories.
-
-    Parameters
-    ----------
-    actions : array, shape (n_samples, task_horizon) + action_space.shape
-        Action sequences (plans).
-
-    trajectories : array,
-            shape (n_samples, n_particles, task_horizon + 1)
-            + observation_space.shape
-        Sequences of observations sampled with plans.
-
-    reward_model : callable
-        Mapping from pairs of state and action to reward.
-
-    Returns
-    -------
-    expected_returns : array, shape (n_samples,)
-        Expected returns, summed up over task horizon, averaged over particles.
-    """
-    assert not jnp.any(jnp.isnan(trajectories))
-    n_samples, task_horizon = actions.shape[:2]
-    action_shape = actions.shape[2:]
-    n_particles = trajectories.shape[1]
-
-    broadcasted_actions = np.broadcast_to(
-        actions[:, jnp.newaxis],
-        (n_samples, n_particles, task_horizon) + action_shape,
-    )  # broadcast along particle axis
-    rewards = reward_model(broadcasted_actions, trajectories[:, :, :-1])
-    # sum along task_horizon axis
-    returns = rewards.sum(axis=-1)
-    # mean along particle axis
-    expected_returns = returns.mean(axis=-1)
-    return expected_returns
 
 
 def train_pets(
@@ -579,6 +456,128 @@ def train_pets(
         obs = next_obs
 
     return mpc
+
+
+@nnx.jit
+@partial(
+    jax.vmap,  # over samples for CEM
+    # key, model_idx, acts, obs, dynamics_model
+    in_axes=(0, None, 0, None, None),
+)
+@partial(
+    jax.vmap,  # over particles for estimation of return
+    # key, model_idx, acts, obs, dynamics_model
+    in_axes=(0, 0, None, None, None),
+)
+def ts_inf(
+    key: jnp.ndarray,
+    model_idx: int,
+    acts: jnp.ndarray,
+    obs: jnp.ndarray,
+    dynamics_model: GaussianMLPEnsemble,
+):
+    """Trajectory sampling infinity (TSinf).
+
+    Particles do never change the bootstrap during a trial.
+
+    Parameters
+    ----------
+    keys : array, shape (n_samples, n_particles)
+        Keys for random number generator.
+    model_idx : array, (n_particles,)
+        Each particle will use another base model for sampling.
+    acts : array, shape (n_samples, task_horizon) + action_space.shape
+        A sequence of actions to take for each sample of the optimizer.
+        Actions at times t:t+T with the horizon T.
+    obs : array, shape observation_space.shape
+        Observation at time t.
+    dynamics_model : GaussianMLPEnsemble
+        Dynamics model.
+
+    Returns
+    -------
+    obs : array, shape (n_samples, n_particles, task_horizon + 1)
+          + observation_space.shape
+        Sequences of observations sampled with plans.
+
+    Examples
+    --------
+    >>> from flax import nnx
+    >>> import jax
+    >>> import chex
+    >>> model = GaussianMLPEnsemble(
+    ...     5, False, 4, 3, [500, 500, 500], nnx.Rngs(0))
+    >>> n_samples = 400
+    >>> n_particles = 20
+    >>> task_horizon = 100
+    >>> key = jax.random.key(0)
+    >>> key, samp_key, model_key, act_key, obs_key = jax.random.split(key, 5)
+    >>> sampling_keys = jax.random.split(samp_key, (n_samples, n_particles))
+    >>> model_indices = jax.random.randint(
+    ...     model_key, (n_particles,), 0, model.n_ensemble)
+    >>> acts = jax.random.normal(act_key, (n_samples, task_horizon, 1))
+    >>> obs = jax.random.normal(obs_key, (3,))
+    >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs, model)
+    >>> chex.assert_shape(
+    ...     trajectories, (n_samples, n_particles, task_horizon + 1, 3))
+    """
+    # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
+    observations = [obs]
+    for act in acts:
+        # We sample from one of the base models.
+        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
+        key, sampling_key = jax.random.split(key, 2)
+        dist = dynamics_model.base_distribution(
+            jnp.hstack((obs, act))[jnp.newaxis], model_idx
+        )
+        delta_obs = dist.sample(seed=sampling_key, sample_shape=1)[
+            0, 0
+        ]  # TODO why [0, 0] and not [0]?
+        obs = obs + delta_obs
+        observations.append(obs)
+    return jnp.vstack(observations)
+
+
+def evaluate_plans(
+    actions: jnp.ndarray,
+    trajectories: jnp.ndarray,
+    reward_model: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+) -> jnp.ndarray:
+    """Evaluate plans based on sampled trajectories.
+
+    Parameters
+    ----------
+    actions : array, shape (n_samples, task_horizon) + action_space.shape
+        Action sequences (plans).
+
+    trajectories : array,
+            shape (n_samples, n_particles, task_horizon + 1)
+            + observation_space.shape
+        Sequences of observations sampled with plans.
+
+    reward_model : callable
+        Mapping from pairs of state and action to reward.
+
+    Returns
+    -------
+    expected_returns : array, shape (n_samples,)
+        Expected returns, summed up over task horizon, averaged over particles.
+    """
+    assert not jnp.any(jnp.isnan(trajectories))
+    n_samples, task_horizon = actions.shape[:2]
+    action_shape = actions.shape[2:]
+    n_particles = trajectories.shape[1]
+
+    broadcasted_actions = np.broadcast_to(
+        actions[:, jnp.newaxis],
+        (n_samples, n_particles, task_horizon) + action_shape,
+    )  # broadcast along particle axis
+    rewards = reward_model(broadcasted_actions, trajectories[:, :, :-1])
+    # sum along task_horizon axis
+    returns = rewards.sum(axis=-1)
+    # mean along particle axis
+    expected_returns = returns.mean(axis=-1)
+    return expected_returns
 
 
 def update_dynamics_model(
