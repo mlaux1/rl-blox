@@ -628,14 +628,40 @@ def evaluate_plans(
 
 
 def update_dynamics_model(
-    dynamics_model,
+    dynamics_model : EnsembleTrainState,
     observations: ArrayLike,
     actions: ArrayLike,
     next_observations: ArrayLike,
     train_key: jnp.ndarray,
     n_epochs: int,
 ) -> jnp.ndarray:
-    """Train dynamics model."""
+    """Train dynamics model.
+
+    Parameters
+    ----------
+    dynamics_model
+        Dynamics model to train.
+
+    observations : array-like, shape (n_samples, n_observation_features)
+        Observations.
+
+    actions : array-like, shape (n_samples, n_action_features)
+        Actions
+
+    next_observations : array-like, shape (n_samples, n_observation_features)
+        Next observations.
+
+    train_key : jnp.ndarray
+        Random key for training.
+
+    n_epochs : int
+        Number of epochs to train.
+
+    Returns
+    -------
+    loss
+        Mean loss of batches during last epoch.
+    """
     observations = jnp.asarray(observations)
     actions = jnp.asarray(actions)
     next_observations = jnp.asarray(next_observations)
@@ -650,7 +676,7 @@ def update_dynamics_model(
         (observations.shape[0], observations.shape[1] + actions.shape[1]),
     )
 
-    loss = train_ensemble(
+    return train_ensemble(
         model=dynamics_model.model,
         optimizer=dynamics_model.optimizer,
         train_size=dynamics_model.train_size,
@@ -664,4 +690,3 @@ def update_dynamics_model(
         batch_size=dynamics_model.batch_size,
         key=train_key,
     )
-    return loss
