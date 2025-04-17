@@ -127,27 +127,8 @@ class ModelPredictiveControl:
                 for _ in range(self.plan_horizon)
             ]
         )
-        lower_bound = jnp.vstack(
-            [self.action_space.low for _ in range(self.plan_horizon)]
-        )
-        upper_bound = jnp.vstack(
-            [self.action_space.high for _ in range(self.plan_horizon)]
-        )
-        self._cem_sample = jax.jit(
-            partial(
-                cem_sample,
-                n_population=self.n_samples,
-                lb=lower_bound,
-                ub=upper_bound,
-            )
-        )
-        # TODO make configurable
-        self._cem_update = jax.jit(
-            partial(
-                cem_update,
-                n_elite=int(0.1 * self.n_samples),
-                alpha=0.1,
-            )
+        self._sample, self._update_search_distribution = (
+            _init_mpc_optimizer_cem(action_space, plan_horizon, n_samples)
         )
 
     def start_episode(self) -> None:
@@ -222,7 +203,7 @@ class ModelPredictiveControl:
 
     def _cem_iter(self, obs, model_indices, mean, var, best_plan, best_return):
         self.key, sampling_key = jax.random.split(self.key, 2)
-        actions = self._cem_sample(mean, var, sampling_key)
+        actions = self._sample(mean, var, sampling_key)
         assert not jnp.any(jnp.isnan(actions))
         chex.assert_shape(
             actions,
@@ -259,7 +240,9 @@ class ModelPredictiveControl:
             actions, trajectories, self.reward_model
         )
         chex.assert_shape(expected_returns, (self.n_samples,))
-        mean, var = self._cem_update(actions, expected_returns, mean, var)
+        mean, var = self._update_search_distribution(
+            actions, expected_returns, mean, var
+        )
         best_idx = jnp.argmax(expected_returns)
         if expected_returns[best_idx] >= best_return:
             best_return = expected_returns[best_idx]
@@ -456,6 +439,42 @@ def train_pets(
         obs = next_obs
 
     return mpc
+
+
+def _init_mpc_optimizer_cem(
+    action_space: gym.spaces.Box,
+    plan_horizon: int,
+    n_samples: int,
+    n_elite: int | None = None,
+    alpha: float = 0.1,
+) -> tuple[
+    Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray],
+    Callable[
+        [jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        tuple[jnp.ndarray, jnp.ndarray],
+    ],
+]:
+    """Init CEM optimizer for MPC."""
+    lower_bound = jnp.vstack([action_space.low for _ in range(plan_horizon)])
+    upper_bound = jnp.vstack([action_space.high for _ in range(plan_horizon)])
+    _sample = jax.jit(
+        partial(
+            cem_sample,
+            n_population=n_samples,
+            lb=lower_bound,
+            ub=upper_bound,
+        )
+    )
+    if n_elite is None:
+        n_elite = int(0.1 * n_samples)
+    _update_search_distribution = jax.jit(
+        partial(
+            cem_update,
+            n_elite=n_elite,
+            alpha=alpha,
+        )
+    )
+    return _sample, _update_search_distribution
 
 
 @nnx.jit
