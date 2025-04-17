@@ -6,6 +6,7 @@ import chex
 import gymnasium as gym
 import jax
 import numpy as np
+import optax
 from flax import nnx
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax import numpy as jnp
@@ -245,6 +246,35 @@ class ModelPredictiveControl:
             best_return = expected_returns[best_idx]
             best_plan = actions[best_idx]
         return mean, var, best_plan, best_return, expected_returns
+
+
+def create_pets_state(
+    env: gym.Env,
+    seed: int,
+    n_ensemble: int = 5,
+    hidden_nodes: tuple[int] | list[int] = (500, 500, 500),
+    learning_rate: float = 1e-3,
+    weight_decay: float = 1e-3,
+    train_size: float = 0.7,
+    batch_size: int = 32,
+):
+    model = GaussianMLPEnsemble(
+        n_ensemble=n_ensemble,
+        n_features=env.observation_space.shape[0] + env.action_space.shape[0],
+        n_outputs=env.observation_space.shape[0],
+        shared_head=True,
+        hidden_nodes=list(hidden_nodes),
+        rngs=nnx.Rngs(seed),
+    )
+    return EnsembleTrainState(
+        model=model,
+        optimizer=nnx.Optimizer(
+            model,
+            optax.adamw(learning_rate=learning_rate, weight_decay=weight_decay),
+        ),
+        train_size=train_size,
+        batch_size=batch_size,
+    )
 
 
 def train_pets(
