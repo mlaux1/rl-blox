@@ -153,9 +153,6 @@ class ModelPredictiveControl:
         obs = jnp.asarray(obs)
         assert obs.ndim == 1
 
-        if self.verbose >= 2:
-            print("[PETS/MPC] sampling trajectories")
-
         best_plan = self._optimize_actions(obs)
 
         self.prev_plan = jnp.concatenate(
@@ -181,27 +178,27 @@ class ModelPredictiveControl:
         else:
             mean = jnp.broadcast_to(self.avg_act, self.prev_plan.shape)
         var = jnp.copy(self.init_var)
+
         for i in range(self.n_opt_iter):
             mean, var, best_plan, best_return, expected_returns = (
-                self._cem_iter(
+                self._opt_iter(
                     obs, model_indices, mean, var, best_plan, best_return
                 )
             )
 
-            if self.verbose >= 3:
+            if self.verbose >= 2:
                 print(
-                    f"[PETS/MPC] it #{i + 1}, "
-                    f"return [{expected_returns.min()}, "
-                    f"{expected_returns.max()}], "
+                    f"[PETS/MPC] it #{i + 1}, return "
                     f"{jnp.mean(expected_returns)} +- "
-                    f"{jnp.std(expected_returns)}"
+                    f"{jnp.std(expected_returns)}, "
+                    f"[{expected_returns.min()}, {expected_returns.max()}]"
                 )
         if self.verbose >= 1:
-            print(f"[PETS/MPC] it #{i + 1}, best return [{best_return}]")
+            print(f"[PETS/MPC] Best return [{best_return}]")
 
         return mean
 
-    def _cem_iter(self, obs, model_indices, mean, var, best_plan, best_return):
+    def _opt_iter(self, obs, model_indices, mean, var, best_plan, best_return):
         self.key, sampling_key = jax.random.split(self.key, 2)
         actions = self._sample(mean, var, sampling_key)
         assert not jnp.any(jnp.isnan(actions))
