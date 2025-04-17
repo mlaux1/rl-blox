@@ -114,7 +114,7 @@ class ModelPredictiveControl:
         self.init_with_previous_plan = init_with_previous_plan
         self.verbose = verbose
 
-        self.key = jax.random.PRNGKey(seed)
+        self.key = jax.random.key(seed)
 
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
         self.avg_act = jnp.asarray(
@@ -233,7 +233,7 @@ class ModelPredictiveControl:
         particle_keys = jax.random.split(
             particle_key, (self.n_samples, self.n_particles)
         )
-        chex.assert_shape(particle_keys, (self.n_samples, self.n_particles, 2))
+        chex.assert_shape(particle_keys, (self.n_samples, self.n_particles))
         chex.assert_shape(model_indices, (self.n_particles,))
         chex.assert_shape(
             actions,
@@ -292,7 +292,7 @@ def ts_inf(
 
     Parameters
     ----------
-    keys : array, shape (n_samples, n_particles, 2)
+    keys : array, shape (n_samples, n_particles)
         Keys for random number generator.
     model_idx : array, (n_particles,)
         Each particle will use another base model for sampling.
