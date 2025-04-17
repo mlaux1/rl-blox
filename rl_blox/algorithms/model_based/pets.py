@@ -74,7 +74,7 @@ class ModelPredictiveControl:
         associated with the pair of the observation and action.
     dynamics_model
         Learned model of the environment's dynamic.
-    task_horizon
+    plan_horizon
         Horizon in which the controller predicts states and optimizes actions.
     n_particles
         Number of particles to compute the expected returns.
@@ -96,7 +96,7 @@ class ModelPredictiveControl:
         action_space: gym.spaces.Box,
         reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
         dynamics_model: GaussianMLPEnsemble,
-        task_horizon: int,
+        plan_horizon: int,
         n_particles: int,
         n_samples: int,
         n_opt_iter: int,
@@ -107,7 +107,7 @@ class ModelPredictiveControl:
         self.action_space = action_space
         self.dynamics_model = dynamics_model
         self.reward_model = reward_model
-        self.task_horizon = task_horizon
+        self.plan_horizon = plan_horizon
         self.n_particles = n_particles
         self.n_samples = n_samples
         self.n_opt_iter = n_opt_iter
@@ -124,14 +124,14 @@ class ModelPredictiveControl:
         self.init_var = jnp.vstack(
             [
                 (self.action_space.high - self.action_space.low) ** 2 / 16.0
-                for _ in range(self.task_horizon)
+                for _ in range(self.plan_horizon)
             ]
         )
         lower_bound = jnp.vstack(
-            [self.action_space.low for _ in range(self.task_horizon)]
+            [self.action_space.low for _ in range(self.plan_horizon)]
         )
         upper_bound = jnp.vstack(
-            [self.action_space.high for _ in range(self.task_horizon)]
+            [self.action_space.high for _ in range(self.plan_horizon)]
         )
         self._cem_sample = jax.jit(
             partial(
@@ -153,7 +153,7 @@ class ModelPredictiveControl:
     def start_episode(self) -> None:
         """Tell MPC that a new episode started."""
         self.prev_plan = jnp.vstack(
-            [self.avg_act for _ in range(self.task_horizon)]
+            [self.avg_act for _ in range(self.plan_horizon)]
         )
 
     def action(self, obs: ArrayLike) -> jnp.ndarray:
@@ -226,7 +226,7 @@ class ModelPredictiveControl:
         assert not jnp.any(jnp.isnan(actions))
         chex.assert_shape(
             actions,
-            (self.n_samples, self.task_horizon) + self.action_space.shape,
+            (self.n_samples, self.plan_horizon) + self.action_space.shape,
         )
         self.key, particle_key = jax.random.split(self.key, 2)
         particle_keys = jax.random.split(
@@ -236,7 +236,7 @@ class ModelPredictiveControl:
         chex.assert_shape(model_indices, (self.n_particles,))
         chex.assert_shape(
             actions,
-            (self.n_samples, self.task_horizon) + self.action_space.shape,
+            (self.n_samples, self.plan_horizon) + self.action_space.shape,
         )
         chex.assert_shape(obs, (obs.shape[0],))
         trajectories = ts_inf(
@@ -251,7 +251,7 @@ class ModelPredictiveControl:
             (
                 self.n_samples,
                 self.n_particles,
-                self.task_horizon + 1,  # initial observation + trajectory
+                self.plan_horizon + 1,  # initial observation + trajectory
                 trajectories.shape[-1],
             ),
         )
@@ -271,7 +271,7 @@ def train_pets(
     env: gym.Env,
     reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
     dynamics_model: EnsembleTrainState,
-    task_horizon: int,
+    planning_horizon: int,
     n_particles: int,
     n_samples: int,
     n_opt_iter: int = 5,
@@ -293,12 +293,12 @@ def train_pets(
     dynamics model captures aleatoric uncertainty (inherent variance of the
     observed data). The ensemble captures epistemic uncertainty through
     bootstrap disagreement far from data. The trajectory sampling (TS)
-    propagation technique uses this dynamics model to re-sample each particle
+    propagation technique uses this dynamics model to resample each particle
     (with associated bootstrap) according to its probabilistic prediction at
-    each point in time, up until a given horizon. At each time step, the
-    model-predictive control (MPC) algorithm computes an optimal action
+    each point in time, up until a given planning horizon. At each time step,
+    the model-predictive control (MPC) algorithm computes an optimal action
     sequence, applies the first action in the sequence, and repeats until the
-    task-horizon.
+    task horizon.
 
     Algorithm:
 
@@ -306,9 +306,9 @@ def train_pets(
     * for trial :math:`k=1` to K do
         * Train a PE dynamics model :math:`f` given
           :math:`\mathcal{D}`.
-        * for time :math:`t=0` to T (`task_horizon`) do
+        * for time :math:`t=0` to T_p (task horizon) do
             * for actions samples :math:`a_{t:t+T} \sim CEM(\cdot)`,
-              1 to `n_samples` do
+              1 to `plan_horizon` do
                 * Propagate state particles :math:`s_{\tau}^p` using TS and
                   :math:`f|\left{\mathcal{D},a_{t:t+T}\right}`
                 * Evaluate actions as
@@ -333,8 +333,8 @@ def train_pets(
         associated with the pair of the observation and action.
     dynamics_model
         Probabilistic ensemble dynamics model.
-    task_horizon
-        Task horizon: number of time steps to predict with dynamics model.
+    planning_horizon
+        Planning horizon: number of time steps to predict with dynamics model.
     n_particles
         Number of particles to compute the expected returns.
     n_samples
@@ -402,7 +402,7 @@ def train_pets(
         action_space,
         reward_model,
         dynamics_model.model,
-        task_horizon,
+        planning_horizon,
         n_particles,
         n_samples,
         n_opt_iter,
@@ -486,7 +486,7 @@ def ts_inf(
         Keys for random number generator.
     model_idx : array, (n_particles,)
         Each particle will use another base model for sampling.
-    acts : array, shape (n_samples, task_horizon) + action_space.shape
+    acts : array, shape (n_samples, plan_horizon) + action_space.shape
         A sequence of actions to take for each sample of the optimizer.
         Actions at times t:t+T with the horizon T.
     obs : array, shape observation_space.shape
@@ -496,7 +496,7 @@ def ts_inf(
 
     Returns
     -------
-    obs : array, shape (n_samples, n_particles, task_horizon + 1)
+    obs : array, shape (n_samples, n_particles, plan_horizon + 1)
           + observation_space.shape
         Sequences of observations sampled with plans.
 
@@ -509,17 +509,17 @@ def ts_inf(
     ...     5, False, 4, 3, [500, 500, 500], nnx.Rngs(0))
     >>> n_samples = 400
     >>> n_particles = 20
-    >>> task_horizon = 100
+    >>> plan_horizon = 100
     >>> key = jax.random.key(0)
     >>> key, samp_key, model_key, act_key, obs_key = jax.random.split(key, 5)
     >>> sampling_keys = jax.random.split(samp_key, (n_samples, n_particles))
     >>> model_indices = jax.random.randint(
     ...     model_key, (n_particles,), 0, model.n_ensemble)
-    >>> acts = jax.random.normal(act_key, (n_samples, task_horizon, 1))
+    >>> acts = jax.random.normal(act_key, (n_samples, plan_horizon, 1))
     >>> obs = jax.random.normal(obs_key, (3,))
     >>> trajectories = ts_inf(sampling_keys, model_indices, acts, obs, model)
     >>> chex.assert_shape(
-    ...     trajectories, (n_samples, n_particles, task_horizon + 1, 3))
+    ...     trajectories, (n_samples, n_particles, plan_horizon + 1, 3))
     """
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = [obs]
@@ -547,11 +547,11 @@ def evaluate_plans(
 
     Parameters
     ----------
-    actions : array, shape (n_samples, task_horizon) + action_space.shape
+    actions : array, shape (n_samples, plan_horizon) + action_space.shape
         Action sequences (plans).
 
     trajectories : array,
-            shape (n_samples, n_particles, task_horizon + 1)
+            shape (n_samples, n_particles, plan_horizon + 1)
             + observation_space.shape
         Sequences of observations sampled with plans.
 
@@ -561,19 +561,20 @@ def evaluate_plans(
     Returns
     -------
     expected_returns : array, shape (n_samples,)
-        Expected returns, summed up over task horizon, averaged over particles.
+        Expected returns, summed up over planning horizon, averaged over
+        particles.
     """
     assert not jnp.any(jnp.isnan(trajectories))
-    n_samples, task_horizon = actions.shape[:2]
+    n_samples, plan_horizon = actions.shape[:2]
     action_shape = actions.shape[2:]
     n_particles = trajectories.shape[1]
 
     broadcasted_actions = np.broadcast_to(
         actions[:, jnp.newaxis],
-        (n_samples, n_particles, task_horizon) + action_shape,
+        (n_samples, n_particles, plan_horizon) + action_shape,
     )  # broadcast along particle axis
     rewards = reward_model(broadcasted_actions, trajectories[:, :, :-1])
-    # sum along task_horizon axis
+    # sum along plan_horizon axis
     returns = rewards.sum(axis=-1)
     # mean along particle axis
     expected_returns = returns.mean(axis=-1)
