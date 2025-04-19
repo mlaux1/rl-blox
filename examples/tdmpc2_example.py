@@ -36,7 +36,7 @@ agent = train_tdmpc2(
     # misc
     seed=seed,
     # speedups
-    compile=True,
+    compile=False,
 )
 env.close()
 
