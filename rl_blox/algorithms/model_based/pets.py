@@ -569,10 +569,10 @@ def ts_inf(
     """
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = [obs]
-    for act in acts:
+    sampling_keys = jax.random.split(key, len(acts))
+    for act, sampling_key in zip(acts, sampling_keys):
         # We sample from one of the base models.
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
-        key, sampling_key = jax.random.split(key, 2)
         dist = dynamics_model.base_distribution(
             jnp.hstack((obs, act)), model_idx
         )
