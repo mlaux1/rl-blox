@@ -38,7 +38,6 @@ warnings.filterwarnings("ignore")
 import dataclasses
 import datetime
 import random
-import re
 import time
 from collections import defaultdict
 from copy import deepcopy
@@ -529,67 +528,6 @@ class TensorWrapper(gym.Wrapper):
             truncation,
             info,
         )
-
-
-def cfg_to_dataclass(cfg_dict, frozen=False):
-    """Converts a config to a dataclass object.
-
-    This prevents graph breaks when used with torch.compile.
-    """
-    fields = []
-    for key, value in cfg_dict.items():
-        fields.append(
-            (
-                key,
-                Any,
-                dataclasses.field(default_factory=lambda value_=value: value_),
-            )
-        )
-    dataclass_name = "Config"
-    dataclass = dataclasses.make_dataclass(
-        dataclass_name, fields, frozen=frozen
-    )
-
-    def get(self, val, default=None):
-        return getattr(self, val, default)
-
-    dataclass.get = get
-    return dataclass()
-
-
-def parse_cfg(cfg: dict) -> Any:
-    """
-    Parses a Hydra config. Mostly for convenience.
-    """
-    # Convenience
-    cfg["work_dir"] = (
-        Path(".") / "logs" / cfg["task"] / str(cfg["seed"]) / cfg["exp_name"]
-    )
-    cfg["task_title"] = cfg["task"].replace("-", " ").title()
-    # Bin size for discrete regression
-    cfg["bin_size"] = (cfg["vmax"] - cfg["vmin"]) / (cfg["num_bins"] - 1)
-
-    # Model size
-    if cfg.get("model_size") is not None:
-        if (
-            cfg["model_size"] not in MODEL_SIZE
-        ):
-            raise ValueError(f"Invalid model size {cfg['model_size']}. "
-                             f"Must be one of {list(MODEL_SIZE.keys())}")
-        for k, v in MODEL_SIZE[cfg["model_size"]].items():
-            cfg[k] = v
-
-    cfg["tasks"] = TASK_SET.get(cfg["task"], [cfg["task"]])
-
-    return cfg_to_dataclass(cfg)
-
-
-def set_seed(seed):
-    """Set seed for reproducibility."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
 
 
 class Buffer:
@@ -1864,9 +1802,8 @@ def train_tdmpc2(**cfg) -> TDMPC2:
     assert torch.cuda.is_available()
     assert cfg["steps"] > 0, "Must train for at least 1 step."
 
-    cfg = parse_cfg(cfg)
+    cfg = cfg_to_dataclass(cfg)
     set_seed(cfg.seed)
-    print(colored("Work dir:", "yellow", attrs=["bold"]), cfg.work_dir)
 
     gym.logger.min_level = 40
     env = TensorWrapper(cfg.env)
@@ -1877,9 +1814,24 @@ def train_tdmpc2(**cfg) -> TDMPC2:
     except:  # Box
         cfg.obs_shape = {cfg.get("obs", "state"): env.observation_space.shape}
 
+    cfg.tasks = TASK_SET.get(cfg.task, [cfg.task])
+    cfg.work_dir = (
+        Path(".") / "logs" / cfg.task / str(cfg.seed) / cfg.exp_name
+    )
+    cfg.task_title = cfg.task.replace("-", " ").title()
+    # Bin size for discrete regression
+    cfg.bin_size = (cfg.vmax - cfg.vmin) / (cfg.num_bins - 1)
+    # Model size
+    if cfg.model_size is not None:
+        if cfg.model_size not in MODEL_SIZE:
+            raise ValueError(f"Invalid model size {cfg.model_size}. "
+                             f"Must be one of {list(MODEL_SIZE.keys())}")
+        for k, v in MODEL_SIZE[cfg.model_size].items():
+            setattr(cfg, k, v)
     cfg.action_dim = env.action_space.shape[0]
     cfg.episode_length = env.spec.max_episode_steps
     cfg.seed_steps = max(1000, 5 * cfg.episode_length)
+    print(colored("Work dir:", "yellow", attrs=["bold"]), cfg.work_dir)
 
     trainer = OnlineTrainer(
         cfg=cfg,
@@ -1891,3 +1843,37 @@ def train_tdmpc2(**cfg) -> TDMPC2:
     trainer.train()
     print("\nTraining completed successfully")
     return trainer.agent
+
+
+def cfg_to_dataclass(cfg_dict, frozen=False):
+    """Converts a config to a dataclass object.
+
+    This prevents graph breaks when used with torch.compile.
+    """
+    fields = []
+    for key, value in cfg_dict.items():
+        fields.append(
+            (
+                key,
+                Any,
+                dataclasses.field(default_factory=lambda value_=value: value_),
+            )
+        )
+    dataclass_name = "Config"
+    dataclass = dataclasses.make_dataclass(
+        dataclass_name, fields, frozen=frozen
+    )
+
+    def get(self, val, default=None):
+        return getattr(self, val, default)
+
+    dataclass.get = get
+    return dataclass()
+
+
+def set_seed(seed):
+    """Set seed for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
