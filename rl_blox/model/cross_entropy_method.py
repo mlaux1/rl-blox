@@ -135,8 +135,8 @@ def cem_update(
     n_elite: int,
     alpha: float,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    ranking = jnp.argsort(fitness, descending=True)
-    elites = samples[ranking][:n_elite]
+    _, top_k = jax.lax.top_k(fitness, n_elite)
+    elites = jnp.take(samples, top_k, axis=0)
     mean = alpha * mean + (1.0 - alpha) * jnp.mean(elites, axis=0)
     var = alpha * var + (1.0 - alpha) * jnp.var(elites, axis=0)
     return mean, var
