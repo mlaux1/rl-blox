@@ -35,7 +35,6 @@ agent = train_tdmpc2(
     discount_max=0.995,
     buffer_size=1_000_000,
     exp_name="default",
-    data_dir="???",
     # planning
     mpc=True,
     iterations=6,
