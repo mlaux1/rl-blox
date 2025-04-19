@@ -1282,9 +1282,16 @@ class TDMPC2(torch.nn.Module):
 
 
 class WorldModel(nn.Module):
-    """
-    TD-MPC2 implicit world model architecture.
-    Can be used for both single-task and multi-task experiments.
+    """TD-MPC2 implicit world model architecture.
+
+    The world model consists of
+
+    * an encoder that maps observations to latent states
+    * a dynamics model that predicts the next latent state given the current
+      latent state and action
+    * a reward model that predicts the reward given the current latent state
+    * a policy prior that predicts the action given the current latent state
+    * a Q-function ensemble that predicts the value of a given action
     """
 
     def __init__(self, cfg):
