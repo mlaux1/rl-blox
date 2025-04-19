@@ -1,5 +1,3 @@
-from collections import namedtuple
-
 import gymnasium as gym
 import torch
 
@@ -16,22 +14,11 @@ agent = train_tdmpc2(
     task=env_name,
     obs="state",
     # eval
-    eval_episodes=10,
+    eval_episodes=3,
     eval_freq=2_000,
     steps=4_000,
     # training
-    batch_size=256,
-    reward_coef=0.1,
-    value_coef=0.1,
-    consistency_coef=20,
-    rho=0.5,
     lr=3e-4,
-    enc_lr_scale=0.3,
-    grad_clip_norm=20,
-    tau=0.01,
-    discount_denom=5,
-    discount_min=0.95,
-    discount_max=0.995,
     buffer_size=1_000_000,
     exp_name="default",
     # planning
@@ -41,33 +28,15 @@ agent = train_tdmpc2(
     num_elites=64,
     num_pi_trajs=24,
     horizon=3,
-    min_std=0.05,
-    max_std=2,
     temperature=0.5,
-    # actor
-    log_std_min=-10,
-    log_std_max=2,
-    entropy_coef=1e-4,
-    # critic
-    num_bins=101,
-    vmin=-10,
-    vmax=+10,
     # architecture
     model_size=1,  # 1, 5, 19, 48, 317
-    num_enc_layers=2,
-    enc_dim=256,
-    num_channels=32,
-    mlp_dim=512,
-    latent_dim=512,
-    num_q=5,
-    dropout=0.01,
-    simnorm_dim=8,
     # logging
     save_csv=True,
     # misc
     seed=seed,
     # speedups
-    compile=False,
+    compile=True,
 )
 env.close()
 
