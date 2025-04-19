@@ -15,7 +15,6 @@ agent = train_tdmpc2(
     env=env,
     task=env_name,
     obs="state",
-    checkpoint="???",
     # eval
     eval_episodes=10,
     eval_freq=2_000,

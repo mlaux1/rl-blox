@@ -561,18 +561,6 @@ def parse_cfg(cfg: dict) -> Any:
     """
     Parses a Hydra config. Mostly for convenience.
     """
-    # Algebraic expressions
-    for k in cfg:
-        v = cfg[k]
-        if isinstance(v, str):
-            match = re.match(r"(\d+)([+\-*/])(\d+)", v)
-            if match:
-                cfg[k] = eval(
-                    match.group(1) + match.group(2) + match.group(3)
-                )
-                if isinstance(cfg[k], float) and cfg[k].is_integer():
-                    cfg[k] = int(cfg[k])
-
     # Convenience
     cfg["work_dir"] = (
         Path(".") / "logs" / cfg["task"] / str(cfg["seed"]) / cfg["exp_name"]
@@ -1778,8 +1766,6 @@ def train_tdmpc2(**cfg) -> TDMPC2:
         Task name.
     obs : str in ["state", "rgb"]
         Observation type.
-    checkpoint
-        TODO
     eval_episodes : int
         Number of evaluation episodes.
     eval_freq : int
