@@ -1819,13 +1819,13 @@ def train_tdmpc2(**cfg) -> TDMPC2:
     max_std : float
         TODO
     temperature : float
-        TODO
+        Temperature for planning with MPPI.
     log_std_min : float
         Minimum of log std for actor.
     log_std_max : float
         Maximum of log std for actor.
     entropy_coef : float
-        TODO
+        Entropy coefficient for policy update.
     num_bins : float
         TODO
     vmin : float
