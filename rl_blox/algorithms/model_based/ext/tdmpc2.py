@@ -1801,9 +1801,11 @@ def train_tdmpc2(**cfg) -> TDMPC2:
     enc_lr_scale
         Scaling for encoder learning rate.
     grad_clip_norm
-        TODO
+        Clip the gradients during backpropagation.
     tau
-        TODO
+        For Polyak averaging. Determines the interpolation factor between
+        the current parameters of the target network and the parameters of the
+        main network.
     discount_denom
         TODO
     discount_min
@@ -1814,8 +1816,6 @@ def train_tdmpc2(**cfg) -> TDMPC2:
         Size of the replay buffer.
     exp_name : str
         Name of the experiment.
-    data_dir : str
-        TODO
     mpc : bool
         TODO
     iterations : int
