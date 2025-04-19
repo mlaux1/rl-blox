@@ -28,6 +28,8 @@
 
 import os
 
+from fontTools.misc.bezierTools import namedtuple
+
 os.environ["MUJOCO_GL"] = os.getenv("MUJOCO_GL", "egl")
 os.environ["LAZY_LEGACY_OP"] = "0"
 os.environ["TORCHDYNAMO_INLINE_INBUILT_NN_MODULES"] = "1"
@@ -35,7 +37,6 @@ os.environ["TORCH_LOGS"] = "+recompiles"
 import warnings
 
 warnings.filterwarnings("ignore")
-import dataclasses
 import datetime
 import random
 import time
@@ -441,11 +442,11 @@ def print_run(cfg):
 
 class Logger:
     """Primary logging object. Logs either locally or using wandb."""
-    def __init__(self, cfg):
+    def __init__(self, cfg, seed):
         self._log_dir = make_dir(cfg.work_dir)
         self._model_dir = make_dir(self._log_dir / "models")
         self._save_csv = cfg.save_csv
-        self._seed = cfg.seed
+        self._seed = seed
         self._eval = []
         print_run(cfg)
 
@@ -800,9 +801,6 @@ class TDMPC2(torch.nn.Module):
         )
         self.model.eval()
         self.scale = RunningScale(cfg)
-        self.cfg.iterations += 2 * int(
-            cfg.action_dim >= 20
-        )  # Heuristic for large action spaces
         self.discount = self._get_discount(cfg.episode_length)
         self._prev_mean = torch.nn.Buffer(
             torch.zeros(
@@ -1693,14 +1691,132 @@ def zero_(params):
         p.data.fill_(0)
 
 
-def train_tdmpc2(**cfg) -> TDMPC2:
+Config = namedtuple(
+    "Config",
+    [
+        "task",
+        "obs",
+        "eval_episodes",
+        "eval_freq",
+        "steps",
+        "batch_size",
+        "reward_coef",
+        "value_coef",
+        "consistency_coef",
+        "rho",
+        "lr",
+        "enc_lr_scale",
+        "grad_clip_norm",
+        "tau",
+        "discount_denom",
+        "discount_min",
+        "discount_max",
+        "buffer_size",
+        "exp_name",
+        "mpc",
+        "iterations",
+        "num_samples",
+        "num_elites",
+        "num_pi_trajs",
+        "horizon",
+        "min_std",
+        "max_std",
+        "temperature",
+        "log_std_min",
+        "log_std_max",
+        "entropy_coef",
+        "num_bins",
+        "vmin",
+        "vmax",
+        "model_size",
+        "num_enc_layers",
+        "enc_dim",
+        "num_channels",
+        "mlp_dim",
+        "latent_dim",
+        "num_q",
+        "dropout",
+        "simnorm_dim",
+        "save_csv",
+        "compile",
+        # internal configuration
+        "obs_shape",
+        "tasks",
+        "work_dir",
+        "task_title",
+        "bin_size",
+        "action_dim",
+        "episode_length",
+        "seed_steps",
+    ],
+)
+
+
+def train_tdmpc2(
+    env,
+    task,
+    obs="state",
+    # eval
+    eval_episodes=10,
+    eval_freq=50_000,
+    steps=10_000_000,
+    # training
+    batch_size=256,
+    reward_coef=0.1,
+    value_coef=0.1,
+    consistency_coef=20,
+    rho=0.5,
+    lr=3e-4,
+    enc_lr_scale=0.3,
+    grad_clip_norm=20,
+    tau=0.01,
+    discount_denom=5,
+    discount_min=0.95,
+    discount_max=0.995,
+    buffer_size=1_000_000,
+    exp_name="default",
+    # planning
+    mpc=True,
+    iterations=6,
+    num_samples=512,
+    num_elites=64,
+    num_pi_trajs=24,
+    horizon=3,
+    min_std=0.05,
+    max_std=2,
+    temperature=0.5,
+    # actor
+    log_std_min=-10,
+    log_std_max=2,
+    entropy_coef=1e-4,
+    # critic
+    num_bins=101,
+    vmin=-10,
+    vmax=+10,
+    # architecture
+    model_size=5,  # 1, 5, 19, 48, 317
+    num_enc_layers=2,
+    enc_dim=256,
+    num_channels=32,
+    mlp_dim=512,
+    latent_dim=512,
+    num_q=5,
+    dropout=0.01,
+    simnorm_dim=8,
+    # logging
+    save_csv=True,
+    # misc
+    seed=1,
+    # speedups
+    compile=False,
+) -> TDMPC2:
     """TD-MPC2.
 
     Parameters
     ----------
-    env
+    env : gymnasium.Env
         Training environment.
-    task
+    task : str
         Task name.
     obs : str in ["state", "rgb"]
         Observation type.
@@ -1743,7 +1859,8 @@ def train_tdmpc2(**cfg) -> TDMPC2:
     mpc : bool
         TODO
     iterations : int
-        Number of iterations to optimize plan.
+        Number of iterations to optimize plan. We add 2 iterations for large
+        action spaces (>= 20 dimensions).
     num_samples : int
         Number of samples for MPC planning.
     num_elites : int
@@ -1800,75 +1917,111 @@ def train_tdmpc2(**cfg) -> TDMPC2:
         Compile graphs for faster training.
     """
     assert torch.cuda.is_available()
-    assert cfg["steps"] > 0, "Must train for at least 1 step."
 
-    cfg = cfg_to_dataclass(cfg)
-    set_seed(cfg.seed)
+    # Check parameters, compute defaults, and create configuration object
+    assert steps > 0, "Must train for at least 1 step."
 
-    gym.logger.min_level = 40
-    env = TensorWrapper(cfg.env)
     try:  # Dict
-        cfg.obs_shape = {
+        obs_shape = {
             k: v.shape for k, v in env.observation_space.spaces.items()
         }
     except:  # Box
-        cfg.obs_shape = {cfg.get("obs", "state"): env.observation_space.shape}
-
-    cfg.tasks = TASK_SET.get(cfg.task, [cfg.task])
-    cfg.work_dir = (
-        Path(".") / "logs" / cfg.task / str(cfg.seed) / cfg.exp_name
-    )
-    cfg.task_title = cfg.task.replace("-", " ").title()
+        obs_shape = {obs: env.observation_space.shape}
+    tasks = TASK_SET.get(task, [task])
+    work_dir = Path(".") / "logs" / task / str(seed) / exp_name
+    task_title = task.replace("-", " ").title()
     # Bin size for discrete regression
-    cfg.bin_size = (cfg.vmax - cfg.vmin) / (cfg.num_bins - 1)
+    bin_size = (vmax - vmin) / (num_bins - 1)
     # Model size
-    if cfg.model_size is not None:
-        if cfg.model_size not in MODEL_SIZE:
-            raise ValueError(f"Invalid model size {cfg.model_size}. "
+    if model_size is not None:
+        if model_size not in MODEL_SIZE:
+            raise ValueError(f"Invalid model size {model_size}. "
                              f"Must be one of {list(MODEL_SIZE.keys())}")
-        for k, v in MODEL_SIZE[cfg.model_size].items():
-            setattr(cfg, k, v)
-    cfg.action_dim = env.action_space.shape[0]
-    cfg.episode_length = env.spec.max_episode_steps
-    cfg.seed_steps = max(1000, 5 * cfg.episode_length)
-    print(colored("Work dir:", "yellow", attrs=["bold"]), cfg.work_dir)
+        for k, v in MODEL_SIZE[model_size].items():
+            enc_dim = MODEL_SIZE[model_size]["enc_dim"]
+            mlp_dim = MODEL_SIZE[model_size]["mlp_dim"]
+            latent_dim = MODEL_SIZE[model_size]["latent_dim"]
+            num_enc_layers = MODEL_SIZE[model_size]["num_enc_layers"]
+            num_q = MODEL_SIZE[model_size]["num_q"]
+    action_dim = env.action_space.shape[0]
+    episode_length = env.spec.max_episode_steps
+    seed_steps = max(1000, 5 * episode_length)
+    # Heuristic for large action spaces
+    iterations += 2 * int(action_dim >= 20)
+
+    cfg = Config(
+        task=task,
+        obs=obs,
+        eval_episodes=eval_episodes,
+        eval_freq=eval_freq,
+        steps=steps,
+        batch_size=batch_size,
+        reward_coef=reward_coef,
+        value_coef=value_coef,
+        consistency_coef=consistency_coef,
+        rho=rho,
+        lr=lr,
+        enc_lr_scale=enc_lr_scale,
+        grad_clip_norm=grad_clip_norm,
+        tau=tau,
+        discount_denom=discount_denom,
+        discount_min=discount_min,
+        discount_max=discount_max,
+        buffer_size=buffer_size,
+        exp_name=exp_name,
+        mpc=mpc,
+        iterations=iterations,
+        num_samples=num_samples,
+        num_elites=num_elites,
+        num_pi_trajs=num_pi_trajs,
+        horizon=horizon,
+        min_std=min_std,
+        max_std=max_std,
+        temperature=temperature,
+        log_std_min=log_std_min,
+        log_std_max=log_std_max,
+        entropy_coef=entropy_coef,
+        num_bins=num_bins,
+        vmin=vmin,
+        vmax=vmax,
+        model_size=model_size,
+        num_enc_layers=num_enc_layers,
+        enc_dim=enc_dim,
+        num_channels=num_channels,
+        mlp_dim=mlp_dim,
+        latent_dim=latent_dim,
+        num_q=num_q,
+        dropout=dropout,
+        simnorm_dim=simnorm_dim,
+        save_csv=save_csv,
+        compile=compile,
+        obs_shape=obs_shape,
+        tasks=tasks,
+        work_dir=work_dir,
+        task_title=task_title,
+        bin_size=bin_size,
+        action_dim=action_dim,
+        episode_length=episode_length,
+        seed_steps=seed_steps,
+    )
+
+    set_seed(seed)
+
+    gym.logger.min_level = 40
+    env = TensorWrapper(env)
+
+    print(colored("Work dir:", "yellow", attrs=["bold"]), work_dir)
 
     trainer = OnlineTrainer(
         cfg=cfg,
         env=env,
         agent=TDMPC2(cfg),
         buffer=Buffer(cfg),
-        logger=Logger(cfg),
+        logger=Logger(cfg, seed),
     )
     trainer.train()
     print("\nTraining completed successfully")
     return trainer.agent
-
-
-def cfg_to_dataclass(cfg_dict, frozen=False):
-    """Converts a config to a dataclass object.
-
-    This prevents graph breaks when used with torch.compile.
-    """
-    fields = []
-    for key, value in cfg_dict.items():
-        fields.append(
-            (
-                key,
-                Any,
-                dataclasses.field(default_factory=lambda value_=value: value_),
-            )
-        )
-    dataclass_name = "Config"
-    dataclass = dataclasses.make_dataclass(
-        dataclass_name, fields, frozen=frozen
-    )
-
-    def get(self, val, default=None):
-        return getattr(self, val, default)
-
-    dataclass.get = get
-    return dataclass()
 
 
 def set_seed(seed):
