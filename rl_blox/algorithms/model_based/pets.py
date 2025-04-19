@@ -574,11 +574,9 @@ def ts_inf(
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
         key, sampling_key = jax.random.split(key, 2)
         dist = dynamics_model.base_distribution(
-            jnp.hstack((obs, act))[jnp.newaxis], model_idx
+            jnp.hstack((obs, act)), model_idx
         )
-        delta_obs = dist.sample(seed=sampling_key, sample_shape=1)[
-            0, 0
-        ]  # TODO why [0, 0] and not [0]?
+        delta_obs = dist.sample(seed=sampling_key)[0]
         obs = obs + delta_obs
         observations.append(obs)
     return jnp.vstack(observations)
