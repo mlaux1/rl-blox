@@ -481,7 +481,7 @@ def train_sac(
         obs = next_obs
 
         if global_step > learning_starts:
-            observations, actions, rewards, next_observations, dones = (
+            observations, actions, rewards, next_observations, terminations = (
                 rb.sample_batch(batch_size, rng)
             )
 
@@ -499,7 +499,7 @@ def train_sac(
                 actions,
                 rewards,
                 next_observations,
-                dones,
+                terminations,
                 action_key,
                 entropy_control.alpha,
             )
@@ -582,7 +582,7 @@ def sac_update_critic(
     actions: jnp.ndarray,
     rewards: jnp.ndarray,
     next_observations: jnp.ndarray,
-    dones: jnp.ndarray,
+    terminations: jnp.ndarray,
     action_key: jnp.ndarray,
     alpha: jnp.ndarray,
 ) -> tuple[float, float]:
@@ -594,7 +594,7 @@ def sac_update_critic(
     min_q_next_target = (
         jnp.minimum(q1_next_target, q2_next_target) - alpha * next_log_pi
     )
-    q_target_value = rewards + (1 - dones) * gamma * min_q_next_target
+    q_target_value = rewards + (1 - terminations) * gamma * min_q_next_target
 
     q1_loss_value, q1_grads = nnx.value_and_grad(action_value_loss, argnums=3)(
         observations, actions, q_target_value, q1
