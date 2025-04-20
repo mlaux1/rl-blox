@@ -16,9 +16,11 @@ class ReplayBuffer:
     def __init__(self, n_samples):
         self.buffer = deque(maxlen=n_samples)
 
-    def add_sample(self, observation, action, reward, next_observation, done):
+    def add_sample(
+        self, observation, action, reward, next_observation, terminated
+    ):
         self.buffer.append(
-            (observation, action, reward, next_observation, done)
+            (observation, action, reward, next_observation, terminated)
         )
 
     def sample_batch(
@@ -29,8 +31,8 @@ class ReplayBuffer:
         actions = jnp.stack([self.buffer[i][1] for i in indices])
         rewards = jnp.hstack([self.buffer[i][2] for i in indices])
         next_observations = jnp.vstack([self.buffer[i][3] for i in indices])
-        dones = jnp.hstack([self.buffer[i][4] for i in indices])
-        return observations, actions, rewards, next_observations, dones
+        terminations = jnp.hstack([self.buffer[i][4] for i in indices])
+        return observations, actions, rewards, next_observations, terminations
 
 
 class MLP(nnx.Module):
@@ -196,20 +198,22 @@ def ddpg_update_critic(
     actions: jnp.ndarray,
     next_observations: jnp.ndarray,
     rewards: jnp.ndarray,
-    dones: jnp.ndarray,
+    terminations: jnp.ndarray,
 ) -> float:
     """DDPG critic update."""
     chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
     chex.assert_equal_shape((observations, next_observations))
     chex.assert_equal_shape_prefix((observations, rewards), prefix_len=1)
-    chex.assert_equal_shape_prefix((observations, dones), prefix_len=1)
+    chex.assert_equal_shape_prefix((observations, terminations), prefix_len=1)
 
     # TODO why was it clipped to [-1, 1] before?
     next_actions = policy_target(next_observations)
     q_target_next = q_target(
         jnp.concatenate((next_observations, next_actions), axis=-1)
     ).squeeze()
-    q_bootstrap = (rewards + (1 - dones) * gamma * q_target_next).reshape(-1)
+    q_bootstrap = (
+        rewards + (1 - terminations) * gamma * q_target_next
+    ).reshape(-1)
 
     loss = partial(action_value_loss, observations, actions, q_bootstrap)
     q_loss_value, grads = nnx.value_and_grad(loss)(q)
@@ -439,9 +443,13 @@ def train_ddpg(
 
         if t > learning_starts:
             for _ in range(gradient_steps):
-                observations, actions, rewards, next_observations, dones = (
-                    rb.sample_batch(batch_size, rng)
-                )
+                (
+                    observations,
+                    actions,
+                    rewards,
+                    next_observations,
+                    terminations,
+                ) = rb.sample_batch(batch_size, rng)
 
                 q_loss_value = ddpg_update_critic(
                     policy_target,
@@ -453,7 +461,7 @@ def train_ddpg(
                     actions,
                     next_observations,
                     rewards,
-                    dones,
+                    terminations,
                 )
                 if verbose >= 2:
                     print(f"{q_loss_value=}")
