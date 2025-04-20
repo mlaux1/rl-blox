@@ -222,6 +222,9 @@ class EntropyControl:
             self.alpha = jnp.exp(self.log_alpha["log_alpha"])
             self.optimizer = optax.adam(learning_rate=learning_rate)
             self.optimizer_state = self.optimizer.init(self.log_alpha)
+            self._grad = nnx.jit(
+                jax.value_and_grad(sac_exploration_loss, argnums=4)
+            )
         else:
             self.alpha = alpha
 
@@ -229,9 +232,13 @@ class EntropyControl:
         if not self.autotune:
             return 0.0
 
-        exploration_loss, grad = jax.value_and_grad(
-            sac_exploration_loss, argnums=4
-        )(policy, self.target_entropy, action_key, observations, self.log_alpha)
+        exploration_loss, grad = self._grad(
+            policy,
+            self.target_entropy,
+            action_key,
+            observations,
+            self.log_alpha,
+        )
         updates, self.optimizer_state = self.optimizer.update(
             grad, self.optimizer_state
         )
