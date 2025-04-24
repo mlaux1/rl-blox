@@ -1,5 +1,6 @@
 import gymnasium
 import jax.numpy as jnp
+from aim import Run
 from jax import Array, jit, random
 from jax.random import PRNGKey
 from jax.typing import ArrayLike
@@ -17,16 +18,19 @@ def q_learning(
     epsilon: float,
     num_episodes: int,
     gamma: float = 0.9999,
+    aim_run: Run = None,
 ) -> Array:
-
     ep_rewards = jnp.zeros(num_episodes)
 
     for i in tqdm(range(num_episodes)):
         key, subkey = random.split(key)
         q_table, ep_reward = _q_learning_episode(
-            subkey, env, q_table, alpha, epsilon, gamma
+            subkey, env, q_table, alpha, epsilon, gamma, aim_run
         )
         ep_rewards = ep_rewards.at[i].add(ep_reward)
+        if aim_run is not None:
+            aim_run.log_debug("Debug message!")
+            aim_run.track(ep_reward, name="ep_reward")
 
     return q_table, ep_rewards
 
@@ -38,6 +42,7 @@ def _q_learning_episode(
     alpha: float,
     epsilon: float,
     gamma: float = 0.9999,
+    aim_run: Run = None,
 ) -> float:
     """
     Performs a single episode rollout.
@@ -62,6 +67,9 @@ def _q_learning_episode(
         )
         # get next action
         next_action = get_greedy_action(subkey2, q_table, observation)
+
+        if aim_run is not None:
+            aim_run.track(reward, name="reward")
 
         # update target policy
         q_table = _q_learning_update(

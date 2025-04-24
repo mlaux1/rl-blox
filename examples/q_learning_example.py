@@ -1,8 +1,10 @@
 from functools import partial
 
 import gymnasium as gym
+from aim import Run
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
+
 from rl_blox.algorithms.model_free.q_learning import q_learning
 from rl_blox.helper.experiment_helper import generate_rollout
 from rl_blox.policy.value_policy import get_greedy_action, make_q_table
@@ -13,6 +15,13 @@ EPSILON = 0.05
 KEY = PRNGKey(42)
 WINDOW_SIZE = 10
 ENV_NAME = "CliffWalking-v0"
+
+run = Run(repo="dummy", experiment="q-learning")
+run["hparams"] = {
+    "num_episodes": NUM_EPISODES,
+    "lr": LEARNING_RATE,
+    "epsilon": EPSILON,
+}
 
 env = gym.make(ENV_NAME)
 env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
@@ -26,6 +35,7 @@ q_table, ep_rewards = q_learning(
     alpha=LEARNING_RATE,
     epsilon=EPSILON,
     num_episodes=NUM_EPISODES,
+    aim_run=run,
 )
 
 env.close()
