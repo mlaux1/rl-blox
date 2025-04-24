@@ -130,11 +130,16 @@ class GaussianPolicy(StochasticPolicyBase):
             jnp.array((action_space.high + action_space.low) / 2.0)
         )
 
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        y, _ = self.net(observation)
-        return nnx.tanh(y) * jnp.broadcast_to(
+    def __call__(
+        self, observation: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        y, log_var = self.net(observation)
+        mean = nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
+        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
+        std = jnp.exp(log_std)
+        return mean, std
 
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from Gaussian distribution."""

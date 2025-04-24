@@ -46,7 +46,7 @@ while True:
     done = False
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy(jnp.asarray(obs)))
+        action = np.asarray(policy(jnp.asarray(obs))[0])
         next_obs, reward, termination, truncation, info = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
