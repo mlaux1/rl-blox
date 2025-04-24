@@ -143,16 +143,8 @@ class GaussianPolicy(StochasticPolicyBase):
 
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from Gaussian distribution."""
-        y, log_var = self.net(observation)
-        mean = nnx.tanh(y) * jnp.broadcast_to(
-            self.action_scale.value, y.shape
-        ) + jnp.broadcast_to(self.action_bias.value, y.shape)
-        return (
-            jax.random.normal(key, mean.shape)
-            # TODO compare to alternative approach from previous implementation
-            * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
-            + mean
-        )
+        mean, std = self(observation)
+        return jax.random.normal(key, mean.shape) * std + mean
 
     def log_probability(
         self,
@@ -160,13 +152,7 @@ class GaussianPolicy(StochasticPolicyBase):
         action: jnp.ndarray,
     ) -> jnp.ndarray:
         """Compute log probability of action given observation."""
-        y, log_var = self.net(observation)
-        mean = nnx.tanh(y) * jnp.broadcast_to(
-            self.action_scale.value, y.shape
-        ) + jnp.broadcast_to(self.action_bias.value, y.shape)
-        # TODO compare to alternative approach from previous implementation
-        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
-        std = jnp.exp(log_std)
+        mean, std = self(observation)
         # same as
         # -jnp.log(std)
         # - 0.5 * jnp.log(2.0 * jnp.pi)
