@@ -11,6 +11,7 @@ from flax import nnx
 from numpy.typing import ArrayLike
 
 
+# TODO consolidate replay buffer implementations
 class ReplayBuffer:
     buffer: deque[tuple[ArrayLike, ArrayLike, float, ArrayLike, bool]]
 
@@ -37,6 +38,7 @@ class ReplayBuffer:
         return observations, actions, rewards, next_observations, terminations
 
 
+# TODO consolidate MLP implementations
 class MLP(nnx.Module):
     """Multilayer Perceptron.
 
