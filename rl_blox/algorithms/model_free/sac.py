@@ -12,6 +12,7 @@ from flax import nnx
 from .ddpg import MLP, ReplayBuffer, action_value_loss, update_target
 
 
+# TODO consolidate implementations
 class GaussianMLP(nnx.Module):
     """Probabilistic neural network that predicts a Gaussian distribution.
 
