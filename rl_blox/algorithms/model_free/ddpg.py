@@ -272,7 +272,10 @@ def sample_actions(
     obs: jnp.ndarray,
     key: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Sample actions with deterministic policy and Gaussian action noise."""
+    """Sample actions with deterministic policy and Gaussian action noise.
+
+    Actions will be clipped to [action_low, action_high].
+    """
     action = policy(obs)
     exploring_action = jax.random.multivariate_normal(
         key, action, jnp.diag(action_scale * exploration_noise)
