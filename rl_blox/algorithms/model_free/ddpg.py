@@ -205,18 +205,18 @@ def ddpg_update_critic(
     chex.assert_equal_shape((observations, next_observations))
     chex.assert_equal_shape_prefix((observations, rewards), prefix_len=1)
     chex.assert_equal_shape_prefix((observations, terminations), prefix_len=1)
+    chex.assert_equal_shape((rewards, terminations))
 
     # TODO why was it clipped to [-1, 1] before?
     next_actions = policy_target(next_observations)
     q_target_next = q_target(
         jnp.concatenate((next_observations, next_actions), axis=-1)
     ).squeeze()
-    q_bootstrap = (
-        rewards + (1 - terminations) * gamma * q_target_next
-    ).reshape(-1)
+    q_bootstrap = rewards + (1 - terminations) * gamma * q_target_next
 
-    loss = partial(action_value_loss, observations, actions, q_bootstrap)
-    q_loss_value, grads = nnx.value_and_grad(loss)(q)
+    q_loss_value, grads = nnx.value_and_grad(action_value_loss, argnums=3)(
+        observations, actions, q_bootstrap, q
+    )
     q_optimizer.update(grads)
 
     return q_loss_value
@@ -230,8 +230,9 @@ def ddpg_update_actor(
     observations: jnp.ndarray,
 ) -> float:
     """DDPG actor update."""
-    loss = partial(deterministic_policy_value_loss, q, observations)
-    actor_loss_value, grads = nnx.value_and_grad(loss)(policy)
+    actor_loss_value, grads = nnx.value_and_grad(
+        deterministic_policy_value_loss, argnums=2
+    )(q, observations, policy)
     policy_optimizer.update(grads)
     return actor_loss_value
 
