@@ -568,6 +568,7 @@ def sac_update_actor(
     observations: jnp.ndarray,
     alpha: jnp.ndarray,
 ) -> float:
+    """SAC update of actor."""
     loss, grads = nnx.value_and_grad(sac_actor_loss, argnums=0)(
         policy, q1, q2, alpha, action_key, observations
     )
