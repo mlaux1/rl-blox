@@ -145,7 +145,7 @@ def action_value_loss(
 
     Returns
     -------
-    loss
+    loss : array, shape ()
         Mean squared distance between predicted and actual action values.
     """
     chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
