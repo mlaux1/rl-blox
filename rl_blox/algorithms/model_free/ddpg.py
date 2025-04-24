@@ -237,14 +237,25 @@ def ddpg_update_actor(
 
 
 @nnx.jit
-def update_target(net, target_net, tau):
-    _, q1_params = nnx.split(net)
-    q1_graphdef, q1_target_params = nnx.split(target_net)
-    q1_target_params = optax.incremental_update(
-        q1_params, q1_target_params, tau
-    )
-    target_net = nnx.merge(q1_graphdef, q1_target_params)
-    return target_net
+def update_target(net: nnx.Module, target_net: nnx.Module, tau: float) -> None:
+    """Update target network inplace with Polyak averaging.
+
+    Parameters
+    ----------
+    net : nnx.Module
+        Live network.
+
+    target_net : nnx.Module
+        Target network.
+
+    tau : float
+        The step_size used to update the Polyak average, i.e., the coefficient
+        with which the live network's parameters will be multiplied.
+    """
+    params = nnx.state(net)
+    target_params = nnx.state(target_net)
+    target_params = optax.incremental_update(params, target_params, tau)
+    nnx.update(target_net, target_params)
 
 
 def sample_actions(
@@ -477,8 +488,8 @@ def train_ddpg(
                         # TODO implement logging here
                         # TODO implement checkpointing here
 
-                    policy_target = update_target(policy, policy_target, tau)
+                    update_target(policy, policy_target, tau)
                     # TODO why is it updated less often than q?
-                    q_target = update_target(q, q_target, tau)
+                    update_target(q, q_target, tau)
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer

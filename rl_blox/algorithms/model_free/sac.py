@@ -531,8 +531,8 @@ def train_sac(
                         )
 
             if global_step % target_network_frequency == 0:
-                q1_target = update_target(q1, q1_target, tau)
-                q2_target = update_target(q2, q2_target, tau)
+                update_target(q1, q1_target, tau)
+                update_target(q2, q2_target, tau)
 
             if verbose and global_step % 1_000 == 0:
                 # TODO implement logging here
