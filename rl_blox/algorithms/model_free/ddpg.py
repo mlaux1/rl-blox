@@ -29,11 +29,11 @@ class ReplayBuffer:
     ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         indices = rng.integers(0, len(self.buffer), batch_size)
         samples = [self.buffer[i] for i in indices]
-        observations = jnp.vstack([s[0] for s in samples])
-        actions = jnp.stack([s[1] for s in samples])
-        rewards = jnp.hstack([s[2] for s in samples])
-        next_observations = jnp.vstack([s[3] for s in samples])
-        terminations = jnp.hstack([s[4] for s in samples])
+        observations = jnp.array([s[0] for s in samples])
+        actions = jnp.array([s[1] for s in samples])
+        rewards = jnp.array([s[2] for s in samples])
+        next_observations = jnp.array([s[3] for s in samples])
+        terminations = jnp.array([s[4] for s in samples])
         return observations, actions, rewards, next_observations, terminations
 
 
