@@ -462,6 +462,10 @@ def train_sac(
             env, alpha, autotune, entropy_learning_rate
         )
 
+    @nnx.jit
+    def _sample_action(policy, obs, action_key):
+        return policy.sample(obs, action_key)
+
     env.observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)
 
@@ -471,7 +475,9 @@ def train_sac(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(policy.sample(jnp.asarray(obs), action_key))
+            action = np.asarray(
+                _sample_action(policy, jnp.asarray(obs), action_key)
+            )
 
         next_obs, reward, termination, truncation, info = env.step(action)
 
