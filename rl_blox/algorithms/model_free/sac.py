@@ -221,6 +221,7 @@ class EntropyControl:
             self.alpha = alpha
 
     def update(self, policy, observations, action_key):
+        """Update entropy coefficient alpha."""
         if not self.autotune:
             return 0.0
 
