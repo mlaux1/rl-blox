@@ -593,6 +593,10 @@ def sac_update_critic(
     action_key: jnp.ndarray,
     alpha: jnp.ndarray,
 ) -> tuple[float, float]:
+    """SAC update of critic.
+
+    This function updates both q1 and q2.
+    """
     next_actions = policy.sample(next_observations, action_key)
     next_log_pi = policy.log_probability(next_observations, next_actions)
     next_obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
