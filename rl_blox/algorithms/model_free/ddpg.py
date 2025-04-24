@@ -4,6 +4,7 @@ from functools import partial
 import chex
 import gymnasium as gym
 import jax.numpy as jnp
+import jax.random
 import numpy as np
 import optax
 from flax import nnx
@@ -260,18 +261,20 @@ def update_target(net: nnx.Module, target_net: nnx.Module, tau: float) -> None:
 
 
 def sample_actions(
-    policy: DeterministicPolicy,
-    action_space: gym.spaces.Box,
-    obs: np.ndarray,
+    action_low: jnp.ndarray,
+    action_high: jnp.ndarray,
+    action_scale: jnp.ndarray,
     exploration_noise: float,
-    rng: np.random.Generator,
-) -> np.ndarray:
+    policy: DeterministicPolicy,
+    obs: jnp.ndarray,
+    key: jnp.ndarray,
+) -> jnp.ndarray:
     """Sample actions with deterministic policy and Gaussian action noise."""
-    action = np.asarray(policy(jnp.asarray(obs)))
-    action_scale = 0.5 * (action_space.high - action_space.low)
-    noise = rng.normal(0.0, action_scale * exploration_noise)
-    exploring_action = action + noise
-    return np.clip(exploring_action, action_space.low, action_space.high)
+    action = policy(obs)
+    exploring_action = jax.random.multivariate_normal(
+        key, action, jnp.diag(action_scale * exploration_noise)
+    )
+    return jnp.clip(exploring_action, action_low, action_high)
 
 
 def create_ddpg_state(
@@ -411,6 +414,7 @@ def train_ddpg(
        Conference Track Proceedings. http://arxiv.org/abs/1509.02971
     """
     rng = np.random.default_rng(seed)
+    key = jax.random.key(seed)
 
     assert isinstance(
         env.action_space, gym.spaces.Box
@@ -418,6 +422,17 @@ def train_ddpg(
 
     env.observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)
+
+    action_scale = 0.5 * (env.action_space.high - env.action_space.low)
+    _sample_actions = nnx.jit(
+        partial(
+            sample_actions,
+            env.action_space.low,
+            env.action_space.high,
+            action_scale,
+            exploration_noise,
+        )
+    )
 
     obs, _ = env.reset(seed=seed)
 
@@ -430,8 +445,9 @@ def train_ddpg(
         if t < learning_starts:
             action = env.action_space.sample()
         else:
-            action = sample_actions(
-                policy, env.action_space, obs, exploration_noise, rng
+            key, action_key = jax.random.split(key, 2)
+            action = np.asarray(
+                _sample_actions(policy, jnp.asarray(obs), action_key)
             )
 
         next_obs, reward, terminated, truncated, info = env.step(action)
