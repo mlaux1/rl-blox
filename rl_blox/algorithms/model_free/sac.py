@@ -248,7 +248,8 @@ def create_sac_state(
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
     q_learning_rate: float = 1e-3,
     seed: int = 0,
-):
+) -> namedtuple:
+    """Create components for SAC algorithm with default configuration."""
     env.action_space.seed(seed)
 
     policy_net = GaussianMLP(

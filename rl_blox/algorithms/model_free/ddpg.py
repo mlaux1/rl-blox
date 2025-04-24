@@ -290,7 +290,7 @@ def create_ddpg_state(
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
     q_learning_rate: float = 3e-4,
     seed: int = 0,
-):
+) -> namedtuple:
     """Create components for DDPG algorithm with default configuration."""
     env.action_space.seed(seed)
 
