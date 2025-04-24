@@ -267,8 +267,7 @@ def sample_actions(
     rng: np.random.Generator,
 ) -> np.ndarray:
     """Sample actions with deterministic policy and Gaussian action noise."""
-    assert obs.shape == (3,)
-    action = np.asarray(policy(jnp.asarray(obs)[jnp.newaxis])[0])
+    action = np.asarray(policy(jnp.asarray(obs)))
     action_scale = 0.5 * (action_space.high - action_space.low)
     noise = rng.normal(0.0, action_scale * exploration_noise)
     exploring_action = action + noise
