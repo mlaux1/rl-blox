@@ -291,6 +291,7 @@ def create_ddpg_state(
     q_learning_rate: float = 3e-4,
     seed: int = 0,
 ):
+    """Create components for DDPG algorithm with default configuration."""
     env.action_space.seed(seed)
 
     policy_net = MLP(
