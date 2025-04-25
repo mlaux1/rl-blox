@@ -34,9 +34,9 @@ class Logger:
     start_time: float
     n_episodes: int
     n_steps: int
-    stats_loc: dict[str, list[tuple[int | None, int | None]]]
+    stats_loc: dict[str, list[tuple[int | None, int | None, float | None]]]
     stats: dict[str, list[Any]]
-    epoch_loc: dict[str, list[tuple[int | None, int | None]]]
+    epoch_loc: dict[str, list[tuple[int | None, int | None, float | None]]]
     epoch: dict[str, int]
     checkpointer: ocp.StandardCheckpointer | None
     checkpoint_frequencies: dict[str, int]
@@ -121,6 +121,7 @@ class Logger:
         value: Any,
         episode: int | None = None,
         step: int | None = None,
+        t: float | None = None,
         verbose: int | None = None,
     ):
         """Record statistics.
@@ -141,6 +142,9 @@ class Logger:
 
         verbose : int, optional
             Overwrite verbosity level.
+
+        t : float, optional
+            Wallclock time, measured with time.time().
         """
         if key not in self.stats:
             self.stats_loc[key] = []
@@ -149,13 +153,16 @@ class Logger:
             episode = self.n_episodes
         if step is None:
             step = self.n_steps
-        self.stats_loc[key].append((episode, step))
+        if t is None:
+            t = time.time()
+        self.stats_loc[key].append((episode, step, t))
         self.stats[key].append(value)
         verbose = self.verbose if verbose is None else verbose
         if verbose:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
-                f"({episode}|{step}) {key}: {value}"
+                f"({episode:04d}|{step:06d}|{t - self.start_time:.2f}) "
+                f"{key}: {value}"
             )
 
     def get_stat(self, key: str, x_key="episode"):
@@ -178,7 +185,7 @@ class Logger:
             Requested statistics.
         """
         assert key in self.stats
-        X_KEYS = ["episode", "step"]
+        X_KEYS = ["episode", "step", "time"]
         assert x_key in X_KEYS
         x_idx = X_KEYS.index(x_key)
         x = np.asarray(list(map(lambda x: x[x_idx], self.stats_loc[key])))
@@ -191,6 +198,7 @@ class Logger:
         value: Any,
         episode: int | None = None,
         step: int | None = None,
+        t: float | None = None,
     ):
         """Record training epoch of function approximator.
 
@@ -207,6 +215,9 @@ class Logger:
 
         step : int, optional
             Step at which we record the statistic.
+
+        t : float, optional
+            Wallclock time, measured with time.time().
         """
         if key not in self.epoch:
             self.epoch_loc[key] = []
@@ -215,12 +226,15 @@ class Logger:
             episode = self.n_episodes
         if step is None:
             step = self.n_steps
-        self.epoch_loc[key].append((episode, step))
+        if t is None:
+            t = time.time()
+        self.epoch_loc[key].append((episode, step, t))
         self.epoch[key] += 1
         if self.verbose:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
-                f"({episode}|{step}) {key}: {self.epoch[key]} epochs trained"
+                f"({episode:04d}|{step:06d}|{t - self.start_time:.2f}) {key}: "
+                f"{self.epoch[key]} epochs trained"
             )
 
         if (
