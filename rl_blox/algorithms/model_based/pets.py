@@ -196,7 +196,7 @@ class ModelPredictiveControl:
         obs = jnp.asarray(obs)
         assert obs.ndim == 1
 
-        best_plan = self._optimize_actions(obs)
+        best_plan = _pets_optimize(self.config, self.state, obs)
 
         self.state.prev_plan = jnp.concatenate(
             (best_plan[1:], self.config.avg_act[jnp.newaxis]), axis=0
@@ -204,95 +204,100 @@ class ModelPredictiveControl:
 
         return best_plan[0]
 
-    def _optimize_actions(self, obs):
-        best_plan = self.state.prev_plan
-        best_return = -jnp.inf
 
-        self.state.key, bootstrap_key = jax.random.split(self.state.key, 2)
-        model_indices = jax.random.randint(
-            bootstrap_key,
-            shape=(self.config.n_particles,),
-            minval=0,
-            maxval=self.state.dynamics_model.n_ensemble,
-        )
+def _pets_optimize(config, state, obs):
+    """Optimize plan with PE-TS."""
+    best_plan = state.prev_plan
+    best_return = -jnp.inf
 
-        if self.config.init_with_previous_plan:
-            mean = self.state.prev_plan
-        else:
-            mean = jnp.broadcast_to(
-                self.config.avg_act, self.state.prev_plan.shape
-            )
-        var = jnp.copy(self.config.init_var)
+    state.key, bootstrap_key = jax.random.split(state.key, 2)
+    model_indices = jax.random.randint(
+        bootstrap_key,
+        shape=(config.n_particles,),
+        minval=0,
+        maxval=state.dynamics_model.n_ensemble,
+    )
 
-        for i in range(self.config.n_opt_iter):
-            mean, var, best_plan, best_return, expected_returns = (
-                self._opt_iter(
-                    obs, model_indices, mean, var, best_plan, best_return
-                )
-            )
+    if config.init_with_previous_plan:
+        mean = state.prev_plan
+    else:
+        mean = jnp.broadcast_to(config.avg_act, state.prev_plan.shape)
+    var = jnp.copy(config.init_var)
 
-            if self.config.verbose >= 2:
-                print(
-                    f"[PETS/MPC] it #{i + 1}, return "
-                    f"{jnp.mean(expected_returns)} +- "
-                    f"{jnp.std(expected_returns)}, "
-                    f"[{expected_returns.min()}, {expected_returns.max()}]"
-                )
-        if self.config.verbose >= 1:
-            print(f"[PETS/MPC] Best return [{best_return}]")
-
-        return mean
-
-    def _opt_iter(self, obs, model_indices, mean, var, best_plan, best_return):
-        self.state.key, sampling_key = jax.random.split(self.state.key, 2)
-        actions = self.config.sample_fn(mean, var, sampling_key)
-        assert not jnp.any(jnp.isnan(actions))
-        chex.assert_shape(
-            actions,
-            (self.config.n_samples, self.config.plan_horizon)
-            + self.config.action_space_shape,
-        )
-        self.state.key, particle_key = jax.random.split(self.state.key, 2)
-        particle_keys = jax.random.split(
-            particle_key, (self.config.n_samples, self.config.n_particles)
-        )
-        chex.assert_shape(
-            particle_keys, (self.config.n_samples, self.config.n_particles)
-        )
-        chex.assert_shape(model_indices, (self.config.n_particles,))
-        chex.assert_shape(
-            actions,
-            (self.config.n_samples, self.config.plan_horizon)
-            + self.config.action_space_shape,
-        )
-        chex.assert_shape(obs, (obs.shape[0],))
-        trajectories = ts_inf(
-            particle_keys,
-            model_indices,
-            actions,
+    for i in range(config.n_opt_iter):
+        mean, var, best_plan, best_return, expected_returns = _pets_opt_iter(
+            config,
+            state,
             obs,
-            self.state.dynamics_model,
+            model_indices,
+            mean,
+            var,
+            best_plan,
+            best_return,
         )
-        chex.assert_shape(
-            trajectories,
-            (
-                self.config.n_samples,
-                self.config.n_particles,
-                # initial observation + trajectory:
-                self.config.plan_horizon + 1,
-                trajectories.shape[-1],
-            ),
-        )
-        expected_returns = evaluate_plans(
-            actions, trajectories, self.config.reward_model
-        )
-        chex.assert_shape(expected_returns, (self.config.n_samples,))
-        mean, var = self.config.update_fn(actions, expected_returns, mean, var)
-        best_idx = jnp.argmax(expected_returns)
-        if expected_returns[best_idx] >= best_return:
-            best_return = expected_returns[best_idx]
-            best_plan = actions[best_idx]
-        return mean, var, best_plan, best_return, expected_returns
+
+        if config.verbose >= 2:
+            jax.debug.print(
+                f"[PETS/MPC] it #{i + 1}, return "
+                f"{jnp.mean(expected_returns)} +- "
+                f"{jnp.std(expected_returns)}, "
+                f"[{expected_returns.min()}, {expected_returns.max()}]"
+            )
+    if config.verbose >= 1:
+        jax.debug.print(f"[PETS/MPC] Best return [{best_return}]")
+
+    return mean
+
+
+def _pets_opt_iter(
+    config, state, obs, model_indices, mean, var, best_plan, best_return
+):
+    """One iteration of the optimizer."""
+    state.key, sampling_key = jax.random.split(state.key, 2)
+    actions = config.sample_fn(mean, var, sampling_key)
+    assert not jnp.any(jnp.isnan(actions))
+    chex.assert_shape(
+        actions,
+        (config.n_samples, config.plan_horizon) + config.action_space_shape,
+    )
+    state.key, particle_key = jax.random.split(state.key, 2)
+    particle_keys = jax.random.split(
+        particle_key, (config.n_samples, config.n_particles)
+    )
+    chex.assert_shape(particle_keys, (config.n_samples, config.n_particles))
+    chex.assert_shape(model_indices, (config.n_particles,))
+    chex.assert_shape(
+        actions,
+        (config.n_samples, config.plan_horizon) + config.action_space_shape,
+    )
+    chex.assert_shape(obs, (obs.shape[0],))
+    trajectories = ts_inf(
+        particle_keys,
+        model_indices,
+        actions,
+        obs,
+        state.dynamics_model,
+    )
+    chex.assert_shape(
+        trajectories,
+        (
+            config.n_samples,
+            config.n_particles,
+            # initial observation + trajectory:
+            config.plan_horizon + 1,
+            trajectories.shape[-1],
+        ),
+    )
+    expected_returns = evaluate_plans(
+        actions, trajectories, config.reward_model
+    )
+    chex.assert_shape(expected_returns, (config.n_samples,))
+    mean, var = config.update_fn(actions, expected_returns, mean, var)
+    best_idx = jnp.argmax(expected_returns)
+    if expected_returns[best_idx] >= best_return:
+        best_return = expected_returns[best_idx]
+        best_plan = actions[best_idx]
+    return mean, var, best_plan, best_return, expected_returns
 
 
 def create_pets_state(
