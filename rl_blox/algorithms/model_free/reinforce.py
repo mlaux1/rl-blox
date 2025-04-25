@@ -868,11 +868,15 @@ def collect_samples(
     if logger is not None:
         logger.start_new_episode()
 
+    @nnx.jit
+    def sample(policy, observation, subkey):
+        return policy.sample(observation, subkey)
+
     steps_per_episode = 0
     observation, _ = env.reset()
     while True:
         key, subkey = jax.random.split(key)
-        action = np.asarray(policy.sample(jnp.array(observation), subkey))
+        action = np.asarray(sample(policy, jnp.array(observation), subkey))
 
         next_observation, reward, terminated, truncated, _ = env.step(action)
 
