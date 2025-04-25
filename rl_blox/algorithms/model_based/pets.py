@@ -64,11 +64,18 @@ class ReplayBuffer:
 class MPCConfig:
     """Configuration of Model-Predictive Control (MPC)."""
 
-    action_space_shape: tuple[int, ...]
+    plan_horizon: int
+    n_particles: int
+    n_samples: int
+    n_opt_iter: int
+    init_with_previous_plan: bool
+    verbose: int
     reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray] = struct.field(
         pytree_node=False
     )
-    plan_horizon: int
+    action_space_shape: tuple[int, ...]
+    avg_act: jnp.ndarray
+    init_var: jnp.ndarray
 
 
 class ModelPredictiveControl:
@@ -117,38 +124,35 @@ class ModelPredictiveControl:
         verbose: int = 0,
     ):
         self.config = MPCConfig(
-            action_space_shape=action_space.shape,
-            reward_model=reward_model,
             plan_horizon=plan_horizon,
+            n_particles=n_particles,
+            n_samples=n_samples,
+            n_opt_iter=n_opt_iter,
+            init_with_previous_plan=init_with_previous_plan,
+            verbose=verbose,
+            reward_model=reward_model,
+            action_space_shape=action_space.shape,
+            avg_act=jnp.asarray(0.5 * (action_space.high + action_space.low)),
+            init_var=jnp.array(
+                [
+                    (action_space.high - action_space.low) ** 2 / 16.0
+                    for _ in range(plan_horizon)
+                ]
+            ),
         )
         self.dynamics_model = dynamics_model
-        self.n_particles = n_particles
-        self.n_samples = n_samples
-        self.n_opt_iter = n_opt_iter
-        self.init_with_previous_plan = init_with_previous_plan
-        self.verbose = verbose
 
         self.key = jax.random.key(seed)
 
-        # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
-        self.avg_act = jnp.asarray(0.5 * (action_space.high + action_space.low))
-        self.start_episode()
-        self.init_var = jnp.vstack(
-            [
-                (action_space.high - action_space.low) ** 2 / 16.0
-                for _ in range(self.config.plan_horizon)
-            ]
-        )
         self._sample, self._update_search_distribution = (
-            _init_mpc_optimizer_cem(
-                action_space, self.config.plan_horizon, n_samples
-            )
+            _init_mpc_optimizer_cem(action_space, plan_horizon, n_samples)
         )
+        self.start_episode()
 
     def start_episode(self) -> None:
         """Tell MPC that a new episode started."""
         self.prev_plan = jnp.vstack(
-            [self.avg_act for _ in range(self.config.plan_horizon)]
+            [self.config.avg_act for _ in range(self.config.plan_horizon)]
         )
 
     def action(self, obs: ArrayLike) -> jnp.ndarray:
@@ -170,7 +174,7 @@ class ModelPredictiveControl:
         best_plan = self._optimize_actions(obs)
 
         self.prev_plan = jnp.concatenate(
-            (best_plan[1:], self.avg_act[jnp.newaxis]), axis=0
+            (best_plan[1:], self.config.avg_act[jnp.newaxis]), axis=0
         )
 
         return best_plan[0]
@@ -182,32 +186,32 @@ class ModelPredictiveControl:
         self.key, bootstrap_key = jax.random.split(self.key, 2)
         model_indices = jax.random.randint(
             bootstrap_key,
-            shape=(self.n_particles,),
+            shape=(self.config.n_particles,),
             minval=0,
             maxval=self.dynamics_model.n_ensemble,
         )
 
-        if self.init_with_previous_plan:
+        if self.config.init_with_previous_plan:
             mean = self.prev_plan
         else:
-            mean = jnp.broadcast_to(self.avg_act, self.prev_plan.shape)
-        var = jnp.copy(self.init_var)
+            mean = jnp.broadcast_to(self.config.avg_act, self.prev_plan.shape)
+        var = jnp.copy(self.config.init_var)
 
-        for i in range(self.n_opt_iter):
+        for i in range(self.config.n_opt_iter):
             mean, var, best_plan, best_return, expected_returns = (
                 self._opt_iter(
                     obs, model_indices, mean, var, best_plan, best_return
                 )
             )
 
-            if self.verbose >= 2:
+            if self.config.verbose >= 2:
                 print(
                     f"[PETS/MPC] it #{i + 1}, return "
                     f"{jnp.mean(expected_returns)} +- "
                     f"{jnp.std(expected_returns)}, "
                     f"[{expected_returns.min()}, {expected_returns.max()}]"
                 )
-        if self.verbose >= 1:
+        if self.config.verbose >= 1:
             print(f"[PETS/MPC] Best return [{best_return}]")
 
         return mean
@@ -218,18 +222,18 @@ class ModelPredictiveControl:
         assert not jnp.any(jnp.isnan(actions))
         chex.assert_shape(
             actions,
-            (self.n_samples, self.config.plan_horizon)
+            (self.config.n_samples, self.config.plan_horizon)
             + self.config.action_space_shape,
         )
         self.key, particle_key = jax.random.split(self.key, 2)
         particle_keys = jax.random.split(
-            particle_key, (self.n_samples, self.n_particles)
+            particle_key, (self.config.n_samples, self.config.n_particles)
         )
-        chex.assert_shape(particle_keys, (self.n_samples, self.n_particles))
-        chex.assert_shape(model_indices, (self.n_particles,))
+        chex.assert_shape(particle_keys, (self.config.n_samples, self.config.n_particles))
+        chex.assert_shape(model_indices, (self.config.n_particles,))
         chex.assert_shape(
             actions,
-            (self.n_samples, self.config.plan_horizon)
+            (self.config.n_samples, self.config.plan_horizon)
             + self.config.action_space_shape,
         )
         chex.assert_shape(obs, (obs.shape[0],))
@@ -243,17 +247,17 @@ class ModelPredictiveControl:
         chex.assert_shape(
             trajectories,
             (
-                self.n_samples,
-                self.n_particles,
-                self.config.plan_horizon
-                + 1,  # initial observation + trajectory
+                self.config.n_samples,
+                self.config.n_particles,
+                # initial observation + trajectory:
+                self.config.plan_horizon + 1,
                 trajectories.shape[-1],
             ),
         )
         expected_returns = evaluate_plans(
             actions, trajectories, self.config.reward_model
         )
-        chex.assert_shape(expected_returns, (self.n_samples,))
+        chex.assert_shape(expected_returns, (self.config.n_samples,))
         mean, var = self._update_search_distribution(
             actions, expected_returns, mean, var
         )
