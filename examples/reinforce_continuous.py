@@ -46,6 +46,7 @@ for i in range(n_epochs):
         key=subkey,
         logger=logger,
     )
+env.close()
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")

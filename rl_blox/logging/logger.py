@@ -154,14 +154,14 @@ class Logger:
         if step is None:
             step = self.n_steps
         if t is None:
-            t = time.time()
+            t = time.time() - self.start_time
         self.stats_loc[key].append((episode, step, t))
         self.stats[key].append(value)
         verbose = self.verbose if verbose is None else verbose
         if verbose:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
-                f"({episode:04d}|{step:06d}|{t - self.start_time:.2f}) "
+                f"({episode:04d}|{step:06d}|{t:.2f}) "
                 f"{key}: {value}"
             )
 
@@ -227,13 +227,13 @@ class Logger:
         if step is None:
             step = self.n_steps
         if t is None:
-            t = time.time()
+            t = time.time() - self.start_time
         self.epoch_loc[key].append((episode, step, t))
         self.epoch[key] += 1
         if self.verbose:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
-                f"({episode:04d}|{step:06d}|{t - self.start_time:.2f}) {key}: "
+                f"({episode:04d}|{step:06d}|{t:.2f}) {key}: "
                 f"{self.epoch[key]} epochs trained"
             )
 
