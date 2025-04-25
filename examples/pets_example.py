@@ -18,7 +18,7 @@ mpc = train_pets(
     n_opt_iter=10,
     init_with_previous_plan=False,
     seed=seed,
-    learning_starts=600,  # 200 steps = one episode
+    learning_starts=200,  # 200 steps = one episode
     learning_starts_gradient_steps=300,
     n_steps_per_iteration=200,  # 200 steps = one episode
     gradient_steps=10,

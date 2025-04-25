@@ -1,6 +1,7 @@
 from collections import deque
 from collections.abc import Callable
 from functools import partial
+from typing import Any
 
 import chex
 import gymnasium as gym
@@ -85,27 +86,9 @@ class MPCConfig:
     ] = struct.field(pytree_node=False)
 
 
-class MPCState:
-    """State of Model-Predictive Control (MPC)."""
-
-    config: MPCConfig
-    dynamics_model: GaussianMLPEnsemble
-    key: jnp.ndarray
-    prev_plan: jnp.ndarray
-
-    def __init__(
-        self, config: MPCConfig, dynamics_model: GaussianMLPEnsemble, seed: int
-    ):
-        self.config = config
-        self.dynamics_model = dynamics_model
-        self.key = jax.random.key(seed)
-        self.start_episode()
-
-    def start_episode(self) -> None:
-        """Tell MPC that a new episode started."""
-        self.prev_plan = jnp.vstack(
-            [self.config.avg_act for _ in range(self.config.plan_horizon)]
-        )
+def initial_plan(config: MPCConfig) -> jnp.ndarray:
+    """Create initial plan for MPC."""
+    return jnp.vstack([config.avg_act for _ in range(config.plan_horizon)])
 
 
 class ModelPredictiveControl:
@@ -141,7 +124,8 @@ class ModelPredictiveControl:
     """
 
     config: MPCConfig
-    state: MPCState
+    state: dict[str, Any]
+    key: jnp.ndarray
 
     def __init__(
         self,
@@ -178,7 +162,12 @@ class ModelPredictiveControl:
             sample_fn=sample_fn,
             update_fn=update_fn,
         )
-        self.state = MPCState(self.config, dynamics_model, seed)
+        self.state = dict(
+            dynamics_model=dynamics_model,
+            prev_plan=initial_plan(self.config),
+        )
+        self.key = jax.random.key(seed)
+        self._optimize = nnx.jit(partial(_pets_optimize, self.config))
 
     def action(self, obs: ArrayLike) -> jnp.ndarray:
         """Plan next action.
@@ -196,9 +185,10 @@ class ModelPredictiveControl:
         obs = jnp.asarray(obs)
         assert obs.ndim == 1
 
-        best_plan = _pets_optimize(self.config, self.state, obs)
+        self.key, opt_key = jax.random.split(self.key, 2)
+        best_plan = self._optimize(self.state, self.key, obs)
 
-        self.state.prev_plan = jnp.concatenate(
+        self.state["prev_plan"] = jnp.concatenate(
             (best_plan[1:], self.config.avg_act[jnp.newaxis]), axis=0
         )
 
@@ -206,30 +196,31 @@ class ModelPredictiveControl:
 
 
 def _pets_optimize(
-    config: MPCConfig, state: MPCState, obs: jnp.ndarray
+    config: MPCConfig, state: dict, key: jnp.ndarray, obs: jnp.ndarray
 ) -> jnp.ndarray:
     """Optimize plan with PE-TS."""
-    best_plan = state.prev_plan
+    best_plan = state["prev_plan"]
     best_return = -jnp.inf
 
-    state.key, bootstrap_key = jax.random.split(state.key, 2)
+    key, bootstrap_key = jax.random.split(key, 2)
     model_indices = jax.random.randint(
         bootstrap_key,
         shape=(config.n_particles,),
         minval=0,
-        maxval=state.dynamics_model.n_ensemble,
+        maxval=state["dynamics_model"].n_ensemble,
     )
 
     if config.init_with_previous_plan:
-        mean = state.prev_plan
+        mean = state["prev_plan"]
     else:
-        mean = jnp.broadcast_to(config.avg_act, state.prev_plan.shape)
+        mean = jnp.broadcast_to(config.avg_act, state["prev_plan"].shape)
     var = jnp.copy(config.init_var)
 
     for i in range(config.n_opt_iter):
         mean, var, best_plan, best_return, expected_returns = _pets_opt_iter(
             config,
-            state,
+            state["dynamics_model"],
+            key,
             obs,
             model_indices,
             mean,
@@ -238,22 +229,13 @@ def _pets_optimize(
             best_return,
         )
 
-        if config.verbose >= 2:
-            jax.debug.print(
-                f"[PETS/MPC] it #{i + 1}, return "
-                f"{jnp.mean(expected_returns)} +- "
-                f"{jnp.std(expected_returns)}, "
-                f"[{expected_returns.min()}, {expected_returns.max()}]"
-            )
-    if config.verbose >= 1:
-        jax.debug.print(f"[PETS/MPC] Best return [{best_return}]")
-
     return mean
 
 
 def _pets_opt_iter(
     config: MPCConfig,
-    state: MPCState,
+    dynamics_model: GaussianMLPEnsemble,
+    key: jnp.ndarray,
     obs: jnp.ndarray,
     model_indices: jnp.ndarray,
     mean: jnp.ndarray,
@@ -262,14 +244,14 @@ def _pets_opt_iter(
     best_return: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """One iteration of the optimizer."""
-    state.key, sampling_key = jax.random.split(state.key, 2)
+    key, sampling_key = jax.random.split(key, 2)
     actions = config.sample_fn(mean, var, sampling_key)
-    assert not jnp.any(jnp.isnan(actions))
-    chex.assert_shape(
-        actions,
-        (config.n_samples, config.plan_horizon) + config.action_space_shape,
-    )
-    state.key, particle_key = jax.random.split(state.key, 2)
+    #assert not jnp.any(jnp.isnan(actions))
+    #chex.assert_shape(
+    #    actions,
+    #    (config.n_samples, config.plan_horizon) + config.action_space_shape,
+    #)
+    key, particle_key = jax.random.split(key, 2)
     particle_keys = jax.random.split(
         particle_key, (config.n_samples, config.n_particles)
     )
@@ -285,7 +267,7 @@ def _pets_opt_iter(
         model_indices,
         actions,
         obs,
-        state.dynamics_model,
+        dynamics_model,
     )
     chex.assert_shape(
         trajectories,
@@ -303,9 +285,8 @@ def _pets_opt_iter(
     chex.assert_shape(expected_returns, (config.n_samples,))
     mean, var = config.update_fn(actions, expected_returns, mean, var)
     best_idx = jnp.argmax(expected_returns)
-    if expected_returns[best_idx] >= best_return:
-        best_return = expected_returns[best_idx]
-        best_plan = actions[best_idx]
+    best_return = jnp.where(expected_returns[best_idx] >= best_return, expected_returns[best_idx], best_return)
+    best_plan = jnp.where(expected_returns[best_idx] >= best_return, actions[best_idx], best_plan)
     return mean, var, best_plan, best_return, expected_returns
 
 
@@ -521,7 +502,7 @@ def train_pets(
         if termination or truncation:
             if verbose >= 1:
                 print(f"{t=}, {info=}")
-            mpc.state.start_episode()
+            mpc.state["prev_plan"] = initial_plan(mpc.config)
             obs, _ = env.reset()
 
         obs = next_obs
@@ -669,12 +650,12 @@ def evaluate_plans(
         Expected returns, summed up over planning horizon, averaged over
         particles.
     """
-    assert not jnp.any(jnp.isnan(trajectories))
+    #assert not jnp.any(jnp.isnan(trajectories))
     n_samples, plan_horizon = actions.shape[:2]
     action_shape = actions.shape[2:]
     n_particles = trajectories.shape[1]
 
-    broadcasted_actions = np.broadcast_to(
+    broadcasted_actions = jnp.broadcast_to(
         actions[:, jnp.newaxis],
         (n_samples, n_particles, plan_horizon) + action_shape,
     )  # broadcast along particle axis
