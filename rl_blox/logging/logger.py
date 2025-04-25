@@ -34,6 +34,7 @@ class Logger:
     start_time: float
     n_episodes: int
     n_steps: int
+    lpad_keys: int
     stats_loc: dict[str, list[tuple[int | None, int | None, float | None]]]
     stats: dict[str, list[Any]]
     epoch_loc: dict[str, list[tuple[int | None, int | None, float | None]]]
@@ -48,6 +49,7 @@ class Logger:
 
         self.env_name = None
         self.algorithm_name = None
+        self.lpad_keys = 0
         self.stats_loc = {}
         self.stats = {}
         self.epoch_loc = {}
@@ -153,6 +155,7 @@ class Logger:
         if key not in self.stats:
             self.stats_loc[key] = []
             self.stats[key] = []
+            self.lpad_keys = max(self.lpad_keys, len(key))
         if episode is None:
             episode = self.n_episodes
         if step is None:
@@ -165,8 +168,9 @@ class Logger:
         if verbose:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
-                f"({episode:04d}|{step:06d}|{t:.2f}) "
-                f"{key}: {format_str.format(value)}"
+                f"({episode:04d}|{step:06d}|{t:.2f}) S "  # S: statistics
+                f"{key.rjust(self.lpad_keys)}: "
+                f"{format_str.format(value)}"
             )
 
     def get_stat(self, key: str, x_key="episode"):
@@ -226,6 +230,7 @@ class Logger:
         if key not in self.epoch:
             self.epoch_loc[key] = []
             self.epoch[key] = 0
+            self.lpad_keys = max(self.lpad_keys, len(key))
         if episode is None:
             episode = self.n_episodes
         if step is None:
@@ -237,7 +242,8 @@ class Logger:
         if self.verbose:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
-                f"({episode:04d}|{step:06d}|{t:.2f}) {key}: "
+                f"({episode:04d}|{step:06d}|{t:.2f}) E "  # E: epoch
+                f"{key.rjust(self.lpad_keys)}: "
                 f"{self.epoch[key]} epochs trained"
             )
 
