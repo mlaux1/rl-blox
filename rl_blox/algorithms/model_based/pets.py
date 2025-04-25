@@ -321,15 +321,12 @@ def ts_inf(
             jnp.hstack((obs, act)), model_idx
         )
         delta_obs = dist.sample(seed=sampling_key)[0]
-        obs = obs + delta_obs
-        return obs, obs
-
-    initial_obs = obs
+        return obs + delta_obs, obs
 
     sampling_keys = jax.random.split(key, len(acts))
     obs, observations = sample_trajectory(obs, acts, sampling_keys)
 
-    return jnp.concatenate((initial_obs[jnp.newaxis], observations), axis=0)
+    return jnp.concatenate((observations, obs[jnp.newaxis]), axis=0)
 
 
 def evaluate_plans(
