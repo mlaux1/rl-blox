@@ -1,3 +1,4 @@
+import dataclasses
 import warnings
 from collections import deque
 from collections.abc import Callable
@@ -87,9 +88,18 @@ class MPCConfig:
     ] = struct.field(pytree_node=False)
 
 
-def initial_plan(config: MPCConfig) -> jnp.ndarray:
-    """Create initial plan for MPC."""
-    return jnp.vstack([config.avg_act for _ in range(config.plan_horizon)])
+@dataclasses.dataclass(frozen=False)
+class MPCState:
+    """State of Model-Predictive Control (MPC)."""
+
+    dynamics_model: GaussianMLPEnsemble
+    prev_plan: jnp.ndarray
+    key: jnp.ndarray
+
+    @staticmethod
+    def initial_plan(config: MPCConfig) -> jnp.ndarray:
+        """Create initial plan for MPC."""
+        return jnp.vstack([config.avg_act for _ in range(config.plan_horizon)])
 
 
 class ModelPredictiveControl:
@@ -125,8 +135,7 @@ class ModelPredictiveControl:
     """
 
     config: MPCConfig
-    state: dict[str, Any]
-    key: jnp.ndarray
+    state: MPCState
 
     def __init__(
         self,
@@ -165,17 +174,17 @@ class ModelPredictiveControl:
             sample_fn=sample_fn,
             update_fn=update_fn,
         )
-        self.state = dict(
+        self.state = MPCState(
             dynamics_model=dynamics_model,
-            prev_plan=initial_plan(self.config),
+            prev_plan=MPCState.initial_plan(self.config),
+            key=jax.random.key(seed),
         )
-        self.key = jax.random.key(seed)
         try:
             self._optimize = nnx.jit(partial(_pets_optimize, self.config))
             self._optimize(
-                self.state["dynamics_model"],
-                self.state["prev_plan"],
-                self.key,
+                self.state.dynamics_model,
+                self.state.prev_plan,
+                self.state.key,
                 jnp.zeros(env.observation_space.shape),
             )
         except jax.errors.ConcretizationTypeError as e:
@@ -202,22 +211,20 @@ class ModelPredictiveControl:
         obs = jnp.asarray(obs)
         assert obs.ndim == 1, "currently only supports 1d observation spaces"
 
-        self.key, opt_key = jax.random.split(self.key, 2)
+        self.state.key, opt_key = jax.random.split(self.state.key, 2)
         if self.config.init_with_previous_plan:
-            mean = self.state["prev_plan"]
+            mean = self.state.prev_plan
         else:
             mean = jnp.broadcast_to(
-                self.config.avg_act, self.state["prev_plan"].shape
+                self.config.avg_act, self.state.prev_plan.shape
             )
-        best_plan = self._optimize(
-            self.state["dynamics_model"], mean, self.key, obs
+        plan = self._optimize(self.state.dynamics_model, mean, opt_key, obs)
+
+        self.state.prev_plan = jnp.concatenate(
+            (plan[1:], self.config.avg_act[jnp.newaxis]), axis=0
         )
 
-        self.state["prev_plan"] = jnp.concatenate(
-            (best_plan[1:], self.config.avg_act[jnp.newaxis]), axis=0
-        )
-
-        return best_plan[0]
+        return plan[0]
 
 
 def _pets_optimize(
@@ -531,7 +538,7 @@ def train_pets(
         if termination or truncation:
             if verbose >= 1:
                 print(f"{t=}, {info=}")
-            mpc.state["prev_plan"] = initial_plan(mpc.config)
+            mpc.state.prev_plan = MPCState.initial_plan(mpc.config)
             obs, _ = env.reset()
 
         obs = next_obs
