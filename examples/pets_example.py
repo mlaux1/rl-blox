@@ -8,11 +8,11 @@ env = gym.make(env_name, render_mode="human")
 seed = 1
 
 dynamics_model = create_pets_state(env, seed=seed)
-mpc = train_pets(
+mpc_config, mpc_state, optimizer_fn = train_pets(
     env,
     pendulum_reward,
     dynamics_model,
-    planning_horizon=25,
+    plan_horizon=25,
     n_particles=20,
     n_samples=400,
     n_opt_iter=10,
