@@ -205,7 +205,9 @@ class ModelPredictiveControl:
         return best_plan[0]
 
 
-def _pets_optimize(config, state, obs):
+def _pets_optimize(
+    config: MPCConfig, state: MPCState, obs: jnp.ndarray
+) -> jnp.ndarray:
     """Optimize plan with PE-TS."""
     best_plan = state.prev_plan
     best_return = -jnp.inf
@@ -250,8 +252,15 @@ def _pets_optimize(config, state, obs):
 
 
 def _pets_opt_iter(
-    config, state, obs, model_indices, mean, var, best_plan, best_return
-):
+    config: MPCConfig,
+    state: MPCState,
+    obs: jnp.ndarray,
+    model_indices: jnp.ndarray,
+    mean: jnp.ndarray,
+    var: jnp.ndarray,
+    best_plan: jnp.ndarray,
+    best_return: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """One iteration of the optimizer."""
     state.key, sampling_key = jax.random.split(state.key, 2)
     actions = config.sample_fn(mean, var, sampling_key)
