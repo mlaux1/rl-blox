@@ -312,9 +312,9 @@ def ts_inf(
     ...     trajectories, (n_samples, n_particles, plan_horizon + 1, 3))
     """
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
-    observations = [obs]
-    sampling_keys = jax.random.split(key, len(acts))
-    for act, sampling_key in zip(acts, sampling_keys, strict=False):
+
+    @nnx.scan(in_axes=(nnx.Carry, 0, 0), out_axes=(nnx.Carry, 0))
+    def sample_trajectory(obs, act, sampling_key):
         # We sample from one of the base models.
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
         dist = dynamics_model.base_distribution(
@@ -322,8 +322,14 @@ def ts_inf(
         )
         delta_obs = dist.sample(seed=sampling_key)[0]
         obs = obs + delta_obs
-        observations.append(obs)
-    return jnp.vstack(observations)
+        return obs, obs
+
+    initial_obs = obs
+
+    sampling_keys = jax.random.split(key, len(acts))
+    obs, observations = sample_trajectory(obs, acts, sampling_keys)
+
+    return jnp.concatenate((initial_obs[jnp.newaxis], observations), axis=0)
 
 
 def evaluate_plans(
