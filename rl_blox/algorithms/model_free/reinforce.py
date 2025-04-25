@@ -42,23 +42,23 @@ class EpisodeDataset:
             indices.extend([t for t in range(len(episode))])
         return indices
 
-    def _observations(self) -> np.ndarray:
+    def _observations(self) -> list:
         observations = []
         for episode in self.episodes:
             observations.extend([o for o, _, _, _ in episode])
-        return np.vstack(observations)
+        return observations
 
-    def _actions(self) -> np.ndarray:
+    def _actions(self) -> list:
         actions = []
         for episode in self.episodes:
             actions.extend([a for _, a, _, _ in episode])
-        return np.stack(actions)
+        return actions
 
-    def _nest_observations(self) -> np.ndarray:
+    def _nest_observations(self) -> list:
         next_observations = []
         for episode in self.episodes:
             next_observations.extend([s for _, _, s, _ in episode])
-        return np.vstack(next_observations)
+        return next_observations
 
     def _rewards(self) -> list[list[float]]:
         rewards = []
