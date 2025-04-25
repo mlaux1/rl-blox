@@ -123,6 +123,7 @@ class Logger:
         step: int | None = None,
         t: float | None = None,
         verbose: int | None = None,
+        format_str: str = "{0:.3f}",
     ):
         """Record statistics.
 
@@ -140,11 +141,14 @@ class Logger:
         step : int, optional
             Step at which we record the statistic.
 
+        t : float, optional
+            Wallclock time, measured with time.time().
+
         verbose : int, optional
             Overwrite verbosity level.
 
-        t : float, optional
-            Wallclock time, measured with time.time().
+        format_str : str, optional
+            Format string for stdout logging.
         """
         if key not in self.stats:
             self.stats_loc[key] = []
@@ -162,7 +166,7 @@ class Logger:
             print(
                 f"[{self.env_name}|{self.algorithm_name}] "
                 f"({episode:04d}|{step:06d}|{t:.2f}) "
-                f"{key}: {value}"
+                f"{key}: {format_str.format(value)}"
             )
 
     def get_stat(self, key: str, x_key="episode"):
