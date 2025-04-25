@@ -1,3 +1,4 @@
+import warnings
 from collections import deque
 from collections.abc import Callable
 from functools import partial
@@ -129,7 +130,7 @@ class ModelPredictiveControl:
 
     def __init__(
         self,
-        action_space: gym.spaces.Box,
+        env: gym.Env[gym.spaces.Box, gym.spaces.Box],
         reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray],
         dynamics_model: GaussianMLPEnsemble,
         plan_horizon: int,
@@ -141,7 +142,7 @@ class ModelPredictiveControl:
         verbose: int = 0,
     ):
         sample_fn, update_fn = _init_mpc_optimizer_cem(
-            action_space, plan_horizon, n_samples
+            env.action_space, plan_horizon, n_samples
         )
         self.config = MPCConfig(
             plan_horizon=plan_horizon,
@@ -151,11 +152,13 @@ class ModelPredictiveControl:
             init_with_previous_plan=init_with_previous_plan,
             verbose=verbose,
             reward_model=reward_model,
-            action_space_shape=action_space.shape,
-            avg_act=jnp.asarray(0.5 * (action_space.high + action_space.low)),
+            action_space_shape=env.action_space.shape,
+            avg_act=jnp.asarray(
+                0.5 * (env.action_space.high + env.action_space.low)
+            ),
             init_var=jnp.array(
                 [
-                    (action_space.high - action_space.low) ** 2 / 16.0
+                    (env.action_space.high - env.action_space.low) ** 2 / 16.0
                     for _ in range(plan_horizon)
                 ]
             ),
@@ -167,7 +170,21 @@ class ModelPredictiveControl:
             prev_plan=initial_plan(self.config),
         )
         self.key = jax.random.key(seed)
-        self._optimize = nnx.jit(partial(_pets_optimize, self.config))
+        try:
+            self._optimize = nnx.jit(partial(_pets_optimize, self.config))
+            self._optimize(
+                self.state["dynamics_model"],
+                self.state["prev_plan"],
+                self.key,
+                jnp.zeros(env.observation_space.shape),
+            )
+        except jax.errors.ConcretizationTypeError as e:
+            warnings.warn(
+                f"nnx.jit failed. MPC will be slow. Check if your reward "
+                f"model is JIT-compilable. Error message: {e}",
+                stacklevel=2,
+            )
+            self._optimize = partial(_pets_optimize, self.config)
 
     def action(self, obs: ArrayLike) -> jnp.ndarray:
         """Plan next action.
@@ -183,10 +200,18 @@ class ModelPredictiveControl:
             Next action to take.
         """
         obs = jnp.asarray(obs)
-        assert obs.ndim == 1
+        assert obs.ndim == 1, "currently only supports 1d observation spaces"
 
         self.key, opt_key = jax.random.split(self.key, 2)
-        best_plan = self._optimize(self.state, self.key, obs)
+        if self.config.init_with_previous_plan:
+            mean = self.state["prev_plan"]
+        else:
+            mean = jnp.broadcast_to(
+                self.config.avg_act, self.state["prev_plan"].shape
+            )
+        best_plan = self._optimize(
+            self.state["dynamics_model"], mean, self.key, obs
+        )
 
         self.state["prev_plan"] = jnp.concatenate(
             (best_plan[1:], self.config.avg_act[jnp.newaxis]), axis=0
@@ -196,10 +221,14 @@ class ModelPredictiveControl:
 
 
 def _pets_optimize(
-    config: MPCConfig, state: dict, key: jnp.ndarray, obs: jnp.ndarray
+    config: MPCConfig,
+    dynamics_model: GaussianMLPEnsemble,
+    mean: jnp.ndarray,
+    key: jnp.ndarray,
+    obs: jnp.ndarray,
 ) -> jnp.ndarray:
     """Optimize plan with PE-TS."""
-    best_plan = state["prev_plan"]
+    best_plan = mean
     best_return = -jnp.inf
 
     key, bootstrap_key = jax.random.split(key, 2)
@@ -207,19 +236,14 @@ def _pets_optimize(
         bootstrap_key,
         shape=(config.n_particles,),
         minval=0,
-        maxval=state["dynamics_model"].n_ensemble,
+        maxval=dynamics_model.n_ensemble,
     )
 
-    if config.init_with_previous_plan:
-        mean = state["prev_plan"]
-    else:
-        mean = jnp.broadcast_to(config.avg_act, state["prev_plan"].shape)
-    var = jnp.copy(config.init_var)
-
-    for i in range(config.n_opt_iter):
+    var = config.init_var
+    for _ in range(config.n_opt_iter):
         mean, var, best_plan, best_return, expected_returns = _pets_opt_iter(
             config,
-            state["dynamics_model"],
+            dynamics_model,
             key,
             obs,
             model_indices,
@@ -246,11 +270,10 @@ def _pets_opt_iter(
     """One iteration of the optimizer."""
     key, sampling_key = jax.random.split(key, 2)
     actions = config.sample_fn(mean, var, sampling_key)
-    #assert not jnp.any(jnp.isnan(actions))
-    #chex.assert_shape(
-    #    actions,
-    #    (config.n_samples, config.plan_horizon) + config.action_space_shape,
-    #)
+    chex.assert_shape(
+        actions,
+        (config.n_samples, config.plan_horizon) + config.action_space_shape,
+    )
     key, particle_key = jax.random.split(key, 2)
     particle_keys = jax.random.split(
         particle_key, (config.n_samples, config.n_particles)
@@ -285,8 +308,14 @@ def _pets_opt_iter(
     chex.assert_shape(expected_returns, (config.n_samples,))
     mean, var = config.update_fn(actions, expected_returns, mean, var)
     best_idx = jnp.argmax(expected_returns)
-    best_return = jnp.where(expected_returns[best_idx] >= best_return, expected_returns[best_idx], best_return)
-    best_plan = jnp.where(expected_returns[best_idx] >= best_return, actions[best_idx], best_plan)
+    best_return = jnp.where(
+        expected_returns[best_idx] >= best_return,
+        expected_returns[best_idx],
+        best_return,
+    )
+    best_plan = jnp.where(
+        expected_returns[best_idx] >= best_return, actions[best_idx], best_plan
+    )
     return mean, var, best_plan, best_return, expected_returns
 
 
@@ -451,7 +480,7 @@ def train_pets(
     rb = ReplayBuffer(buffer_size)
 
     mpc = ModelPredictiveControl(
-        action_space,
+        env,
         reward_model,
         dynamics_model.model,
         planning_horizon,
@@ -650,7 +679,6 @@ def evaluate_plans(
         Expected returns, summed up over planning horizon, averaged over
         particles.
     """
-    #assert not jnp.any(jnp.isnan(trajectories))
     n_samples, plan_horizon = actions.shape[:2]
     action_shape = actions.shape[2:]
     n_particles = trajectories.shape[1]
@@ -658,7 +686,7 @@ def evaluate_plans(
     broadcasted_actions = jnp.broadcast_to(
         actions[:, jnp.newaxis],
         (n_samples, n_particles, plan_horizon) + action_shape,
-    )  # broadcast along particle axis
+    )  # broadcast actions along particle axis
     rewards = reward_model(broadcasted_actions, trajectories[:, :, :-1])
     # sum along plan_horizon axis
     returns = rewards.sum(axis=-1)
