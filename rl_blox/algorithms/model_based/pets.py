@@ -323,7 +323,7 @@ def ts_inf(
         delta_obs = dist.sample(seed=sampling_key)[0]
         obs = obs + delta_obs
         observations.append(obs)
-    return jnp.vstack(observations)
+    return jnp.array(observations)
 
 
 def evaluate_plans(
