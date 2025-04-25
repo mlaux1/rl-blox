@@ -85,6 +85,29 @@ class MPCConfig:
     ] = struct.field(pytree_node=False)
 
 
+class MPCState:
+    """State of Model-Predictive Control (MPC)."""
+
+    config: MPCConfig
+    dynamics_model: GaussianMLPEnsemble
+    key: jnp.ndarray
+    prev_plan: jnp.ndarray
+
+    def __init__(
+        self, config: MPCConfig, dynamics_model: GaussianMLPEnsemble, seed: int
+    ):
+        self.config = config
+        self.dynamics_model = dynamics_model
+        self.key = jax.random.key(seed)
+        self.start_episode()
+
+    def start_episode(self) -> None:
+        """Tell MPC that a new episode started."""
+        self.prev_plan = jnp.vstack(
+            [self.config.avg_act for _ in range(self.config.plan_horizon)]
+        )
+
+
 class ModelPredictiveControl:
     """Model-Predictive Control (MPC).
 
@@ -116,6 +139,9 @@ class ModelPredictiveControl:
     verbose
         Verbosity level.
     """
+
+    config: MPCConfig
+    state: MPCState
 
     def __init__(
         self,
@@ -152,16 +178,7 @@ class ModelPredictiveControl:
             sample_fn=sample_fn,
             update_fn=update_fn,
         )
-
-        self.dynamics_model = dynamics_model
-        self.key = jax.random.key(seed)
-        self.start_episode()
-
-    def start_episode(self) -> None:
-        """Tell MPC that a new episode started."""
-        self.prev_plan = jnp.vstack(
-            [self.config.avg_act for _ in range(self.config.plan_horizon)]
-        )
+        self.state = MPCState(self.config, dynamics_model, seed)
 
     def action(self, obs: ArrayLike) -> jnp.ndarray:
         """Plan next action.
@@ -181,28 +198,30 @@ class ModelPredictiveControl:
 
         best_plan = self._optimize_actions(obs)
 
-        self.prev_plan = jnp.concatenate(
+        self.state.prev_plan = jnp.concatenate(
             (best_plan[1:], self.config.avg_act[jnp.newaxis]), axis=0
         )
 
         return best_plan[0]
 
     def _optimize_actions(self, obs):
-        best_plan = self.prev_plan
+        best_plan = self.state.prev_plan
         best_return = -jnp.inf
 
-        self.key, bootstrap_key = jax.random.split(self.key, 2)
+        self.state.key, bootstrap_key = jax.random.split(self.state.key, 2)
         model_indices = jax.random.randint(
             bootstrap_key,
             shape=(self.config.n_particles,),
             minval=0,
-            maxval=self.dynamics_model.n_ensemble,
+            maxval=self.state.dynamics_model.n_ensemble,
         )
 
         if self.config.init_with_previous_plan:
-            mean = self.prev_plan
+            mean = self.state.prev_plan
         else:
-            mean = jnp.broadcast_to(self.config.avg_act, self.prev_plan.shape)
+            mean = jnp.broadcast_to(
+                self.config.avg_act, self.state.prev_plan.shape
+            )
         var = jnp.copy(self.config.init_var)
 
         for i in range(self.config.n_opt_iter):
@@ -225,7 +244,7 @@ class ModelPredictiveControl:
         return mean
 
     def _opt_iter(self, obs, model_indices, mean, var, best_plan, best_return):
-        self.key, sampling_key = jax.random.split(self.key, 2)
+        self.state.key, sampling_key = jax.random.split(self.state.key, 2)
         actions = self.config.sample_fn(mean, var, sampling_key)
         assert not jnp.any(jnp.isnan(actions))
         chex.assert_shape(
@@ -233,7 +252,7 @@ class ModelPredictiveControl:
             (self.config.n_samples, self.config.plan_horizon)
             + self.config.action_space_shape,
         )
-        self.key, particle_key = jax.random.split(self.key, 2)
+        self.state.key, particle_key = jax.random.split(self.state.key, 2)
         particle_keys = jax.random.split(
             particle_key, (self.config.n_samples, self.config.n_particles)
         )
@@ -252,7 +271,7 @@ class ModelPredictiveControl:
             model_indices,
             actions,
             obs,
-            self.dynamics_model,
+            self.state.dynamics_model,
         )
         chex.assert_shape(
             trajectories,
@@ -488,7 +507,7 @@ def train_pets(
         if termination or truncation:
             if verbose >= 1:
                 print(f"{t=}, {info=}")
-            mpc.start_episode()
+            mpc.state.start_episode()
             obs, _ = env.reset()
 
         obs = next_obs
