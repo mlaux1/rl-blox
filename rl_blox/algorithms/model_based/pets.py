@@ -76,6 +76,13 @@ class MPCConfig:
     action_space_shape: tuple[int, ...]
     avg_act: jnp.ndarray
     init_var: jnp.ndarray
+    sample_fn: Callable[
+        [jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray
+    ] = struct.field(pytree_node=False)
+    update_fn: Callable[
+        [jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        tuple[jnp.ndarray, jnp.ndarray],
+    ] = struct.field(pytree_node=False)
 
 
 class ModelPredictiveControl:
@@ -123,6 +130,9 @@ class ModelPredictiveControl:
         seed: int,
         verbose: int = 0,
     ):
+        sample_fn, update_fn = _init_mpc_optimizer_cem(
+            action_space, plan_horizon, n_samples
+        )
         self.config = MPCConfig(
             plan_horizon=plan_horizon,
             n_particles=n_particles,
@@ -139,14 +149,12 @@ class ModelPredictiveControl:
                     for _ in range(plan_horizon)
                 ]
             ),
+            sample_fn=sample_fn,
+            update_fn=update_fn,
         )
+
         self.dynamics_model = dynamics_model
-
         self.key = jax.random.key(seed)
-
-        self._sample, self._update_search_distribution = (
-            _init_mpc_optimizer_cem(action_space, plan_horizon, n_samples)
-        )
         self.start_episode()
 
     def start_episode(self) -> None:
@@ -218,7 +226,7 @@ class ModelPredictiveControl:
 
     def _opt_iter(self, obs, model_indices, mean, var, best_plan, best_return):
         self.key, sampling_key = jax.random.split(self.key, 2)
-        actions = self._sample(mean, var, sampling_key)
+        actions = self.config.sample_fn(mean, var, sampling_key)
         assert not jnp.any(jnp.isnan(actions))
         chex.assert_shape(
             actions,
@@ -229,7 +237,9 @@ class ModelPredictiveControl:
         particle_keys = jax.random.split(
             particle_key, (self.config.n_samples, self.config.n_particles)
         )
-        chex.assert_shape(particle_keys, (self.config.n_samples, self.config.n_particles))
+        chex.assert_shape(
+            particle_keys, (self.config.n_samples, self.config.n_particles)
+        )
         chex.assert_shape(model_indices, (self.config.n_particles,))
         chex.assert_shape(
             actions,
@@ -258,9 +268,7 @@ class ModelPredictiveControl:
             actions, trajectories, self.config.reward_model
         )
         chex.assert_shape(expected_returns, (self.config.n_samples,))
-        mean, var = self._update_search_distribution(
-            actions, expected_returns, mean, var
-        )
+        mean, var = self.config.update_fn(actions, expected_returns, mean, var)
         best_idx = jnp.argmax(expected_returns)
         if expected_returns[best_idx] >= best_return:
             best_return = expected_returns[best_idx]
