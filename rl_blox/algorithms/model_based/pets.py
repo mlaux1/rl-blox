@@ -7,7 +7,7 @@ import gymnasium as gym
 import jax
 import numpy as np
 import optax
-from flax import nnx
+from flax import nnx, struct
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax import numpy as jnp
 from jax.typing import ArrayLike
@@ -60,6 +60,17 @@ class ReplayBuffer:
         return len(self.buffer)
 
 
+@struct.dataclass
+class MPCConfig:
+    """Configuration of Model-Predictive Control (MPC)."""
+
+    action_space_shape: tuple[int, ...]
+    reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray] = struct.field(
+        pytree_node=False
+    )
+    plan_horizon: int
+
+
 class ModelPredictiveControl:
     """Model-Predictive Control (MPC).
 
@@ -105,10 +116,12 @@ class ModelPredictiveControl:
         seed: int,
         verbose: int = 0,
     ):
-        self.action_space = action_space
+        self.config = MPCConfig(
+            action_space_shape=action_space.shape,
+            reward_model=reward_model,
+            plan_horizon=plan_horizon,
+        )
         self.dynamics_model = dynamics_model
-        self.reward_model = reward_model
-        self.plan_horizon = plan_horizon
         self.n_particles = n_particles
         self.n_samples = n_samples
         self.n_opt_iter = n_opt_iter
@@ -118,24 +131,24 @@ class ModelPredictiveControl:
         self.key = jax.random.key(seed)
 
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L132
-        self.avg_act = jnp.asarray(
-            0.5 * (self.action_space.high + self.action_space.low)
-        )
+        self.avg_act = jnp.asarray(0.5 * (action_space.high + action_space.low))
         self.start_episode()
         self.init_var = jnp.vstack(
             [
-                (self.action_space.high - self.action_space.low) ** 2 / 16.0
-                for _ in range(self.plan_horizon)
+                (action_space.high - action_space.low) ** 2 / 16.0
+                for _ in range(self.config.plan_horizon)
             ]
         )
         self._sample, self._update_search_distribution = (
-            _init_mpc_optimizer_cem(action_space, plan_horizon, n_samples)
+            _init_mpc_optimizer_cem(
+                action_space, self.config.plan_horizon, n_samples
+            )
         )
 
     def start_episode(self) -> None:
         """Tell MPC that a new episode started."""
         self.prev_plan = jnp.vstack(
-            [self.avg_act for _ in range(self.plan_horizon)]
+            [self.avg_act for _ in range(self.config.plan_horizon)]
         )
 
     def action(self, obs: ArrayLike) -> jnp.ndarray:
@@ -205,7 +218,8 @@ class ModelPredictiveControl:
         assert not jnp.any(jnp.isnan(actions))
         chex.assert_shape(
             actions,
-            (self.n_samples, self.plan_horizon) + self.action_space.shape,
+            (self.n_samples, self.config.plan_horizon)
+            + self.config.action_space_shape,
         )
         self.key, particle_key = jax.random.split(self.key, 2)
         particle_keys = jax.random.split(
@@ -215,7 +229,8 @@ class ModelPredictiveControl:
         chex.assert_shape(model_indices, (self.n_particles,))
         chex.assert_shape(
             actions,
-            (self.n_samples, self.plan_horizon) + self.action_space.shape,
+            (self.n_samples, self.config.plan_horizon)
+            + self.config.action_space_shape,
         )
         chex.assert_shape(obs, (obs.shape[0],))
         trajectories = ts_inf(
@@ -230,12 +245,13 @@ class ModelPredictiveControl:
             (
                 self.n_samples,
                 self.n_particles,
-                self.plan_horizon + 1,  # initial observation + trajectory
+                self.config.plan_horizon
+                + 1,  # initial observation + trajectory
                 trajectories.shape[-1],
             ),
         )
         expected_returns = evaluate_plans(
-            actions, trajectories, self.reward_model
+            actions, trajectories, self.config.reward_model
         )
         chex.assert_shape(expected_returns, (self.n_samples,))
         mean, var = self._update_search_distribution(
@@ -570,7 +586,7 @@ def ts_inf(
     # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L318
     observations = [obs]
     sampling_keys = jax.random.split(key, len(acts))
-    for act, sampling_key in zip(acts, sampling_keys):
+    for act, sampling_key in zip(acts, sampling_keys, strict=False):
         # We sample from one of the base models.
         # https://github.com/kchua/handful-of-trials/blob/master/dmbrl/controllers/MPC.py#L340
         dist = dynamics_model.base_distribution(
@@ -626,7 +642,7 @@ def evaluate_plans(
 
 
 def update_dynamics_model(
-    dynamics_model : EnsembleTrainState,
+    dynamics_model: EnsembleTrainState,
     observations: ArrayLike,
     actions: ArrayLike,
     next_observations: ArrayLike,
