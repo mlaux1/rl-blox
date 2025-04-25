@@ -242,7 +242,7 @@ class GaussianMLPEnsemble(nnx.Module):
             Predicted variance.
         """
         graphdef, state = nnx.split(self.ensemble)
-        state_i = jax.tree_map(lambda x: x[i], state)
+        state_i = jax.tree.map(lambda x: x[i], state)
         base_model = nnx.merge(graphdef, state_i)
         mean_i, log_var_i = base_model(x)
         log_var_i = self._safe_log_var(
@@ -269,7 +269,7 @@ class GaussianMLPEnsemble(nnx.Module):
             Predicted distribution.
         """
         graphdef, state = nnx.split(self.ensemble)
-        state_i = jax.tree_map(lambda x: x[i], state)
+        state_i = jax.tree.map(lambda x: x[i], state)
         base_model = nnx.merge(graphdef, state_i)
         mean_i, log_var_i = base_model(x)
         log_var_i = self._safe_log_var_i(
