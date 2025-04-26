@@ -20,9 +20,9 @@ logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
 
 reinforce_state = create_policy_gradient_discrete_state(
     env,
-    policy_hidden_nodes=[32],
+    policy_hidden_nodes=[64, 64],
     policy_learning_rate=1e-4,
-    value_network_hidden_nodes=[50, 50],
+    value_network_hidden_nodes=[256, 256],
     value_network_learning_rate=1e-2,
     seed=42,
 )
