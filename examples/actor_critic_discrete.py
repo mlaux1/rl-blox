@@ -23,10 +23,10 @@ logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
 
 ac_state = create_policy_gradient_discrete_state(
     env,
-    policy_hidden_nodes=[32],
+    policy_hidden_nodes=[64, 64],
     policy_learning_rate=3e-4,
     policy_optimizer=optax.adam,
-    value_network_hidden_nodes=[100, 100],
+    value_network_hidden_nodes=[256, 256],
     value_network_learning_rate=1e-2,
     seed=42,
 )
@@ -41,9 +41,9 @@ for _ in tqdm.trange(n_epochs):
         ac_state.policy_optimizer,
         ac_state.value_function,
         ac_state.value_function_optimizer,
-        policy_gradient_steps=10,
-        value_gradient_steps=10,
-        total_steps=500,
+        policy_gradient_steps=20,
+        value_gradient_steps=20,
+        total_steps=1000,
         gamma=1.0,
         train_after_episode=False,
         key=subkey,
