@@ -1,3 +1,4 @@
+import contextlib
 import os
 import shutil
 import time
@@ -195,10 +196,8 @@ class Logger:
                 f"{format_str.format(value)}"
             )
         if self.use_aim:
-            try:
+            with contextlib.suppress(TypeError):
                 value = float(value)
-            except:
-                pass  # ignore error during conversion attempt
             self.aim_run.track(value=value, name=key, step=step)
 
     def get_stat(self, key: str, x_key="episode"):
