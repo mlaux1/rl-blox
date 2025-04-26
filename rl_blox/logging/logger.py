@@ -2,10 +2,10 @@ import os
 import shutil
 import time
 from typing import Any
-import tqdm
 
 import numpy as np
 import orbax.checkpoint as ocp
+import tqdm
 from flax import nnx
 
 
