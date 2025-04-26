@@ -182,7 +182,7 @@ class Logger:
         key : str
             The name of the statistic.
 
-        x_key : str in ['episode', 'step'], optional
+        x_key : str in ['episode', 'step', 'time'], optional
             x-values.
 
         Returns
