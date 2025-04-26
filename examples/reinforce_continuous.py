@@ -16,11 +16,7 @@ env_name = "InvertedPendulum-v5"
 env = gym.make(env_name)
 env.reset(seed=43)
 
-logger = logger.Logger(verbose=2)
-logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
-
-reinforce_state = create_policy_gradient_continuous_state(
-    env,
+hparams = dict(
     policy_shared_head=True,
     policy_hidden_nodes=[64, 64],
     policy_learning_rate=3e-4,
@@ -29,7 +25,14 @@ reinforce_state = create_policy_gradient_continuous_state(
     seed=42,
 )
 
-n_epochs = 200
+logger = logger.Logger(use_aim=True, verbose=2)
+logger.define_experiment(
+    env_name=env_name, algorithm_name="REINFORCE", hparams=hparams
+)
+
+reinforce_state = create_policy_gradient_continuous_state(env, **hparams)
+
+n_epochs = 100
 key = reinforce_state.key
 for _ in tqdm.trange(n_epochs):
     key, subkey = jax.random.split(key, 2)

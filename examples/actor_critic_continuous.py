@@ -19,20 +19,22 @@ env_name = "InvertedPendulum-v5"
 env = gym.make(env_name)
 env.reset(seed=43)
 
-logger = logger.Logger(verbose=2)
-logger.define_experiment(env_name=env_name, algorithm_name="REINFORCE")
-logger.define_checkpoint_frequency("value_function", 10)
-
-ac_state = create_policy_gradient_continuous_state(
-    env,
+hparams = dict(
     policy_shared_head=True,
     policy_hidden_nodes=[32, 32],
     policy_learning_rate=3e-4,
-    policy_optimizer=optax.adam,
     value_network_hidden_nodes=[50, 50],
     value_network_learning_rate=1e-2,
     seed=42,
 )
+
+logger = logger.Logger(use_aim=True, verbose=2)
+logger.define_experiment(
+    env_name=env_name, algorithm_name="Actor-Critic", hparams=hparams
+)
+logger.define_checkpoint_frequency("value_function", 10)
+
+ac_state = create_policy_gradient_continuous_state(env, **hparams)
 
 n_epochs = 375
 key = ac_state.key

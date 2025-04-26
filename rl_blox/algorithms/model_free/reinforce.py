@@ -680,7 +680,7 @@ def create_policy_gradient_discrete_state(
     env: gym.Env,
     policy_hidden_nodes: list[int] | tuple[int] = (32,),
     policy_learning_rate: float = 1e-4,
-    policy_optimizer: Callable = optax.adamw,
+    policy_optimizer: Callable = optax.adam,
     value_network_hidden_nodes: list[int] | tuple[int] = (50, 50),
     value_network_learning_rate: float = 1e-2,
     value_network_optimizer: Callable = optax.adamw,

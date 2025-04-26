@@ -3,6 +3,7 @@ import shutil
 import time
 from typing import Any
 
+import aim
 import numpy as np
 import orbax.checkpoint as ocp
 import tqdm
@@ -24,15 +25,21 @@ class Logger:
 
             This directory will be deleted before the experiment starts!
 
+    use_aim : bool, optional
+        Use AIM for experiment tracking.
+
     verbose : int, optional
         Verbosity level.
     """
 
     checkpoint_dir: str
+    use_aim: bool
     verbose: int
+    aim_run: aim.Run | None
     env_name: str | None
     algorithm_name: str | None
     start_time: float
+    hparams: dict | None = None
     n_episodes: int
     n_steps: int
     lpad_keys: int
@@ -44,10 +51,14 @@ class Logger:
     checkpoint_frequencies: dict[str, int]
     checkpoint_path: dict[str, list[str]]
 
-    def __init__(self, checkpoint_dir="/tmp/rl-blox/", verbose=0):
+    def __init__(
+        self, checkpoint_dir="/tmp/rl-blox/", use_aim=False, verbose=0
+    ):
         self.checkpoint_dir = checkpoint_dir
+        self.use_aim = use_aim
         self.verbose = verbose
 
+        self.aim_run = None
         self.env_name = None
         self.algorithm_name = None
         self.lpad_keys = 0
@@ -79,7 +90,10 @@ class Logger:
         self.record_stat("episode_length", total_steps, verbose=0)
 
     def define_experiment(
-        self, env_name: str | None = None, algorithm_name: str | None = None
+        self,
+        env_name: str | None = None,
+        algorithm_name: str | None = None,
+        hparams: dict | None = None,
     ):
         """Define the experiment.
 
@@ -90,10 +104,17 @@ class Logger:
 
         algorithm_name : str, optional
             The name of the reinforcement learning algorithm.
+
+        hparams : dict, optional
+            Hyperparameters of the experiment.
         """
         self.env_name = env_name
         self.algorithm_name = algorithm_name
         self.start_time = time.time()
+        self.hparams = hparams
+        if self.use_aim:
+            self.aim_run = aim.Run(log_system_params=True)
+            self.aim_run["hparams"] = hparams if hparams is not None else {}
 
     def define_checkpoint_frequency(self, key: str, frequency: int):
         """Define the checkpoint frequency for a function approximator.
@@ -173,6 +194,12 @@ class Logger:
                 f"{key.rjust(self.lpad_keys)}: "
                 f"{format_str.format(value)}"
             )
+        if self.use_aim:
+            try:
+                value = float(value)
+            except:
+                pass  # ignore error during conversion attempt
+            self.aim_run.track(value=value, name=key, step=step)
 
     def get_stat(self, key: str, x_key="episode"):
         """Get statistics.
