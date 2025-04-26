@@ -1,4 +1,4 @@
-from collections import deque, namedtuple
+from collections import namedtuple, OrderedDict
 from functools import partial
 
 import chex
@@ -13,29 +13,38 @@ from numpy.typing import ArrayLike
 
 # TODO consolidate replay buffer implementations
 class ReplayBuffer:
-    buffer: deque[tuple[ArrayLike, ArrayLike, float, ArrayLike, bool]]
+    buffer: OrderedDict[str, np.typing.NDArray[float]]
 
-    def __init__(self, n_samples):
-        self.buffer = deque(maxlen=n_samples)
+    def __init__(self, buffer_size: int, keys: list[str] | None = None):
+        if keys is None:
+            keys = ["observation", "action", "reward", "next_observation", "termination"]
+        self.buffer = OrderedDict()
+        for k in keys:
+            self.buffer[k] = np.empty(0, dtype=float)
+        self.buffer_size = buffer_size
+        self.current_len = 0
+        self.insert_idx = 0
 
-    def add_sample(
-        self, observation, action, reward, next_observation, terminated
-    ):
-        self.buffer.append(
-            (observation, action, reward, next_observation, terminated)
-        )
+    def add_sample(self, **sample):
+        if self.current_len == 0:
+            for k, v in sample.items():
+                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
+                self.buffer[k] = np.empty(
+                    (self.buffer_size,) + np.asarray(v).shape, dtype=float
+                )
+        for k, v in sample.items():
+            self.buffer[k][self.insert_idx] = v
+        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+        self.current_len = min(self.current_len + 1, self.buffer_size)
 
     def sample_batch(
         self, batch_size: int, rng: np.random.Generator
-    ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        indices = rng.integers(0, len(self.buffer), batch_size)
-        samples = [self.buffer[i] for i in indices]
-        observations = jnp.array([s[0] for s in samples])
-        actions = jnp.array([s[1] for s in samples])
-        rewards = jnp.array([s[2] for s in samples])
-        next_observations = jnp.array([s[3] for s in samples])
-        terminations = jnp.array([s[4] for s in samples])
-        return observations, actions, rewards, next_observations, terminations
+    ) -> tuple[jnp.ndarray, ...]:
+        indices = rng.integers(0, self.current_len, batch_size)
+        return tuple(jnp.asarray(self.buffer[k][indices]) for k in self.buffer)
+
+    def __len__(self):
+        return self.current_len
 
 
 # TODO consolidate MLP implementations
@@ -457,11 +466,17 @@ def train_ddpg(
                 _sample_actions(policy, jnp.asarray(obs), action_key)
             )
 
-        next_obs, reward, terminated, truncated, info = env.step(action)
+        next_obs, reward, termination, truncated, info = env.step(action)
 
-        rb.add_sample(obs, action, reward, next_obs, terminated)
+        rb.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=termination
+        )
 
-        done = terminated or truncated
+        done = termination or truncated
         if done:
             if verbose and "episode" in info:
                 # TODO implement logging here

@@ -29,7 +29,7 @@ sac_result = train_sac(
     sac_state.q1_optimizer,
     sac_state.q2,
     sac_state.q2_optimizer,
-    total_timesteps=10_000,
+    total_timesteps=11_000,
     buffer_size=1_000_000,
     gamma=0.99,
     learning_starts=5_000,

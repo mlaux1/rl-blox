@@ -483,7 +483,13 @@ def train_sac(
 
             obs, _ = env.reset()
 
-        rb.add_sample(obs, action, reward, next_obs, termination)
+        rb.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=termination
+        )
 
         obs = next_obs
 
