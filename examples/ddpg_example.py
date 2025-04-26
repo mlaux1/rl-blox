@@ -27,6 +27,7 @@ policy, policy_target, policy_optimizer, q, q_target, q_optimizer = train_ddpg(
     gradient_steps=1,
     seed=seed,
     total_timesteps=11_000,
+    buffer_size=11_000,
     learning_starts=5_000,
     verbose=1,
 )

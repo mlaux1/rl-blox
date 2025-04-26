@@ -39,9 +39,9 @@ class ReplayBuffer:
 
     def sample_batch(
         self, batch_size: int, rng: np.random.Generator
-    ) -> tuple[jnp.ndarray, ...]:
+    ) -> list[jnp.ndarray]:
         indices = rng.integers(0, self.current_len, batch_size)
-        return tuple(jnp.asarray(self.buffer[k][indices]) for k in self.buffer)
+        return [jnp.asarray(self.buffer[k][indices]) for k in self.buffer]
 
     def __len__(self):
         return self.current_len
