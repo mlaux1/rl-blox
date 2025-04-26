@@ -23,7 +23,7 @@ hparams = dict(
     policy_shared_head=True,
     policy_hidden_nodes=[32, 32],
     policy_learning_rate=3e-4,
-    value_network_hidden_nodes=[50, 50],
+    value_network_hidden_nodes=[128, 128],
     value_network_learning_rate=1e-2,
     seed=42,
 )
@@ -36,7 +36,7 @@ logger.define_checkpoint_frequency("value_function", 10)
 
 ac_state = create_policy_gradient_continuous_state(env, **hparams)
 
-n_epochs = 375
+n_epochs = 175
 key = ac_state.key
 for _ in tqdm.trange(n_epochs):
     key, subkey = jax.random.split(key, 2)
