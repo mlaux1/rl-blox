@@ -1,4 +1,5 @@
 from collections import namedtuple
+from functools import partial
 
 import chex
 import distrax
@@ -214,8 +215,8 @@ class EntropyControl:
             self.alpha = jnp.exp(self.log_alpha["log_alpha"])
             self.optimizer = optax.adam(learning_rate=learning_rate)
             self.optimizer_state = self.optimizer.init(self.log_alpha)
-            self._grad = nnx.jit(
-                jax.value_and_grad(sac_exploration_loss, argnums=4)
+            self._update_entropy_coefficient = nnx.jit(
+                partial(_update_entropy_coefficient, self.optimizer)
             )
         else:
             self.alpha = alpha
@@ -225,19 +226,41 @@ class EntropyControl:
         if not self.autotune:
             return 0.0
 
-        exploration_loss, grad = self._grad(
-            policy,
-            self.target_entropy,
-            action_key,
-            observations,
-            self.log_alpha,
+        exploration_loss, self.optimizer_state, self.log_alpha, self.alpha = (
+            self._update_entropy_coefficient(
+                policy,
+                self.target_entropy,
+                action_key,
+                observations,
+                self.log_alpha,
+                self.optimizer_state,
+            )
         )
-        updates, self.optimizer_state = self.optimizer.update(
-            grad, self.optimizer_state
-        )
-        self.log_alpha = optax.apply_updates(self.log_alpha, updates)
-        self.alpha = jnp.exp(self.log_alpha["log_alpha"])
         return exploration_loss
+
+
+def _update_entropy_coefficient(
+    optimizer,
+    policy,
+    target_entropy,
+    action_key,
+    observations,
+    log_alpha,
+    optimizer_state,
+):
+    exploration_loss, grad = jax.value_and_grad(
+        sac_exploration_loss, argnums=4
+    )(
+        policy,
+        target_entropy,
+        action_key,
+        observations,
+        log_alpha,
+    )
+    updates, optimizer_state = optimizer.update(grad, optimizer_state)
+    log_alpha = optax.apply_updates(log_alpha, updates)
+    alpha = jnp.exp(log_alpha["log_alpha"])
+    return exploration_loss, optimizer_state, log_alpha, alpha
 
 
 def create_sac_state(
@@ -488,7 +511,7 @@ def train_sac(
             action=action,
             reward=reward,
             next_observation=next_obs,
-            termination=termination
+            termination=termination,
         )
 
         obs = next_obs
