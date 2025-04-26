@@ -2,6 +2,7 @@ import os
 import shutil
 import time
 from typing import Any
+import tqdm
 
 import numpy as np
 import orbax.checkpoint as ocp
@@ -166,7 +167,7 @@ class Logger:
         self.stats[key].append(value)
         verbose = self.verbose if verbose is None else verbose
         if verbose:
-            print(
+            tqdm.tqdm.write(
                 f"[{self.env_name}|{self.algorithm_name}] "
                 f"({episode:04d}|{step:06d}|{t:.2f}) S "  # S: statistics
                 f"{key.rjust(self.lpad_keys)}: "
@@ -240,7 +241,7 @@ class Logger:
         self.epoch_loc[key].append((episode, step, t))
         self.epoch[key] += 1
         if self.verbose:
-            print(
+            tqdm.tqdm.write(
                 f"[{self.env_name}|{self.algorithm_name}] "
                 f"({episode:04d}|{step:06d}|{t:.2f}) E "  # E: epoch
                 f"{key.rjust(self.lpad_keys)}: "
@@ -263,7 +264,7 @@ class Logger:
         self.checkpointer.save(f"{checkpoint_path}", state)
         self.checkpoint_path[key].append(checkpoint_path)
         if self.verbose:
-            print(
+            tqdm.tqdm.write(
                 f"[{self.env_name}|{self.algorithm_name}] {key}: "
                 f"checkpoint saved at {checkpoint_path}"
             )

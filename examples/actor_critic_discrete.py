@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+import tqdm
 
 from rl_blox.algorithms.model_free.actor_critic import (
     train_ac_epoch,
@@ -32,7 +33,7 @@ ac_state = create_policy_gradient_discrete_state(
 
 n_epochs = 100
 key = ac_state.key
-for i in range(n_epochs):
+for _ in tqdm.trange(n_epochs):
     key, subkey = jax.random.split(key, 2)
     train_ac_epoch(
         env,
