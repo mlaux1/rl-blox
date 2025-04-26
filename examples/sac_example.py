@@ -15,9 +15,9 @@ env = gym.wrappers.RecordEpisodeStatistics(env)
 
 sac_state = create_sac_state(
     env,
-    policy_hidden_nodes=[256, 256],
+    policy_hidden_nodes=[128, 128],
     policy_learning_rate=3e-4,
-    q_hidden_nodes=[256, 256],
+    q_hidden_nodes=[512, 512],
     q_learning_rate=1e-3,
     seed=seed,
 )
