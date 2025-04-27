@@ -171,6 +171,43 @@ def sac_actor_loss(
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
 ) -> jnp.ndarray:
+    r"""Actor loss for Soft Actor-Critic with double Q learning.
+
+    .. math::
+
+        \mathcal{L}(\theta)
+        =
+        \frac{1}{N}
+        \sum_{o \in \mathcal{D}, a \sim \pi_{\theta}(a|o)}
+        \alpha \log \pi_{\theta}(a|o)
+        -
+        \min(Q_1(o, a), Q_2(o, a))
+
+    Parameters
+    ----------
+    policy : StochasticPolicyBase
+        Policy.
+
+    q1 : nnx.Module
+        First action-value function.
+
+    q2 : nnx.Module
+        Second action-value function.
+
+    alpha : float
+        Entropy coefficient.
+
+    action_key : array
+        Random key for action generation.
+
+    observations : array, (n_observations,) + observation_space.shape
+        Batch of observations.
+
+    Returns
+    -------
+    actor_loss : array, shape ()
+        Loss value.
+    """
     actions = policy.sample(observations, action_key)
     log_prob = policy.log_probability(observations, actions)
     obs_act = jnp.concatenate((observations, actions), axis=-1)

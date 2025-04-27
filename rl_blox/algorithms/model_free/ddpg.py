@@ -180,7 +180,11 @@ def deterministic_policy_value_loss(
 
     .. math::
 
-        \mathcal{L}(\theta) = -Q_{\theta}(o, a)
+        \mathcal{L}(\theta)
+        =
+        \frac{1}{N}
+        \sum_{o \in \mathcal{D}}
+        -Q_{\theta}(o, \pi(o))
 
     Parameters
     ----------
