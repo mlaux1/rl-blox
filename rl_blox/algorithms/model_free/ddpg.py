@@ -221,14 +221,65 @@ def ddpg_update_critic(
     rewards: jnp.ndarray,
     terminations: jnp.ndarray,
 ) -> float:
-    """DDPG critic update."""
+    r"""DDPG critic update.
+
+    Uses the bootstrap estimate
+
+    .. math::
+
+        r_{t+1} + \gamma Q(o_{t+1}, \pi(o_{t+1}))
+
+    based on the target network of :math:`Q,\pi` as a target value for the
+    Q network update with a mean squared error loss.
+
+    Parameters
+    ----------
+    policy_target : nnx.Module
+        Target network of policy.
+
+    q : nnx.Module
+        Action-value function.
+
+    q_target : nnx.Module
+        Target network of q.
+
+    q_optimizer : nnx.Optimizer
+        Optimizer of q.
+
+    gamma : float
+        Discount factor of discounted infinite horizon return model.
+
+    observations : array
+        Observations :math:`o_t`.
+
+    actions : array
+        Actions :math:`a_t`.
+
+    next_observations : array
+        Next observations :math:`o_{t+1}`.
+
+    rewards : array
+        Rewards :math:`r_{t+1}`.
+
+    terminations : array
+        Indicates if a terminal state was reached in this step.
+
+    Returns
+    -------
+    q_loss_value : float
+        Loss value.
+
+    See also
+    --------
+    mse_action_value_loss
+        The mean squared error loss.
+    """
     chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
     chex.assert_equal_shape((observations, next_observations))
     chex.assert_equal_shape_prefix((observations, rewards), prefix_len=1)
     chex.assert_equal_shape_prefix((observations, terminations), prefix_len=1)
     chex.assert_equal_shape((rewards, terminations))
 
-    # TODO why was it clipped to [-1, 1] before?
     next_actions = policy_target(next_observations)
     q_target_next = q_target(
         jnp.concatenate((next_observations, next_actions), axis=-1)

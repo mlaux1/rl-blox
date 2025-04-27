@@ -663,7 +663,13 @@ def sac_update_actor(
     observations: jnp.ndarray,
     alpha: jnp.ndarray,
 ) -> float:
-    """SAC update of actor."""
+    """SAC update of actor.
+
+    See also
+    --------
+    sac_actor_loss
+        The loss function used during the optimization step.
+    """
     loss, grads = nnx.value_and_grad(sac_actor_loss, argnums=0)(
         policy, q1, q2, alpha, action_key, observations
     )
@@ -758,6 +764,11 @@ def sac_update_critic(
 
     q2_loss_value : float
         Loss for q2.
+
+    See also
+    --------
+    .ddpg.mse_action_value_loss
+        The mean squared error loss.
     """
     next_actions = policy.sample(next_observations, action_key)
     next_log_pi = policy.log_probability(next_observations, next_actions)
