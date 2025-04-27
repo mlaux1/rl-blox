@@ -114,7 +114,10 @@ class Logger:
         self.start_time = time.time()
         self.hparams = hparams
         if self.use_aim:
-            self.aim_run = aim.Run(log_system_params=True)
+            self.aim_run = aim.Run(
+                experiment=f"{env_name}-{algorithm_name}",
+                log_system_params=True
+            )
             self.aim_run["hparams"] = hparams if hparams is not None else {}
 
     def define_checkpoint_frequency(self, key: str, frequency: int):
