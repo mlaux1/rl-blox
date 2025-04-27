@@ -62,6 +62,10 @@ class Logger:
         self.aim_run = None
         self.env_name = None
         self.algorithm_name = None
+        self.start_time = 0.0
+        self.hparams = None
+        self.n_episodes = 0
+        self.n_steps = 0
         self.lpad_keys = 0
         self.stats_loc = {}
         self.stats = {}
@@ -70,10 +74,6 @@ class Logger:
         self.checkpointer = None
         self.checkpoint_frequencies = {}
         self.checkpoint_path = {}
-        self.start_time = 0.0
-        self.n_episodes = 0
-        self.n_steps = 0
-        self.define_experiment()
 
     def start_new_episode(self):
         """Increase episode counter."""
