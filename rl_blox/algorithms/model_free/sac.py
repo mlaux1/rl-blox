@@ -189,12 +189,35 @@ def sac_exploration_loss(
     observations: jnp.ndarray,
     log_alpha: dict,
 ) -> jnp.ndarray:
+    r"""Exploration loss used to update entropy coefficient alpha.
+
+    Parameters
+    ----------
+    policy : StochasticPolicyBase
+        Policy.
+
+    target_entropy : float
+        Target value for entropy.
+
+    action_key : array
+        Key for random sampling.
+
+    observations : array, shape (n_observations,) + observation_space.shape
+        Observations.
+
+    log_alpha
+        Log of entropy coefficient.
+
+    Returns
+    -------
+    loss : array, shape ()
+        Loss value.
+    """
     actions = policy.sample(observations, action_key)
     log_prob = policy.log_probability(observations, actions)
-    alpha_loss = (
+    return (
         -jnp.exp(log_alpha["log_alpha"]) * (log_prob + target_entropy)
     ).mean()
-    return alpha_loss
 
 
 class EntropyControl:
