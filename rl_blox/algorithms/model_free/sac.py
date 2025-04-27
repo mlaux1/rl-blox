@@ -689,9 +689,75 @@ def sac_update_critic(
     action_key: jnp.ndarray,
     alpha: jnp.ndarray,
 ) -> tuple[float, float]:
-    """SAC update of critic.
+    r"""SAC update of critic.
 
     This function updates both q1 and q2.
+
+    Uses the bootstrap estimate
+
+    .. math::
+
+        r_{t+1} + \gamma
+        \left[\min(Q_1(o_{t+1}, a_{t+1}), Q_2(o_{t+1}, a_{t+1}))
+        - \alpha \log \pi(a_{t+1}|o_{t+1})\right]
+
+    based on the target networks of :math:`Q_1, Q_2` as a target value for the
+    Q network update with a mean squared error loss.
+
+    Parameters
+    ----------
+    q1 : nnx.Module
+        First action-value network.
+
+    q1_target : nnx.Module
+        Target network of q1.
+
+    q1_optimizer : nnx.Optimizer
+        Optimizer of q1.
+
+    q2 : nnx.Module
+        Second action-value network.
+
+    q2_target : nnx.Module
+        Target network of q2.
+
+    q2_optimizer : nnx.Optimizer
+        Optimizer of q2.
+
+    policy : StochasticPolicyBase
+        Policy.
+
+    gamma : float
+        Discount factor of discounted infinite horizon return model.
+
+    observations : array
+        Observations :math:`o_t`.
+
+    actions : array
+        Actions :math:`a_t`.
+
+    rewards : array
+        Rewards :math:`r_{t+1}`.
+
+    next_observations : array
+        Next observations :math:`o_{t+1}`.
+
+    terminations : array
+        Indicates if a terminal state was reached in this step.
+
+    action_key : array
+        Random key for action sampling.
+
+    alpha : float
+        Entropy coefficient.
+
+    Returns
+    -------
+    q1_loss_value : float
+        Loss for q1.
+
+    q2_loss_value : float
+        Loss for q2.
     """
     next_actions = policy.sample(next_observations, action_key)
     next_log_pi = policy.log_probability(next_observations, next_actions)

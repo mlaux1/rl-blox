@@ -26,9 +26,13 @@ API Documentation
    ~ddpg.mse_action_value_loss
    ~ddpg.deterministic_policy_value_loss
    ~ddpg.update_target
+   ~ddpg.ddpg_update_actor
+   ~ddpg.ddpg_update_critic
    ~sac.train_sac
    ~sac.sac_actor_loss
    ~sac.sac_exploration_loss
+   ~sac.sac_update_actor
+   ~sac.sac_update_critic
    ~double_q_learning.double_q_learning
 
 
