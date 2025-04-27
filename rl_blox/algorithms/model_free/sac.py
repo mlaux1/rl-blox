@@ -232,12 +232,11 @@ def sac_exploration_loss(
 class EntropyControl:
     """Automatic entropy tuning."""
 
-    alpha_: jnp.ndarray
     autotune: bool
     target_entropy: float
     _alpha: EntropyCoefficient
-    alpha_: float
-    optimizer: nnx.Optimizer
+    alpha_: jnp.ndarray
+    optimizer: nnx.Optimizer | None
 
     def __init__(self, env, alpha, autotune, learning_rate):
         self.autotune = autotune
@@ -251,7 +250,9 @@ class EntropyControl:
                 self._alpha, optax.adam(learning_rate=learning_rate)
             )
         else:
+            self.target_entropy = alpha
             self.alpha_ = alpha
+            self.optimizer = None
 
     def update(self, policy, observations, action_key):
         """Update entropy coefficient alpha."""
