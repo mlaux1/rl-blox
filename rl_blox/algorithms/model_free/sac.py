@@ -1,5 +1,4 @@
 from collections import namedtuple
-from functools import partial
 
 import chex
 import distrax
@@ -182,12 +181,24 @@ def sac_actor_loss(
     return actor_loss
 
 
+class EntropyCoefficient(nnx.Module):
+    """Entropy coefficient alpha, internally represented by log of alpha."""
+
+    log_alpha: nnx.Param[jnp.ndarray]
+
+    def __init__(self, log_alpha: jnp.ndarray):
+        self.log_alpha = nnx.Param(log_alpha)
+
+    def __call__(self) -> jnp.ndarray:
+        return jnp.exp(self.log_alpha.value)
+
+
 def sac_exploration_loss(
     policy: StochasticPolicyBase,
     target_entropy: float,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
-    log_alpha: dict,
+    alpha: EntropyCoefficient,
 ) -> jnp.ndarray:
     r"""Exploration loss used to update entropy coefficient alpha.
 
@@ -205,8 +216,8 @@ def sac_exploration_loss(
     observations : array, shape (n_observations,) + observation_space.shape
         Observations.
 
-    log_alpha
-        Log of entropy coefficient.
+    alpha : EntropyCoefficient
+        Entropy coefficient, internally represented by log alpha.
 
     Returns
     -------
@@ -215,53 +226,52 @@ def sac_exploration_loss(
     """
     actions = policy.sample(observations, action_key)
     log_prob = policy.log_probability(observations, actions)
-    return (
-        -jnp.exp(log_alpha["log_alpha"]) * (log_prob + target_entropy)
-    ).mean()
+    return (-alpha() * (log_prob + target_entropy)).mean()
 
 
 class EntropyControl:
     """Automatic entropy tuning."""
 
-    alpha: jnp.ndarray
+    alpha_: jnp.ndarray
     autotune: bool
-    target_entropy: jnp.ndarray
-    log_alpha: dict[str, jnp.ndarray]
-    optimizer: optax.adam
-    optimizer_state: optax.OptState
+    target_entropy: float
+    _alpha: EntropyCoefficient
+    alpha_: float
+    optimizer: nnx.Optimizer
 
     def __init__(self, env, alpha, autotune, learning_rate):
         self.autotune = autotune
         if self.autotune:
-            self.target_entropy = -jnp.prod(jnp.array(env.action_space.shape))
-            self.log_alpha = {"log_alpha": jnp.zeros(1)}
-            self.alpha = jnp.exp(self.log_alpha["log_alpha"])
-            self.optimizer = optax.adam(learning_rate=learning_rate)
-            self.optimizer_state = self.optimizer.init(self.log_alpha)
-            self._update_entropy_coefficient = nnx.jit(
-                partial(_update_entropy_coefficient, self.optimizer)
+            self.target_entropy = -float(
+                jnp.prod(jnp.array(env.action_space.shape))
+            )
+            self._alpha = EntropyCoefficient(jnp.zeros(1))
+            self.alpha_ = self._alpha()
+            self.optimizer = nnx.Optimizer(
+                self._alpha, optax.adam(learning_rate=learning_rate)
             )
         else:
-            self.alpha = alpha
+            self.alpha_ = alpha
 
     def update(self, policy, observations, action_key):
         """Update entropy coefficient alpha."""
         if not self.autotune:
             return 0.0
 
-        exploration_loss, self.optimizer_state, self.log_alpha, self.alpha = (
-            self._update_entropy_coefficient(
+        exploration_loss, self._alpha, self.alpha_ = (
+            _update_entropy_coefficient(
+                self.optimizer,
                 policy,
                 self.target_entropy,
                 action_key,
                 observations,
-                self.log_alpha,
-                self.optimizer_state,
+                self._alpha,
             )
         )
         return exploration_loss
 
 
+@nnx.jit
 def _update_entropy_coefficient(
     optimizer,
     policy,
@@ -269,9 +279,8 @@ def _update_entropy_coefficient(
     action_key,
     observations,
     log_alpha,
-    optimizer_state,
 ):
-    exploration_loss, grad = jax.value_and_grad(
+    exploration_loss, grad = nnx.value_and_grad(
         sac_exploration_loss, argnums=4
     )(
         policy,
@@ -280,10 +289,9 @@ def _update_entropy_coefficient(
         observations,
         log_alpha,
     )
-    updates, optimizer_state = optimizer.update(grad, optimizer_state)
-    log_alpha = optax.apply_updates(log_alpha, updates)
-    alpha = jnp.exp(log_alpha["log_alpha"])
-    return exploration_loss, optimizer_state, log_alpha, alpha
+    optimizer.update(grad)
+    alpha = log_alpha()
+    return exploration_loss, log_alpha, alpha
 
 
 def create_sac_state(
@@ -560,7 +568,7 @@ def train_sac(
                 next_observations,
                 terminations,
                 action_key,
-                entropy_control.alpha,
+                entropy_control.alpha_,
             )
 
             if global_step % policy_frequency == 0:
@@ -574,7 +582,7 @@ def train_sac(
                         q2,
                         action_key,
                         observations,
-                        entropy_control.alpha,
+                        entropy_control.alpha_,
                     )
                     if autotune:
                         key, action_key = jax.random.split(key, 2)
@@ -591,7 +599,7 @@ def train_sac(
                 print("losses/q1_loss", q1_loss_value, global_step)
                 print("losses/q2_loss", q2_loss_value, global_step)
                 print("losses/policy_loss", actor_loss_value, global_step)
-                print("losses/alpha", entropy_control.alpha, global_step)
+                print("losses/alpha", entropy_control.alpha_, global_step)
                 if autotune:
                     print(
                         "losses/alpha_loss", exploration_loss_value, global_step
