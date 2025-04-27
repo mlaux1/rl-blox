@@ -259,15 +259,13 @@ class EntropyControl:
         if not self.autotune:
             return 0.0
 
-        exploration_loss, self._alpha, self.alpha_ = (
-            _update_entropy_coefficient(
-                self.optimizer,
-                policy,
-                self.target_entropy,
-                action_key,
-                observations,
-                self._alpha,
-            )
+        exploration_loss, self.alpha_ = _update_entropy_coefficient(
+            self.optimizer,
+            policy,
+            self.target_entropy,
+            action_key,
+            observations,
+            self._alpha,
         )
         return exploration_loss
 
@@ -292,7 +290,7 @@ def _update_entropy_coefficient(
     )
     optimizer.update(grad)
     alpha = log_alpha()
-    return exploration_loss, log_alpha, alpha
+    return exploration_loss, alpha
 
 
 def create_sac_state(
