@@ -583,11 +583,10 @@ def train_sac(
                         observations,
                         entropy_control.alpha_,
                     )
-                    if autotune:
-                        key, action_key = jax.random.split(key, 2)
-                        exploration_loss_value = entropy_control.update(
-                            policy, observations, key
-                        )
+                    key, action_key = jax.random.split(key, 2)
+                    exploration_loss_value = entropy_control.update(
+                        policy, observations, key
+                    )
 
             if global_step % target_network_frequency == 0:
                 update_target(q1, q1_target, tau)
