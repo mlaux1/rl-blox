@@ -301,7 +301,13 @@ def ddpg_update_actor(
     q: nnx.Module,
     observations: jnp.ndarray,
 ) -> float:
-    """DDPG actor update."""
+    """DDPG actor update.
+
+    See also
+    --------
+    deterministic_policy_value_loss
+        The loss function used during the optimization step.
+    """
     actor_loss_value, grads = nnx.value_and_grad(
         deterministic_policy_value_loss, argnums=2
     )(q, observations, policy)
