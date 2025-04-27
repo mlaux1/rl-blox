@@ -176,7 +176,11 @@ def deterministic_policy_value_loss(
     observations: jnp.ndarray,
     policy: nnx.Module,
 ) -> jnp.ndarray:
-    """Loss function for the deterministic policy of the actor.
+    r"""Loss function for the deterministic policy of the actor.
+
+    .. math::
+
+        \mathcal{L}(\theta) = -Q_{\theta}(o, a)
 
     Parameters
     ----------
