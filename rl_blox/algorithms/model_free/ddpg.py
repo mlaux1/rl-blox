@@ -130,13 +130,13 @@ class DeterministicPolicy(nnx.Module):
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
 
-def action_value_loss(
+def mse_action_value_loss(
     observations: jnp.ndarray,
     actions: jnp.ndarray,
     q_target_values: jnp.ndarray,
     q: nnx.Module,
 ) -> jnp.ndarray:
-    """Loss function for action-value function.
+    """Mean squared eror loss function for action-value function.
 
     Parameters
     ----------
@@ -227,7 +227,7 @@ def ddpg_update_critic(
     ).squeeze()
     q_bootstrap = rewards + (1 - terminations) * gamma * q_target_next
 
-    q_loss_value, grads = nnx.value_and_grad(action_value_loss, argnums=3)(
+    q_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
         observations, actions, q_bootstrap, q
     )
     q_optimizer.update(grads)

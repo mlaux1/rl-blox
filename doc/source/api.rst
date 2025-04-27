@@ -23,9 +23,12 @@ API Documentation
    ~actor_critic.train_ac_epoch
    ~actor_critic.actor_critic_policy_gradient
    ~ddpg.train_ddpg
+   ~ddpg.mse_action_value_loss
+   ~ddpg.deterministic_policy_value_loss
+   ~ddpg.update_target
    ~sac.train_sac
-   ~sac.sac_exploration_loss
    ~sac.sac_actor_loss
+   ~sac.sac_exploration_loss
    ~double_q_learning.double_q_learning
 
 

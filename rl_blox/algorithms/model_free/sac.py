@@ -9,7 +9,7 @@ import numpy as np
 import optax
 from flax import nnx
 
-from .ddpg import MLP, ReplayBuffer, action_value_loss, update_target
+from .ddpg import MLP, ReplayBuffer, mse_action_value_loss, update_target
 
 
 # TODO consolidate implementations
@@ -666,13 +666,13 @@ def sac_update_critic(
     )
     q_target_value = rewards + (1 - terminations) * gamma * min_q_next_target
 
-    q1_loss_value, q1_grads = nnx.value_and_grad(action_value_loss, argnums=3)(
-        observations, actions, q_target_value, q1
-    )
+    q1_loss_value, q1_grads = nnx.value_and_grad(
+        mse_action_value_loss, argnums=3
+    )(observations, actions, q_target_value, q1)
     q1_optimizer.update(q1_grads)
-    q2_loss_value, q2_grads = nnx.value_and_grad(action_value_loss, argnums=3)(
-        observations, actions, q_target_value, q2
-    )
+    q2_loss_value, q2_grads = nnx.value_and_grad(
+        mse_action_value_loss, argnums=3
+    )(observations, actions, q_target_value, q2)
     q2_optimizer.update(q2_grads)
 
     return q1_loss_value, q2_loss_value
