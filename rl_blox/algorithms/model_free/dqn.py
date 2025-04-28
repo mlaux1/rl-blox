@@ -7,7 +7,7 @@ from flax import nnx
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from ...policy.replay_buffer import ReplayBuffer, Transition
+from ...policy.replay_buffer import Transition
 
 
 class MLP(nnx.Module):
@@ -137,11 +137,11 @@ def _train_step(
 
 
 @nnx.jit
-def _select_action(
+def _greedy_policy(
     q_net: MLP,
     obs: ArrayLike,
 ) -> int:
-    """Greedy action selection.
+    """Greedy policy.
 
     Selects the greedy action for a given observation based on the given
     Q-Network by choosing the action that maximises the Q-Value.
@@ -194,6 +194,8 @@ def train_dqn(
         The Q-network to be optimised.
     env: gymnasium
         The envrionment to train the Q-network on.
+    replay_buffer : ReplayBuffer
+        The replay buffer used for storing collected transitions.
     buffer_size : int
         The maximum size of the replay buffer.
     total_timesteps : int
@@ -225,8 +227,6 @@ def train_dqn(
     # initialise episode
     obs, _ = env.reset(seed=seed)
 
-    rb = ReplayBuffer(buffer_size)
-
     epsilon = linear_schedule(total_timesteps)
 
     # for each step:
@@ -236,7 +236,7 @@ def train_dqn(
         if roll < epsilon[step]:
             action = env.action_space.sample()
         else:
-            action = _select_action(q_net, obs)
+            action = _greedy_policy(q_net, obs)
 
         # execute action
         next_obs, reward, terminated, truncated, info = env.step(int(action))
