@@ -1,7 +1,3 @@
-from functools import partial
-from typing import List, Tuple
-
-import flax
 import gymnasium
 import jax
 import jax.numpy as jnp
@@ -35,7 +31,6 @@ def linear_schedule(
     end: float = 0.1,
     fraction: float = 0.1,
 ) -> jnp.ndarray:
-
     transition_steps = int(
         total_timesteps * fraction
     )  # Number of steps for decay
@@ -146,7 +141,9 @@ def _select_action(
     q_net: MLP,
     obs: ArrayLike,
 ) -> int:
-    """Selects the greedy action for a given observation based on the given
+    """Greedy action selection.
+
+    Selects the greedy action for a given observation based on the given
     Q-Network by choosing the action that maximises the Q-Value.
 
     Parameters
@@ -234,7 +231,6 @@ def train_dqn(
 
     # for each step:
     for step in tqdm(range(total_timesteps)):
-
         key, subkey = jax.random.split(key)
         roll = jax.random.uniform(subkey)
         if roll < epsilon[step]:
