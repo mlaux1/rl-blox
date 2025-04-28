@@ -23,7 +23,9 @@ hparams = dict(
     seed=42,
 )
 
-logger = logger.Logger(use_aim=True, verbose=2)
+logger = logger.LoggerList(
+    [logger.StandardLogger(verbose=2), logger.AIMLogger()]
+)
 logger.define_experiment(
     env_name=env_name, algorithm_name="REINFORCE", hparams=hparams
 )

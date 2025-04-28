@@ -1,8 +1,15 @@
 import matplotlib.pyplot as plt
-from .logger import Logger
+
+from .logger import StandardLogger
 
 
-def plot_stats(logger: Logger, y_key: str, x_key: str = "step", ax: plt.Axes | None = None, legend: bool = True):
+def plot_stats(
+    logger: StandardLogger,
+    y_key: str,
+    x_key: str = "step",
+    ax: plt.Axes | None = None,
+    legend: bool = True,
+):
     if ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)

@@ -40,4 +40,7 @@ API Documentation
    :toctree: _apidoc/
    :template: class.rst
 
-   ~logger.Logger
+   ~logger.LoggerBase
+   ~logger.StandardLogger
+   ~logger.AIMLogger
+   ~logger.LoggerList

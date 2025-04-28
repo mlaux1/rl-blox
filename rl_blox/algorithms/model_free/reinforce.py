@@ -740,7 +740,7 @@ def train_reinforce_epoch(
     gamma: float = 1.0,
     train_after_episode: bool = False,
     key: jnp.ndarray | None = None,
-    logger: logger.Logger | None = None,
+    logger: logger.StandardLogger | None = None,
 ):
     """Train with REINFORCE for one epoch.
 
@@ -827,7 +827,7 @@ def collect_samples(
     env: gym.Env,
     policy: StochasticPolicyBase,
     key: jnp.ndarray,
-    logger: logger.Logger,
+    logger: logger.StandardLogger,
     train_after_episode: bool,
     total_steps: int,
 ) -> EpisodeDataset:

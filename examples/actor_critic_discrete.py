@@ -2,7 +2,6 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 import tqdm
 
 from rl_blox.algorithms.model_free.actor_critic import (
@@ -26,7 +25,9 @@ hparams = dict(
     seed=42,
 )
 
-logger = logger.Logger(use_aim=True, verbose=2)
+logger = logger.LoggerList(
+    [logger.StandardLogger(verbose=2), logger.AIMLogger()]
+)
 logger.define_experiment(
     env_name=env_name, algorithm_name="Actor-Critic", hparams=hparams
 )

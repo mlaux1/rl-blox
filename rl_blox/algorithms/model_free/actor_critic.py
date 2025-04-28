@@ -82,7 +82,7 @@ def train_ac_epoch(
     gamma: float = 1.0,
     train_after_episode: bool = False,
     key: jnp.ndarray | None = None,
-    logger: logger.Logger | None = None,
+    logger: logger.StandardLogger | None = None,
 ):
     """Train with actor-critic for one epoch.
 
