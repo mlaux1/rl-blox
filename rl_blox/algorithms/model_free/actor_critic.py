@@ -82,7 +82,7 @@ def train_ac_epoch(
     gamma: float = 1.0,
     train_after_episode: bool = False,
     key: jnp.ndarray | None = None,
-    logger: logger.StandardLogger | None = None,
+    logger: logger.LoggerBase | None = None,
 ):
     """Train with actor-critic for one epoch.
 
@@ -124,7 +124,7 @@ def train_ac_epoch(
     key : jnp.ndarray, optional
         Pseudo random number generator key for action sampling.
 
-    logger : logger.Logger, optional
+    logger : logger.LoggerBase, optional
         Experiment logger.
     """
     dataset = collect_samples(
