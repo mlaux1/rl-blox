@@ -28,7 +28,7 @@ The implementation of this project follows the following principles:
 1. Our environment interface is Gymnasium.
 2. We use JAX for everything.
 3. We use Chex to write reliable code.
-4. For optimization algorithms we use Orbax.
+4. For optimization algorithms we use Optax.
 5. For probability distributions we use Distrax.
 6. For all neural networks we use Flax NNX.
 7. To save checkpoints we use Orbax.
