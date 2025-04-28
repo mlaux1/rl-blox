@@ -1,90 +1,137 @@
-from functools import partial
-
-import jax
+import gymnasium as gym
 import jax.numpy as jnp
-import numpy as np
+from flax import nnx
 
-from ...policy.differentiable import GaussianNNPolicy, NeuralNetwork
+from ...logging import logger
 from .reinforce import (
-    EpisodeDataset,
-    ValueFunctionApproximation,
-    gaussian_policy_gradient_pseudo_loss,
-    softmax_policy_gradient_pseudo_loss,
+    MLP,
+    StochasticPolicyBase,
+    collect_samples,
+    policy_gradient_pseudo_loss,
+    train_value_function,
 )
 
 
-def ac_policy_gradient(
-    policy: NeuralNetwork,
-    value_function: ValueFunctionApproximation,
-    states: jax.Array,
-    actions: jax.Array,
-    next_states: jax.Array,
-    rewards: jax.Array,
-    gamma_discount: jax.Array,
+@nnx.jit
+def actor_critic_policy_gradient(
+    policy: StochasticPolicyBase,
+    value_function: nnx.Module,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    next_observations: jnp.ndarray,
+    rewards: jnp.ndarray,
+    gamma_discount: jnp.ndarray,
     gamma: float,
-) -> jax.Array:
-    V = value_function.predict(states)
-    V_next = value_function.predict(next_states)
-    TD_bootstrap_estimate = rewards + gamma * V_next - V
-    weights = gamma_discount * TD_bootstrap_estimate
+) -> jnp.ndarray:
+    r"""Actor-critic policy gradient.
 
-    if isinstance(
-        policy, GaussianNNPolicy
-    ):  # TODO find another way without if-else
-        return jax.grad(
-            partial(
-                gaussian_policy_gradient_pseudo_loss, states, actions, weights
-            )
-        )(policy.theta)
-    else:
-        return jax.grad(
-            partial(
-                softmax_policy_gradient_pseudo_loss, states, actions, weights
-            )
-        )(policy.theta)
+    Parameters
+    ----------
+    policy
+        Probabilistic policy that we want to update and has been used for
+        exploration.
+    value_function
+        Estimated value function.
+    observations
+        Samples that were collected with the policy.
+    actions
+        Samples that were collected with the policy.
+    next_observations
+        Samples that were collected with the policy.
+    rewards
+        Samples that were collected with the policy.
+    gamma_discount
+        Discounting for individual steps of the episode.
+    gamma
+        Discount factor.
+
+    Returns
+    -------
+    loss
+        Actor-critic policy gradient pseudo loss.
+    grad
+        Actor-critic policy gradient.
+
+    See also
+    --------
+    .reinforce.policy_gradient_pseudo_loss
+        The pseudo loss that is used to compute the policy gradient. As
+        weights for the pseudo loss we use the TD error bootstrap estimate
+        :math:`r_t + \gamma v(o_{t+1}) - v(o_t)` multiplied by the discounting
+        factor for the step of the episode.
+    """
+    v = value_function(observations).squeeze()
+    v_next = value_function(next_observations).squeeze()
+    td_bootstrap_estimate = rewards + gamma * v_next - v
+    weights = gamma_discount * td_bootstrap_estimate
+
+    return nnx.value_and_grad(policy_gradient_pseudo_loss, argnums=3)(
+        observations, actions, weights, policy
+    )
 
 
 def train_ac_epoch(
-    train_env,
-    policy,
-    policy_trainer,
-    render_env,
-    value_function,
-    batch_size,
-    gamma,
-    train_after_episode=False,
+    env: gym.Env,
+    policy: StochasticPolicyBase,
+    policy_optimizer: nnx.Optimizer,
+    value_function: MLP,
+    value_function_optimizer: nnx.Optimizer,
+    policy_gradient_steps: int = 1,
+    value_gradient_steps: int = 1,
+    total_steps: int = 1000,
+    gamma: float = 1.0,
+    train_after_episode: bool = False,
+    key: jnp.ndarray | None = None,
+    logger: logger.LoggerBase | None = None,
 ):
-    dataset = EpisodeDataset()
-    if render_env is not None:
-        env = render_env
-    else:
-        env = train_env
+    """Train with actor-critic for one epoch.
 
-    dataset.start_episode()
-    observation, _ = env.reset()
-    while True:
-        action = policy.sample(jnp.array(observation))
-        next_observation, reward, terminated, truncated, _ = env.step(
-            np.asarray(action)
-        )
+    Parameters
+    ----------
+    env : gym.Env
+        Environment.
 
-        done = terminated or truncated
+    policy : nnx.Module
+        Probabilistic policy network. Maps observations to probability
+        distribution over actions.
 
-        dataset.add_sample(observation, action, next_observation, reward)
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy network.
 
-        observation = next_observation
+    value_function : nnx.Module or None, optional
+        Policy network. Maps observations to expected returns.
 
-        if done:
-            if train_after_episode or len(dataset) >= batch_size:
-                break
+    value_function_optimizer : nnx.Optimizer or None, optional
+        Optimizer for value function network.
 
-            env = train_env
-            observation, _ = env.reset()
-            dataset.start_episode()
+    policy_gradient_steps : int, optional
+        Number of gradient descent steps for the policy network.
 
-    print(f"{dataset.average_return()=}")
+    value_gradient_steps : int, optional
+        Number of gradient descent steps for the value network.
 
-    states, actions, next_states, returns, gamma_discount = (
+    total_steps : int, optional
+        Number of samples to collect before updating the policy. Alternatively
+        you can train after each episode.
+
+    gamma : float, optional
+        Discount factor for rewards.
+
+    train_after_episode : bool, optional
+        Train after each episode. Alternatively you can train after collecting
+        a certain number of samples.
+
+    key : jnp.ndarray, optional
+        Pseudo random number generator key for action sampling.
+
+    logger : logger.LoggerBase, optional
+        Experiment logger.
+    """
+    dataset = collect_samples(
+        env, policy, key, logger, train_after_episode, total_steps
+    )
+
+    observations, actions, next_observations, returns, gamma_discount = (
         dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
     )
     rewards = jnp.hstack(
@@ -94,16 +141,59 @@ def train_ac_epoch(
         ]
     )
 
-    policy_trainer.update(
-        ac_policy_gradient,
+    p_loss = train_policy_actor_critic(
+        policy,
+        policy_optimizer,
+        policy_gradient_steps,
         value_function,
-        states,
+        observations,
         actions,
-        next_states,
+        next_observations,
         rewards,
         gamma_discount,
         gamma,
     )
+    if logger is not None:
+        logger.record_stat("policy loss", p_loss, episode=logger.n_episodes - 1)
+        logger.record_epoch("policy", policy)
 
-    if value_function is not None:
-        value_function.update(states, returns)
+    v_loss = train_value_function(
+        value_function,
+        value_function_optimizer,
+        value_gradient_steps,
+        observations,
+        returns,
+    )
+    if logger is not None:
+        logger.record_stat(
+            "value function loss", v_loss, episode=logger.n_episodes - 1
+        )
+        logger.record_epoch("value_function", value_function)
+
+
+def train_policy_actor_critic(
+    policy,
+    policy_optimizer,
+    policy_gradient_steps,
+    value_function,
+    observations,
+    actions,
+    next_observations,
+    rewards,
+    gamma_discount,
+    gamma,
+):
+    p_loss = 0.0
+    for _ in range(policy_gradient_steps):
+        p_loss, p_grad = actor_critic_policy_gradient(
+            policy,
+            value_function,
+            observations,
+            actions,
+            next_observations,
+            rewards,
+            gamma_discount,
+            gamma,
+        )
+        policy_optimizer.update(p_grad)
+    return p_loss
