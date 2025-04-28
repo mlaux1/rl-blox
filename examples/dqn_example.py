@@ -1,10 +1,9 @@
 import gymnasium as gym
 import jax.numpy as jnp
-import numpy as np
 from flax import nnx
-from gymnasium.spaces.utils import flatdim
 
 from rl_blox.algorithms.model_free.dqn import MLP, train_dqn
+from rl_blox.policy.replay_buffer import ReplayBuffer
 
 # Set up environment
 env_name = "CartPole-v1"
@@ -17,10 +16,14 @@ env.action_space.seed(seed)
 nnx_rngs = nnx.Rngs(seed)
 q_net = MLP(4, 10, env.action_space.n, nnx_rngs)
 
+# Initialse the replay buffer
+rb = ReplayBuffer(30_000)
+
 # Train
 q = train_dqn(
     q_net,
     env,
+    rb,
     learning_rate=0.003,
     seed=seed,
     total_timesteps=30_000,

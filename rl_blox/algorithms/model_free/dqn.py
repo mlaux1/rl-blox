@@ -7,7 +7,7 @@ from flax import nnx
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from ...policy.replay_buffer import Transition
+from ...policy.replay_buffer import ReplayBuffer, Transition
 
 
 class MLP(nnx.Module):
@@ -166,7 +166,7 @@ def _greedy_policy(
 def train_dqn(
     q_net: MLP,
     env: gymnasium.Env,
-    buffer_size: int = 3_000,
+    replay_buffer: ReplayBuffer,
     batch_size: int = 32,
     total_timesteps: int = 1e4,
     learning_rate: float = 1e-4,
@@ -196,8 +196,6 @@ def train_dqn(
         The envrionment to train the Q-network on.
     replay_buffer : ReplayBuffer
         The replay buffer used for storing collected transitions.
-    buffer_size : int
-        The maximum size of the replay buffer.
     total_timesteps : int
         The number of environment sets to train for.
     learning_rate : float
@@ -238,14 +236,12 @@ def train_dqn(
         else:
             action = _greedy_policy(q_net, obs)
 
-        # execute action
         next_obs, reward, terminated, truncated, info = env.step(int(action))
-        # store transition in replay buffer
-        rb.push(obs, action, reward, next_obs, terminated)
+        replay_buffer.push(obs, action, reward, next_obs, terminated)
 
         # sample minibatch from replay buffer
         if step > batch_size:
-            transition_batch = rb.sample(batch_size)
+            transition_batch = replay_buffer.sample(batch_size)
 
             _train_step(q_net, optimizer, transition_batch)
 
