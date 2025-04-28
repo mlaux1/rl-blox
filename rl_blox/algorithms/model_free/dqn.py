@@ -217,7 +217,7 @@ def train_dqn(
     ), "DQN only supports discrete action spaces"
 
     rng = np.random.default_rng(seed)
-    key = jax.random.PRNGKey(seed)
+    key = jax.random.key(seed)
 
     # initialise optimiser
     optimizer = nnx.Optimizer(q_net, optax.adam(learning_rate))
