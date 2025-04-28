@@ -1,0 +1,40 @@
+<package>
+  <name>RL-BLOX</name>
+  <description brief="Modular JAX-based toolbox for implementing RL algorithms.">
+    This project contains modular implementations of various model-free and
+    model-based RL algorithms and consists of deep neural network-based as well
+    as tabular representation of Q-Values, policies, etc. which can be used
+    interchangeably. The goal of this project is for the authors to learn by
+    reimplementing various RL algorithms and to eventually provide an
+    algorithmic toolbox for research purposes.
+  </description>
+  <author>Melvin Laux/melvin.laux@uni-bremen.de, Alexander Fabisch/alexander.fabisch@dfki.de</author>
+  <maintainer>Melvin Laux/melvin.laux@uni-bremen.de</maintainer>
+
+  <license>BSD-3-Clause</license>
+  <url>https://github.com/mlaux1/rl-blox</url>
+  <logo>../doc/source/_static/rl_blox_logo_v1.png</logo>
+
+  <depend package="numpy"/>
+  <depend package="gymnasium"/>
+  <depend package="jax"/>
+  <depend package="jaxlib"/>
+  <depend package="optax"/>
+  <depend package="distrax"/>
+  <depend package="chex"/>
+  <depend package="tqdm"/>
+  <depend package="flax"/>
+
+  <keywords>
+    <keyword>learning</keyword>
+    <keyword>control</keyword>
+  </keywords>
+
+  <stage>0</stage>
+  <use>multi project</use>
+  <activity>active</activity>
+  <classifiers>
+    <classifier>python</classifier>
+    <classifier>ubuntu</classifier>
+  </classifiers>
+</package>

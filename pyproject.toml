@@ -1,7 +1,146 @@
+[build-system]
+requires = ["setuptools"]
+build-backends = "setuptools.build_meta"
+
+[project]
+name = "rl_blox"
+maintainers = [
+    { name="Melvin Laux", email="melvin.laux@uni-bremen.de"},
+]
+authors = [
+    { name="Melvin Laux", email="melvin.laux@uni-bremen.de" },
+    { name="Alexander Fabisch", email="alexander.fabisch@dfki.de" },
+]
+description = "Modular RL building blocks in JAX"
+requires-python = ">=3.10"
+license = {text = "BSD-3-Clause"}
+keywords = ["Reinforcement Learning", "RL", "JAX"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: The 3-Clause BSD License (BSD-3-Clause)",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy",
+    "gymnasium",
+    "jax",
+    "jaxlib",
+    "optax",
+    "distrax",
+    "chex",
+    "tqdm",
+    "flax",
+    "orbax",
+    "aim",
+]
+dynamic = ["version", "readme"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pre-commit",
+    "flake8",
+    "black",
+    "isort",
+    "pytest-cov",
+]
+examples = ["gymnasium[classic-control,toy-text,mujoco]", "matplotlib"]
+all = ["rl_blox[dev,examples]"]
+doc = [
+    "sphinx",
+    "pydata-sphinx-theme",
+    "numpydoc",
+]
+
+[project.urls]
+Homepage = "https://github.com/mlaux1/rl-blox"
+Issues = "https://github.com/mlaux1/rl-blox/issues"
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
+testpaths = ["tests"]
+addopts = [
+    "--cov-config=pyproject.toml",
+    "--cov=rl_blox",
+    "--cov-report=html",
+    "--doctest-modules",
+]
+
+[tool.coverage.run]
+branch = true
+parallel = true
+source = ["rl_blox"]
+
+[tool.coverage.report]
+show_missing = true
+precision = 1
+
+[tool.coverage.paths]
+source = ["rl_blox"]
+
+[tool.setuptools]
+packages = ["rl_blox"]
+
+[tool.setuptools.dynamic]
+version = {attr = "rl_blox.__version__"}
+readme = {file = ["README.md"]}
+
 [tool.black]
 line-length = 80
 target-version = ["py310", "py311", "py312"]
+include = '''
+/(
+      rl_blox
+    | examples
+)\/.*\.pyi?$
+'''
+exclude = '''
+/(
+      .git
+    | __pycache__
+    | doc
+    | venv
+    | build
+    | dist
+)/
+'''
 
 [tool.isort]
 profile = "black"
 line_length = 80
+
+[tool.ruff]
+line-length = 80
+target-version = "py310"
+include = [
+    "rl_blox/**/*.py",
+    "examples/**/*.py",
+]
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+]
+# all rules can be found here: https://beta.ruff.rs/docs/rules/
+ignore=[
+    "SIM108",  # Use ternary operator
+]

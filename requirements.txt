@@ -1,10 +1,11 @@
-gymnasium
 numpy
-torch
+gymnasium
 jax
-chex
-distrax
+jaxlib
 optax
+distrax
+chex
 tqdm
+flax
 matplotlib
 pre-commit

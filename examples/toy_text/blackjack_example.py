@@ -1,3 +1,5 @@
+from functools import partial
+
 import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey

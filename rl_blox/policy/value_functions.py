@@ -6,6 +6,8 @@ import numpy.typing as npt
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 
+from ..tools import gymtools
+
 
 class ValueFunction(abc.ABC):
     """Base value function class interface."""
@@ -57,9 +59,10 @@ class TabularQFunction(QFunction):
         action_space: Discrete,
         initial_value: float = 0.0,
     ):
+        obs_shape = gymtools.space_shape(observation_space)
+        act_shape = (flatdim(action_space),)
         self.values = np.full(
-            shape=(flatdim(observation_space), flatdim(action_space)),
-            fill_value=initial_value,
+            shape=obs_shape + act_shape, fill_value=initial_value
         )
 
     def get_action_value(
@@ -67,7 +70,7 @@ class TabularQFunction(QFunction):
     ) -> npt.ArrayLike:
         return self.values[observation, action]
 
-    def update(self, observations, actions, step) -> None:
+    def update(self, observations, actions, step):
         self.values[observations, actions] += step
 
         logging.debug(f"Updating Q Table: {observations=}, {actions=}, {step=}")
