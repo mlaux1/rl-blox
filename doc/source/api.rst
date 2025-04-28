@@ -16,6 +16,7 @@ API Documentation
 
    ~q_learning.q_learning
    ~reinforce.train_reinforce_epoch
+   ~reinforce.discounted_reward_to_go
    ~reinforce.reinforce_gradient
    ~reinforce.policy_gradient_pseudo_loss
    ~reinforce.mse_value_loss
