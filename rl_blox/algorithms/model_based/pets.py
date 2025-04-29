@@ -10,7 +10,6 @@ import jax
 import numpy as np
 import optax
 from flax import nnx, struct
-from gymnasium.wrappers import RecordEpisodeStatistics
 from jax import numpy as jnp
 from jax.typing import ArrayLike
 
@@ -18,9 +17,9 @@ from ...model.cross_entropy_method import cem_sample, cem_update
 from ...model.probabilistic_ensemble import (
     EnsembleTrainState,
     GaussianMLPEnsemble,
-    store_checkpoint,
     train_ensemble,
 )
+from ...logging.logger import LoggerBase
 
 
 class ReplayBuffer:
@@ -71,7 +70,6 @@ class PETSMPCConfig:
     n_samples: int
     n_opt_iter: int
     init_with_previous_plan: bool
-    verbose: int
     reward_model: Callable[[ArrayLike, ArrayLike], jnp.ndarray] = struct.field(
         pytree_node=False
     )
@@ -413,9 +411,7 @@ def train_pets(
     learning_starts_gradient_steps: int = 100,
     n_steps_per_iteration: int = 100,
     gradient_steps: int = 10,
-    save_checkpoints: bool = False,
-    checkpoint_path_prefix: str = "/tmp",
-    verbose: int = 0,
+    logger: LoggerBase | None = None,
 ) -> tuple[
     PETSMPCConfig,
     PETSMPCState,
@@ -498,15 +494,8 @@ def train_pets(
         Should correspond to the expected number of steps in one episode.
     gradient_steps, optional
         Number of gradient steps during one training phase.
-    save_checkpoints, optional
-        Save checkpoint each time we update the model.
-    checkpoint_path_prefix, optional
-        Prefix of path at which we store checkpoints after each model update.
-        Note that the path has to be absolute. '/tmp/' is recommended and used
-        as default. Model checkpoints will be stored in
-        '/tmp/pets_dynamics_model_iteration' in this case.
-    verbose, optional
-        Verbosity level.
+    logger : logger.LoggerBase, optional
+        Experiment logger.
 
     Returns
     -------
@@ -530,9 +519,6 @@ def train_pets(
     ), "only continuous action space is supported"
     action_space: gym.spaces.Box = env.action_space
 
-    if verbose:
-        env = RecordEpisodeStatistics(env)
-
     rb = ReplayBuffer(buffer_size)
 
     # Initialize model-predictive control: configuration, state, and optimizer
@@ -545,7 +531,6 @@ def train_pets(
         n_samples=n_samples,
         n_opt_iter=n_opt_iter,
         init_with_previous_plan=init_with_previous_plan,
-        verbose=verbose,
         reward_model=reward_model,
         action_space_shape=env.action_space.shape,
         avg_act=jnp.asarray(
@@ -586,6 +571,9 @@ def train_pets(
     env.action_space.seed(seed)
 
     obs, _ = env.reset(seed=seed)
+    if logger is not None:
+        logger.start_new_episode()
+    steps_per_episode = 0
 
     for t in range(total_timesteps):
         if (
@@ -593,20 +581,14 @@ def train_pets(
             and (t - learning_starts) % n_steps_per_iteration == 0
         ):
             D_obs, D_acts, _, D_next_obs, _ = rb.sample_batch(len(rb), rng)
-            if verbose >= 2:
-                print("[PETS] start training")
             key, train_key = jax.random.split(key)
-            loss = update_dynamics_model(
+            dynamics_model_loss = update_dynamics_model(
                 dynamics_model, D_obs, D_acts, D_next_obs, train_key, n_epochs
             )
-            if verbose >= 2:
-                print(f"[PETS] training done; {loss=}")
             n_epochs = gradient_steps
-            if save_checkpoints:  # TODO use logging interface
-                store_checkpoint(
-                    f"{checkpoint_path_prefix}/pets_dynamics_model_{t}",
-                    dynamics_model.model,
-                )
+            if logger is not None:
+                logger.record_stat("dynamics model loss", dynamics_model_loss, step=t)
+                logger.record_epoch("dynamics_model", dynamics_model.model, step=t)
 
         if t < learning_starts:
             action = action_space.sample()
@@ -614,14 +596,20 @@ def train_pets(
             action = mpc_action(mpc_config, mpc_state, mpc_optimize_fn, obs)
 
         next_obs, reward, termination, truncation, info = env.step(action)
+        steps_per_episode += 1
 
         rb.add_sample(obs, action, reward, next_obs, termination)
 
         if termination or truncation:
-            if verbose >= 1:
-                print(f"{t=}, {info=}")
-            mpc_state.prev_plan = PETSMPCState.initial_plan(mpc_config)
+            if logger is not None:
+                if "episode" in info:
+                    logger.record_stat("return", info["episode"]["r"], step=t)
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+
+            steps_per_episode = 0
             obs, _ = env.reset()
+            mpc_state.prev_plan = PETSMPCState.initial_plan(mpc_config)
 
         obs = next_obs
 

@@ -509,21 +509,6 @@ def train_ensemble(
     return loss
 
 
-def store_checkpoint(path: str, model: GaussianMLPEnsemble):
-    """Store model state without graphdef with orbax.
-
-    Parameters
-    ----------
-    path : Absolute path to directory in which the checkpoint should be stored.
-    model : Model that should be stored.
-    """
-    import orbax.checkpoint as ocp
-
-    graphdef, state = nnx.split(model)
-    checkpointer = ocp.PyTreeCheckpointer()
-    checkpointer.save(path, state)
-
-
 def restore_checkpoint(
     path: str, model: GaussianMLPEnsemble
 ) -> GaussianMLPEnsemble:
