@@ -28,6 +28,9 @@ hparams_algorithm = dict(
     learning_starts=5_000,
 )
 
+if verbose:
+    print("This example uses the AIM logger. You will not see any output on "
+          "stdout. Run 'aim up' to analyze the progress.")
 logger = logger.AIMLogger()
 logger.define_experiment(
     env_name=env_name,
