@@ -276,10 +276,15 @@ class GaussianPolicy(StochasticPolicyBase):
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from Gaussian distribution."""
         mean, log_var = self.net(observation)
-        return (
-            jax.random.normal(key, mean.shape)
-            * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
-            + mean
+        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
+        std = jnp.exp(log_std)
+        # same as
+        # jax.random.normal(key, mean.shape)
+        # * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
+        # + mean
+        return distrax.MultivariateNormalDiag(loc=mean, scale_diag=std).sample(
+            seed=key,
+            sample_shape=(),
         )
 
     def log_probability(
