@@ -11,24 +11,34 @@ API Documentation
     :no-members:
     :no-inherited-members:
 
+Algorithm Interface
+-------------------
+
 .. autosummary::
    :toctree: _apidoc/
 
    ~q_learning.q_learning
    ~reinforce.train_reinforce_epoch
+   ~actor_critic.train_ac_epoch
+   ~ddpg.train_ddpg
+   ~sac.train_sac
+
+Blox Interface
+--------------
+
+.. autosummary::
+   :toctree: _apidoc/
+
    ~reinforce.discounted_reward_to_go
    ~reinforce.reinforce_gradient
    ~reinforce.policy_gradient_pseudo_loss
    ~reinforce.mse_value_loss
-   ~actor_critic.train_ac_epoch
    ~actor_critic.actor_critic_policy_gradient
-   ~ddpg.train_ddpg
    ~ddpg.mse_action_value_loss
    ~ddpg.deterministic_policy_value_loss
    ~ddpg.update_target
    ~ddpg.ddpg_update_actor
    ~ddpg.ddpg_update_critic
-   ~sac.train_sac
    ~sac.sac_actor_loss
    ~sac.sac_exploration_loss
    ~sac.sac_update_actor
