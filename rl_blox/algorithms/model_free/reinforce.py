@@ -232,7 +232,7 @@ class GaussianMLP(nnx.Module):
 
 
 class StochasticPolicyBase(nnx.Module):
-    """Base class for probabilistic policies."""
+    """Base class for stochastic policies."""
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         """Compute action probabilities for given observation."""
@@ -263,9 +263,6 @@ class GaussianPolicy(StochasticPolicyBase):
     ----------
     net : nnx.Module
         Gaussian neural network.
-
-    rngs
-        Random number generator.
     """
 
     net: nnx.Module
@@ -313,9 +310,6 @@ class SoftmaxPolicy(StochasticPolicyBase):
     ----------
     net : nnx.Module
         Gaussian neural network.
-
-    rngs
-        Random number generator.
     """
 
     net: nnx.Module
