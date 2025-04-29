@@ -9,6 +9,7 @@ import numpy as np
 import optax
 from flax import nnx
 
+from ...logging import logger
 from .ddpg import MLP, ReplayBuffer, mse_action_value_loss, update_target
 
 
@@ -406,7 +407,7 @@ def train_sac(
     q1_target: nnx.Module | None = None,
     q2_target: nnx.Module | None = None,
     entropy_control: EntropyControl | None = None,
-    verbose: int = 0,
+    logger: logger.LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -482,8 +483,8 @@ def train_sac(
         Target network for q2.
     entropy_control
         State of entropy tuning.
-    verbose
-        Verbosity level.
+    logger : logger.LoggerBase, optional
+        Experiment logger.
 
     Returns
     -------
@@ -553,7 +554,11 @@ def train_sac(
     env.observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)
 
+    if logger is not None:
+        logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
+    steps_per_episode = 0
+
     for global_step in range(total_timesteps):
         if global_step < learning_starts:
             action = env.action_space.sample()
@@ -564,14 +569,17 @@ def train_sac(
             )
 
         next_obs, reward, termination, truncation, info = env.step(action)
+        steps_per_episode += 1
 
         done = termination or truncation
         if done:
-            if verbose and "episode" in info:
-                # TODO implement logging here
-                print(f"{global_step=}, episodic_return={info['episode']['r']}")
-
+            if logger is not None:
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+                if "episode" in info:
+                    logger.record_stat("return", info["episode"]["r"])
             obs, _ = env.reset()
+            steps_per_episode = 0
 
         rb.add_sample(
             observation=obs,
@@ -606,12 +614,17 @@ def train_sac(
                 action_key,
                 entropy_control.alpha_,
             )
+            if logger is not None:
+                logger.record_stat("q1 loss", q1_loss_value, step=global_step)
+                logger.record_epoch("q1", q1)
+                logger.record_stat("q2 loss", q2_loss_value, step=global_step)
+                logger.record_epoch("q2", q2)
 
             if global_step % policy_frequency == 0:
                 # compensate for delay by doing 'policy_frequency' updates
                 for _ in range(policy_frequency):
                     key, action_key = jax.random.split(key, 2)
-                    actor_loss_value = sac_update_actor(
+                    policy_loss_value = sac_update_actor(
                         policy,
                         policy_optimizer,
                         q1,
@@ -624,21 +637,29 @@ def train_sac(
                     exploration_loss_value = entropy_control.update(
                         policy, observations, key
                     )
+                    if logger is not None:
+                        logger.record_stat(
+                            "policy loss", policy_loss_value, step=global_step
+                        )
+                        logger.record_epoch("policy", policy)
+                        logger.record_stat(
+                            "alpha",
+                            float(entropy_control.alpha_[0]),
+                            step=global_step,
+                        )
+                        if autotune:
+                            logger.record_stat(
+                                "alpha loss",
+                                exploration_loss_value,
+                                step=global_step,
+                            )
+                            logger.record_epoch("alpha", alpha)
 
             if global_step % target_network_frequency == 0:
                 update_target(q1, q1_target, tau)
+                logger.record_epoch("q1_target", q1_target)
                 update_target(q2, q2_target, tau)
-
-            if verbose and global_step % 1_000 == 0:
-                # TODO implement logging here
-                print("losses/q1_loss", q1_loss_value, global_step)
-                print("losses/q2_loss", q2_loss_value, global_step)
-                print("losses/policy_loss", actor_loss_value, global_step)
-                print("losses/alpha", entropy_control.alpha_, global_step)
-                if autotune:
-                    print(
-                        "losses/alpha_loss", exploration_loss_value, global_step
-                    )
+                logger.record_epoch("q2_target", q2_target)
 
     return (
         policy,
