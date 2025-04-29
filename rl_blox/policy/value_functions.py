@@ -73,7 +73,7 @@ class TabularQFunction(QFunction):
         return self.values[observation, action]
 
     def update(self, observations, actions, step):
-        self.values[observations][actions] += step
+        self.values[observations, actions] += step
 
         logging.debug(f"Updating Q Table: {observations=}, {actions=}, {step=}")
         logging.debug(f"New Q table: {self.values}")
