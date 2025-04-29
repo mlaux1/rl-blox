@@ -109,14 +109,9 @@ questions about the software, you should ask them in the discussion section.
 
 The recommended workflow to add a new feature, add documentation, or fix a bug is the following:
 - Push your changes to a branch (e.g. feature/x, doc/y, or fix/z) of your fork of the RL-BLOX repository.
-- Open a pull request to the latest development branch. There is usually an open merge request from the latest development branch to the main branch.
-- When the latest development branch is merged to the main branch, a new release will be made.
-
-Note that there is a checklist for new features.
+- Open a pull request to the main branch.
 
 It is forbidden to directly push to the main branch.
-Each new version has its own development branch from which a pull request will be opened to the main branch.
-Only the maintainers of the software are allowed to merge a development branch to the main branch.
 
 ## Testing
 
