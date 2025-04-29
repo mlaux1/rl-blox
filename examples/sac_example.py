@@ -6,7 +6,7 @@ from rl_blox.algorithms.model_free.sac import (
     create_sac_state,
     train_sac,
 )
-from rl_blox.logging import logger
+from rl_blox.logging.logger import AIMLogger
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -31,7 +31,7 @@ hparams_algorithm = dict(
 if verbose:
     print("This example uses the AIM logger. You will not see any output on "
           "stdout. Run 'aim up' to analyze the progress.")
-logger = logger.AIMLogger()
+logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="SAC",

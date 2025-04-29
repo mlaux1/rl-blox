@@ -9,7 +9,7 @@ import numpy as np
 import optax
 from flax import nnx
 
-from ...logging import logger
+from ...logging.logger import LoggerBase
 from .ddpg import MLP, ReplayBuffer, mse_action_value_loss, update_target
 
 
@@ -407,7 +407,7 @@ def train_sac(
     q1_target: nnx.Module | None = None,
     q2_target: nnx.Module | None = None,
     entropy_control: EntropyControl | None = None,
-    logger: logger.LoggerBase | None = None,
+    logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -483,7 +483,7 @@ def train_sac(
         Target network for q2.
     entropy_control
         State of entropy tuning.
-    logger : logger.LoggerBase, optional
+    logger : LoggerBase, optional
         Experiment logger.
 
     Returns
@@ -534,8 +534,6 @@ def train_sac(
 
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
-
-    obs, _ = env.reset(seed=seed)
 
     if q1_target is None:
         q1_target = nnx.clone(q1)
@@ -641,7 +639,7 @@ def train_sac(
                         logger.record_stat(
                             "policy loss", policy_loss_value, step=global_step
                         )
-                        logger.record_epoch("policy", policy)
+                        logger.record_epoch("policy", policy, step=global_step)
                         logger.record_stat(
                             "alpha",
                             float(entropy_control.alpha_[0]),
@@ -653,13 +651,15 @@ def train_sac(
                                 exploration_loss_value,
                                 step=global_step,
                             )
-                            logger.record_epoch("alpha", alpha)
+                            logger.record_epoch(
+                                "alpha", alpha, step=global_step
+                            )
 
             if global_step % target_network_frequency == 0:
                 update_target(q1, q1_target, tau)
-                logger.record_epoch("q1_target", q1_target)
+                logger.record_epoch("q1_target", q1_target, step=global_step)
                 update_target(q2, q2_target, tau)
-                logger.record_epoch("q2_target", q2_target)
+                logger.record_epoch("q2_target", q2_target, step=global_step)
 
     return (
         policy,

@@ -1,4 +1,4 @@
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict, namedtuple
 from functools import partial
 
 import chex
@@ -8,7 +8,8 @@ import jax.random
 import numpy as np
 import optax
 from flax import nnx
-from numpy.typing import ArrayLike
+
+from ...logging.logger import LoggerBase
 
 
 # TODO consolidate replay buffer implementations
@@ -17,7 +18,13 @@ class ReplayBuffer:
 
     def __init__(self, buffer_size: int, keys: list[str] | None = None):
         if keys is None:
-            keys = ["observation", "action", "reward", "next_observation", "termination"]
+            keys = [
+                "observation",
+                "action",
+                "reward",
+                "next_observation",
+                "termination",
+            ]
         self.buffer = OrderedDict()
         for k in keys:
             self.buffer[k] = np.empty(0, dtype=float)
@@ -416,7 +423,7 @@ def train_ddpg(
     policy_frequency: int = 2,
     policy_target: nnx.Optimizer | None = None,
     q_target: nnx.Optimizer | None = None,
-    verbose: int = 0,
+    logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer
 ]:
@@ -464,7 +471,8 @@ def train_ddpg(
     q_target
         Target network. Only has to be set if we want to continue training
         from an old state.
-    verbose: Verbosity level.
+    logger : LoggerBase, optional
+        Experiment logger.
 
     Returns
     -------
@@ -515,15 +523,18 @@ def train_ddpg(
         )
     )
 
+    if logger is not None:
+        logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
+    steps_per_episode = 0
 
     if policy_target is None:
         policy_target = nnx.clone(policy)
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for t in range(total_timesteps):
-        if t < learning_starts:
+    for global_step in range(total_timesteps):
+        if global_step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
@@ -532,30 +543,33 @@ def train_ddpg(
             )
 
         next_obs, reward, termination, truncated, info = env.step(action)
+        steps_per_episode += 1
 
         rb.add_sample(
             observation=obs,
             action=action,
             reward=reward,
             next_observation=next_obs,
-            termination=termination
+            termination=termination,
         )
 
         done = termination or truncated
         if done:
-            if verbose and "episode" in info:
-                # TODO implement logging here
-                print(
-                    f"{t=}, length={info['episode']['l']}, "
-                    f"return={info['episode']['r']}"
-                )
+            if logger is not None:
+                if "episode" in info:
+                    logger.record_stat(
+                        "return", info["episode"]["r"], step=global_step
+                    )
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
 
             obs, _ = env.reset()
+            steps_per_episode = 0
             continue
 
         obs = next_obs
 
-        if t > learning_starts:
+        if global_step > learning_starts:
             for _ in range(gradient_steps):
                 (
                     observations,
@@ -577,22 +591,29 @@ def train_ddpg(
                     rewards,
                     terminations,
                 )
-                if verbose >= 2:
-                    print(f"{q_loss_value=}")
-                    # TODO implement logging here
-                    # TODO implement checkpointing here
+                if logger is not None:
+                    logger.record_stat("q loss", q_loss_value, step=global_step)
+                    logger.record_epoch("q", q, step=global_step)
 
-                if t % policy_frequency == 0:
+                if global_step % policy_frequency == 0:
                     actor_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q, observations
                     )
-                    if verbose >= 2:
-                        print(f"{actor_loss_value=}")
-                        # TODO implement logging here
-                        # TODO implement checkpointing here
 
                     update_target(policy, policy_target, tau)
                     # TODO why is it updated less often than q?
                     update_target(q, q_target, tau)
+
+                    if logger is not None:
+                        logger.record_stat(
+                            "policy loss", actor_loss_value, step=global_step
+                        )
+                        logger.record_epoch("policy", policy, step=global_step)
+                        logger.record_epoch(
+                            "policy_target", policy_target, step=global_step
+                        )
+                        logger.record_epoch(
+                            "q_target", q_target, step=global_step
+                        )
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
