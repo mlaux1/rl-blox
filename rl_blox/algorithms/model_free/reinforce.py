@@ -1,3 +1,4 @@
+import contextlib
 from collections import namedtuple
 from collections.abc import Callable
 
@@ -904,6 +905,13 @@ def sample_trajectories(
             episode=logger.n_episodes - 1,
         )
     return dataset
+
+
+# DEPRECATED: for backward compatibility
+collect_samples = sample_trajectories
+with contextlib.suppress(ImportError):
+    from warnings import deprecated
+    collect_samples = deprecated(collect_samples)
 
 
 def train_value_function(
