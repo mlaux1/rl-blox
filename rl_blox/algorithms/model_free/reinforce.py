@@ -784,7 +784,7 @@ def train_reinforce_epoch(
     logger : logger.LoggerBase, optional
         Experiment logger.
     """
-    dataset = collect_samples(
+    dataset = sample_trajectories(
         env, policy, key, logger, train_after_episode, total_steps
     )
 
@@ -822,15 +822,15 @@ def train_reinforce_epoch(
             logger.record_epoch("value_function", value_function)
 
 
-def collect_samples(
+def sample_trajectories(
     env: gym.Env,
     policy: StochasticPolicyBase,
     key: jnp.ndarray,
-    logger: logger.StandardLogger,
+    logger: logger.LoggerBase,
     train_after_episode: bool,
     total_steps: int,
 ) -> EpisodeDataset:
-    """Collect samples with stochastic policy.
+    """Sample trajectories with stochastic policy.
 
     Parameters
     ----------

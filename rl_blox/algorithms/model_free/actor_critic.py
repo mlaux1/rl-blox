@@ -2,12 +2,12 @@ import gymnasium as gym
 import jax.numpy as jnp
 from flax import nnx
 
-from ...logging import logger
+from ...logging.logger import LoggerBase
 from .reinforce import (
     MLP,
     StochasticPolicyBase,
-    collect_samples,
     policy_gradient_pseudo_loss,
+    sample_trajectories,
     train_value_function,
 )
 
@@ -82,7 +82,7 @@ def train_ac_epoch(
     gamma: float = 1.0,
     train_after_episode: bool = False,
     key: jnp.ndarray | None = None,
-    logger: logger.LoggerBase | None = None,
+    logger: LoggerBase | None = None,
 ):
     """Train with actor-critic for one epoch.
 
@@ -127,7 +127,7 @@ def train_ac_epoch(
     logger : logger.LoggerBase, optional
         Experiment logger.
     """
-    dataset = collect_samples(
+    dataset = sample_trajectories(
         env, policy, key, logger, train_after_episode, total_steps
     )
 
