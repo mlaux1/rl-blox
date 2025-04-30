@@ -1,5 +1,6 @@
 import gymnasium as gym
 import jax.numpy as jnp
+import optax
 from flax import nnx
 
 from rl_blox.algorithms.model_free.dqn import MLP, train_dqn
@@ -16,15 +17,18 @@ env.action_space.seed(seed)
 nnx_rngs = nnx.Rngs(seed)
 q_net = MLP(4, 10, env.action_space.n, nnx_rngs)
 
-# Initialse the replay buffer
+# Initialise the replay buffer
 rb = ReplayBuffer(30_000)
+
+# initialise optimiser
+optimizer = nnx.Optimizer(q_net, optax.adam(0.003))
 
 # Train
 q = train_dqn(
     q_net,
     env,
     rb,
-    learning_rate=0.003,
+    optimizer,
     seed=seed,
     total_timesteps=30_000,
 )

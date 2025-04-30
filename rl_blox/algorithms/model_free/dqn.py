@@ -167,9 +167,9 @@ def train_dqn(
     q_net: MLP,
     env: gymnasium.Env,
     replay_buffer: ReplayBuffer,
+    optimizer: nnx.Optimizer,
     batch_size: int = 32,
     total_timesteps: int = 1e4,
-    learning_rate: float = 1e-4,
     gamma: float = 0.99,
     seed: int = 1,
 ) -> MLP:
@@ -196,6 +196,8 @@ def train_dqn(
         The envrionment to train the Q-network on.
     replay_buffer : ReplayBuffer
         The replay buffer used for storing collected transitions.
+    optimizer : nnx.Optimizer
+        The optimiser for the Q-Network.
     total_timesteps : int
         The number of environment sets to train for.
     learning_rate : float
@@ -218,9 +220,6 @@ def train_dqn(
 
     rng = np.random.default_rng(seed)
     key = jax.random.key(seed)
-
-    # initialise optimiser
-    optimizer = nnx.Optimizer(q_net, optax.adam(learning_rate))
 
     # initialise episode
     obs, _ = env.reset(seed=seed)
