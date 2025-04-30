@@ -216,7 +216,9 @@ def train_dqn(
     References
     ----------
 
-    .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I., Wierstra, D., & Riedmiller, M. (2013). Playing atari with deep reinforcement learning. arXiv preprint arXiv:1312.5602.
+    .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I.,
+       Wierstra, D., & Riedmiller, M. (2013). Playing atari with deep
+       reinforcement learning. arXiv preprint arXiv:1312.5602.
 
     """
 
