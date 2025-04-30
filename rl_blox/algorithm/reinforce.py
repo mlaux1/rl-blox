@@ -911,6 +911,7 @@ def sample_trajectories(
 collect_samples = sample_trajectories
 with contextlib.suppress(ImportError):
     from warnings import deprecated
+
     collect_samples = deprecated(collect_samples)
 
 

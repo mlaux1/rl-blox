@@ -8,8 +8,8 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import optax
-from flax import nnx
 import tqdm
+from flax import nnx
 
 from ...logging.logger import LoggerBase
 
@@ -54,6 +54,7 @@ class ReplayBuffer:
 
     def __len__(self):
         return self.current_len
+
 
 # TODO consolidate MLP implementations
 class MLP(nnx.Module):
