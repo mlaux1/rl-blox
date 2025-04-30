@@ -118,7 +118,7 @@ class GaussianMLPEnsemble(nnx.Module):
            https://papers.nips.cc/paper_files/paper/2018/hash/3de568f8597b94bda53149c7d7f5958c-Abstract.html
     """
 
-    ensemble: GaussianMLP
+    ensemble: list[GaussianMLP]
     n_ensemble: int
     n_outputs: int
 
@@ -134,18 +134,16 @@ class GaussianMLPEnsemble(nnx.Module):
         self.n_ensemble = n_ensemble
         self.n_outputs = n_outputs
 
-        @nnx.split_rngs(splits=self.n_ensemble)
-        @nnx.vmap
-        def make_model(rngs: nnx.Rngs) -> GaussianMLP:
-            return GaussianMLP(
+        self.ensemble = [
+            GaussianMLP(
                 shared_head=shared_head,
                 n_features=n_features,
                 n_outputs=n_outputs,
                 hidden_nodes=hidden_nodes,
                 rngs=rngs,
             )
-
-        self.ensemble = make_model(rngs)
+            for _ in range(self.n_ensemble)
+        ]
 
         # TODO move safe_log_var to nnx.Module
         def safe_log_var(log_var, min_log_var, max_log_var):
@@ -162,14 +160,6 @@ class GaussianMLPEnsemble(nnx.Module):
         self.raw_min_log_var = nnx.Param(jnp.zeros(self.n_outputs))
         self.raw_max_log_var = nnx.Param(jnp.zeros(self.n_outputs))
 
-        def forward(
-            model: GaussianMLP, x: jnp.ndarray
-        ) -> tuple[jnp.ndarray, jnp.ndarray]:
-            return model(x)
-
-        self._forward_ensemble = nnx.vmap(forward, in_axes=(0, None))
-        self._forward_individual = nnx.vmap(forward, in_axes=(0, 0))
-
     @property
     def min_log_var(self):
         return constrained_param(self.raw_min_log_var.value, -20.0, 0.0)
@@ -179,12 +169,21 @@ class GaussianMLPEnsemble(nnx.Module):
         return constrained_param(self.raw_max_log_var.value, -4.0, 5.0)
 
     def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+        means = []
+        log_vars = []
         if x.ndim == 2:
-            means, log_vars = self._forward_ensemble(self.ensemble, x)
+            for model in self.ensemble:
+                m, lv = model(x)
+                means.append(m)
+                log_vars.append(lv)
         elif x.ndim == 3:
-            means, log_vars = self._forward_individual(self.ensemble, x)
+            for model, x_i in zip(self.ensemble, x):
+                m, lv = model(x_i)
+                means.append(m)
+                log_vars.append(lv)
         else:
-            raise ValueError(f"{x.shape=}")
+            raise ValueError(f"invalid input shape: {x.shape=}")
+        means, log_vars = jnp.asarray(means), jnp.asarray(log_vars)
 
         log_vars = self._safe_log_var(
             log_vars, self.min_log_var, self.max_log_var
@@ -211,11 +210,7 @@ class GaussianMLPEnsemble(nnx.Module):
             epistemic variance is the variance of the individual means of the
             ensemble.
         """
-        means, log_vars = self._forward_ensemble(self.ensemble, x)
-
-        log_vars = self._safe_log_var(
-            log_vars, self.min_log_var, self.max_log_var
-        )
+        means, log_vars = self(x)
 
         mean = jnp.mean(means, axis=0)
         aleatoric_var = jnp.mean(jnp.exp(log_vars), axis=0)
@@ -241,11 +236,8 @@ class GaussianMLPEnsemble(nnx.Module):
         var : array, shape (n_samples, n_outputs)
             Predicted variance.
         """
-        graphdef, state = nnx.split(self.ensemble)
-        state_i = jax.tree.map(lambda x: x[i], state)
-        base_model = nnx.merge(graphdef, state_i)
-        mean_i, log_var_i = base_model(x)
-        log_var_i = self._safe_log_var(
+        mean_i, log_var_i = self.ensemble[i](x)
+        log_var_i = self._safe_log_var_i(
             log_var_i, self.min_log_var, self.max_log_var
         )
         return mean_i, jnp.exp(log_var_i)
@@ -268,10 +260,7 @@ class GaussianMLPEnsemble(nnx.Module):
         distribution : distrax.MultivariateNormalDiag
             Predicted distribution.
         """
-        graphdef, state = nnx.split(self.ensemble)
-        state_i = jax.tree.map(lambda x: x[i], state)
-        base_model = nnx.merge(graphdef, state_i)
-        mean_i, log_var_i = base_model(x)
+        mean_i, log_var_i = self.ensemble[i](x)
         log_var_i = self._safe_log_var_i(
             log_var_i, self.min_log_var, self.max_log_var
         )
