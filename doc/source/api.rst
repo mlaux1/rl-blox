@@ -46,6 +46,33 @@ Blox Interface
    ~double_q_learning.double_q_learning
 
 
+:mod:`rl_blox.algorithms.model_based`
+=====================================
+
+.. automodule:: rl_blox.algorithms.model_based
+    :no-members:
+    :no-inherited-members:
+
+Algorithm Interface
+-------------------
+
+.. autosummary::
+   :toctree: _apidoc/
+
+   ~pets.train_pets
+
+Blox Interface
+--------------
+
+.. autosummary::
+   :toctree: _apidoc/
+
+   ~pets.mpc_action
+   ~pets.ts_inf
+   ~pets.evaluate_plans
+   ~pets.update_dynamics_model
+
+
 :mod:`rl_blox.logging`
 ======================
 
