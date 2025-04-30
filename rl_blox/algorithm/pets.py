@@ -266,6 +266,9 @@ def ts_inf(
 ):
     """Trajectory sampling infinity (TSinf).
 
+    Notes
+    -----
+
     Particles do never change the bootstrap during a trial.
 
     Parameters
@@ -284,8 +287,7 @@ def ts_inf(
 
     Returns
     -------
-    obs : array, shape (n_samples, n_particles, plan_horizon + 1)
-          + observation_space.shape
+    obs : array, shape (n_samples, n_particles, plan_horizon + 1) + obs.shape
         Sequences of observations sampled with plans.
 
     Examples
@@ -333,13 +335,14 @@ def evaluate_plans(
 
     Parameters
     ----------
-    actions : array, shape (n_samples, plan_horizon) + action_space.shape
+    actions : array, shape (n_samples, plan_horizon) + action.shape
         Action sequences (plans).
 
-    trajectories : array,
-            shape (n_samples, n_particles, plan_horizon + 1)
-            + observation_space.shape
-        Sequences of observations sampled with plans.
+    trajectories : array, shape (n_samples, n_par, plan_horizon + 1) + obs.shape
+        Sequences of observations sampled with `actions`.
+        Note: `n_par` is the abbreviation for `n_particles`. When numpydoc
+        allows multiline type documentation, this should be updated
+        (issue: https://github.com/numpy/numpydoc/issues/87).
 
     reward_model : callable
         Mapping from pairs of state and action to reward.
@@ -358,6 +361,7 @@ def evaluate_plans(
         actions[:, jnp.newaxis],
         (n_samples, n_particles, plan_horizon) + action_shape,
     )  # broadcast actions along particle axis
+    # TODO the reward model could be extended to include next observations
     rewards = reward_model(broadcasted_actions, trajectories[:, :, :-1])
     # sum along plan_horizon axis
     returns = rewards.sum(axis=-1)
@@ -433,27 +437,6 @@ def train_pets(
     sequence, applies the first action in the sequence, and repeats until the
     task horizon.
 
-    Algorithm:
-
-    * Initialize dataset :math:`\mathcal{D}` with a random controller.
-    * for trial :math:`k=1` to K do
-        * Train a PE dynamics model :math:`f` given
-          :math:`\mathcal{D}`.
-        * for time :math:`t=0` to T_p (task horizon) do
-            * for actions samples :math:`a_{t:t+T} \sim CEM(\cdot)`,
-              1 to `plan_horizon` do
-                * Propagate state particles :math:`s_{\tau}^p` using TS and
-                  :math:`f|\left{\mathcal{D},a_{t:t+T}\right}`
-                * Evaluate actions as
-                  :math:`\sum_{\tau=t}^{t+T} \frac{1}{P} \sum_{p=1}^P
-                  r(s_{\tau}^p, a_{\tau})`
-                * Update :math:`CEM(\cdot)` distribution.
-        * Execute first action :math:`a_t^*` (only) from optimal actions
-          :math:`a_{t:t+T}^*`.
-        * Record outcome:
-          :math:`\mathcal{D} \leftarrow \mathcal{D} \cup
-          \left{s_t, a_t^*, s_{t+1}\right}`
-
     Parameters
     ----------
     env
@@ -501,6 +484,57 @@ def train_pets(
     -------
     mpc
         Model-predictive control based on dynamics model.
+
+    Notes
+    -----
+    The original PE-TS algorithm can be summarized as follows.
+
+    * Parameters
+
+      * environment with specfic task horizon
+      * :math:`r(o, a)` - reward model (`reward_model`)
+      * :math:`f` - probabilistic ensemble (PE) dynamics model
+      * :math:`T` - planning horizon (`plan_horizon`) for trajectory sampling
+        (TS)
+      * :math:`CEM(\cdot)` - cross entropy method (CEM) optimizer
+      * :math:`N` - number of samples for CEM (`n_samples`)
+      * :math:`P` - number of particles for trajectory sampling
+        (`n_particles`)
+    * Initialize dataset :math:`\mathcal{D}` with a random controller.
+    * for trial :math:`k=1` to K do
+
+      * Train dynamics model :math:`f` given :math:`\mathcal{D}` (see
+        :func:`update_dynamics_model`)
+      * for time :math:`t=0` to task horizon do
+
+        * for actions samples :math:`a_{t:t+T} \sim CEM(\cdot)`,
+          1 to :math:`N` do (see :func:`mpc_action`)
+
+          * Propagate observation particles :math:`o_{\tau}^p` using TS with
+            :math:`f,a_{t:t+T}` (see :func:`ts_inf`)
+          * Evaluate actions as
+            :math:`\sum_{\tau=t}^{t+T} \frac{1}{P} \sum_{p=1}^P
+            r(o_{\tau}^p, a_{\tau})` (see :func:`evaluate_plans`)
+          * Update :math:`CEM(\cdot)` distribution.
+      * Execute first action :math:`a_t^*` (only) from optimal actions
+        :math:`a_{t:t+T}^*`.
+      * Record outcome:
+        :math:`\mathcal{D} \leftarrow \mathcal{D} \cup
+        \{s_t, a_t^*, s_{t+1}\}`
+
+    This implementation modifies the original algorithm. We change the
+    episode-driven training to step-driven training so that you can specify
+    an initial number of random steps (`learning_starts`), a total number of
+    steps (`total_timesteps`), and a number of steps that will be recorded
+    before the dynamics model is trained for an epoch
+    (`n_steps_per_iteration`).
+
+    In addition, the number of gradient steps to train the initial model
+    (`learning_start_gradient_steps`) and to train the model in each iteration
+    (`gradient_steps`) can be specified separately.
+
+    The model-predictive controller can be configured to not initialize with
+    the last solution (`init_with_previous_plan=False`) if desired.
 
     References
     ----------
