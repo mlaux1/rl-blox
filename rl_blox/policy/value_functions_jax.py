@@ -8,7 +8,8 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 from jax import Array
 
-from ...policy.base_model import NeuralNetwork, ReplayBuffer, Transition
+from ...policy.base_model import NeuralNetwork
+from ..replay_buffer import ReplayBuffer, Transition
 
 
 class ValueFunction(abc.ABC):

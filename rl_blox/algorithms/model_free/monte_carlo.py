@@ -40,7 +40,7 @@ class MonteCarlo:
             ep_return = sum(rews)
 
             # get the visited state action pairs
-            state_action_pairs = zip(obs, acs)
+            state_action_pairs = zip(obs, acs, strict=False)
 
             if self.update_mode == "first_visit":
                 state_action_pairs = list(set(state_action_pairs))
@@ -49,8 +49,12 @@ class MonteCarlo:
                 self.n_visits[idx] += 1
                 self.total_return[idx] += ep_return
                 new_q_val = self.total_return[idx] / self.n_visits[idx]
+
                 state, action = idx
-                step = new_q_val - self.target_policy.value_function.values[state][action]
+                step = (
+                    new_q_val
+                    - self.target_policy.value_function.values[state][action]
+                )
                 self.target_policy.update(state, action, step)
 
     def collect_episode_rollout(self):

@@ -1,5 +1,6 @@
 from collections import OrderedDict, namedtuple
 from functools import partial
+from typing import List, Tuple
 
 import chex
 import gymnasium as gym
@@ -53,7 +54,6 @@ class ReplayBuffer:
 
     def __len__(self):
         return self.current_len
-
 
 # TODO consolidate MLP implementations
 class MLP(nnx.Module):
