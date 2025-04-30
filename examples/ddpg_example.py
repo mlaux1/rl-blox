@@ -1,43 +1,66 @@
 import gymnasium as gym
+import jax.numpy as jnp
 import numpy as np
 
-from rl_blox.algorithms.model_free.ddpg import train_ddpg, DeterministicMlpPolicyNetwork, MlpQNetwork
-
+from rl_blox.algorithms.model_free.ddpg import create_ddpg_state, train_ddpg
+from rl_blox.logging.logger import AIMLogger
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
+
 seed = 1
+verbose = 2
 env = gym.wrappers.RecordEpisodeStatistics(env)
-env.action_space.seed(seed)
-envs = gym.vector.SyncVectorEnv([lambda: env])
-policy = DeterministicMlpPolicyNetwork.create([256, 256], envs)
-q = MlpQNetwork(hidden_nodes=[256, 256])
-policy, policy_params, q, q_params = train_ddpg(
-    envs,
-    policy,
-    q,
+
+hparams_models = dict(
+    policy_hidden_nodes=[256, 256],
+    policy_learning_rate=3e-4,
+    q_hidden_nodes=[256, 256],
+    q_learning_rate=3e-4,
+    seed=seed,
+)
+hparams_algorithm = dict(
     gradient_steps=1,
     seed=seed,
-    total_timesteps=31_000,
-    verbose=1
+    total_timesteps=11_000,
+    buffer_size=11_000,
+    learning_starts=5_000,
 )
-envs.close()
+
+if verbose:
+    print("This example uses the AIM logger. You will not see any output on "
+          "stdout. Run 'aim up' to analyze the progress.")
+logger = AIMLogger()
+logger.define_experiment(
+    env_name=env_name,
+    algorithm_name="DDPG",
+    hparams=hparams_models | hparams_algorithm,
+)
+
+ddpg_state = create_ddpg_state(env, **hparams_models)
+
+policy, policy_target, policy_optimizer, q, q_target, q_optimizer = train_ddpg(
+    env,
+    ddpg_state.policy,
+    ddpg_state.policy_optimizer,
+    ddpg_state.q,
+    ddpg_state.q_optimizer,
+    logger=logger,
+    **hparams_algorithm,
+)
+env.close()
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")
-env = gym.wrappers.RecordEpisodeStatistics(env)
 while True:
     done = False
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy.apply(policy_params, obs)[0])
+        action = np.asarray(policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
-        q_value = q.apply(q_params, obs, action)
-        print(f"{q_value=}")
+        q_value = q(jnp.concatenate((obs, action)))
+        if verbose:
+            print(f"{q_value=}")
         obs = np.asarray(next_obs)
-    if "final_info" in infos:
-        for info in infos["final_info"]:
-            print(f"episodic_return={info['episode']['r']}")
-            break

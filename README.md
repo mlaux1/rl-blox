@@ -58,32 +58,40 @@ the SAC RL algorithm.
 import gymnasium as gym
 
 from rl_blox.algorithms.model_free.sac import (
-    GaussianMlpPolicyNetwork,
-    SoftMlpQNetwork,
+    create_sac_state,
     train_sac,
 )
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
 seed = 1
+verbose = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
-env.action_space.seed(seed)
-envs = gym.vector.SyncVectorEnv([lambda: env])
 
-policy = GaussianMlpPolicyNetwork.create([256, 256], envs)
-q = SoftMlpQNetwork(hidden_nodes=[256, 256])
-
-policy, policy_params, q, q1_params, q2_params = train_sac(
-    envs,
-    policy,
-    q,
+sac_state = create_sac_state(
+    env,
+    policy_hidden_nodes=[128, 128],
+    policy_learning_rate=3e-4,
+    q_hidden_nodes=[512, 512],
+    q_learning_rate=1e-3,
     seed=seed,
-    total_timesteps=8_000,
-    buffer_size=1_000_000,
+)
+sac_result = train_sac(
+    env,
+    sac_state.policy,
+    sac_state.policy_optimizer,
+    sac_state.q1,
+    sac_state.q1_optimizer,
+    sac_state.q2,
+    sac_state.q2_optimizer,
+    total_timesteps=11_000,
+    buffer_size=11_000,
     gamma=0.99,
     learning_starts=5_000,
+    verbose=verbose,
 )
-envs.close()
+env.close()
+policy, _, q1, _, _, q2, _, _, _ = sac_result
 
 # Do something with the trained policy...
 ```
@@ -109,14 +117,9 @@ questions about the software, you should ask them in the discussion section.
 
 The recommended workflow to add a new feature, add documentation, or fix a bug is the following:
 - Push your changes to a branch (e.g. feature/x, doc/y, or fix/z) of your fork of the RL-BLOX repository.
-- Open a pull request to the latest development branch. There is usually an open merge request from the latest development branch to the main branch.
-- When the latest development branch is merged to the main branch, a new release will be made.
-
-Note that there is a checklist for new features.
+- Open a pull request to the main branch.
 
 It is forbidden to directly push to the main branch.
-Each new version has its own development branch from which a pull request will be opened to the main branch.
-Only the maintainers of the software are allowed to merge a development branch to the main branch.
 
 ## Testing
 

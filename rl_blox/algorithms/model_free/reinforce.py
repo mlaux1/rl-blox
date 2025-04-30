@@ -1,3 +1,4 @@
+import contextlib
 from collections import namedtuple
 from collections.abc import Callable
 
@@ -232,7 +233,7 @@ class GaussianMLP(nnx.Module):
 
 
 class StochasticPolicyBase(nnx.Module):
-    """Base class for probabilistic policies."""
+    """Base class for stochastic policies."""
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         """Compute action probabilities for given observation."""
@@ -263,9 +264,6 @@ class GaussianPolicy(StochasticPolicyBase):
     ----------
     net : nnx.Module
         Gaussian neural network.
-
-    rngs
-        Random number generator.
     """
 
     net: nnx.Module
@@ -279,10 +277,15 @@ class GaussianPolicy(StochasticPolicyBase):
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from Gaussian distribution."""
         mean, log_var = self.net(observation)
-        return (
-            jax.random.normal(key, mean.shape)
-            * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
-            + mean
+        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
+        std = jnp.exp(log_std)
+        # same as
+        # jax.random.normal(key, mean.shape)
+        # * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
+        # + mean
+        return distrax.MultivariateNormalDiag(loc=mean, scale_diag=std).sample(
+            seed=key,
+            sample_shape=(),
         )
 
     def log_probability(
@@ -313,9 +316,6 @@ class SoftmaxPolicy(StochasticPolicyBase):
     ----------
     net : nnx.Module
         Gaussian neural network.
-
-    rngs
-        Random number generator.
     """
 
     net: nnx.Module
@@ -785,7 +785,7 @@ def train_reinforce_epoch(
     logger : logger.LoggerBase, optional
         Experiment logger.
     """
-    dataset = collect_samples(
+    dataset = sample_trajectories(
         env, policy, key, logger, train_after_episode, total_steps
     )
 
@@ -823,15 +823,15 @@ def train_reinforce_epoch(
             logger.record_epoch("value_function", value_function)
 
 
-def collect_samples(
+def sample_trajectories(
     env: gym.Env,
     policy: StochasticPolicyBase,
     key: jnp.ndarray,
-    logger: logger.StandardLogger,
+    logger: logger.LoggerBase,
     train_after_episode: bool,
     total_steps: int,
 ) -> EpisodeDataset:
-    """Collect samples with stochastic policy.
+    """Sample trajectories with stochastic policy.
 
     Parameters
     ----------
@@ -905,6 +905,13 @@ def collect_samples(
             episode=logger.n_episodes - 1,
         )
     return dataset
+
+
+# DEPRECATED: for backward compatibility
+collect_samples = sample_trajectories
+with contextlib.suppress(ImportError):
+    from warnings import deprecated
+    collect_samples = deprecated(collect_samples)
 
 
 def train_value_function(

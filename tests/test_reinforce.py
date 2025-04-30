@@ -8,7 +8,7 @@ from rl_blox.algorithms.model_free.reinforce import (
     GaussianMLP,
     GaussianPolicy,
     SoftmaxPolicy,
-    collect_samples,
+    sample_trajectories,
     discounted_reward_to_go,
 )
 
@@ -28,7 +28,7 @@ def test_data_collection_discrete():
     )
     env.close()
     total_steps = 100
-    dataset = collect_samples(env, policy, key, None, False, total_steps)
+    dataset = sample_trajectories(env, policy, key, None, False, total_steps)
     assert len(dataset) >= total_steps
     # regression test:
     assert dataset.average_return() == 20.8
@@ -50,7 +50,7 @@ def test_data_collection_continuous():
     )
     env.close()
     total_steps = 100
-    dataset = collect_samples(env, policy, key, None, False, total_steps)
+    dataset = sample_trajectories(env, policy, key, None, False, total_steps)
     assert len(dataset) >= total_steps
     # regression test:
     assert dataset.average_return() == 5.8

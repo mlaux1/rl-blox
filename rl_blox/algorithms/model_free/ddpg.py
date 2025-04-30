@@ -1,199 +1,419 @@
-from collections import deque
+from collections import OrderedDict, namedtuple
 from functools import partial
 from typing import List, Tuple
 
-import flax
-import flax.linen as nn
+import chex
 import gymnasium as gym
-import jax
 import jax.numpy as jnp
+import jax.random
 import numpy as np
 import optax
-from flax.training.train_state import TrainState
-from numpy.typing import ArrayLike
+from flax import nnx
+import tqdm
 
-from ...policy.replay_buffer import ReplayBufferJax as ReplayBuffer
+from ...logging.logger import LoggerBase
 
 
-class MlpQNetwork(nn.Module):
-    r"""Q network represented by multilayer perceptron.
+# TODO consolidate replay buffer implementations
+class ReplayBuffer:
+    buffer: OrderedDict[str, np.typing.NDArray[float]]
 
-    A Q network maps observations and actions to their value, hence, represents
-    the action-value function :math:`Q(o, a)`.
+    def __init__(self, buffer_size: int, keys: list[str] | None = None):
+        if keys is None:
+            keys = [
+                "observation",
+                "action",
+                "reward",
+                "next_observation",
+                "termination",
+            ]
+        self.buffer = OrderedDict()
+        for k in keys:
+            self.buffer[k] = np.empty(0, dtype=float)
+        self.buffer_size = buffer_size
+        self.current_len = 0
+        self.insert_idx = 0
+
+    def add_sample(self, **sample):
+        if self.current_len == 0:
+            for k, v in sample.items():
+                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
+                self.buffer[k] = np.empty(
+                    (self.buffer_size,) + np.asarray(v).shape, dtype=float
+                )
+        for k, v in sample.items():
+            self.buffer[k][self.insert_idx] = v
+        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+        self.current_len = min(self.current_len + 1, self.buffer_size)
+
+    def sample_batch(
+        self, batch_size: int, rng: np.random.Generator
+    ) -> list[jnp.ndarray]:
+        indices = rng.integers(0, self.current_len, batch_size)
+        return [jnp.asarray(self.buffer[k][indices]) for k in self.buffer]
+
+    def __len__(self):
+        return self.current_len
+
+# TODO consolidate MLP implementations
+class MLP(nnx.Module):
+    """Multilayer Perceptron.
+
+    Parameters
+    ----------
+    n_features
+        Number of features.
+
+    n_outputs
+        Number of output components.
+
+    hidden_nodes
+        Numbers of hidden nodes of the MLP.
+
+    rngs
+        Random number generator.
     """
 
-    hidden_nodes: List[int]
-    """Numbers of hidden nodes of the MLP."""
+    n_outputs: int
+    hidden_layers: list[nnx.Linear]
+    output_layer: nnx.Linear
 
-    @nn.compact
-    def __call__(self, obs: jnp.ndarray, act: jnp.ndarray):
-        x = jnp.concatenate([obs, act], -1)
-        for n_nodes in self.hidden_nodes:
-            x = nn.Dense(n_nodes)(x)
-            x = nn.relu(x)
-        x = nn.Dense(1)(x)
-        return x
+    def __init__(
+        self,
+        n_features: int,
+        n_outputs: int,
+        hidden_nodes: list[int],
+        rngs: nnx.Rngs,
+    ):
+        chex.assert_scalar_positive(n_features)
+        chex.assert_scalar_positive(n_outputs)
+
+        self.n_outputs = n_outputs
+
+        self.hidden_layers = []
+        n_in = n_features
+        for n_out in hidden_nodes:
+            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            n_in = n_out
+
+        self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
+
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        for layer in self.hidden_layers:
+            x = nnx.relu(
+                layer(x)
+            )  # TODO different activation in comparison to REINFORCE branch
+        return self.output_layer(x)
 
 
-class DeterministicMlpPolicyNetwork(nn.Module):
-    r"""Deterministic policy represented by multilayer perceptron (MLP).
+class DeterministicPolicy(nnx.Module):
+    r"""Deterministic policy represented with a function approximator.
 
-    The MLP directly maps observations to actions, hence, represents the
-    function :math:`\pi(o) = a`.
+    The deterministic policy directly maps observations to actions, hence,
+    represents the function :math:`\pi(o) = a`.
     """
 
-    hidden_nodes: List[int]
-    """Numbers of hidden nodes of the MLP."""
+    policy_net: nnx.Module
+    """Underlying function approximator."""
 
-    action_dim: int
-    """Dimension of the action space."""
-
-    action_scale: jnp.ndarray
+    action_scale: nnx.Variable[jnp.ndarray]
     """Scales for each component of the action."""
 
-    action_bias: jnp.ndarray
+    action_bias: nnx.Variable[jnp.ndarray]
     """Offset for each component of the action."""
 
-    @nn.compact
-    def __call__(self, x):
-        for n_nodes in self.hidden_nodes:
-            x = nn.Dense(n_nodes)(x)
-            x = nn.relu(x)
-        x = nn.Dense(self.action_dim)(x)
-        x = nn.tanh(x)
-        x = x * self.action_scale + self.action_bias
-        return x
-
-    @staticmethod
-    def create(actor_hidden_nodes: List[int], envs: gym.vector.SyncVectorEnv):
-        return DeterministicMlpPolicyNetwork(
-            hidden_nodes=actor_hidden_nodes,
-            action_dim=np.prod(envs.single_action_space.shape),
-            action_scale=jnp.array(
-                (envs.action_space.high - envs.action_space.low) / 2.0
-            ),
-            action_bias=jnp.array(
-                (envs.action_space.high + envs.action_space.low) / 2.0
-            ),
+    def __init__(self, policy_net: nnx.Module, action_space: gym.spaces.Box):
+        self.policy_net = policy_net
+        self.action_scale = nnx.Variable(
+            jnp.array((action_space.high - action_space.low) / 2.0)
+        )
+        self.action_bias = nnx.Variable(
+            jnp.array((action_space.high + action_space.low) / 2.0)
         )
 
+    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
+        y = self.policy_net(observation)
+        return nnx.tanh(y) * jnp.broadcast_to(
+            self.action_scale.value, y.shape
+        ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
-class TargetTrainState(TrainState):
-    """TrainState with additional target parameters.
 
-    Target parameters are supposed to be more stable and will be updated by
-    Polyak averaging.
+def mse_action_value_loss(
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    q_target_values: jnp.ndarray,
+    q: nnx.Module,
+) -> jnp.ndarray:
+    """Mean squared eror loss function for action-value function.
+
+    Parameters
+    ----------
+    observations : array, shape (n_samples, n_observation_features)
+        Batch of observations.
+
+    actions : array, shape (n_samples, n_action_dims)
+        Batch of selected actions.
+
+    q_target_values : array, shape (n_samples,)
+        Actual action values that should be approximated.
+
+    q : nnx.Module
+        Q network.
+
+    Returns
+    -------
+    loss : array, shape ()
+        Mean squared distance between predicted and actual action values.
     """
+    chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
+    chex.assert_equal_shape_prefix(
+        (observations, q_target_values), prefix_len=1
+    )
 
-    target_params: flax.core.FrozenDict
+    q_predicted = q(jnp.concatenate((observations, actions), axis=-1)).squeeze()
+    chex.assert_equal_shape((q_predicted, q_target_values))
+
+    return (
+        2.0
+        * optax.l2_loss(predictions=q_predicted, targets=q_target_values).mean()
+    )
 
 
-def critic_loss(
-    q: nn.Module,
-    observations: np.ndarray,
-    actions: np.ndarray,
-    q_target: np.ndarray,
-    q_params: flax.core.FrozenDict,
-) -> float:
-    """Loss function for action-value function of the critic.
+def deterministic_policy_value_loss(
+    q: nnx.Module,
+    observations: jnp.ndarray,
+    policy: nnx.Module,
+) -> jnp.ndarray:
+    r"""Loss function for the deterministic policy of the actor.
 
-    :param q: Q network.
-    :param observations: Batch of observations.
-    :param actions: Batch of selected actions.
-    :param q_target: Actual action values that should be approximated.
-    :param q_params: Parameters of the Q network.
-    :return: Mean squared distance between predicted and actual action values.
+    .. math::
+
+        \mathcal{L}(\theta)
+        =
+        \frac{1}{N}
+        \sum_{o \in \mathcal{D}}
+        -Q_{\theta}(o, \pi(o))
+
+    Parameters
+    ----------
+    q : nnx.Module
+        Q network.
+
+    observations : array, shape (n_samples, n_observation_features)
+        Batch of observations.
+
+    policy : nnx.Module
+        Deterministic policy represented by neural network.
+
+    Returns
+    -------
+    loss
+        Negative value of the actions selected by the policy for the given
+        observations.
     """
-    q_predicted = q.apply(q_params, observations, actions).squeeze()
-    return 2.0 * optax.l2_loss(predictions=q_predicted, targets=q_target).mean()
-
-
-def actor_loss(
-    policy: nn.Module,
-    q: nn.Module,
-    q_state: TargetTrainState,
-    observations: np.ndarray,
-    policy_params: flax.core.FrozenDict,
-) -> float:
-    """Loss function for the deterministic policy of the actor.
-
-    :param policy: Deterministic policy represented by neural network.
-    :param q: Q network.
-    :param q_state: Training state of the Q network.
-    :param observations: Batch of observations.
-    :param policy_params: Parameters of the policy.
-    :return: Negative value of the actions selected by the policy for the given
-             observations.
-    """
-    return -q.apply(
-        q_state.params, observations, policy.apply(policy_params, observations)
+    return -q(
+        jnp.concatenate((observations, policy(observations)), axis=-1)
     ).mean()
 
 
+@nnx.jit
 def ddpg_update_critic(
-    policy: nn.Module,
-    q: nn.Module,
+    policy_target: nnx.Module,
+    q: nnx.Module,
+    q_target: nnx.Module,
+    q_optimizer: nnx.Optimizer,
     gamma: float,
-    policy_state: TargetTrainState,
-    q_state: TargetTrainState,
-    observations: np.ndarray,
-    actions: np.ndarray,
-    next_observations: np.ndarray,
-    rewards: np.ndarray,
-    dones: np.ndarray,
-) -> Tuple[TargetTrainState, float]:
-    """DDPG critic update."""
-    # TODO why was it clipped to [-1, 1] before?
-    next_actions = policy.apply(policy_state.target_params, next_observations)
-    q_next_target = q.apply(
-        q_state.target_params, next_observations, next_actions
-    ).reshape(-1)
-    q_actual = (rewards + (1 - dones) * gamma * q_next_target).reshape(-1)
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    next_observations: jnp.ndarray,
+    rewards: jnp.ndarray,
+    terminations: jnp.ndarray,
+) -> float:
+    r"""DDPG critic update.
 
-    loss = partial(critic_loss, q, observations, actions, q_actual)
-    q_loss_value, grads = jax.value_and_grad(loss)(q_state.params)
-    q_state = q_state.apply_gradients(grads=grads)
+    Uses the bootstrap estimate
 
-    return q_state, q_loss_value
+    .. math::
+
+        r_{t+1} + \gamma Q(o_{t+1}, \pi(o_{t+1}))
+
+    based on the target network of :math:`Q,\pi` as a target value for the
+    Q network update with a mean squared error loss.
+
+    Parameters
+    ----------
+    policy_target : nnx.Module
+        Target network of policy.
+
+    q : nnx.Module
+        Action-value function.
+
+    q_target : nnx.Module
+        Target network of q.
+
+    q_optimizer : nnx.Optimizer
+        Optimizer of q.
+
+    gamma : float
+        Discount factor of discounted infinite horizon return model.
+
+    observations : array
+        Observations :math:`o_t`.
+
+    actions : array
+        Actions :math:`a_t`.
+
+    next_observations : array
+        Next observations :math:`o_{t+1}`.
+
+    rewards : array
+        Rewards :math:`r_{t+1}`.
+
+    terminations : array
+        Indicates if a terminal state was reached in this step.
+
+    Returns
+    -------
+    q_loss_value : float
+        Loss value.
+
+    See also
+    --------
+    mse_action_value_loss
+        The mean squared error loss.
+    """
+    chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
+    chex.assert_equal_shape((observations, next_observations))
+    chex.assert_equal_shape_prefix((observations, rewards), prefix_len=1)
+    chex.assert_equal_shape_prefix((observations, terminations), prefix_len=1)
+    chex.assert_equal_shape((rewards, terminations))
+
+    next_actions = policy_target(next_observations)
+    q_target_next = q_target(
+        jnp.concatenate((next_observations, next_actions), axis=-1)
+    ).squeeze()
+    q_bootstrap = rewards + (1 - terminations) * gamma * q_target_next
+
+    q_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
+        observations, actions, q_bootstrap, q
+    )
+    q_optimizer.update(grads)
+
+    return q_loss_value
 
 
+@nnx.jit
 def ddpg_update_actor(
-    actor: nn.Module,
-    q: nn.Module,
-    actor_state: TargetTrainState,
-    q_state: TargetTrainState,
-    observations: np.ndarray,
-) -> Tuple[TargetTrainState, float]:
-    """DDPG actor update."""
-    loss = partial(actor_loss, actor, q, q_state, observations)
-    actor_loss_value, grads = jax.value_and_grad(loss)(actor_state.params)
-    actor_state = actor_state.apply_gradients(grads=grads)
-    return actor_state, actor_loss_value
+    policy: nnx.Module,
+    policy_optimizer: nnx.Optimizer,
+    q: nnx.Module,
+    observations: jnp.ndarray,
+) -> float:
+    """DDPG actor update.
+
+    See also
+    --------
+    deterministic_policy_value_loss
+        The loss function used during the optimization step.
+    """
+    actor_loss_value, grads = nnx.value_and_grad(
+        deterministic_policy_value_loss, argnums=2
+    )(q, observations, policy)
+    policy_optimizer.update(grads)
+    return actor_loss_value
+
+
+@nnx.jit
+def update_target(net: nnx.Module, target_net: nnx.Module, tau: float) -> None:
+    """Update target network inplace with Polyak averaging.
+
+    Parameters
+    ----------
+    net : nnx.Module
+        Live network.
+
+    target_net : nnx.Module
+        Target network.
+
+    tau : float
+        The step_size used to update the Polyak average, i.e., the coefficient
+        with which the live network's parameters will be multiplied.
+    """
+    params = nnx.state(net)
+    target_params = nnx.state(target_net)
+    target_params = optax.incremental_update(params, target_params, tau)
+    nnx.update(target_net, target_params)
 
 
 def sample_actions(
-    actor: nn.Module,
-    actor_state: TargetTrainState,
-    action_space: gym.spaces.Box,
-    obs: np.ndarray,
+    action_low: jnp.ndarray,
+    action_high: jnp.ndarray,
+    action_scale: jnp.ndarray,
     exploration_noise: float,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    """Sample actions with deterministic policy and Gaussian action noise."""
-    deterministic_actions = jax.device_get(actor.apply(actor_state.params, obs))
-    noise = rng.normal(0.0, actor.action_scale * exploration_noise)
-    exploring_actions = deterministic_actions + noise
-    return exploring_actions.clip(action_space.low, action_space.high)
+    policy: DeterministicPolicy,
+    obs: jnp.ndarray,
+    key: jnp.ndarray,
+) -> jnp.ndarray:
+    """Sample actions with deterministic policy and Gaussian action noise.
+
+    Actions will be clipped to [action_low, action_high].
+    """
+    action = policy(obs)
+    exploring_action = jax.random.multivariate_normal(
+        key, action, jnp.diag(action_scale * exploration_noise)
+    )
+    return jnp.clip(exploring_action, action_low, action_high)
+
+
+def create_ddpg_state(
+    env: gym.Env[gym.spaces.Box, gym.spaces.Box],
+    policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    policy_learning_rate: float = 3e-4,
+    q_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    q_learning_rate: float = 3e-4,
+    seed: int = 0,
+) -> namedtuple:
+    """Create components for DDPG algorithm with default configuration."""
+    env.action_space.seed(seed)
+
+    policy_net = MLP(
+        env.observation_space.shape[0],
+        env.action_space.shape[0],
+        policy_hidden_nodes,
+        nnx.Rngs(seed),
+    )
+    policy = DeterministicPolicy(policy_net, env.action_space)
+    policy_optimizer = nnx.Optimizer(
+        policy, optax.adam(learning_rate=policy_learning_rate)
+    )
+
+    q = MLP(
+        env.observation_space.shape[0] + env.action_space.shape[0],
+        1,
+        q_hidden_nodes,
+        nnx.Rngs(seed),
+    )
+    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
+
+    return namedtuple(
+        "DDPGState",
+        [
+            "policy",
+            "policy_optimizer",
+            "q",
+            "q_optimizer",
+        ],
+    )(policy, policy_optimizer, q, q_optimizer)
 
 
 def train_ddpg(
-    envs,
-    policy: nn.Module,
-    q: nn.Module,
+    env: gym.Env[gym.spaces.Box, gym.spaces.Box],
+    policy: nnx.Module,
+    policy_optimizer: nnx.Optimizer,
+    q: nnx.Module,
+    q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
-    actor_learning_rate: float = 3e-4,
-    q_learning_rate: float = 3e-4,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     tau: float = 0.005,
@@ -202,125 +422,199 @@ def train_ddpg(
     exploration_noise: float = 0.1,
     learning_starts: int = 25_000,
     policy_frequency: int = 2,
-    verbose: int = 0,
-) -> Tuple[nn.Module, flax.core.FrozenDict, nn.Module, flax.core.FrozenDict]:
+    policy_target: nnx.Optimizer | None = None,
+    q_target: nnx.Optimizer | None = None,
+    logger: LoggerBase | None = None,
+) -> tuple[
+    nnx.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer
+]:
     """Deep Deterministic Policy Gradients (DDPG).
 
     This is an off-policy actor-critic algorithm with a deterministic policy.
     The critic approximates the action-value function. The actor will maximize
     action values based on the approximation of the action-value function.
 
-    :param envs: Vectorized Gymnasium environments.
-    :param policy: Deterministic policy network.
-    :param q: Q network.
-    :param seed: Seed for random number generators in Jax and NumPy.
-    :param total_timesteps: Number of steps to execute in the environment.
-    :param actor_learning_rate: Learning rate of the actor.
-    :param q_learning_rate: Learning rate of the critic.
-    :param buffer_size: Size of the replay buffer.
-    :param gamma: Discount factor.
-    :param tau: Learning rate for polyak averaging of target policy and value
-                function.
-    :param batch_size: Size of a batch during gradient computation.
-    :param gradient_steps: Number of gradient steps during one training phase.
-    :param exploration_noise: Exploration noise in action space. Will be scaled
-                              by half of the range of the action space.
-    :param learning_starts: Learning starts after this number of random steps
-                            was taken in the environment.
-    :param policy_frequency: The policy will only be updated after this number
-                             of steps. Target policy and value function will be
-                             updated with the same frequency. The value
-                             function will be updated after every step.
-    :param verbose: Verbosity level.
-    :returns: A tuple of the policy, policy parameters, Q network, and its
-              parameters.
+    DDPG [2]_ extends Deterministic Policy Gradients [1]_ to use neural
+    networks as function approximators with target networks.
+
+    Parameters
+    ----------
+    env: Vectorized Gymnasium environments.
+    policy: Deterministic policy network.
+    policy_optimizer: Optimizer for the policy network.
+    q: Q network.
+    q_optimizer: Optimizer for the Q network.
+    seed: Seed for random number generators in Jax and NumPy.
+    total_timesteps: Number of steps to execute in the environment.
+    actor_learning_rate: Learning rate of the actor.
+    q_learning_rate: Learning rate of the critic.
+    buffer_size: Size of the replay buffer.
+    gamma: Discount factor.
+    tau
+        Learning rate for polyak averaging of target policy and value function.
+    batch_size
+        Size of a batch during gradient computation.
+    gradient_steps
+        Number of gradient steps during one training phase.
+    exploration_noise
+        Exploration noise in action space. Will be scaled by half of the range
+        of the action space.
+    learning_starts
+        Learning starts after this number of random steps was taken in the
+        environment.
+    policy_frequency
+        The policy will only be updated after this number of steps. Target
+        policy and value function will be updated with the same frequency. The
+        value function will be updated after every step.
+    policy_target
+        Target policy. Only has to be set if we want to continue training
+        from an old state.
+    q_target
+        Target network. Only has to be set if we want to continue training
+        from an old state.
+    logger : LoggerBase, optional
+        Experiment logger.
+
+    Returns
+    -------
+    policy
+        Final policy.
+    policy_target
+        Target policy.
+    policy_optimizer
+        Policy optimizer.
+    q
+        Final state-action value function.
+    q_target
+        Target network.
+    q_optimizer
+        Optimizer for Q network.
+
+    References
+    ----------
+    .. [1] Silver, D., Lever, G., Heess, N., Degris, T., Wierstra, D. &
+       Riedmiller, M. (2014). Deterministic Policy Gradient Algorithms.
+       In Proceedings of the 31st International Conference on Machine Learning,
+       PMLR 32(1):387-395. https://proceedings.mlr.press/v32/silver14.html
+
+    .. [2] Lillicrap, T.P., Hunt, J.J., Pritzel, A., Heess, N., Erez, T.,
+       Tassa, Y., Silver, D. & Wierstra, D. (2016). Continuous control with
+       deep reinforcement learning. In 4th International Conference on Learning
+       Representations, {ICLR} 2016, San Juan, Puerto Rico, May 2-4, 2016,
+       Conference Track Proceedings. http://arxiv.org/abs/1509.02971
     """
     rng = np.random.default_rng(seed)
-    key = jax.random.PRNGKey(seed)
+    key = jax.random.key(seed)
 
     assert isinstance(
-        envs.single_action_space, gym.spaces.Box
+        env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
-    action_space: gym.spaces.Box = envs.action_space
 
-    envs.single_observation_space.dtype = np.float32
+    env.observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)
 
-    obs, _ = envs.reset(seed=seed)
-
-    key, actor_key, q_key = jax.random.split(key, 3)
-    policy_state = TargetTrainState.create(
-        apply_fn=policy.apply,
-        params=policy.init(actor_key, obs),
-        target_params=policy.init(actor_key, obs),
-        tx=optax.adam(learning_rate=actor_learning_rate),
+    action_scale = 0.5 * (env.action_space.high - env.action_space.low)
+    _sample_actions = nnx.jit(
+        partial(
+            sample_actions,
+            env.action_space.low,
+            env.action_space.high,
+            action_scale,
+            exploration_noise,
+        )
     )
-    q_state = TargetTrainState.create(
-        apply_fn=q.apply,
-        params=q.init(q_key, obs, action_space.sample()),
-        target_params=q.init(q_key, obs, action_space.sample()),
-        tx=optax.adam(learning_rate=q_learning_rate),
-    )
-    policy.apply = jax.jit(policy.apply)
-    q.apply = jax.jit(q.apply)
-    update_critic = jax.jit(partial(ddpg_update_critic, policy, q, gamma))
-    update_actor = jax.jit(partial(ddpg_update_actor, policy, q))
 
-    for t in range(total_timesteps):
-        if t < learning_starts:
-            actions = envs.action_space.sample()
+    if logger is not None:
+        logger.start_new_episode()
+    obs, _ = env.reset(seed=seed)
+    steps_per_episode = 0
+
+    if policy_target is None:
+        policy_target = nnx.clone(policy)
+    if q_target is None:
+        q_target = nnx.clone(q)
+
+    for global_step in tqdm.trange(total_timesteps):
+        if global_step < learning_starts:
+            action = env.action_space.sample()
         else:
-            actions = sample_actions(
-                policy,
-                policy_state,
-                envs.single_action_space,
-                obs,
-                exploration_noise,
-                rng,
+            key, action_key = jax.random.split(key, 2)
+            action = np.asarray(
+                _sample_actions(policy, jnp.asarray(obs), action_key)
             )
 
-        next_obs, rewards, terminations, truncations, infos = envs.step(actions)
+        next_obs, reward, termination, truncated, info = env.step(action)
+        steps_per_episode += 1
 
-        for i in range(len(terminations)):
-            if terminations[i] or truncations[i]:
-                print(
-                    f"{t=}, length={infos['episode']['l']}, "
-                    f"return={infos['episode']['r']}"
-                )
-            break
+        rb.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=termination,
+        )
 
-        rb.add_samples(obs, actions, rewards, next_obs, terminations)
+        done = termination or truncated
+        if done:
+            if logger is not None:
+                if "episode" in info:
+                    logger.record_stat(
+                        "return", info["episode"]["r"], step=global_step
+                    )
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+
+            obs, _ = env.reset()
+            steps_per_episode = 0
+            continue
 
         obs = next_obs
 
-        if t > learning_starts:
+        if global_step > learning_starts:
             for _ in range(gradient_steps):
-                observations, actions, rewards, next_observations, dones = (
-                    rb.sample_batch(batch_size, rng)
-                )
+                (
+                    observations,
+                    actions,
+                    rewards,
+                    next_observations,
+                    terminations,
+                ) = rb.sample_batch(batch_size, rng)
 
-                q_state, q_loss_value = update_critic(
-                    policy_state,
-                    q_state,
+                q_loss_value = ddpg_update_critic(
+                    policy_target,
+                    q,
+                    q_target,
+                    q_optimizer,
+                    gamma,
                     observations,
                     actions,
                     next_observations,
                     rewards,
-                    dones,
+                    terminations,
                 )
-                if t % policy_frequency == 0:
-                    policy_state, actor_loss_value = update_actor(
-                        policy_state, q_state, observations
-                    )
-                    policy_state = policy_state.replace(
-                        target_params=optax.incremental_update(
-                            policy_state.params, policy_state.target_params, tau
-                        )
-                    )
-                    q_state = q_state.replace(
-                        target_params=optax.incremental_update(
-                            q_state.params, q_state.target_params, tau
-                        )
+                if logger is not None:
+                    logger.record_stat("q loss", q_loss_value, step=global_step)
+                    logger.record_epoch("q", q, step=global_step)
+
+                if global_step % policy_frequency == 0:
+                    actor_loss_value = ddpg_update_actor(
+                        policy, policy_optimizer, q, observations
                     )
 
-    return policy, policy_state.params, q, q_state.params
+                    update_target(policy, policy_target, tau)
+                    # TODO why is it updated less often than q?
+                    update_target(q, q_target, tau)
+
+                    if logger is not None:
+                        logger.record_stat(
+                            "policy loss", actor_loss_value, step=global_step
+                        )
+                        logger.record_epoch("policy", policy, step=global_step)
+                        logger.record_epoch(
+                            "policy_target", policy_target, step=global_step
+                        )
+                        logger.record_epoch(
+                            "q_target", q_target, step=global_step
+                        )
+
+    return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
