@@ -21,7 +21,7 @@ q_net = MLP(4, 10, env.action_space.n, nnx_rngs)
 rb = ReplayBuffer(30_000)
 
 # initialise optimiser
-optimizer = nnx.Optimizer(q_net, optax.adam(0.003))
+optimizer = nnx.Optimizer(q_net, optax.rprop(0.003))
 
 # Train
 q = train_dqn(
