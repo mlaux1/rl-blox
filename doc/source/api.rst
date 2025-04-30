@@ -18,6 +18,7 @@ Algorithm Interface
    :toctree: _apidoc/
 
    ~q_learning.q_learning
+   ~dqn.train_dqn
    ~reinforce.train_reinforce_epoch
    ~actor_critic.train_ac_epoch
    ~ddpg.train_ddpg
@@ -30,6 +31,8 @@ Functional Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   ~dqn.critic_loss
+   ~dqn.greedy_policy
    ~reinforce.discounted_reward_to_go
    ~reinforce.reinforce_gradient
    ~reinforce.policy_gradient_pseudo_loss
@@ -56,6 +59,7 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   ~dqn.MLP
    ~reinforce.MLP
    ~reinforce.GaussianMLP
    ~reinforce.StochasticPolicyBase
