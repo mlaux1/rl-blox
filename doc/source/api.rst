@@ -23,8 +23,8 @@ Algorithm Interface
    ~ddpg.train_ddpg
    ~sac.train_sac
 
-Blox Interface
---------------
+Functional Blox
+---------------
 
 .. autosummary::
    :toctree: _apidoc/
@@ -45,6 +45,26 @@ Blox Interface
    ~sac.sac_update_critic
    ~double_q_learning.double_q_learning
 
+Data Blox
+---------
+
+.. autosummary::
+   :toctree: _apidoc/
+
+   ~reinforce.MLP
+   ~reinforce.GaussianMLP
+   ~reinforce.StochasticPolicyBase
+   ~reinforce.GaussianPolicy
+   ~reinforce.SoftmaxPolicy
+   ~ddpg.ReplayBuffer
+   ~ddpg.MLP
+   ~ddpg.DeterministicPolicy
+   ~sac.GaussianMLP
+   ~sac.StochasticPolicyBase
+   ~sac.GaussianPolicy
+   ~sac.EntropyCoefficient
+   ~sac.EntropyControl
+
 
 :mod:`rl_blox.algorithms.model_based`
 =====================================
@@ -61,8 +81,8 @@ Algorithm Interface
 
    ~pets.train_pets
 
-Blox Interface
---------------
+Functional Blox
+---------------
 
 .. autosummary::
    :toctree: _apidoc/
@@ -71,6 +91,16 @@ Blox Interface
    ~pets.ts_inf
    ~pets.evaluate_plans
    ~pets.update_dynamics_model
+
+Data Blox
+---------
+
+.. autosummary::
+   :toctree: _apidoc/
+   :template: class.rst
+
+   ~pets.PETSMPCConfig
+   ~pets.PETSMPCState
 
 
 :mod:`rl_blox.logging`
