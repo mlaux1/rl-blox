@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
+import tqdm
 
 from ...logging.logger import LoggerBase
 from .ddpg import MLP, ReplayBuffer, mse_action_value_loss, update_target
@@ -557,7 +558,7 @@ def train_sac(
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
 
-    for global_step in range(total_timesteps):
+    for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

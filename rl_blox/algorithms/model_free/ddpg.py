@@ -8,6 +8,7 @@ import jax.random
 import numpy as np
 import optax
 from flax import nnx
+import tqdm
 
 from ...logging.logger import LoggerBase
 
@@ -533,7 +534,7 @@ def train_ddpg(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in range(total_timesteps):
+    for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
