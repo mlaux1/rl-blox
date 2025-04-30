@@ -172,7 +172,7 @@ def train_dqn(
     total_timesteps: int = 1e4,
     gamma: float = 0.99,
     seed: int = 1,
-) -> MLP:
+) -> tuple[MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
     Implements the most basic version of DQN with experience replay as described
@@ -212,6 +212,8 @@ def train_dqn(
     -------
     q_net : MLP
         The trained Q-network.
+    optimizer : nnx.Optimizer
+        The Q-net optimiser.
 
     References
     ----------
@@ -258,4 +260,4 @@ def train_dqn(
         else:
             obs = next_obs
 
-    return q_net
+    return q_net, optimizer

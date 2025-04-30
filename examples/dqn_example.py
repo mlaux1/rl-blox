@@ -24,7 +24,7 @@ rb = ReplayBuffer(30_000)
 optimizer = nnx.Optimizer(q_net, optax.rprop(0.003))
 
 # Train
-q = train_dqn(
+q, _ = train_dqn(
     q_net,
     env,
     rb,
