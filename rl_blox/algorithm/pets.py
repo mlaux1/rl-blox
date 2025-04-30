@@ -9,6 +9,7 @@ import gymnasium as gym
 import jax
 import numpy as np
 import optax
+import tqdm
 from flax import nnx, struct
 from jax import numpy as jnp
 from jax.typing import ArrayLike
@@ -575,7 +576,7 @@ def train_pets(
         logger.start_new_episode()
     steps_per_episode = 0
 
-    for t in range(total_timesteps):
+    for t in tqdm.trange(total_timesteps):
         if (
             t >= learning_starts
             and (t - learning_starts) % n_steps_per_iteration == 0
