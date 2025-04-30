@@ -5,7 +5,7 @@ from jax.random import PRNGKey
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from ..policy.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ..blox.value_policy import get_epsilon_greedy_action, get_greedy_action
 from ..util.error_functions import td_error
 
 

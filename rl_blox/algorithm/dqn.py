@@ -7,7 +7,7 @@ from flax import nnx
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from ..policy.replay_buffer import ReplayBuffer, Transition
+from ..blox.replay_buffer import ReplayBuffer, Transition
 
 
 class MLP(nnx.Module):

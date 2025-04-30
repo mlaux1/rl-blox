@@ -13,13 +13,13 @@ from flax import nnx, struct
 from jax import numpy as jnp
 from jax.typing import ArrayLike
 
-from ..logging.logger import LoggerBase
-from ..model.cross_entropy_method import cem_sample, cem_update
-from ..model.probabilistic_ensemble import (
+from ..blox.cross_entropy_method import cem_sample, cem_update
+from ..blox.probabilistic_ensemble import (
     EnsembleTrainState,
     GaussianMLPEnsemble,
     train_ensemble,
 )
+from ..logging.logger import LoggerBase
 
 
 class ReplayBuffer:

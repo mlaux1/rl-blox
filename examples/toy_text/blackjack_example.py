@@ -6,7 +6,7 @@ from jax.random import PRNGKey
 
 from rl_blox.algorithm.q_learning import q_learning
 from rl_blox.algorithm.sarsa import sarsa
-from rl_blox.policy.value_policy import get_greedy_action, make_q_table
+from rl_blox.blox.value_policy import get_greedy_action, make_q_table
 from rl_blox.util.experiment_helper import generate_rollout
 
 NUM_EPISODES = 2000

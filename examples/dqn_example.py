@@ -4,7 +4,7 @@ import optax
 from flax import nnx
 
 from rl_blox.algorithm.dqn import MLP, train_dqn
-from rl_blox.policy.replay_buffer import ReplayBuffer
+from rl_blox.blox.replay_buffer import ReplayBuffer
 
 # Set up environment
 env_name = "CartPole-v1"
