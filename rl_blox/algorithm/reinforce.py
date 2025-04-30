@@ -11,7 +11,7 @@ import numpy as np
 import optax
 from flax import nnx
 
-from ...logging import logger
+from ..logging import logger
 
 
 class EpisodeDataset:

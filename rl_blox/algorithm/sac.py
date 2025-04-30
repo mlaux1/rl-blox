@@ -10,7 +10,7 @@ import optax
 import tqdm
 from flax import nnx
 
-from ...logging.logger import LoggerBase
+from ..logging.logger import LoggerBase
 from .ddpg import MLP, ReplayBuffer, mse_action_value_loss, update_target
 
 

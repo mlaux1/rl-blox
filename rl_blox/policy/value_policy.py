@@ -5,7 +5,7 @@ from jax import Array, jit, random
 from jax.random import PRNGKey
 from jax.typing import ArrayLike
 
-from ..tools import gymtools
+from ..util import gymtools
 
 
 def make_q_table(env: gymnasium.Env) -> Array:

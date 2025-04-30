@@ -2,7 +2,7 @@ import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
 
-from rl_blox.algorithms.model_free.ddpg import create_ddpg_state, train_ddpg
+from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.logging.logger import AIMLogger
 
 env_name = "Pendulum-v1"
@@ -28,8 +28,10 @@ hparams_algorithm = dict(
 )
 
 if verbose:
-    print("This example uses the AIM logger. You will not see any output on "
-          "stdout. Run 'aim up' to analyze the progress.")
+    print(
+        "This example uses the AIM logger. You will not see any output on "
+        "stdout. Run 'aim up' to analyze the progress."
+    )
 logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,

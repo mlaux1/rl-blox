@@ -5,10 +5,10 @@ import jax.random
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
 
-from rl_blox.algorithms.model_free.q_learning import q_learning
-from rl_blox.algorithms.model_free.sarsa import sarsa
-from rl_blox.helper.experiment_helper import generate_rollout
+from rl_blox.algorithm.q_learning import q_learning
+from rl_blox.algorithm.sarsa import sarsa
 from rl_blox.policy.value_policy import get_greedy_action, make_q_table
+from rl_blox.util.experiment_helper import generate_rollout
 
 NUM_EPISODES = 2000
 LEARNING_RATE = 0.05
@@ -27,8 +27,13 @@ q_table = make_q_table(env)
 
 # train using Q-Learning
 q_table, ep_rewards = q_learning(
-    key0, env, q_table,
-    alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
+    key0,
+    env,
+    q_table,
+    alpha=LEARNING_RATE,
+    epsilon=EPSILON,
+    num_episodes=NUM_EPISODES,
+)
 
 env.close()
 
@@ -45,8 +50,13 @@ env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
 sarsa_q_table = make_q_table(env)
 
 sarsa_q_table, ep_rewards = sarsa(
-    key2, env, sarsa_q_table,
-    alpha=LEARNING_RATE, epsilon=EPSILON, num_episodes=NUM_EPISODES)
+    key2,
+    env,
+    sarsa_q_table,
+    alpha=LEARNING_RATE,
+    epsilon=EPSILON,
+    num_episodes=NUM_EPISODES,
+)
 
 env.close()
 

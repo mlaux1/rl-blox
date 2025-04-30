@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 import tqdm
 
-from rl_blox.algorithms.model_free.reinforce import (
+from rl_blox.algorithm.reinforce import (
     create_policy_gradient_discrete_state,
     train_reinforce_epoch,
 )

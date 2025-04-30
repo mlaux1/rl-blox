@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
-from rl_blox.algorithms.model_free.dqn import MLP, train_dqn
+from rl_blox.algorithm.dqn import MLP, train_dqn
 from rl_blox.policy.replay_buffer import ReplayBuffer
 
 # Set up environment

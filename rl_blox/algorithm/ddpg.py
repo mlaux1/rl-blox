@@ -1,6 +1,5 @@
 from collections import OrderedDict, namedtuple
 from functools import partial
-from typing import List, Tuple
 
 import chex
 import gymnasium as gym
@@ -11,7 +10,7 @@ import optax
 import tqdm
 from flax import nnx
 
-from ...logging.logger import LoggerBase
+from ..logging.logger import LoggerBase
 
 
 # TODO consolidate replay buffer implementations

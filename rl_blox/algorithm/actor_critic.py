@@ -2,7 +2,7 @@ import gymnasium as gym
 import jax.numpy as jnp
 from flax import nnx
 
-from ...logging.logger import LoggerBase
+from ..logging.logger import LoggerBase
 from .reinforce import (
     MLP,
     StochasticPolicyBase,

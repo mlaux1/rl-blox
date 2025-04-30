@@ -3,9 +3,10 @@ from functools import partial
 import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
-from rl_blox.algorithms.model_free.q_learning import q_learning
-from rl_blox.helper.experiment_helper import generate_rollout
+
+from rl_blox.algorithm.q_learning import q_learning
 from rl_blox.policy.value_policy import get_greedy_action, make_q_table
+from rl_blox.util.experiment_helper import generate_rollout
 
 NUM_EPISODES = 2000
 LEARNING_RATE = 0.05

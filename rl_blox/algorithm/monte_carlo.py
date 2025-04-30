@@ -1,6 +1,6 @@
 import numpy as np
 
-from ...policy.base_policy import GreedyQPolicy, UniformRandomPolicy
+from ..policy.base_policy import GreedyQPolicy, UniformRandomPolicy
 
 
 class MonteCarlo:

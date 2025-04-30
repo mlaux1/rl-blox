@@ -6,7 +6,7 @@ import numpy.typing as npt
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 
-from ..tools import gymtools
+from ..util import gymtools
 
 
 class ValueFunction(abc.ABC):
