@@ -4,12 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 import tqdm
 
-from rl_blox.algorithms.model_free.actor_critic import (
-    train_ac_epoch,
-)
-from rl_blox.algorithms.model_free.reinforce import (
-    create_policy_gradient_continuous_state,
-)
+from rl_blox.algorithm.actor_critic import train_ac_epoch
+from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
 from rl_blox.logging import logger
 
 # env_name = "Pendulum-v1"

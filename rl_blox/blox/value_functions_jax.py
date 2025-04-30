@@ -8,7 +8,7 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.spaces.utils import flatdim
 from jax import Array
 
-from ...policy.base_model import NeuralNetwork
+from ..base_model import NeuralNetwork
 from ..replay_buffer import ReplayBuffer, Transition
 
 
@@ -108,7 +108,7 @@ class NNQFunction(QFunction):
         # detailed explanation). This converts batch-array of Transitions
         # to Transition of batch-arrays.
         transitions = self.replay_buffer.sample(self.batch_size)
-        batch = Transition(*zip(*transitions))
+        batch = Transition(*zip(*transitions, strict=False))
 
         # Compute a mask of non-final states and concatenate the batch elements
         # (a final state would've been the one after which simulation ended)

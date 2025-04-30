@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 
-from rl_blox.algorithms.model_based.pets_reward_models import (
+from rl_blox.algorithm.pets_reward_models import (
     PENDULUM_MAX_TORQUE,
     pendulum_reward,
 )

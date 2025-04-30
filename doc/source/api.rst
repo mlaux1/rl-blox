@@ -4,10 +4,10 @@
 API Documentation
 =================
 
-:mod:`rl_blox.algorithms.model_free`
+:mod:`rl_blox.algorithm`
 ====================================
 
-.. automodule:: rl_blox.algorithms.model_free
+.. automodule:: rl_blox.algorithm
     :no-members:
     :no-inherited-members:
 
@@ -22,6 +22,7 @@ Algorithm Interface
    ~actor_critic.train_ac_epoch
    ~ddpg.train_ddpg
    ~sac.train_sac
+   ~pets.train_pets
 
 Functional Blox
 ---------------
@@ -44,6 +45,10 @@ Functional Blox
    ~sac.sac_update_actor
    ~sac.sac_update_critic
    ~double_q_learning.double_q_learning
+   ~pets.mpc_action
+   ~pets.ts_inf
+   ~pets.evaluate_plans
+   ~pets.update_dynamics_model
 
 Data Blox
 ---------
@@ -64,43 +69,9 @@ Data Blox
    ~sac.GaussianPolicy
    ~sac.EntropyCoefficient
    ~sac.EntropyControl
-
-
-:mod:`rl_blox.algorithms.model_based`
-=====================================
-
-.. automodule:: rl_blox.algorithms.model_based
-    :no-members:
-    :no-inherited-members:
-
-Algorithm Interface
--------------------
-
-.. autosummary::
-   :toctree: _apidoc/
-
-   ~pets.train_pets
-
-Functional Blox
----------------
-
-.. autosummary::
-   :toctree: _apidoc/
-
-   ~pets.mpc_action
-   ~pets.ts_inf
-   ~pets.evaluate_plans
-   ~pets.update_dynamics_model
-
-Data Blox
----------
-
-.. autosummary::
-   :toctree: _apidoc/
-   :template: class.rst
-
    ~pets.PETSMPCConfig
    ~pets.PETSMPCState
+
 
 
 :mod:`rl_blox.logging`

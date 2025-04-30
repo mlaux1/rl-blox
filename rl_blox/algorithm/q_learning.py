@@ -5,8 +5,8 @@ from jax.random import PRNGKey
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from ...policy.value_policy import get_epsilon_greedy_action, get_greedy_action
-from ...tools.error_functions import td_error
+from ..blox.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ..util.error_functions import td_error
 
 
 def q_learning(
@@ -18,7 +18,6 @@ def q_learning(
     num_episodes: int,
     gamma: float = 0.9999,
 ) -> Array:
-
     ep_rewards = jnp.zeros(num_episodes)
 
     for i in tqdm(range(num_episodes)):

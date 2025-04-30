@@ -1,7 +1,7 @@
 import gymnasium as gym
 
-from rl_blox.algorithms.model_based.pets import create_pets_state, train_pets
-from rl_blox.algorithms.model_based.pets_reward_models import pendulum_reward
+from rl_blox.algorithm.pets import create_pets_state, train_pets
+from rl_blox.algorithm.pets_reward_models import pendulum_reward
 from rl_blox.logging.logger import AIMLogger
 
 env_name = "Pendulum-v1"

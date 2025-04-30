@@ -13,13 +13,13 @@ from flax import nnx, struct
 from jax import numpy as jnp
 from jax.typing import ArrayLike
 
-from ...model.cross_entropy_method import cem_sample, cem_update
-from ...model.probabilistic_ensemble import (
+from ..blox.cross_entropy_method import cem_sample, cem_update
+from ..blox.probabilistic_ensemble import (
     EnsembleTrainState,
     GaussianMLPEnsemble,
     train_ensemble,
 )
-from ...logging.logger import LoggerBase
+from ..logging.logger import LoggerBase
 
 
 class ReplayBuffer:
@@ -587,8 +587,12 @@ def train_pets(
             )
             n_epochs = gradient_steps
             if logger is not None:
-                logger.record_stat("dynamics model loss", dynamics_model_loss, step=t)
-                logger.record_epoch("dynamics_model", dynamics_model.model, step=t)
+                logger.record_stat(
+                    "dynamics model loss", dynamics_model_loss, step=t
+                )
+                logger.record_epoch(
+                    "dynamics_model", dynamics_model.model, step=t
+                )
 
         if t < learning_starts:
             action = action_space.sample()

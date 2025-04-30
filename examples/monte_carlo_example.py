@@ -1,6 +1,6 @@
 import gymnasium as gym
 
-from rl_blox.algorithms.model_free.monte_carlo import MonteCarlo
+from rl_blox.algorithm.monte_carlo import MonteCarlo
 
 train_env = gym.make(
     "FrozenLake-v1", render_mode="human", desc=["SFFH", "FFFF", "FFFF", "FFFG"]

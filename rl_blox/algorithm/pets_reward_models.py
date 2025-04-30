@@ -3,7 +3,6 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-
 PENDULUM_MAX_TORQUE: float = 2.0
 
 

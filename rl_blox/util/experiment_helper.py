@@ -1,15 +1,11 @@
-from typing import Tuple
-
 import gymnasium as gym
 import numpy as np
 from numpy.typing import ArrayLike
 
-from ..policy.base_policy import BasePolicy
-
 
 def generate_rollout(
     env: gym.Env, policy
-) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
+) -> tuple[ArrayLike, ArrayLike, ArrayLike]:
     observation, _ = env.reset()
     terminated = False
     truncated = False

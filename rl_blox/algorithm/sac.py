@@ -7,10 +7,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from flax import nnx
 import tqdm
+from flax import nnx
 
-from ...logging.logger import LoggerBase
+from ..logging.logger import LoggerBase
 from .ddpg import MLP, ReplayBuffer, mse_action_value_loss, update_target
 
 

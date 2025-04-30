@@ -1,6 +1,5 @@
 from collections import OrderedDict, namedtuple
 from functools import partial
-from typing import List, Tuple
 
 import chex
 import gymnasium as gym
@@ -8,10 +7,10 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import optax
-from flax import nnx
 import tqdm
+from flax import nnx
 
-from ...logging.logger import LoggerBase
+from ..logging.logger import LoggerBase
 
 
 # TODO consolidate replay buffer implementations
@@ -54,6 +53,7 @@ class ReplayBuffer:
 
     def __len__(self):
         return self.current_len
+
 
 # TODO consolidate MLP implementations
 class MLP(nnx.Module):

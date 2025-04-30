@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import optax
 from flax import nnx
 
-from rl_blox.model.probabilistic_ensemble import (
+from rl_blox.blox.probabilistic_ensemble import (
     GaussianMLPEnsemble,
     train_ensemble,
 )

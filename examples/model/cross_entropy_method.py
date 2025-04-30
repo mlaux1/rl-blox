@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
-from rl_blox.model.cross_entropy_method import optimize_cem
+from rl_blox.blox.cross_entropy_method import optimize_cem
 
 
 def fitness_function(x: jnp.ndarray) -> jnp.ndarray:
