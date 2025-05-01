@@ -77,6 +77,31 @@ Data Blox
    pets.PETSMPCState
 
 
+:mod:`rl_blox.blox`
+===================
+
+.. automodule:: rl_blox.blox
+    :no-members:
+    :no-inherited-members:
+
+Functional Blox
+---------------
+
+.. autosummary::
+   :toctree: _apidoc/
+
+   cross_entropy_method.cem_sample
+   cross_entropy_method.cem_update
+
+Data Blox
+---------
+
+.. autosummary::
+   :toctree: _apidoc/
+
+   probabilistic_ensemble.GaussianMLP
+
+
 :mod:`rl_blox.logging`
 ======================
 
