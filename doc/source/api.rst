@@ -92,6 +92,11 @@ Functional Blox
 
    cross_entropy_method.cem_sample
    cross_entropy_method.cem_update
+   probabilistic_ensemble.gaussian_nll
+   probabilistic_ensemble.bootstrap
+   probabilistic_ensemble.gaussian_ensemble_loss
+   probabilistic_ensemble.train_ensemble
+   probabilistic_ensemble.restore_checkpoint
 
 Data Blox
 ---------
@@ -100,6 +105,8 @@ Data Blox
    :toctree: _apidoc/
 
    probabilistic_ensemble.GaussianMLP
+   probabilistic_ensemble.GaussianMLPEnsemble
+   probabilistic_ensemble.EnsembleTrainState
 
 
 :mod:`rl_blox.logging`
