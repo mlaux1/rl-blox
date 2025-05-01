@@ -5,7 +5,7 @@ API Documentation
 =================
 
 :mod:`rl_blox.algorithm`
-====================================
+========================
 
 .. automodule:: rl_blox.algorithm
     :no-members:
@@ -75,7 +75,6 @@ Data Blox
    ~sac.EntropyControl
    ~pets.PETSMPCConfig
    ~pets.PETSMPCState
-
 
 
 :mod:`rl_blox.logging`
