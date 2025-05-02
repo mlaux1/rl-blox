@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools"]
-build-backends = "setuptools.build_meta"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "rl_blox"
@@ -87,8 +87,9 @@ precision = 1
 [tool.coverage.paths]
 source = ["rl_blox"]
 
-[tool.setuptools]
-packages = ["rl_blox"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rl_blox*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "rl_blox.__version__"}
