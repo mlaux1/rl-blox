@@ -1,4 +1,3 @@
-import numpy as np
 import gymnasium as gym
 from rl_blox.algorithm.ext.crossq import train_crossq
 
