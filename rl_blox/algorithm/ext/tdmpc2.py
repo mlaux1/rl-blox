@@ -27,8 +27,7 @@
 # SOFTWARE.
 
 import os
-
-from fontTools.misc.bezierTools import namedtuple
+from collections import namedtuple
 
 os.environ["MUJOCO_GL"] = os.getenv("MUJOCO_GL", "egl")
 os.environ["LAZY_LEGACY_OP"] = "0"
