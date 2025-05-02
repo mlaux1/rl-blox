@@ -59,7 +59,6 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
-   dqn.MLP
    reinforce.GaussianMLP
    reinforce.StochasticPolicyBase
    reinforce.GaussianPolicy
