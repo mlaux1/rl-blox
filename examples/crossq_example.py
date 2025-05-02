@@ -18,6 +18,7 @@ if verbose:
     )
 hparams = dict(
     total_timesteps=15_000,
+    crossq_style=True,
     seed=seed,
 )
 logger = AIMLogger()
