@@ -1,7 +1,6 @@
 import gymnasium
 import jax
 import jax.numpy as jnp
-import numpy as np
 import optax
 from flax import nnx
 from jax.typing import ArrayLike
@@ -77,7 +76,7 @@ def _extract(
 
 
 @nnx.jit
-def _critic_loss(
+def critic_loss(
     q_net: MLP,
     batch: list[Transition],
     gamma: float = 0.99,
@@ -131,13 +130,13 @@ def _train_step(
     batch :
         The minibatch of transitions to compute the update from.
     """
-    grad_fn = nnx.value_and_grad(_critic_loss)
+    grad_fn = nnx.value_and_grad(critic_loss)
     loss, grads = grad_fn(q_net, batch)
     optimizer.update(grads)
 
 
 @nnx.jit
-def _greedy_policy(
+def greedy_policy(
     q_net: MLP,
     obs: ArrayLike,
 ) -> int:
@@ -176,9 +175,9 @@ def train_dqn(
     """Deep Q Learning with Experience Replay
 
     Implements the most basic version of DQN with experience replay as described
-    in Mnih et al. (2013), which is an off-policy value-based RL algorithm. It
-    uses a neural network to approximate the Q-function and samples minibatches
-    from the replay buffer to calculate updates.
+    in Mnih et al. (2013) [1]_, which is an off-policy value-based RL algorithm.
+    It uses a neural network to approximate the Q-function and samples
+    minibatches from the replay buffer to calculate updates.
 
     This implementation aims to be as close as possible to the original algorithm
     described in the paper while remaining not overly engineered towards a
@@ -207,7 +206,6 @@ def train_dqn(
     seed : int
         The random seed, which can be set to reproduce results.
 
-
     Returns
     -------
     q_net : MLP
@@ -217,18 +215,15 @@ def train_dqn(
 
     References
     ----------
-
     .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I.,
        Wierstra, D., & Riedmiller, M. (2013). Playing atari with deep
        reinforcement learning. arXiv preprint arXiv:1312.5602.
-
     """
 
     assert isinstance(
         env.action_space, gymnasium.spaces.Discrete
     ), "DQN only supports discrete action spaces"
 
-    rng = np.random.default_rng(seed)
     key = jax.random.key(seed)
 
     # initialise episode
@@ -243,7 +238,7 @@ def train_dqn(
         if roll < epsilon[step]:
             action = env.action_space.sample()
         else:
-            action = _greedy_policy(q_net, obs)
+            action = greedy_policy(q_net, obs)
 
         next_obs, reward, terminated, truncated, info = env.step(int(action))
         replay_buffer.push(obs, action, reward, next_obs, terminated)

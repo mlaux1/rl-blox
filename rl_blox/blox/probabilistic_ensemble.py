@@ -340,7 +340,7 @@ def gaussian_nll(
 def bootstrap(
     n_ensemble: int, train_size: float, n_samples: int, key: jnp.ndarray
 ) -> jnp.ndarray:
-    """Bootstrap training sets.
+    """Bootstrap training sets for ensemble.
 
     Parameters
     ----------
@@ -375,7 +375,7 @@ def gaussian_ensemble_loss(
     X: jnp.ndarray,
     Y: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Sum of Gaussian NLL and penalty for log_var boundaries and weights."""
+    """Sum of Gaussian NLL and penalty for log_var boundaries."""
     mean, log_var = model(X)
     boundary_loss = model.max_log_var.sum() - model.min_log_var.sum()
     return gaussian_nll(mean, log_var, Y).sum() + 0.01 * boundary_loss
@@ -509,19 +509,20 @@ def train_ensemble(
     return loss
 
 
-def restore_checkpoint(
-    path: str, model: GaussianMLPEnsemble
-) -> GaussianMLPEnsemble:
+def restore_checkpoint(path: str, model: nnx.Module) -> nnx.Module:
     """Restore checkpoint with orbax.
 
     Parameters
     ----------
-    path : Absolute path to directory in which the checkpoint should be stored.
-    model : Model with graphdef that should be restored.
+    path : str
+        Absolute path to directory in which the checkpoint should be stored.
+    model : nnx.Module
+        Model with graphdef that should be restored.
 
     Returns
     -------
-    model : Model state without graphdef.
+    model : nnx.Module
+        Restored model.
     """
     import orbax.checkpoint as ocp
 
