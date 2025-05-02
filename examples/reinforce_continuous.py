@@ -1,14 +1,12 @@
 import gymnasium as gym
-import jax
 import jax.numpy as jnp
 import numpy as np
-import tqdm
 
 from rl_blox.algorithm.reinforce import (
     create_policy_gradient_continuous_state,
-    train_reinforce_epoch,
+    train_reinforce,
 )
-from rl_blox.logging import logger
+from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 # env_name = "Pendulum-v1"
 # env_name = "HalfCheetah-v4"
@@ -16,7 +14,7 @@ env_name = "InvertedPendulum-v5"
 env = gym.make(env_name)
 env.reset(seed=43)
 
-hparams = dict(
+hparams_model = dict(
     policy_shared_head=True,
     policy_hidden_nodes=[64, 64],
     policy_learning_rate=3e-4,
@@ -24,34 +22,34 @@ hparams = dict(
     value_network_learning_rate=1e-2,
     seed=42,
 )
-
-logger = logger.LoggerList(
-    [logger.StandardLogger(verbose=2), logger.AIMLogger()]
+hparams_algorithm = dict(
+    policy_gradient_steps=5,
+    value_gradient_steps=5,
+    total_timesteps=500_000,
+    steps_per_update=5000,
+    gamma=0.99,
+    train_after_episode=False,
 )
+
+logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
 logger.define_experiment(
-    env_name=env_name, algorithm_name="REINFORCE", hparams=hparams
+    env_name=env_name,
+    algorithm_name="REINFORCE",
+    hparams=hparams_model | hparams_algorithm,
 )
 
-reinforce_state = create_policy_gradient_continuous_state(env, **hparams)
+reinforce_state = create_policy_gradient_continuous_state(env, **hparams_model)
 
-n_epochs = 100
-key = reinforce_state.key
-for _ in tqdm.trange(n_epochs):
-    key, subkey = jax.random.split(key, 2)
-    train_reinforce_epoch(
-        env,
-        reinforce_state.policy,
-        reinforce_state.policy_optimizer,
-        reinforce_state.value_function,
-        reinforce_state.value_function_optimizer,
-        policy_gradient_steps=5,
-        value_gradient_steps=5,
-        total_steps=5000,
-        gamma=0.99,
-        train_after_episode=False,
-        key=subkey,
-        logger=logger,
-    )
+train_reinforce(
+    env,
+    reinforce_state.policy,
+    reinforce_state.policy_optimizer,
+    reinforce_state.value_function,
+    reinforce_state.value_function_optimizer,
+    **hparams_algorithm,
+    key=reinforce_state.key,
+    logger=logger,
+)
 env.close()
 
 # Evaluation

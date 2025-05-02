@@ -1,53 +1,51 @@
 import gymnasium as gym
-import jax
 import jax.numpy as jnp
 import numpy as np
-import tqdm
 
-from rl_blox.algorithm.actor_critic import train_ac_epoch
+from rl_blox.algorithm.actor_critic import train_ac
 from rl_blox.algorithm.reinforce import create_policy_gradient_discrete_state
-from rl_blox.logging import logger
+from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 env_name = "CartPole-v1"
 # env_name = "MountainCar-v0"  # never reaches the goal -> never learns
 env = gym.make(env_name)
 env.reset(seed=42)
 
-hparams = dict(
+hparams_model = dict(
     policy_hidden_nodes=[64, 64],
     policy_learning_rate=3e-4,
     value_network_hidden_nodes=[256, 256],
     value_network_learning_rate=1e-2,
     seed=42,
 )
-
-logger = logger.LoggerList(
-    [logger.StandardLogger(verbose=2), logger.AIMLogger()]
+hparams_algorithm = dict(
+    policy_gradient_steps=20,
+    value_gradient_steps=20,
+    total_timesteps=100_000,
+    gamma=1.0,
+    steps_per_update=1_000,
+    train_after_episode=False,
 )
+
+logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
 logger.define_experiment(
-    env_name=env_name, algorithm_name="Actor-Critic", hparams=hparams
+    env_name=env_name,
+    algorithm_name="Actor-Critic",
+    hparams=hparams_model | hparams_algorithm,
 )
 
-ac_state = create_policy_gradient_discrete_state(env, **hparams)
+ac_state = create_policy_gradient_discrete_state(env, **hparams_model)
 
-n_epochs = 100
-key = ac_state.key
-for _ in tqdm.trange(n_epochs):
-    key, subkey = jax.random.split(key, 2)
-    train_ac_epoch(
-        env,
-        ac_state.policy,
-        ac_state.policy_optimizer,
-        ac_state.value_function,
-        ac_state.value_function_optimizer,
-        policy_gradient_steps=20,
-        value_gradient_steps=20,
-        total_steps=1000,
-        gamma=1.0,
-        train_after_episode=False,
-        key=subkey,
-        logger=logger,
-    )
+train_ac(
+    env,
+    ac_state.policy,
+    ac_state.policy_optimizer,
+    ac_state.value_function,
+    ac_state.value_function_optimizer,
+    key=ac_state.key,
+    logger=logger,
+    **hparams_algorithm,
+)
 env.close()
 
 # Evaluation

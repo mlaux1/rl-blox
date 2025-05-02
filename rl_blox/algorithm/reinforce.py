@@ -9,9 +9,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+import tqdm
 from flax import nnx
 
-from ..logging import logger
+from ..logging.logger import LoggerBase
 
 
 class EpisodeDataset:
@@ -728,7 +729,7 @@ def create_policy_gradient_discrete_state(
     )(policy, policy_optimizer, value_function, value_function_optimizer, key)
 
 
-def train_reinforce_epoch(
+def train_reinforce(
     env: gym.Env,
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
@@ -736,13 +737,14 @@ def train_reinforce_epoch(
     value_function_optimizer: nnx.Optimizer | None = None,
     policy_gradient_steps: int = 1,
     value_gradient_steps: int = 1,
-    total_steps: int = 1000,
+    total_timesteps: int = 1_000_000,
     gamma: float = 1.0,
+    steps_per_update: int = 1_000,
     train_after_episode: bool = False,
     key: jnp.ndarray | None = None,
-    logger: logger.LoggerBase | None = None,
+    logger: LoggerBase | None = None,
 ):
-    """Train with REINFORCE for one epoch.
+    """Train with REINFORCE.
 
     Parameters
     ----------
@@ -768,12 +770,15 @@ def train_reinforce_epoch(
     value_gradient_steps : int, optional
         Number of gradient descent steps for the value network.
 
-    total_steps : int, optional
-        Number of samples to collect before updating the policy. Alternatively
-        you can train after each episode.
+    total_timesteps
+        Total timesteps of the experiments.
 
     gamma : float, optional
         Discount factor for rewards.
+
+    steps_per_update
+        Number of samples to collect before updating the policy. Alternatively
+        you can train after each episode.
 
     train_after_episode : bool, optional
         Train after each episode. Alternatively you can train after collecting
@@ -782,52 +787,61 @@ def train_reinforce_epoch(
     key : jnp.ndarray, optional
         Pseudo random number generator key for action sampling.
 
-    logger : logger.LoggerBase, optional
+    logger : LoggerBase, optional
         Experiment logger.
     """
-    dataset = sample_trajectories(
-        env, policy, key, logger, train_after_episode, total_steps
-    )
+    progress = tqdm.tqdm(total=total_timesteps)
+    step = 0
+    while step < total_timesteps:
+        key, skey = jax.random.split(key, 2)
+        dataset = sample_trajectories(
+            env, policy, skey, logger, train_after_episode, steps_per_update
+        )
+        step += len(dataset)
+        progress.update(len(dataset))
 
-    observations, actions, _, returns, gamma_discount = (
-        dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
-    )
+        observations, actions, _, returns, gamma_discount = (
+            dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
+        )
 
-    p_loss = train_policy_reinforce(
-        policy,
-        policy_optimizer,
-        policy_gradient_steps,
-        value_function,
-        observations,
-        actions,
-        returns,
-        gamma_discount,
-    )
-    if logger is not None:
-        logger.record_stat("policy loss", p_loss, episode=logger.n_episodes - 1)
-        logger.record_epoch("policy", policy)
-
-    if value_function is not None:
-        assert value_function_optimizer is not None
-        v_loss = train_value_function(
+        p_loss = train_policy_reinforce(
+            policy,
+            policy_optimizer,
+            policy_gradient_steps,
             value_function,
-            value_function_optimizer,
-            value_gradient_steps,
             observations,
+            actions,
             returns,
+            gamma_discount,
         )
         if logger is not None:
             logger.record_stat(
-                "value function loss", v_loss, episode=logger.n_episodes - 1
+                "policy loss", p_loss, episode=logger.n_episodes - 1
             )
-            logger.record_epoch("value_function", value_function)
+            logger.record_epoch("policy", policy)
+
+        if value_function is not None:
+            assert value_function_optimizer is not None
+            v_loss = train_value_function(
+                value_function,
+                value_function_optimizer,
+                value_gradient_steps,
+                observations,
+                returns,
+            )
+            if logger is not None:
+                logger.record_stat(
+                    "value function loss", v_loss, episode=logger.n_episodes - 1
+                )
+                logger.record_epoch("value_function", value_function)
+    progress.close()
 
 
 def sample_trajectories(
     env: gym.Env,
     policy: StochasticPolicyBase,
     key: jnp.ndarray,
-    logger: logger.LoggerBase,
+    logger: LoggerBase,
     train_after_episode: bool,
     total_steps: int,
 ) -> EpisodeDataset:
@@ -915,6 +929,9 @@ with contextlib.suppress(ImportError):
     collect_samples = deprecated(collect_samples)
 
 
+mse_value_loss_and_grad = nnx.jit(nnx.value_and_grad(mse_value_loss, argnums=2))
+
+
 def train_value_function(
     value_function,
     value_function_optimizer,
@@ -924,7 +941,7 @@ def train_value_function(
 ):
     v_loss = 0.0
     for _ in range(value_gradient_steps):
-        v_loss, v_grad = nnx.value_and_grad(mse_value_loss, argnums=2)(
+        v_loss, v_grad = mse_value_loss_and_grad(
             observations, returns, value_function
         )
         value_function_optimizer.update(v_grad)
