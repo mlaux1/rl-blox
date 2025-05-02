@@ -107,6 +107,33 @@ def cem_sample(
     lb: jnp.ndarray,
     ub: jnp.ndarray,
 ) -> jnp.ndarray:
+    r"""Sample from search distribution.
+
+    Parameters
+    ----------
+    mean : array, shape (n_parameters,)
+        Mean of search distribution.
+
+    var : array, shape (n_parameters,)
+        Variance per dimension of search distribution.
+
+    step_key : array
+        Random key for sampling.
+
+    n_population : int
+        Number of samples to draw.
+
+    lb : array, (n_parameters,)
+        Lower bound for sampling.
+
+    ub : array, (n_parameters,)
+        Upper bound for sampling.
+
+    Returns
+    -------
+    samples : array, shape (n_population, n_parameters)
+        Samples :math:`lb \leq x_i \leq ub` from search distribution.
+    """
     chex.assert_equal_shape((mean, var))
     chex.assert_equal_shape((mean, lb))
     chex.assert_equal_shape((mean, ub))
@@ -135,6 +162,48 @@ def cem_update(
     n_elite: int,
     alpha: float,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    r"""Update search distribution with cross entropy method (CEM).
+
+    Based on the top k samples :math:`x_1, \ldots, x_k`, the search
+    distribution is updated according to
+
+    .. math::
+
+        \mu_{t+1} &= \alpha \mu_t + (1-\alpha) \bar{x}\\
+        \sigma^2_{t+1} &= \alpha \sigma_t^2
+        + (1-\alpha) \frac{1}{k}\sum_i (x_i - \bar{x})^2
+
+    with :math:`\bar{x} = \frac{1}{k}\sum_i x_i`.
+
+    Parameters
+    ----------
+    samples : array, shape (n_population, n_parameters)
+        Samples from current search distribution.
+
+    fitness : array, shape (n_population,)
+        Fitness values obtained for samples. Larger values are better.
+
+    mean : array, shape (n_parameters,)
+        Mean of current search distribution.
+
+    var : array, shape (n_parameters,)
+        Variance per dimension of current search distribution.
+
+    n_elite : int
+        Number of samples used for the update.
+
+    alpha : float
+        Weight of the old distribution in the update. (1 - alpha) is similar
+        to a learning rate.
+
+    Returns
+    -------
+    mean : array, shape (n_parameters,)
+        Mean of new search distribution.
+
+    var : array, shape (n_parameters,)
+        Variance per dimension of new search distribution.
+    """
     _, top_k = jax.lax.top_k(fitness, n_elite)
     elites = jnp.take(samples, top_k, axis=0)
     mean = alpha * mean + (1.0 - alpha) * jnp.mean(elites, axis=0)
