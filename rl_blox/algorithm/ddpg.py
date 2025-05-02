@@ -161,12 +161,13 @@ def deterministic_policy_value_loss(
         Negative value of the actions selected by the policy for the given
         observations.
     """
+    actions = policy(observations)
     return -q(
-        jnp.concatenate((observations, policy(observations)), axis=-1)
+        jnp.concatenate((observations, actions), axis=-1)
     ).mean()
 
 
-@nnx.jit
+@partial(nnx.jit, static_argnames=["gamma"])
 def ddpg_update_critic(
     policy_target: nnx.Module,
     q: nnx.Module,
@@ -245,7 +246,7 @@ def ddpg_update_critic(
     q_bootstrap = rewards + (1 - terminations) * gamma * q_target_next
 
     q_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
-        observations, actions, q_bootstrap, q
+        observations, actions, jax.lax.stop_gradient(q_bootstrap), q
     )
     q_optimizer.update(grads)
 
@@ -273,7 +274,7 @@ def ddpg_update_actor(
     return actor_loss_value
 
 
-@nnx.jit
+@partial(nnx.jit, static_argnames=["tau"])
 def update_target(net: nnx.Module, target_net: nnx.Module, tau: float) -> None:
     """Update target network inplace with Polyak averaging.
 
