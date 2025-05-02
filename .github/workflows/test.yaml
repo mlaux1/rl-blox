@@ -3,11 +3,7 @@
 
 name: Tests
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+on: [pull_request, push]
 
 jobs:
   build:
@@ -19,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -33,4 +29,4 @@ jobs:
 
       - name: Test with pytest
         run: |
-          pytest tests/
+          pytest .
