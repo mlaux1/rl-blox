@@ -3,13 +3,13 @@ import jax
 from flax import nnx
 from numpy.testing import assert_array_equal
 
-from rl_blox.algorithms.model_free.reinforce import (
+from rl_blox.algorithm.reinforce import (
     MLP,
     GaussianMLP,
     GaussianPolicy,
     SoftmaxPolicy,
-    sample_trajectories,
     discounted_reward_to_go,
+    sample_trajectories,
 )
 
 
