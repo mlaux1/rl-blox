@@ -26,13 +26,16 @@
 
 import os
 import time
+from collections.abc import Callable, Sequence
 from copy import deepcopy
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
-from typing import Callable, Sequence
-from typing import ClassVar
-from typing import NamedTuple
-from typing import no_type_check
+from typing import (
+    Any,
+    ClassVar,
+    NamedTuple,
+    Union,
+    no_type_check,
+)
 
 import flax
 import flax.linen as nn
@@ -42,27 +45,40 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import tensorflow_probability.substrates.jax as tfp
-from flax.linen.module import Module, compact, merge_param  # pylint: disable=g-multiple-import
-from flax.linen.normalization import _compute_stats, _normalize, _canonicalize_axes
+from flax.linen.module import (
+    Module,
+    compact,
+    merge_param,
+)  # pylint: disable=g-multiple-import
+from flax.linen.normalization import (
+    _canonicalize_axes,
+    _compute_stats,
+    _normalize,
+)
 from flax.training.train_state import TrainState
 from gymnasium import spaces
 from jax.nn import initializers
 from stable_baselines3 import HerReplayBuffer
 from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
-from stable_baselines3.common.noise import ActionNoise
-from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.noise import ActionNoise, NormalActionNoise
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.policies import BasePolicy
-from stable_baselines3.common.preprocessing import is_image_space, maybe_transpose
-from stable_baselines3.common.type_aliases import GymEnv, Schedule
-from stable_baselines3.common.type_aliases import MaybeCallback
+from stable_baselines3.common.preprocessing import (
+    is_image_space,
+    maybe_transpose,
+)
+from stable_baselines3.common.type_aliases import (
+    GymEnv,
+    MaybeCallback,
+    Schedule,
+)
 from stable_baselines3.common.utils import is_vectorized_observation
 
 tfd = tfp.distributions
 
 PRNGKey = Any
 Array = Any
-Shape = Tuple[int, ...]
+Shape = tuple[int, ...]
 Dtype = Any  # this could be a real type?
 Axes = Union[int, Sequence[int]]
 
@@ -75,33 +91,33 @@ Axes = Union[int, Sequence[int]]
 class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
     def __init__(
         self,
-        policy: Type[BasePolicy],
-        env: Union[GymEnv, str],
-        learning_rate: Union[float, Schedule],
-        qf_learning_rate: Optional[float] = None,
+        policy: type[BasePolicy],
+        env: GymEnv | str,
+        learning_rate: float | Schedule,
+        qf_learning_rate: float | None = None,
         buffer_size: int = 1_000_000,  # 1e6
         learning_starts: int = 100,
         batch_size: int = 256,
         tau: float = 0.005,
         gamma: float = 0.99,
-        train_freq: Union[int, Tuple[int, str]] = (1, "step"),
+        train_freq: int | tuple[int, str] = (1, "step"),
         gradient_steps: int = 1,
-        action_noise: Optional[ActionNoise] = None,
-        replay_buffer_class: Optional[Type[ReplayBuffer]] = None,
-        replay_buffer_kwargs: Optional[Dict[str, Any]] = None,
+        action_noise: ActionNoise | None = None,
+        replay_buffer_class: type[ReplayBuffer] | None = None,
+        replay_buffer_kwargs: dict[str, Any] | None = None,
         optimize_memory_usage: bool = False,
-        policy_kwargs: Optional[Dict[str, Any]] = None,
-        tensorboard_log: Optional[str] = None,
+        policy_kwargs: dict[str, Any] | None = None,
+        tensorboard_log: str | None = None,
         verbose: int = 0,
         device: str = "auto",
         support_multi_env: bool = False,
         monitor_wrapper: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         use_sde: bool = False,
         sde_sample_freq: int = -1,
         use_sde_at_warmup: bool = False,
         sde_support: bool = True,
-        supported_action_spaces: Optional[Tuple[Type[spaces.Space], ...]] = None,
+        supported_action_spaces: tuple[type[spaces.Space], ...] | None = None,
         stats_window_size: int = 100,
     ):
         super().__init__(
@@ -138,12 +154,12 @@ class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
     def _get_torch_save_params(self):
         return [], []
 
-    def _excluded_save_params(self) -> List[str]:
+    def _excluded_save_params(self) -> list[str]:
         excluded = super()._excluded_save_params()
         excluded.remove("policy")
         return excluded
 
-    def set_random_seed(self, seed: Optional[int]) -> None:  # type: ignore[override]
+    def set_random_seed(self, seed: int | None) -> None:  # type: ignore[override]
         super().set_random_seed(seed)
         if seed is None:
             # Sample random seed
@@ -165,7 +181,9 @@ class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
         # the environment when using HerReplayBuffer
         replay_buffer_kwargs = deepcopy(self.replay_buffer_kwargs)
         if issubclass(self.replay_buffer_class, HerReplayBuffer):  # type: ignore[arg-type]
-            assert self.env is not None, "You must pass an environment when using `HerReplayBuffer`"
+            assert (
+                self.env is not None
+            ), "You must pass an environment when using `HerReplayBuffer`"
             replay_buffer_kwargs["env"] = self.env
 
         self.replay_buffer = self.replay_buffer_class(  # type: ignore[misc]
@@ -185,8 +203,10 @@ class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
 # common.type_aliases.py
 ################################################################################
 
+
 class ActorTrainState(TrainState):
     batch_stats: flax.core.FrozenDict
+
 
 class RLTrainState(TrainState):  # type: ignore[misc]
     target_params: flax.core.FrozenDict  # type: ignore[misc]
@@ -218,8 +238,14 @@ class BaseJaxPolicy(BasePolicy):
     @partial(jax.jit, static_argnames=["return_logprob"])
     def sample_action(actor_state, obervations, key, return_logprob=False):
         if hasattr(actor_state, "batch_stats"):
-            dist = actor_state.apply_fn({"params": actor_state.params, "batch_stats": actor_state.batch_stats},
-                                        obervations, train=False)
+            dist = actor_state.apply_fn(
+                {
+                    "params": actor_state.params,
+                    "batch_stats": actor_state.batch_stats,
+                },
+                obervations,
+                train=False,
+            )
         else:
             dist = actor_state.apply_fn(actor_state.params, obervations)
         action = dist.sample(seed=key)
@@ -232,8 +258,14 @@ class BaseJaxPolicy(BasePolicy):
     @partial(jax.jit, static_argnames=["return_logprob"])
     def select_action(actor_state, obervations, return_logprob=False):
         if hasattr(actor_state, "batch_stats"):
-            dist = actor_state.apply_fn({"params": actor_state.params, "batch_stats": actor_state.batch_stats},
-                                        obervations, train=False)
+            dist = actor_state.apply_fn(
+                {
+                    "params": actor_state.params,
+                    "batch_stats": actor_state.batch_stats,
+                },
+                obervations,
+                train=False,
+            )
         else:
             dist = actor_state.apply_fn(actor_state.params, obervations)
         action = dist.mode()
@@ -246,11 +278,11 @@ class BaseJaxPolicy(BasePolicy):
     @no_type_check
     def predict(
         self,
-        observation: Union[np.ndarray, Dict[str, np.ndarray]],
-        state: Optional[Tuple[np.ndarray, ...]] = None,
-        episode_start: Optional[np.ndarray] = None,
+        observation: np.ndarray | dict[str, np.ndarray],
+        state: tuple[np.ndarray, ...] | None = None,
+        episode_start: np.ndarray | None = None,
         deterministic: bool = False,
-    ) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, ...]]]:
+    ) -> tuple[np.ndarray, tuple[np.ndarray, ...] | None]:
         # self.set_training_mode(False)
 
         observation, vectorized_env = self.prepare_obs(observation)
@@ -269,7 +301,9 @@ class BaseJaxPolicy(BasePolicy):
             else:
                 # Actions could be on arbitrary scale, so clip the actions to avoid
                 # out of bound error (e.g. if sampling from a Gaussian distribution)
-                actions = np.clip(actions, self.action_space.low, self.action_space.high)
+                actions = np.clip(
+                    actions, self.action_space.low, self.action_space.high
+                )
 
         # Remove batch dimension if needed
         if not vectorized_env:
@@ -277,17 +311,26 @@ class BaseJaxPolicy(BasePolicy):
 
         return actions, state
 
-    def prepare_obs(self, observation: Union[np.ndarray, Dict[str, np.ndarray]]) -> Tuple[np.ndarray, bool]:
+    def prepare_obs(
+        self, observation: np.ndarray | dict[str, np.ndarray]
+    ) -> tuple[np.ndarray, bool]:
         vectorized_env = False
         if isinstance(observation, dict):
             assert isinstance(self.observation_space, spaces.Dict)
             # Minimal dict support: flatten
             keys = list(self.observation_space.keys())
-            vectorized_env = is_vectorized_observation(observation[keys[0]], self.observation_space[keys[0]])
+            vectorized_env = is_vectorized_observation(
+                observation[keys[0]], self.observation_space[keys[0]]
+            )
 
             # Add batch dim and concatenate
             observation = np.concatenate(
-                [observation[key].reshape(-1, *self.observation_space[key].shape) for key in keys],
+                [
+                    observation[key].reshape(
+                        -1, *self.observation_space[key].shape
+                    )
+                    for key in keys
+                ],
                 axis=1,
             )
             # need to copy the dict as the dict in VecFrameStack will become a torch tensor
@@ -312,7 +355,9 @@ class BaseJaxPolicy(BasePolicy):
 
         if not isinstance(self.observation_space, spaces.Dict):
             assert isinstance(observation, np.ndarray)
-            vectorized_env = is_vectorized_observation(observation, self.observation_space)
+            vectorized_env = is_vectorized_observation(
+                observation, self.observation_space
+            )
             # Add batch dimension if needed
             observation = observation.reshape((-1, *self.observation_space.shape))  # type: ignore[misc]
 
@@ -337,14 +382,20 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):  # type: ignore[
     """
 
     def __init__(self, distribution: tfd.Distribution, validate_args: bool = False):  # type: ignore[name-defined]
-        super().__init__(distribution=distribution, bijector=tfp.bijectors.Tanh(), validate_args=validate_args)
+        super().__init__(
+            distribution=distribution,
+            bijector=tfp.bijectors.Tanh(),
+            validate_args=validate_args,
+        )
 
     def mode(self) -> jnp.ndarray:
         return self.bijector.forward(self.distribution.mode())
 
     @classmethod
-    def _parameter_properties(cls, dtype: Optional[Any], num_classes=None):
-        td_properties = super()._parameter_properties(dtype, num_classes=num_classes)
+    def _parameter_properties(cls, dtype: Any | None, num_classes=None):
+        td_properties = super()._parameter_properties(
+            dtype, num_classes=num_classes
+        )
         del td_properties["bijector"]
         return td_properties
 
@@ -352,6 +403,7 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):  # type: ignore[
 ################################################################################
 # policies.py
 ################################################################################
+
 
 class BatchRenorm(Module):
     """BatchRenorm Module, implemented based on the Batch Renormalization paper (https://arxiv.org/abs/1702.03275).
@@ -385,22 +437,22 @@ class BatchRenorm(Module):
         calculation for the variance.
     """
 
-    use_running_average: Optional[bool] = None
+    use_running_average: bool | None = None
     axis: int = -1
     momentum: float = 0.999
     epsilon: float = 0.001
-    dtype: Optional[Dtype] = None
+    dtype: Dtype | None = None
     param_dtype: Dtype = jnp.float32
     use_bias: bool = True
     use_scale: bool = True
     bias_init: Callable[[PRNGKey, Shape, Dtype], Array] = initializers.zeros
     scale_init: Callable[[PRNGKey, Shape, Dtype], Array] = initializers.ones
-    axis_name: Optional[str] = None
+    axis_name: str | None = None
     axis_index_groups: Any = None
     use_fast_variance: bool = True
 
     @compact
-    def __call__(self, x, use_running_average: Optional[bool] = None):
+    def __call__(self, x, use_running_average: bool | None = None):
         """
         Args:
           x: the input to be normalized.
@@ -412,37 +464,42 @@ class BatchRenorm(Module):
         """
 
         use_running_average = merge_param(
-            'use_running_average', self.use_running_average, use_running_average
+            "use_running_average", self.use_running_average, use_running_average
         )
         feature_axes = _canonicalize_axes(x.ndim, self.axis)
-        reduction_axes = tuple(i for i in range(x.ndim) if i not in feature_axes)
+        reduction_axes = tuple(
+            i for i in range(x.ndim) if i not in feature_axes
+        )
         feature_shape = [x.shape[ax] for ax in feature_axes]
 
         ra_mean = self.variable(
-            'batch_stats',
-            'mean',
+            "batch_stats",
+            "mean",
             lambda s: jnp.zeros(s, jnp.float32),
             feature_shape,
         )
         ra_var = self.variable(
-            'batch_stats', 'var', lambda s: jnp.ones(s, jnp.float32), feature_shape
+            "batch_stats",
+            "var",
+            lambda s: jnp.ones(s, jnp.float32),
+            feature_shape,
         )
 
         r_max = self.variable(
-            'batch_stats',
-            'r_max',
+            "batch_stats",
+            "r_max",
             lambda s: s,
             3,
         )
         d_max = self.variable(
-            'batch_stats',
-            'd_max',
+            "batch_stats",
+            "d_max",
             lambda s: s,
             5,
         )
         steps = self.variable(
-            'batch_stats',
-            'steps',
+            "batch_stats",
+            "steps",
             lambda s: s,
             0,
         )
@@ -456,7 +513,9 @@ class BatchRenorm(Module):
                 x,
                 reduction_axes,
                 dtype=self.dtype,
-                axis_name=self.axis_name if not self.is_initializing() else None,
+                axis_name=(
+                    self.axis_name if not self.is_initializing() else None
+                ),
                 axis_index_groups=self.axis_index_groups,
                 use_fast_variance=self.use_fast_variance,
             )
@@ -472,18 +531,26 @@ class BatchRenorm(Module):
                 r = jnp.clip(r, 1 / r_max.value, r_max.value)
                 d = jax.lax.stop_gradient((mean - ra_mean.value) / ra_std)
                 d = jnp.clip(d, -d_max.value, d_max.value)
-                tmp_var = var / (r ** 2)
+                tmp_var = var / (r**2)
                 tmp_mean = mean - d * jnp.sqrt(custom_var) / r
 
                 # Warm up batch renorm for 100_000 steps to build up proper running statistics
-                warmed_up = jnp.greater_equal(steps.value, 100_000).astype(jnp.float32)
-                custom_var = warmed_up * tmp_var + (1. - warmed_up) * custom_var
-                custom_mean = warmed_up * tmp_mean + (1. - warmed_up) * custom_mean
+                warmed_up = jnp.greater_equal(steps.value, 100_000).astype(
+                    jnp.float32
+                )
+                custom_var = (
+                    warmed_up * tmp_var + (1.0 - warmed_up) * custom_var
+                )
+                custom_mean = (
+                    warmed_up * tmp_mean + (1.0 - warmed_up) * custom_mean
+                )
 
                 ra_mean.value = (
-                        self.momentum * ra_mean.value + (1 - self.momentum) * mean
+                    self.momentum * ra_mean.value + (1 - self.momentum) * mean
                 )
-                ra_var.value = self.momentum * ra_var.value + (1 - self.momentum) * var
+                ra_var.value = (
+                    self.momentum * ra_var.value + (1 - self.momentum) * var
+                )
                 steps.value += 1
 
         return _normalize(
@@ -505,18 +572,20 @@ class BatchRenorm(Module):
 
 class Critic(nn.Module):
     net_arch: Sequence[int]
-    activation_fn: Type[nn.Module]
+    activation_fn: type[nn.Module]
     batch_norm_momentum: float
     use_layer_norm: bool = False
-    dropout_rate: Optional[float] = None
+    dropout_rate: float | None = None
     use_batch_norm: bool = False
     bn_mode: str = "bn"
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray, action: jnp.ndarray, train) -> jnp.ndarray:
-        if 'bn' in self.bn_mode:
+    def __call__(
+        self, x: jnp.ndarray, action: jnp.ndarray, train
+    ) -> jnp.ndarray:
+        if "bn" in self.bn_mode:
             BN = nn.BatchNorm
-        elif 'brn' in self.bn_mode:
+        elif "brn" in self.bn_mode:
             BN = BatchRenorm
         else:
             raise NotImplementedError
@@ -524,7 +593,9 @@ class Critic(nn.Module):
         x = jnp.concatenate([x, action], -1)
 
         if self.use_batch_norm:
-            x = BN(use_running_average=not train, momentum=self.batch_norm_momentum)(x)
+            x = BN(
+                use_running_average=not train, momentum=self.batch_norm_momentum
+            )(x)
         else:
             # Hack to make flax return state_updates. Is only necessary such that the downstream
             # functions have the same function signature.
@@ -542,7 +613,10 @@ class Critic(nn.Module):
             x = self.activation_fn()(x)
 
             if self.use_batch_norm:
-                x = BN(use_running_average=not train, momentum=self.batch_norm_momentum)(x)
+                x = BN(
+                    use_running_average=not train,
+                    momentum=self.batch_norm_momentum,
+                )(x)
             else:
                 x_dummy = BN(use_running_average=not train)(x)
         x = nn.Dense(1)(x)
@@ -551,16 +625,18 @@ class Critic(nn.Module):
 
 class VectorCritic(nn.Module):
     net_arch: Sequence[int]
-    activation_fn: Type[nn.Module]
+    activation_fn: type[nn.Module]
     batch_norm_momentum: float
     use_batch_norm: bool = False
     batch_norm_mode: str = "bn"
     use_layer_norm: bool = False
-    dropout_rate: Optional[float] = None
+    dropout_rate: float | None = None
     n_critics: int = 2
 
     @nn.compact
-    def __call__(self, obs: jnp.ndarray, action: jnp.ndarray, train: bool = True):
+    def __call__(
+        self, obs: jnp.ndarray, action: jnp.ndarray, train: bool = True
+    ):
         # Idea taken from https://github.com/perrin-isir/xpag
         # Similar to https://github.com/tinkoff-ai/CORL for PyTorch
         vmap_critic = nn.vmap(
@@ -600,15 +676,17 @@ class Actor(nn.Module):
     # type: ignore[name-defined]
     def __call__(self, x: jnp.ndarray, train) -> tfd.Distribution:
 
-        if 'brn_actor' in self.bn_mode:
+        if "brn_actor" in self.bn_mode:
             BN = BatchRenorm
-        elif 'bn' in self.bn_mode or 'brn' in self.bn_mode:
+        elif "bn" in self.bn_mode or "brn" in self.bn_mode:
             BN = nn.BatchNorm
         else:
             raise NotImplementedError
 
-        if self.use_batch_norm and not 'noactor' in self.bn_mode:
-            x = BN(use_running_average=not train, momentum=self.batch_norm_momentum)(x)
+        if self.use_batch_norm and "noactor" not in self.bn_mode:
+            x = BN(
+                use_running_average=not train, momentum=self.batch_norm_momentum
+            )(x)
         else:
             # Hack to make flax return state_updates. Is only necessary such that the downstream
             # functions have the same function signature.
@@ -617,8 +695,11 @@ class Actor(nn.Module):
         for n_units in self.net_arch:
             x = nn.Dense(n_units)(x)
             x = nn.relu(x)
-            if self.use_batch_norm and not 'noactor' in self.bn_mode:
-                x = BN(use_running_average=not train, momentum=self.batch_norm_momentum)(x)
+            if self.use_batch_norm and "noactor" not in self.bn_mode:
+                x = BN(
+                    use_running_average=not train,
+                    momentum=self.batch_norm_momentum,
+                )(x)
             else:
                 x_dummy = BN(use_running_average=not train)(x)
 
@@ -635,32 +716,33 @@ class SACPolicy(BaseJaxPolicy):
     action_space: spaces.Box  # type: ignore[assignment]
 
     def __init__(
-            self,
-            observation_space: spaces.Space,
-            action_space: spaces.Box,
-            lr_schedule: Schedule,
-            activation_fn: Type[nn.Module],
-            net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
-            dropout_rate: float = 0.0,
-            layer_norm: bool = False,
-            batch_norm: bool = False,
-            batch_norm_momentum: float = 0.9,
-            batch_norm_mode: str = "bn",
-            use_sde: bool = False,
-            # Note: most gSDE parameters are not used
-            # this is to keep API consistent with SB3
-            log_std_init: float = -3,
-            use_expln: bool = False,
-            clip_mean: float = 2.0,
-            features_extractor_class=None,
-            features_extractor_kwargs: Optional[Dict[str, Any]] = None,
-            normalize_images: bool = True,
-            optimizer_class: Callable[...,
-            optax.GradientTransformation] = optax.adam,
-            optimizer_kwargs: Optional[Dict[str, Any]] = None,
-            n_critics: int = 2,
-            share_features_extractor: bool = False,
-            td3_mode: bool = False,
+        self,
+        observation_space: spaces.Space,
+        action_space: spaces.Box,
+        lr_schedule: Schedule,
+        activation_fn: type[nn.Module],
+        net_arch: list[int] | dict[str, list[int]] | None = None,
+        dropout_rate: float = 0.0,
+        layer_norm: bool = False,
+        batch_norm: bool = False,
+        batch_norm_momentum: float = 0.9,
+        batch_norm_mode: str = "bn",
+        use_sde: bool = False,
+        # Note: most gSDE parameters are not used
+        # this is to keep API consistent with SB3
+        log_std_init: float = -3,
+        use_expln: bool = False,
+        clip_mean: float = 2.0,
+        features_extractor_class=None,
+        features_extractor_kwargs: dict[str, Any] | None = None,
+        normalize_images: bool = True,
+        optimizer_class: Callable[
+            ..., optax.GradientTransformation
+        ] = optax.adam,
+        optimizer_kwargs: dict[str, Any] | None = None,
+        n_critics: int = 2,
+        share_features_extractor: bool = False,
+        td3_mode: bool = False,
     ):
         super().__init__(
             observation_space,
@@ -693,7 +775,9 @@ class SACPolicy(BaseJaxPolicy):
         if td3_mode:
             self._predict = self._predict_deterministic
 
-    def build(self, key: jnp.ndarray, lr_schedule: Schedule, qf_learning_rate: float) -> jnp.ndarray:
+    def build(
+        self, key: jnp.ndarray, lr_schedule: Schedule, qf_learning_rate: float
+    ) -> jnp.ndarray:
         key, actor_key, qf_key, dropout_key, bn_key = jax.random.split(key, 5)
         # Keep a key for the actor
         key, self.key = jax.random.split(key, 2)
@@ -702,7 +786,12 @@ class SACPolicy(BaseJaxPolicy):
 
         if isinstance(self.observation_space, spaces.Dict):
             obs = jnp.array(
-                [spaces.flatten(self.observation_space, self.observation_space.sample())])
+                [
+                    spaces.flatten(
+                        self.observation_space, self.observation_space.sample()
+                    )
+                ]
+            )
         else:
             obs = jnp.array([self.observation_space.sample()])
         action = jnp.array([self.action_space.sample()])
@@ -719,9 +808,7 @@ class SACPolicy(BaseJaxPolicy):
 
         # params=self.actor.init(actor_key, obs)
         actor_init_variables = self.actor.init(
-            {"params": actor_key, "batch_stats": bn_key},
-            obs,
-            train=False
+            {"params": actor_key, "batch_stats": bn_key}, obs, train=False
         )
         self.actor_state = ActorTrainState.create(
             apply_fn=self.actor.apply,
@@ -770,12 +857,21 @@ class SACPolicy(BaseJaxPolicy):
 
         self.actor.apply = jax.jit(  # type: ignore[method-assign]
             self.actor.apply,
-            static_argnames=("use_batch_norm", "batch_norm_momentum", "bn_mode")
+            static_argnames=(
+                "use_batch_norm",
+                "batch_norm_momentum",
+                "bn_mode",
+            ),
         )
         self.qf.apply = jax.jit(  # type: ignore[method-assign]
             self.qf.apply,
-            static_argnames=("dropout_rate", "use_layer_norm",
-                             "use_batch_norm", "batch_norm_momentum", "bn_mode"),
+            static_argnames=(
+                "dropout_rate",
+                "use_layer_norm",
+                "use_batch_norm",
+                "batch_norm_momentum",
+                "bn_mode",
+            ),
         )
 
         return key
@@ -786,31 +882,47 @@ class SACPolicy(BaseJaxPolicy):
         """
         self.key, self.noise_key = jax.random.split(self.key, 2)
 
-    def forward(self, obs: np.ndarray, deterministic: bool = False) -> np.ndarray:
+    def forward(
+        self, obs: np.ndarray, deterministic: bool = False
+    ) -> np.ndarray:
         return self._predict(obs, deterministic=deterministic)
 
     # type: ignore[override]
-    def _predict(self, observation: np.ndarray, deterministic: bool = False) -> np.ndarray:
+    def _predict(
+        self, observation: np.ndarray, deterministic: bool = False
+    ) -> np.ndarray:
         if deterministic:
             return BaseJaxPolicy.select_action(self.actor_state, observation)
         # Trick to use gSDE: repeat sampled noise by using the same noise key
         if not self.use_sde:
             self.reset_noise()
-        return BaseJaxPolicy.sample_action(self.actor_state, observation, self.noise_key)
+        return BaseJaxPolicy.sample_action(
+            self.actor_state, observation, self.noise_key
+        )
 
-    def _predict_deterministic(self, observation: np.ndarray, **kwargs) -> np.ndarray:
+    def _predict_deterministic(
+        self, observation: np.ndarray, **kwargs
+    ) -> np.ndarray:
         return BaseJaxPolicy.select_action(self.actor_state, observation)
 
-    def predict_action_with_logprobs(self, observation: np.ndarray, deterministic: bool = False) -> np.ndarray:
+    def predict_action_with_logprobs(
+        self, observation: np.ndarray, deterministic: bool = False
+    ) -> np.ndarray:
         if deterministic:
-            return BaseJaxPolicy.select_action(self.actor_state, observation, True)
+            return BaseJaxPolicy.select_action(
+                self.actor_state, observation, True
+            )
         # Trick to use gSDE: repeat sampled noise by using the same noise key
         if not self.use_sde:
             self.reset_noise()
 
-        return BaseJaxPolicy.sample_action(self.actor_state, observation, self.noise_key, True)
+        return BaseJaxPolicy.sample_action(
+            self.actor_state, observation, self.noise_key, True
+        )
 
-    def predict_critic(self, observation: np.ndarray, action: np.ndarray) -> np.ndarray:
+    def predict_critic(
+        self, observation: np.ndarray, action: np.ndarray
+    ) -> np.ndarray:
 
         if not self.use_sde:
             self.reset_noise()
@@ -818,9 +930,10 @@ class SACPolicy(BaseJaxPolicy):
         def Q(params, batch_stats, o, a, dropout_key):
             return self.qf_state.apply_fn(
                 {"params": params, "batch_stats": batch_stats},
-                o, a,
+                o,
+                a,
                 rngs={"dropout": dropout_key},
-                train=False
+                train=False,
             )
 
         return jax.jit(Q)(
@@ -839,7 +952,7 @@ class SACPolicy(BaseJaxPolicy):
 
 def is_slurm_job():
     """Checks whether the script is run within slurm"""
-    return bool(len({k: v for k, v in os.environ.items() if 'SLURM' in k}))
+    return bool(len({k: v for k, v in os.environ.items() if "SLURM" in k}))
 
 
 class ReLU(nn.Module):
@@ -909,7 +1022,10 @@ class EntropyCoef(nn.Module):
 
     @nn.compact
     def __call__(self) -> jnp.ndarray:
-        log_ent_coef = self.param("log_ent_coef", init_fn=lambda key: jnp.full((), jnp.log(self.ent_coef_init)))
+        log_ent_coef = self.param(
+            "log_ent_coef",
+            init_fn=lambda key: jnp.full((), jnp.log(self.ent_coef_init)),
+        )
         return jnp.exp(log_ent_coef)
 
 
@@ -919,12 +1035,14 @@ class ConstantEntropyCoef(nn.Module):
     @nn.compact
     def __call__(self) -> float:
         # Hack to not optimize the entropy coefficient while not having to use if/else for the jit
-        self.param("dummy_param", init_fn=lambda key: jnp.full((), self.ent_coef_init))
+        self.param(
+            "dummy_param", init_fn=lambda key: jnp.full((), self.ent_coef_init)
+        )
         return self.ent_coef_init
 
 
 class SAC(OffPolicyAlgorithmJax):
-    policy_aliases: ClassVar[Dict[str, Type[SACPolicy]]] = {  # type: ignore[assignment]
+    policy_aliases: ClassVar[dict[str, type[SACPolicy]]] = {  # type: ignore[assignment]
         "MlpPolicy": SACPolicy,
         # Minimal dict support using flatten()
         "MultiInputPolicy": SACPolicy,
@@ -934,37 +1052,37 @@ class SAC(OffPolicyAlgorithmJax):
     action_space: spaces.Box  # type: ignore[assignment]
 
     def __init__(
-            self,
-            policy,
-            env: Union[GymEnv, str],
-            learning_rate: Union[float, Schedule] = 3e-4,
-            qf_learning_rate: Optional[float] = None,
-            buffer_size: int = 1_000_000,  # 1e6
-            learning_starts: int = 100,
-            batch_size: int = 256,
-            tau: float = 0.005,
-            gamma: float = 0.99,
-            crossq_style: bool = False,
-            td3_mode: bool = False,
-            use_bnstats_from_live_net: bool = False,
-            policy_q_reduce_fn=jnp.min,
-            train_freq: Union[int, Tuple[int, str]] = 1,
-            gradient_steps: int = 1,
-            policy_delay: int = 1,
-            action_noise: Optional[ActionNoise] = None,
-            replay_buffer_class: Optional[Type[ReplayBuffer]] = None,
-            replay_buffer_kwargs: Optional[Dict[str, Any]] = None,
-            ent_coef: Union[str, float] = "auto",
-            use_sde: bool = False,
-            sde_sample_freq: int = -1,
-            use_sde_at_warmup: bool = False,
-            tensorboard_log: Optional[str] = None,
-            policy_kwargs: Optional[Dict[str, Any]] = None,
-            verbose: int = 0,
-            seed: Optional[int] = None,
-            device: str = "auto",
-            _init_setup_model: bool = True,
-            stats_window_size: int = 100,
+        self,
+        policy,
+        env: GymEnv | str,
+        learning_rate: float | Schedule = 3e-4,
+        qf_learning_rate: float | None = None,
+        buffer_size: int = 1_000_000,  # 1e6
+        learning_starts: int = 100,
+        batch_size: int = 256,
+        tau: float = 0.005,
+        gamma: float = 0.99,
+        crossq_style: bool = False,
+        td3_mode: bool = False,
+        use_bnstats_from_live_net: bool = False,
+        policy_q_reduce_fn=jnp.min,
+        train_freq: int | tuple[int, str] = 1,
+        gradient_steps: int = 1,
+        policy_delay: int = 1,
+        action_noise: ActionNoise | None = None,
+        replay_buffer_class: type[ReplayBuffer] | None = None,
+        replay_buffer_kwargs: dict[str, Any] | None = None,
+        ent_coef: str | float = "auto",
+        use_sde: bool = False,
+        sde_sample_freq: int = -1,
+        use_sde_at_warmup: bool = False,
+        tensorboard_log: str | None = None,
+        policy_kwargs: dict[str, Any] | None = None,
+        verbose: int = 0,
+        seed: int | None = None,
+        device: str = "auto",
+        _init_setup_model: bool = True,
+        stats_window_size: int = 100,
     ) -> None:
         super().__init__(
             policy=policy,
@@ -1001,7 +1119,9 @@ class SAC(OffPolicyAlgorithmJax):
         self.policy_q_reduce_fn = policy_q_reduce_fn
 
         if td3_mode:
-            self.action_noise = NormalActionNoise(mean=jnp.zeros(1), sigma=jnp.ones(1) * 0.1)
+            self.action_noise = NormalActionNoise(
+                mean=jnp.zeros(1), sigma=jnp.ones(1) * 0.1
+            )
 
         if _init_setup_model:
             self._setup_model()
@@ -1022,7 +1142,9 @@ class SAC(OffPolicyAlgorithmJax):
 
             assert isinstance(self.qf_learning_rate, float)
 
-            self.key = self.policy.build(self.key, self.lr_schedule, self.qf_learning_rate)
+            self.key = self.policy.build(
+                self.key, self.lr_schedule, self.qf_learning_rate
+            )
 
             self.key, ent_key = jax.random.split(self.key, 2)
 
@@ -1032,12 +1154,16 @@ class SAC(OffPolicyAlgorithmJax):
             # The entropy coefficient or entropy can be learned automatically
             # see Automating Entropy Adjustment for Maximum Entropy RL section
             # of https://arxiv.org/abs/1812.05905
-            if isinstance(self.ent_coef_init, str) and self.ent_coef_init.startswith("auto"):
+            if isinstance(
+                self.ent_coef_init, str
+            ) and self.ent_coef_init.startswith("auto"):
                 # Default initial value of ent_coef when learned
                 ent_coef_init = 1.0
                 if "_" in self.ent_coef_init:
                     ent_coef_init = float(self.ent_coef_init.split("_")[1])
-                    assert ent_coef_init > 0.0, "The initial value of ent_coef must be greater than 0"
+                    assert (
+                        ent_coef_init > 0.0
+                    ), "The initial value of ent_coef must be greater than 0"
 
                 # Note: we optimize the log of the entropy coeff which is slightly different from the paper
                 # as discussed in https://github.com/rail-berkeley/softlearning/issues/37
@@ -1058,16 +1184,18 @@ class SAC(OffPolicyAlgorithmJax):
             )
 
         # automatically set target entropy if needed
-        self.target_entropy = -np.prod(self.action_space.shape).astype(np.float32)
+        self.target_entropy = -np.prod(self.action_space.shape).astype(
+            np.float32
+        )
 
     def learn(
-            self,
-            total_timesteps: int,
-            callback: MaybeCallback = None,
-            log_interval: int = 4,
-            tb_log_name: str = "SAC",
-            reset_num_timesteps: bool = True,
-            progress_bar: bool = False,
+        self,
+        total_timesteps: int,
+        callback: MaybeCallback = None,
+        log_interval: int = 4,
+        tb_log_name: str = "SAC",
+        reset_num_timesteps: bool = True,
+        progress_bar: bool = False,
     ):
         return super().learn(
             total_timesteps=total_timesteps,
@@ -1080,18 +1208,27 @@ class SAC(OffPolicyAlgorithmJax):
 
     def train(self, batch_size, gradient_steps):
         # Sample all at once for efficiency (so we can jit the for loop)
-        data = self.replay_buffer.sample(batch_size * gradient_steps, env=self._vec_normalize_env)
+        data = self.replay_buffer.sample(
+            batch_size * gradient_steps, env=self._vec_normalize_env
+        )
         # Pre-compute the indices where we need to update the actor
         # This is a hack in order to jit the train loop
         # It will compile once per value of policy_delay_indices
-        policy_delay_indices = {i: True for i in range(gradient_steps) if
-                                ((self._n_updates + i + 1) % self.policy_delay) == 0}
+        policy_delay_indices = {
+            i: True
+            for i in range(gradient_steps)
+            if ((self._n_updates + i + 1) % self.policy_delay) == 0
+        }
         policy_delay_indices = flax.core.FrozenDict(policy_delay_indices)
 
         if isinstance(data.observations, dict):
             keys = list(self.observation_space.keys())
-            obs = np.concatenate([data.observations[key].numpy() for key in keys], axis=1)
-            next_obs = np.concatenate([data.next_observations[key].numpy() for key in keys], axis=1)
+            obs = np.concatenate(
+                [data.observations[key].numpy() for key in keys], axis=1
+            )
+            next_obs = np.concatenate(
+                [data.next_observations[key].numpy() for key in keys], axis=1
+            )
         else:
             obs = data.observations.numpy()
             next_obs = data.next_observations.numpy()
@@ -1129,32 +1266,47 @@ class SAC(OffPolicyAlgorithmJax):
         )
         self._n_updates += gradient_steps
 
-        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        self.logger.record(
+            "train/n_updates", self._n_updates, exclude="tensorboard"
+        )
         for k, v in log_metrics.items():
             self.logger.record(f"train/{k}", v.item())
 
     @staticmethod
-    @partial(jax.jit, static_argnames=["crossq_style", "td3_mode", "use_bnstats_from_live_net"])
+    @partial(
+        jax.jit,
+        static_argnames=[
+            "crossq_style",
+            "td3_mode",
+            "use_bnstats_from_live_net",
+        ],
+    )
     def update_critic(
-            crossq_style: bool,
-            td3_mode: bool,
-            use_bnstats_from_live_net: bool,
-            gamma: float,
-            actor_state: ActorTrainState,
-            qf_state: RLTrainState,
-            ent_coef_state: TrainState,
-            observations: np.ndarray,
-            actions: np.ndarray,
-            next_observations: np.ndarray,
-            rewards: np.ndarray,
-            dones: np.ndarray,
-            key: jnp.ndarray,
+        crossq_style: bool,
+        td3_mode: bool,
+        use_bnstats_from_live_net: bool,
+        gamma: float,
+        actor_state: ActorTrainState,
+        qf_state: RLTrainState,
+        ent_coef_state: TrainState,
+        observations: np.ndarray,
+        actions: np.ndarray,
+        next_observations: np.ndarray,
+        rewards: np.ndarray,
+        dones: np.ndarray,
+        key: jnp.ndarray,
     ):
-        key, noise_key, dropout_key_target, dropout_key_current, redq_key = jax.random.split(key, 5)
+        key, noise_key, dropout_key_target, dropout_key_current, redq_key = (
+            jax.random.split(key, 5)
+        )
         # sample action from the actor
         dist = actor_state.apply_fn(
-            {"params": actor_state.params, "batch_stats": actor_state.batch_stats},
-            next_observations, train=False
+            {
+                "params": actor_state.params,
+                "batch_stats": actor_state.batch_stats,
+            },
+            next_observations,
+            train=False,
         )
 
         if td3_mode:
@@ -1163,12 +1315,17 @@ class SAC(OffPolicyAlgorithmJax):
             target_noise_clip = 0.5
 
             next_state_actions = dist.mode()
-            noise = jax.random.normal(noise_key, next_state_actions.shape) * target_policy_noise
+            noise = (
+                jax.random.normal(noise_key, next_state_actions.shape)
+                * target_policy_noise
+            )
             noise = jnp.clip(noise, -target_noise_clip, target_noise_clip)
             next_state_actions = jnp.clip(next_state_actions + noise, -1.0, 1.0)
             next_log_prob = jnp.zeros(next_state_actions.shape[0])
         else:
-            ent_coef_value = ent_coef_state.apply_fn({"params": ent_coef_state.params})
+            ent_coef_value = ent_coef_state.apply_fn(
+                {"params": ent_coef_state.params}
+            )
 
             next_state_actions = dist.sample(seed=noise_key)
             next_log_prob = dist.log_prob(next_state_actions)
@@ -1178,17 +1335,23 @@ class SAC(OffPolicyAlgorithmJax):
                 next_q_values = qf_state.apply_fn(
                     {
                         "params": qf_state.target_params,
-                        "batch_stats": qf_state.target_batch_stats if not use_bnstats_from_live_net else batch_stats
+                        "batch_stats": (
+                            qf_state.target_batch_stats
+                            if not use_bnstats_from_live_net
+                            else batch_stats
+                        ),
                     },
-                    next_observations, next_state_actions,
+                    next_observations,
+                    next_state_actions,
                     rngs={"dropout": dropout_key_target},
-                    train=False
+                    train=False,
                 )
 
                 # shape is (n_critics, batch_size, 1)
                 current_q_values, state_updates = qf_state.apply_fn(
                     {"params": params, "batch_stats": batch_stats},
-                    observations, actions,
+                    observations,
+                    actions,
                     rngs={"dropout": dropout_key},
                     mutable=["batch_stats"],
                     train=True,
@@ -1207,33 +1370,53 @@ class SAC(OffPolicyAlgorithmJax):
                     mutable=["batch_stats"],
                     train=True,
                 )
-                current_q_values, next_q_values = jnp.split(catted_q_values, 2, axis=1)
+                current_q_values, next_q_values = jnp.split(
+                    catted_q_values, 2, axis=1
+                )
 
             if next_q_values.shape[0] > 2:  # only for REDQ
                 # REDQ style subsampling of critics.
                 m_critics = 2
-                next_q_values = jax.random.choice(redq_key, next_q_values, (m_critics,), replace=False, axis=0)
+                next_q_values = jax.random.choice(
+                    redq_key, next_q_values, (m_critics,), replace=False, axis=0
+                )
 
             next_q_values = jnp.min(next_q_values, axis=0)
-            next_q_values = next_q_values - ent_coef_value * next_log_prob.reshape(-1, 1)
-            target_q_values = rewards.reshape(-1, 1) + (
-                        1 - dones.reshape(-1, 1)) * gamma * next_q_values  # shape is (batch_size, 1)
+            next_q_values = (
+                next_q_values - ent_coef_value * next_log_prob.reshape(-1, 1)
+            )
+            target_q_values = (
+                rewards.reshape(-1, 1)
+                + (1 - dones.reshape(-1, 1)) * gamma * next_q_values
+            )  # shape is (batch_size, 1)
 
-            loss = 0.5 * ((jax.lax.stop_gradient(target_q_values) - current_q_values) ** 2).mean(axis=1).sum()
+            loss = (
+                0.5
+                * (
+                    (jax.lax.stop_gradient(target_q_values) - current_q_values)
+                    ** 2
+                )
+                .mean(axis=1)
+                .sum()
+            )
 
             return loss, (state_updates, current_q_values, next_q_values)
 
-        (qf_loss_value, (state_updates, current_q_values, next_q_values)), grads = \
-            jax.value_and_grad(mse_loss, has_aux=True)(qf_state.params, qf_state.batch_stats, dropout_key_current)
+        (
+            qf_loss_value,
+            (state_updates, current_q_values, next_q_values),
+        ), grads = jax.value_and_grad(mse_loss, has_aux=True)(
+            qf_state.params, qf_state.batch_stats, dropout_key_current
+        )
 
         qf_state = qf_state.apply_gradients(grads=grads)
         qf_state = qf_state.replace(batch_stats=state_updates["batch_stats"])
 
         metrics = {
-            'critic_loss': qf_loss_value,
-            'ent_coef': ent_coef_value,
-            'current_q_values': current_q_values.mean(),
-            'next_q_values': next_q_values.mean(),
+            "critic_loss": qf_loss_value,
+            "ent_coef": ent_coef_value,
+            "current_q_values": current_q_values.mean(),
+            "next_q_values": next_q_values.mean(),
         }
 
         return (qf_state, metrics, key)
@@ -1241,22 +1424,22 @@ class SAC(OffPolicyAlgorithmJax):
     @staticmethod
     @partial(jax.jit, static_argnames=["q_reduce_fn", "td3_mode"])
     def update_actor(
-            actor_state: ActorTrainState,
-            qf_state: RLTrainState,
-            ent_coef_state: TrainState,
-            observations: np.ndarray,
-            key: jnp.ndarray,
-            q_reduce_fn=jnp.min,  # Changes for redq and droq
-            td3_mode=False,
+        actor_state: ActorTrainState,
+        qf_state: RLTrainState,
+        ent_coef_state: TrainState,
+        observations: np.ndarray,
+        key: jnp.ndarray,
+        q_reduce_fn=jnp.min,  # Changes for redq and droq
+        td3_mode=False,
     ):
         key, dropout_key, noise_key, redq_key = jax.random.split(key, 4)
 
         def actor_loss(params, batch_stats):
-            dist, state_updates = actor_state.apply_fn({
-                "params": params, "batch_stats": batch_stats},
+            dist, state_updates = actor_state.apply_fn(
+                {"params": params, "batch_stats": batch_stats},
                 observations,
                 mutable=["batch_stats"],
-                train=True
+                train=True,
             )
 
             if td3_mode:
@@ -1265,17 +1448,20 @@ class SAC(OffPolicyAlgorithmJax):
                 log_prob = jnp.zeros(actor_actions.shape[0])
             else:
                 actor_actions = dist.sample(seed=noise_key)
-                ent_coef_value = ent_coef_state.apply_fn({"params": ent_coef_state.params})
+                ent_coef_value = ent_coef_state.apply_fn(
+                    {"params": ent_coef_state.params}
+                )
                 log_prob = dist.log_prob(actor_actions).reshape(-1, 1)
 
             qf_pi = qf_state.apply_fn(
                 {
                     "params": qf_state.params,
-                    "batch_stats": qf_state.batch_stats
+                    "batch_stats": qf_state.batch_stats,
                 },
                 observations,
                 actor_actions,
-                rngs={"dropout": dropout_key}, train=False
+                rngs={"dropout": dropout_key},
+                train=False,
             )
 
             min_qf_pi = q_reduce_fn(qf_pi, axis=0)
@@ -1283,10 +1469,15 @@ class SAC(OffPolicyAlgorithmJax):
             actor_loss = (ent_coef_value * log_prob - min_qf_pi).mean()
             return actor_loss, (-log_prob.mean(), state_updates)
 
-        (actor_loss_value, (entropy, state_updates)), grads = jax.value_and_grad(actor_loss, has_aux=True)(
-            actor_state.params, actor_state.batch_stats)
+        (actor_loss_value, (entropy, state_updates)), grads = (
+            jax.value_and_grad(actor_loss, has_aux=True)(
+                actor_state.params, actor_state.batch_stats
+            )
+        )
         actor_state = actor_state.apply_gradients(grads=grads)
-        actor_state = actor_state.replace(batch_stats=state_updates["batch_stats"])
+        actor_state = actor_state.replace(
+            batch_stats=state_updates["batch_stats"]
+        )
 
         return actor_state, qf_state, actor_loss_value, key, entropy
 
@@ -1294,43 +1485,62 @@ class SAC(OffPolicyAlgorithmJax):
     @jax.jit
     def soft_update(tau: float, qf_state: RLTrainState):
         qf_state = qf_state.replace(
-            target_params=optax.incremental_update(qf_state.params, qf_state.target_params, tau))
+            target_params=optax.incremental_update(
+                qf_state.params, qf_state.target_params, tau
+            )
+        )
         qf_state = qf_state.replace(
-            target_batch_stats=optax.incremental_update(qf_state.batch_stats, qf_state.target_batch_stats, tau))
+            target_batch_stats=optax.incremental_update(
+                qf_state.batch_stats, qf_state.target_batch_stats, tau
+            )
+        )
         return qf_state
 
     @staticmethod
     @jax.jit
-    def update_temperature(target_entropy: np.ndarray, ent_coef_state: TrainState, entropy: float):
+    def update_temperature(
+        target_entropy: np.ndarray, ent_coef_state: TrainState, entropy: float
+    ):
         def temperature_loss(temp_params):
             ent_coef_value = ent_coef_state.apply_fn({"params": temp_params})
             ent_coef_loss = ent_coef_value * (entropy - target_entropy).mean()
             return ent_coef_loss
 
-        ent_coef_loss, grads = jax.value_and_grad(temperature_loss)(ent_coef_state.params)
+        ent_coef_loss, grads = jax.value_and_grad(temperature_loss)(
+            ent_coef_state.params
+        )
         ent_coef_state = ent_coef_state.apply_gradients(grads=grads)
 
         return ent_coef_state, ent_coef_loss
 
     @classmethod
-    @partial(jax.jit, static_argnames=["cls", "crossq_style", "td3_mode", "use_bnstats_from_live_net", "gradient_steps",
-                                       "q_reduce_fn"])
+    @partial(
+        jax.jit,
+        static_argnames=[
+            "cls",
+            "crossq_style",
+            "td3_mode",
+            "use_bnstats_from_live_net",
+            "gradient_steps",
+            "q_reduce_fn",
+        ],
+    )
     def _train(
-            cls,
-            crossq_style: bool,
-            td3_mode: bool,
-            use_bnstats_from_live_net: bool,
-            gamma: float,
-            tau: float,
-            target_entropy: np.ndarray,
-            gradient_steps: int,
-            data: ReplayBufferSamplesNp,
-            policy_delay_indices: flax.core.FrozenDict,
-            qf_state: RLTrainState,
-            actor_state: ActorTrainState,
-            ent_coef_state: TrainState,
-            key,
-            q_reduce_fn,
+        cls,
+        crossq_style: bool,
+        td3_mode: bool,
+        use_bnstats_from_live_net: bool,
+        gamma: float,
+        tau: float,
+        target_entropy: np.ndarray,
+        gradient_steps: int,
+        data: ReplayBufferSamplesNp,
+        policy_delay_indices: flax.core.FrozenDict,
+        qf_state: RLTrainState,
+        actor_state: ActorTrainState,
+        ent_coef_state: TrainState,
+        key,
+        q_reduce_fn,
     ):
         actor_loss_value = jnp.array(0)
 
@@ -1339,7 +1549,7 @@ class SAC(OffPolicyAlgorithmJax):
             def slice(x, step=i):
                 assert x.shape[0] % gradient_steps == 0
                 batch_size = x.shape[0] // gradient_steps
-                return x[batch_size * step: batch_size * (step + 1)]
+                return x[batch_size * step : batch_size * (step + 1)]
 
             (
                 qf_state,
@@ -1364,21 +1574,22 @@ class SAC(OffPolicyAlgorithmJax):
 
             # hack to be able to jit (n_updates % policy_delay == 0)
             if i in policy_delay_indices:
-                (actor_state, qf_state, actor_loss_value, key, entropy) = cls.update_actor(
-                    actor_state,
-                    qf_state,
-                    ent_coef_state,
-                    slice(data.observations),
-                    key,
-                    q_reduce_fn,
-                    td3_mode,
+                (actor_state, qf_state, actor_loss_value, key, entropy) = (
+                    cls.update_actor(
+                        actor_state,
+                        qf_state,
+                        ent_coef_state,
+                        slice(data.observations),
+                        key,
+                        q_reduce_fn,
+                        td3_mode,
+                    )
                 )
-                ent_coef_state, _ = SAC.update_temperature(target_entropy, ent_coef_state, entropy)
+                ent_coef_state, _ = SAC.update_temperature(
+                    target_entropy, ent_coef_state, entropy
+                )
 
-        log_metrics = {
-            'actor_loss': actor_loss_value,
-            **log_metrics_critic
-        }
+        log_metrics = {"actor_loss": actor_loss_value, **log_metrics_critic}
 
         return (
             qf_state,
@@ -1392,7 +1603,9 @@ class SAC(OffPolicyAlgorithmJax):
         return self.policy.predict_critic(observation, action)
 
     def current_entropy_coeff(self):
-        return self.ent_coef_state.apply_fn({"params": self.ent_coef_state.params})
+        return self.ent_coef_state.apply_fn(
+            {"params": self.ent_coef_state.params}
+        )
 
 
 def train_crossq(
@@ -1431,11 +1644,11 @@ def train_crossq(
     bn_momentum = bn_momentum if bn else 0.0
     dropout_rate, layer_norm = None, False
     policy_q_reduce_fn = jax.numpy.min
-    net_arch = {'pi': [256, 256], 'qf': [n_neurons, n_neurons]}
+    net_arch = {"pi": [256, 256], "qf": [n_neurons, n_neurons]}
     eval_freq = max(5_000_000 // log_freq, 1)
     td3_mode = False
 
-    if algo == 'droq':
+    if algo == "droq":
         dropout_rate = 0.01
         layer_norm = True
         policy_q_reduce_fn = jax.numpy.mean
@@ -1445,7 +1658,7 @@ def train_crossq(
         policy_delay = 20
         utd = 20
         group = f'DroQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
-    elif algo == 'redq':
+    elif algo == "redq":
         policy_q_reduce_fn = jax.numpy.mean
         n_critics = 10
         # adam_b1 = 0.9  # adam default
@@ -1453,7 +1666,7 @@ def train_crossq(
         policy_delay = 20
         utd = 20
         group = f'REDQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
-    elif algo == 'td3':
+    elif algo == "td3":
         # With the right hyperparameters, this here can run all the above algorithms
         # and ablations.
         td3_mode = True
@@ -1461,14 +1674,14 @@ def train_crossq(
         if dropout:
             dropout_rate = 0.01
         group = f'TD3_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
-    elif algo == 'sac':
+    elif algo == "sac":
         # With the right hyperparameters, this here can run all the above algorithms
         # and ablations.
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
         group = f'SAC_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
-    elif algo == 'crossq':
+    elif algo == "crossq":
         adam_b1 = 0.5
         policy_delay = 3
         n_critics = 2
@@ -1478,30 +1691,33 @@ def train_crossq(
         bn_momentum = 0.99
         crossq_style = True  # with a joint forward pass
         tau = 1.0  # without target networks
-        group = f'CrossQ_{env}'
+        group = f"CrossQ_{env}"
     else:
-        raise NotImplemented
+        raise NotImplementedError
 
     model = SAC(
-        "MultiInputPolicy" if isinstance(
-            env.observation_space, gym.spaces.Dict
-        ) else "MlpPolicy",
+        (
+            "MultiInputPolicy"
+            if isinstance(env.observation_space, gym.spaces.Dict)
+            else "MlpPolicy"
+        ),
         env,
-        policy_kwargs=dict({
-            'activation_fn': activation_fn[critic_activation],
-            'layer_norm': layer_norm,
-            'batch_norm': bool(bn),
-            'batch_norm_momentum': float(bn_momentum),
-            'batch_norm_mode': bn_mode,
-            'dropout_rate': dropout_rate,
-            'n_critics': n_critics,
-            'net_arch': net_arch,
-            'optimizer_class': optax.adam,
-            'optimizer_kwargs': dict({
-                'b1': adam_b1,
-                'b2': 0.999  # default
-            })
-        }),
+        policy_kwargs=dict(
+            {
+                "activation_fn": activation_fn[critic_activation],
+                "layer_norm": layer_norm,
+                "batch_norm": bool(bn),
+                "batch_norm_momentum": float(bn_momentum),
+                "batch_norm_mode": bn_mode,
+                "dropout_rate": dropout_rate,
+                "n_critics": n_critics,
+                "net_arch": net_arch,
+                "optimizer_class": optax.adam,
+                "optimizer_kwargs": dict(
+                    {"b1": adam_b1, "b2": 0.999}  # default
+                ),
+            }
+        ),
         gradient_steps=utd,
         policy_delay=policy_delay,
         crossq_style=bool(crossq_style),
@@ -1532,4 +1748,3 @@ def train_crossq(
     )
 
     return model
-
