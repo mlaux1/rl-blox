@@ -64,7 +64,6 @@ Data Blox
    reinforce.GaussianPolicy
    reinforce.SoftmaxPolicy
    ddpg.ReplayBuffer
-   ddpg.MLP
    ddpg.DeterministicPolicy
    sac.GaussianMLP
    sac.StochasticPolicyBase
