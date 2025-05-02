@@ -2,7 +2,7 @@
 
 # Dependencies:
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-# pip install torchrl-nightly==2025.1.1 tensordict-nightly==2025.1.1
+# pip install torchrl tensordict termcolor
 
 # MIT License
 #
