@@ -12,7 +12,7 @@ import optax
 import tqdm
 from flax import nnx
 
-from ..logging import logger
+from ..logging.logger import LoggerBase
 
 
 class EpisodeDataset:
@@ -742,7 +742,7 @@ def train_reinforce(
     steps_per_update: int = 1_000,
     train_after_episode: bool = False,
     key: jnp.ndarray | None = None,
-    logger: logger.LoggerBase | None = None,
+    logger: LoggerBase | None = None,
 ):
     """Train with REINFORCE.
 
@@ -787,7 +787,7 @@ def train_reinforce(
     key : jnp.ndarray, optional
         Pseudo random number generator key for action sampling.
 
-    logger : logger.LoggerBase, optional
+    logger : LoggerBase, optional
         Experiment logger.
     """
     progress = tqdm.tqdm(total=total_timesteps)
@@ -841,7 +841,7 @@ def sample_trajectories(
     env: gym.Env,
     policy: StochasticPolicyBase,
     key: jnp.ndarray,
-    logger: logger.LoggerBase,
+    logger: LoggerBase,
     train_after_episode: bool,
     total_steps: int,
 ) -> EpisodeDataset:
