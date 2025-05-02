@@ -74,6 +74,8 @@ from stable_baselines3.common.type_aliases import (
 )
 from stable_baselines3.common.utils import is_vectorized_observation
 
+from rl_blox.logging.logger import LoggerBase
+
 tfd = tfp.distributions
 
 PRNGKey = Any
@@ -1050,6 +1052,7 @@ class SAC(OffPolicyAlgorithmJax):
 
     policy: SACPolicy
     action_space: spaces.Box  # type: ignore[assignment]
+    rlb_logger : LoggerBase | None
 
     def __init__(
         self,
@@ -1083,6 +1086,7 @@ class SAC(OffPolicyAlgorithmJax):
         device: str = "auto",
         _init_setup_model: bool = True,
         stats_window_size: int = 100,
+        logger : LoggerBase | None = None,
     ) -> None:
         super().__init__(
             policy=policy,
@@ -1117,6 +1121,7 @@ class SAC(OffPolicyAlgorithmJax):
         self.td3_mode = td3_mode
         self.use_bnstats_from_live_net = use_bnstats_from_live_net
         self.policy_q_reduce_fn = policy_q_reduce_fn
+        self.rlb_logger = logger
 
         if td3_mode:
             self.action_noise = NormalActionNoise(
@@ -1265,6 +1270,9 @@ class SAC(OffPolicyAlgorithmJax):
             self.policy_q_reduce_fn,
         )
         self._n_updates += gradient_steps
+        if self.rlb_logger is not None:
+            for k, v in log_metrics.items():
+                self.rlb_logger.record_stat(k, v.item(), episode=self._episode_num, step=self.num_timesteps)
 
         self.logger.record(
             "train/n_updates", self._n_updates, exclude="tensorboard"
@@ -1629,6 +1637,7 @@ def train_crossq(
     utd: int = 1,
     total_timesteps: int = 5_000_000,
     bnstats_live_net: int = 0,  # TODO bool?
+    logger : LoggerBase | None = None,
 ) -> SAC:
     """CrossQ.
 
@@ -1734,6 +1743,7 @@ def train_crossq(
         seed=seed,
         stats_window_size=1,  # don't smooth the episode return stats over time
         tensorboard_log=f"logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/",
+        logger=logger,
     )
 
     # Create log dir where evaluation results will be saved
