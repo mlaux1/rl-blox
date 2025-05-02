@@ -4,8 +4,8 @@ import pytest
 from flax import nnx
 from numpy.testing import assert_array_equal
 
+from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.algorithm.reinforce import (
-    MLP,
     GaussianMLP,
     GaussianPolicy,
     SoftmaxPolicy,
@@ -39,7 +39,6 @@ def test_reinforce():
     )
 
 
-@pytest.mark.skip
 def test_data_collection_discrete():
     env_name = "CartPole-v1"
     env = gym.make(env_name)
@@ -50,6 +49,7 @@ def test_data_collection_discrete():
             env.observation_space.shape[0],
             int(env.action_space.n),
             [32, 32],
+            "swish",
             nnx.Rngs(42),
         )
     )
@@ -61,7 +61,6 @@ def test_data_collection_discrete():
     assert dataset.average_return() == 20.8
 
 
-@pytest.mark.skip
 def test_data_collection_continuous():
     env_name = "InvertedPendulum-v5"
     env = gym.make(env_name)
