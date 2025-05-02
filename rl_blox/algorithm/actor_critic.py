@@ -4,8 +4,8 @@ import jax.numpy as jnp
 import tqdm
 from flax import nnx
 
-from ..logging.logger import LoggerBase
 from ..blox.function_approximator.mlp import MLP
+from ..logging.logger import LoggerBase
 from .reinforce import (
     StochasticPolicyBase,
     policy_gradient_pseudo_loss,

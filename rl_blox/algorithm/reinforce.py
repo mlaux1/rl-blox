@@ -12,8 +12,8 @@ import optax
 import tqdm
 from flax import nnx
 
-from ..logging.logger import LoggerBase
 from ..blox.function_approximator.mlp import MLP
+from ..logging.logger import LoggerBase
 
 
 class EpisodeDataset:
