@@ -929,6 +929,9 @@ with contextlib.suppress(ImportError):
     collect_samples = deprecated(collect_samples)
 
 
+mse_value_loss_and_grad = nnx.jit(nnx.value_and_grad(mse_value_loss, argnums=2))
+
+
 def train_value_function(
     value_function,
     value_function_optimizer,
@@ -938,7 +941,7 @@ def train_value_function(
 ):
     v_loss = 0.0
     for _ in range(value_gradient_steps):
-        v_loss, v_grad = nnx.value_and_grad(mse_value_loss, argnums=2)(
+        v_loss, v_grad = mse_value_loss_and_grad(
             observations, returns, value_function
         )
         value_function_optimizer.update(v_grad)
