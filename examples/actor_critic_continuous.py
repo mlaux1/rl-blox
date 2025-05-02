@@ -4,7 +4,7 @@ import numpy as np
 
 from rl_blox.algorithm.actor_critic import train_ac
 from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
-from rl_blox.logging import logger
+from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 # env_name = "Pendulum-v1"
 # env_name = "HalfCheetah-v4"
@@ -29,9 +29,7 @@ hparams_algorithm = dict(
     train_after_episode=False,
 )
 
-logger = logger.LoggerList(
-    [logger.StandardLogger(verbose=2), logger.AIMLogger()]
-)
+logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="Actor-Critic",

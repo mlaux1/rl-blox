@@ -4,7 +4,7 @@ import numpy as np
 
 from rl_blox.algorithm.actor_critic import train_ac
 from rl_blox.algorithm.reinforce import create_policy_gradient_discrete_state
-from rl_blox.logging import logger
+from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 env_name = "CartPole-v1"
 # env_name = "MountainCar-v0"  # never reaches the goal -> never learns
@@ -27,9 +27,7 @@ hparams_algorithm = dict(
     train_after_episode=False,
 )
 
-logger = logger.LoggerList(
-    [logger.StandardLogger(verbose=2), logger.AIMLogger()]
-)
+logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="Actor-Critic",
