@@ -19,8 +19,8 @@ Algorithm Interface
 
    q_learning.q_learning
    dqn.train_dqn
-   reinforce.train_reinforce_epoch
-   actor_critic.train_ac_epoch
+   reinforce.train_reinforce
+   actor_critic.train_ac
    ddpg.train_ddpg
    sac.train_sac
    pets.train_pets
