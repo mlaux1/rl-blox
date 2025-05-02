@@ -8,9 +8,34 @@ from rl_blox.algorithm.reinforce import (
     GaussianMLP,
     GaussianPolicy,
     SoftmaxPolicy,
+    create_policy_gradient_continuous_state,
     discounted_reward_to_go,
     sample_trajectories,
+    train_reinforce,
 )
+
+
+def test_reinforce():
+    env = gym.make("InvertedPendulum-v5")
+    reinforce_state = create_policy_gradient_continuous_state(
+        env,
+        policy_shared_head=True,
+        policy_hidden_nodes=[64, 64],
+        policy_learning_rate=3e-4,
+        value_network_hidden_nodes=[256, 256],
+        value_network_learning_rate=1e-2,
+        seed=42,
+    )
+
+    train_reinforce(
+        env,
+        reinforce_state.policy,
+        reinforce_state.policy_optimizer,
+        reinforce_state.value_function,
+        reinforce_state.value_function_optimizer,
+        key=reinforce_state.key,
+        total_timesteps=10,
+    )
 
 
 def test_data_collection_discrete():
