@@ -7,21 +7,7 @@ from jax.typing import ArrayLike
 from tqdm import tqdm
 
 from ..blox.replay_buffer import ReplayBuffer, Transition
-
-
-class MLP(nnx.Module):
-    """Basic Multi-layer Perceptron with two hidden layers."""
-
-    def __init__(self, din, dhidden, dout, rngs: nnx.Rngs):
-        self.linear1 = nnx.Linear(din, dhidden, rngs=rngs)
-        self.linear2 = nnx.Linear(dhidden, dhidden, rngs=rngs)
-        self.linear3 = nnx.Linear(dhidden, dout, rngs=rngs)
-
-    def __call__(self, x):
-        x = nnx.relu(self.linear1(x))
-        x = nnx.relu(self.linear2(x))
-        x = self.linear3(x)
-        return x
+from ..blox.function_approximator.mlp import MLP
 
 
 def linear_schedule(

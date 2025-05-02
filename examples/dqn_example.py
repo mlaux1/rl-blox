@@ -3,7 +3,8 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
-from rl_blox.algorithm.dqn import MLP, train_dqn
+from rl_blox.algorithm.dqn import train_dqn
+from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.replay_buffer import ReplayBuffer
 
 # Set up environment
@@ -14,8 +15,13 @@ env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
 # Initialise the Q-Network
-nnx_rngs = nnx.Rngs(seed)
-q_net = MLP(4, 10, env.action_space.n, nnx_rngs)
+q_net = MLP(
+    env.observation_space.shape[0],
+    int(env.action_space.n),
+    [10],
+    "relu",
+    nnx.Rngs(seed),
+)
 
 # Initialise the replay buffer
 rb = ReplayBuffer(30_000)

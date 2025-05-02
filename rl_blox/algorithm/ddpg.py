@@ -11,6 +11,7 @@ import tqdm
 from flax import nnx
 
 from ..logging.logger import LoggerBase
+from ..blox.function_approximator.mlp import MLP
 
 
 # TODO consolidate replay buffer implementations
@@ -53,57 +54,6 @@ class ReplayBuffer:
 
     def __len__(self):
         return self.current_len
-
-
-# TODO consolidate MLP implementations
-class MLP(nnx.Module):
-    """Multilayer Perceptron.
-
-    Parameters
-    ----------
-    n_features
-        Number of features.
-
-    n_outputs
-        Number of output components.
-
-    hidden_nodes
-        Numbers of hidden nodes of the MLP.
-
-    rngs
-        Random number generator.
-    """
-
-    n_outputs: int
-    hidden_layers: list[nnx.Linear]
-    output_layer: nnx.Linear
-
-    def __init__(
-        self,
-        n_features: int,
-        n_outputs: int,
-        hidden_nodes: list[int],
-        rngs: nnx.Rngs,
-    ):
-        chex.assert_scalar_positive(n_features)
-        chex.assert_scalar_positive(n_outputs)
-
-        self.n_outputs = n_outputs
-
-        self.hidden_layers = []
-        n_in = n_features
-        for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
-            n_in = n_out
-
-        self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
-
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        for layer in self.hidden_layers:
-            x = nnx.relu(
-                layer(x)
-            )  # TODO different activation in comparison to REINFORCE branch
-        return self.output_layer(x)
 
 
 class DeterministicPolicy(nnx.Module):
@@ -368,8 +318,10 @@ def sample_actions(
 def create_ddpg_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    policy_activation: str = "relu",
     policy_learning_rate: float = 3e-4,
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    q_activation: str = "relu",
     q_learning_rate: float = 3e-4,
     seed: int = 0,
 ) -> namedtuple:
@@ -380,6 +332,7 @@ def create_ddpg_state(
         env.observation_space.shape[0],
         env.action_space.shape[0],
         policy_hidden_nodes,
+        policy_activation,
         nnx.Rngs(seed),
     )
     policy = DeterministicPolicy(policy_net, env.action_space)
@@ -391,6 +344,7 @@ def create_ddpg_state(
         env.observation_space.shape[0] + env.action_space.shape[0],
         1,
         q_hidden_nodes,
+        q_activation,
         nnx.Rngs(seed),
     )
     q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))

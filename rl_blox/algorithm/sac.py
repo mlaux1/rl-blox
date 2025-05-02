@@ -11,7 +11,8 @@ import tqdm
 from flax import nnx
 
 from ..logging.logger import LoggerBase
-from .ddpg import MLP, ReplayBuffer, mse_action_value_loss, update_target
+from .ddpg import ReplayBuffer, mse_action_value_loss, update_target
+from ..blox.function_approximator.mlp import MLP
 
 
 # TODO consolidate implementations
@@ -338,6 +339,7 @@ def create_sac_state(
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
     policy_learning_rate: float = 3e-4,
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    q_activation: str = "relu",
     q_learning_rate: float = 1e-3,
     seed: int = 0,
 ) -> namedtuple:
@@ -360,6 +362,7 @@ def create_sac_state(
         env.observation_space.shape[0] + env.action_space.shape[0],
         1,
         q_hidden_nodes,
+        q_activation,
         nnx.Rngs(seed),
     )
     q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_learning_rate))
@@ -368,6 +371,7 @@ def create_sac_state(
         env.observation_space.shape[0] + env.action_space.shape[0],
         1,
         q_hidden_nodes,
+        q_activation,
         nnx.Rngs(seed + 1),
     )
     q2_optimizer = nnx.Optimizer(q2, optax.adam(learning_rate=q_learning_rate))
