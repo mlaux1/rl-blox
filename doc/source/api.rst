@@ -60,7 +60,6 @@ Data Blox
    :toctree: _apidoc/
 
    dqn.MLP
-   reinforce.MLP
    reinforce.GaussianMLP
    reinforce.StochasticPolicyBase
    reinforce.GaussianPolicy
@@ -104,6 +103,7 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   function_approximator.mlp.MLP
    probabilistic_ensemble.GaussianMLP
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState

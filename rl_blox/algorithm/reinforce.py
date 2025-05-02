@@ -13,6 +13,7 @@ import tqdm
 from flax import nnx
 
 from ..logging.logger import LoggerBase
+from ..blox.function_approximator.mlp import MLP
 
 
 class EpisodeDataset:
@@ -114,54 +115,6 @@ def discounted_reward_to_go(rewards: list[float], gamma: float) -> np.ndarray:
         accumulated_return += r
         discounted_returns.append(accumulated_return)
     return np.array(list(reversed(discounted_returns)))
-
-
-class MLP(nnx.Module):
-    """Multilayer Perceptron.
-
-    Parameters
-    ----------
-    n_features
-        Number of features.
-
-    n_outputs
-        Number of output components.
-
-    hidden_nodes
-        Numbers of hidden nodes of the MLP.
-
-    rngs
-        Random number generator.
-    """
-
-    n_outputs: int
-    hidden_layers: list[nnx.Linear]
-    output_layer: nnx.Linear
-
-    def __init__(
-        self,
-        n_features: int,
-        n_outputs: int,
-        hidden_nodes: list[int],
-        rngs: nnx.Rngs,
-    ):
-        chex.assert_scalar_positive(n_features)
-        chex.assert_scalar_positive(n_outputs)
-
-        self.n_outputs = n_outputs
-
-        self.hidden_layers = []
-        n_in = n_features
-        for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
-            n_in = n_out
-
-        self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
-
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        for layer in self.hidden_layers:
-            x = nnx.swish(layer(x))
-        return self.output_layer(x)
 
 
 class GaussianMLP(nnx.Module):
@@ -657,6 +610,7 @@ def create_policy_gradient_continuous_state(
         n_features=observation_space.shape[0],
         n_outputs=1,
         hidden_nodes=list(value_network_hidden_nodes),
+        activation="swish",
         rngs=nnx.Rngs(seed),
     )
     value_function_optimizer = nnx.Optimizer(
@@ -698,6 +652,7 @@ def create_policy_gradient_discrete_state(
         n_features=observation_space.shape[0],
         n_outputs=int(action_space.n),
         hidden_nodes=list(policy_hidden_nodes),
+        activation="swish",
         rngs=nnx.Rngs(seed),
     )
     policy = SoftmaxPolicy(policy_net)
@@ -709,6 +664,7 @@ def create_policy_gradient_discrete_state(
         n_features=observation_space.shape[0],
         n_outputs=1,
         hidden_nodes=list(value_network_hidden_nodes),
+        activation="swish",
         rngs=nnx.Rngs(seed),
     )
     value_function_optimizer = nnx.Optimizer(

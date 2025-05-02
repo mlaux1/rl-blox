@@ -5,8 +5,8 @@ import tqdm
 from flax import nnx
 
 from ..logging.logger import LoggerBase
+from ..blox.function_approximator.mlp import MLP
 from .reinforce import (
-    MLP,
     StochasticPolicyBase,
     policy_gradient_pseudo_loss,
     sample_trajectories,
