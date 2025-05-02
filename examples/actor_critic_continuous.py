@@ -1,10 +1,8 @@
 import gymnasium as gym
-import jax
 import jax.numpy as jnp
 import numpy as np
-import tqdm
 
-from rl_blox.algorithm.actor_critic import train_ac_epoch
+from rl_blox.algorithm.actor_critic import train_ac
 from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
 from rl_blox.logging import logger
 
@@ -14,7 +12,7 @@ env_name = "InvertedPendulum-v5"
 env = gym.make(env_name)
 env.reset(seed=43)
 
-hparams = dict(
+hparams_model = dict(
     policy_shared_head=True,
     policy_hidden_nodes=[32, 32],
     policy_learning_rate=3e-4,
@@ -22,35 +20,37 @@ hparams = dict(
     value_network_learning_rate=1e-2,
     seed=42,
 )
+hparams_algorithm = dict(
+    policy_gradient_steps=5,
+    value_gradient_steps=5,
+    total_timesteps=900_000,
+    gamma=0.99,
+    steps_per_update=5_000,
+    train_after_episode=False,
+)
 
 logger = logger.LoggerList(
     [logger.StandardLogger(verbose=2), logger.AIMLogger()]
 )
 logger.define_experiment(
-    env_name=env_name, algorithm_name="Actor-Critic", hparams=hparams
+    env_name=env_name,
+    algorithm_name="Actor-Critic",
+    hparams=hparams_model | hparams_algorithm,
 )
 logger.define_checkpoint_frequency("value_function", 10)
 
-ac_state = create_policy_gradient_continuous_state(env, **hparams)
+ac_state = create_policy_gradient_continuous_state(env, **hparams_model)
 
-n_epochs = 175
-key = ac_state.key
-for _ in tqdm.trange(n_epochs):
-    key, subkey = jax.random.split(key, 2)
-    train_ac_epoch(
-        env,
-        ac_state.policy,
-        ac_state.policy_optimizer,
-        ac_state.value_function,
-        ac_state.value_function_optimizer,
-        policy_gradient_steps=5,
-        value_gradient_steps=5,
-        total_steps=5000,
-        gamma=0.99,
-        train_after_episode=False,
-        key=subkey,
-        logger=logger,
-    )
+train_ac(
+    env,
+    ac_state.policy,
+    ac_state.policy_optimizer,
+    ac_state.value_function,
+    ac_state.value_function_optimizer,
+    key=ac_state.key,
+    logger=logger,
+    **hparams_algorithm,
+)
 env.close()
 
 # Evaluation
