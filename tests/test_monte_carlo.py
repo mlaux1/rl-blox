@@ -1,7 +1,10 @@
-from rl_blox.algorithms.model_free.monte_carlo import MonteCarlo
+import gymnasium as gym
+
+from rl_blox.algorithm.monte_carlo import MonteCarlo
 
 
-class TestMonteCarlo:
-    def test_monte_carlo(self):
-        # TODO
-        pass
+def test_monte_carlo():
+    env = gym.make("FrozenLake-v1")
+    mc = MonteCarlo(env, 0.1, "first_visit")
+    mc.train(1)
+    env.close()

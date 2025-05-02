@@ -1,9 +1,7 @@
 import numpy as np
 from gymnasium.spaces.discrete import Discrete
-from rl_blox.policy.value_functions import (
-    TabularQFunction,
-    TabularValueFunction,
-)
+
+from rl_blox.blox.value_functions import TabularQFunction, TabularValueFunction
 
 
 class TestValueFunction:

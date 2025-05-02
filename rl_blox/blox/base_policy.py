@@ -4,7 +4,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import default_rng
 
-from ..value_functions import TabularQFunction, TabularValueFunction
+from ..blox.value_functions import TabularQFunction, TabularValueFunction
 
 SEED = 0
 
