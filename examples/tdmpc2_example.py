@@ -1,7 +1,7 @@
 import gymnasium as gym
 import torch
 
-from rl_blox.algorithms.model_based.ext.tdmpc2 import train_tdmpc2
+from rl_blox.algorithm.ext.tdmpc2 import train_tdmpc2
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
