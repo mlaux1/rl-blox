@@ -1,6 +1,6 @@
 import numpy as np
 import gymnasium as gym
-from rl_blox.algorithms.model_free.ext.crossq import train_crossq
+from rl_blox.algorithm.ext.crossq import train_crossq
 
 
 env_name = "Pendulum-v1"
