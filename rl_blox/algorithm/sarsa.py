@@ -87,6 +87,7 @@ def train_sarsa(
             next_action,
             gamma,
             alpha,
+            terminated,
         )
 
         if terminated or truncated:
@@ -105,9 +106,10 @@ def _update_policy(
     next_action,
     gamma,
     alpha,
+    terminated,
 ):
     val = q_table[observation, action]
-    next_val = q_table[next_observation, next_action]
+    next_val = (1 - terminated) * q_table[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)
     q_table = q_table.at[observation, action].add(alpha * error)
 
