@@ -1,5 +1,4 @@
 import gymnasium
-import jax.numpy as jnp
 from jax import jit, random
 from jax.random import PRNGKey
 from jax.typing import ArrayLike
@@ -60,53 +59,25 @@ def train_sarsa(
        Machine Learning, 22(1-3), 123–158.
        DOI: [10.1007/BF00114726](https://link.springer.com/article/10.1007/BF00114726)
     """
-    ep_rewards = jnp.zeros(total_timesteps)
 
-    for i in tqdm(range(total_timesteps)):
-        key, subkey = random.split(key)
-        q_table, ep_reward = _sarsa_episode(
-            subkey, env, q_table, alpha, epsilon, gamma
-        )
-        ep_rewards = ep_rewards.at[i].add(ep_reward)
-
-    return q_table
-
-
-def _sarsa_episode(
-    key: PRNGKey,
-    env: gymnasium.Env,
-    q_table: ArrayLike,
-    alpha: float,
-    epsilon: float,
-    gamma: float = 0.9999,
-) -> float:
-    """
-    Performs a single episode rollout.
-
-    :param gamma: Discount factor.
-    :return: Episode reward.
-    """
-    ep_reward = 0
-    truncated = False
-    terminated = False
     observation, _ = env.reset()
 
-    key, subkey = random.split(key)
-
-    action = get_epsilon_greedy_action(subkey, q_table, observation, epsilon)
-
-    while not terminated and not truncated:
+    for i in tqdm(range(total_timesteps)):
         # get action from policy and perform environment step
+        key, subkey = random.split(key)
+        action = get_epsilon_greedy_action(
+            subkey, q_table, observation, epsilon
+        )
         next_observation, reward, terminated, truncated, _ = env.step(
             int(action)
         )
+
         # get next action
         key, subkey = random.split(key)
         next_action = get_epsilon_greedy_action(
             subkey, q_table, observation, epsilon
         )
 
-        # update target policy
         q_table = _update_policy(
             q_table,
             observation,
@@ -118,12 +89,10 @@ def _sarsa_episode(
             alpha,
         )
 
-        # housekeeping
-        action = next_action
-        observation = next_observation
-        ep_reward += reward
+        if terminated or truncated:
+            observation, _ = env.reset()
 
-    return q_table, ep_reward
+    return q_table
 
 
 @jit
