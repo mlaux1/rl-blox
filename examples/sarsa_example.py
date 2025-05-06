@@ -4,11 +4,11 @@ import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics
 from jax.random import PRNGKey
 
-from rl_blox.algorithm.sarsa import sarsa
+from rl_blox.algorithm.sarsa import train_sarsa
 from rl_blox.blox.value_policy import get_greedy_action, make_q_table
 from rl_blox.util.experiment_helper import generate_rollout
 
-NUM_EPISODES = 2000
+NUM_TIMESTEPS = 200_000
 LEARNING_RATE = 0.05
 EPSILON = 0.05
 KEY = PRNGKey(42)
@@ -16,17 +16,17 @@ WINDOW_SIZE = 10
 ENV_NAME = "CliffWalking-v0"
 
 env = gym.make(ENV_NAME)
-env = RecordEpisodeStatistics(env, buffer_length=NUM_EPISODES)
+env = RecordEpisodeStatistics(env, buffer_length=2000)
 
 q_table = make_q_table(env)
 
-ep_rewards = sarsa(
+ep_rewards = train_sarsa(
     KEY,
     env,
     q_table,
     alpha=LEARNING_RATE,
     epsilon=EPSILON,
-    num_episodes=NUM_EPISODES,
+    total_timesteps=NUM_TIMESTEPS,
 )
 
 env.close()
