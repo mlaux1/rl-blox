@@ -75,7 +75,7 @@ def train_sarsa(
         # get next action
         key, subkey = random.split(key)
         next_action = get_epsilon_greedy_action(
-            subkey, q_table, observation, epsilon
+            subkey, q_table, next_observation, epsilon
         )
 
         q_table = _update_policy(
@@ -92,7 +92,8 @@ def train_sarsa(
 
         if terminated or truncated:
             observation, _ = env.reset()
-
+        else:
+            observation = next_observation
     return q_table
 
 
