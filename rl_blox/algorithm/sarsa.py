@@ -27,8 +27,6 @@ def train_sarsa(
 
     Parameters
     ----------
-    key : PRNGKey
-        The random key.
     env : gymnasium.Env
         The environment to train on.
     q_table : ArrayLike
