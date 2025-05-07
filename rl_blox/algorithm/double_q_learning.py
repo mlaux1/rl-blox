@@ -8,7 +8,7 @@ from ..logging.logger import LoggerBase
 from ..util.error_functions import td_error
 
 
-def double_q_learning(
+def train_double_q_learning(
     env: gymnasium.Env,
     q_table1: ArrayLike,
     q_table2: ArrayLike,
