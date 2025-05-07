@@ -1,69 +1,84 @@
 import gymnasium
-import jax.numpy as jnp
-import jax.random
-from jax import Array, jit, random
-from jax.random import PRNGKey
+import jax
+import tqdm
 from jax.typing import ArrayLike
-from tqdm import tqdm
 
 from ..blox.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ..logging.logger import LoggerBase
 from ..util.error_functions import td_error
 
 
 def double_q_learning(
-    key: PRNGKey,
     env: gymnasium.Env,
     q_table1: ArrayLike,
     q_table2: ArrayLike,
-    alpha: float,
-    epsilon: float,
-    num_episodes: int,
-    gamma: float = 0.9999,
-) -> Array:
-    ep_rewards = jnp.zeros(num_episodes)
+    learning_rate: float = 0.1,
+    epsilon: float = 0.05,
+    gamma: float = 0.99,
+    total_timesteps: int = 10_000,
+    seed: int = 1,
+    logger: LoggerBase | None = None,
+) -> ArrayLike:
+    r"""Double Q-Learning.
 
-    for i in tqdm(range(num_episodes)):
-        key, subkey = random.split(key)
-        q_table1, q_table2, ep_reward = _dql_episode(
-            subkey, env, q_table1, q_table2, alpha, epsilon, gamma
-        )
-        ep_rewards = ep_rewards.at[i].add(ep_reward)
+    This function implements the double Q-Learning. It uses two tabular
+    Q-functions and an off-policy TD-update. To select the next action, the
+    sum of the two Q-values needs to be maximised.
 
-    return q_table1, q_table2, ep_rewards
+    Parameters:
+    -----------
+    env : gym.Env
+        The environment to train on.
+    q_table1: ArrayLike
+        The first Q-table of shape (num_states, num_actions), containing
+        current Q-values.
+    q_table2: ArrayLike
+        The second Q-table of shape (num_states, num_actions), containing
+        current Q-values.
+    epsilon : float
+        The tradeoff for random exploration
+    gamma : float
+        The discount factor, representing importance of future rewards
+    total_timesteps : int
+        The number of steps to train for
+    seed : int, optional
+        The random seed.
+    logger : LoggerBase, optional
+        Experiment logger.
 
 
-def _dql_episode(
-    key: PRNGKey,
-    env: gymnasium.Env,
-    q_table1: ArrayLike,
-    q_table2: ArrayLike,
-    alpha: float,
-    epsilon: float,
-    gamma: float = 0.9999,
-) -> float:
-    """Perform a single episode rollout."""
-    ep_reward = 0
-    truncated = False
-    terminated = False
+    Returns:
+    --------
+    q_table1 : jax.numpy.ndarray
+        The first updated Q-table after training.
+    q_table2 : jax.numpy.ndarray
+        The second updated Q-table after training.
+
+    Refernces:
+    ----------
+    TODO!
+
+    """
+    key = jax.random.key(seed)
     observation, _ = env.reset()
+    steps_per_episode = 0
 
-    while not terminated and not truncated:
-        key, subkey1, subkey2, subkey3 = random.split(key, 4)
+    for i in tqdm.trange(total_timesteps):
+        key, subkey1, subkey2, subkey3 = jax.random.split(key, 4)
 
-        # sum the q_tables and select action
         q_table = q_table1 + q_table2
         action = get_epsilon_greedy_action(
             subkey1, q_table, observation, epsilon
         )
-        # perform environment step
-        next_observation, reward, terminated, truncated, _ = env.step(
+        steps_per_episode += 1
+        next_observation, reward, terminated, truncated, info = env.step(
             int(action)
         )
 
         val = jax.random.uniform(subkey3)
         if val < 0.5:
             q_table1 = _dql_update(
-                key,
+                subkey2,
                 q_table1,
                 q_table2,
                 observation,
@@ -71,11 +86,12 @@ def _dql_episode(
                 reward,
                 next_observation,
                 gamma,
-                alpha,
+                learning_rate,
+                terminated,
             )
         else:
             q_table2 = _dql_update(
-                key,
+                subkey2,
                 q_table2,
                 q_table1,
                 observation,
@@ -83,17 +99,24 @@ def _dql_episode(
                 reward,
                 next_observation,
                 gamma,
-                alpha,
+                learning_rate,
+                terminated,
             )
 
-        # housekeeping
-        observation = next_observation
-        ep_reward += reward
+        if terminated or truncated:
+            if logger is not None:
+                logger.record_stat("return", info["episode"]["r"], step=i)
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+            steps_per_episode = 0
+            observation, _ = env.reset()
+        else:
+            observation = next_observation
 
-    return q_table1, q_table2, ep_reward
+    return q_table1, q_table2
 
 
-@jit
+@jax.jit
 def _dql_update(
     key,
     q_table1,
@@ -103,11 +126,12 @@ def _dql_update(
     reward,
     next_observation,
     gamma,
-    alpha,
+    learning_rate,
+    terminated,
 ):
     next_action = get_greedy_action(key, q_table1, observation)
     val = q_table1[observation, action]
-    next_val = q_table2[next_observation, next_action]
+    next_val = (1 - terminated) * q_table2[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)
-    q_table1 = q_table1.at[observation, action].add(alpha * error)
+    q_table1 = q_table1.at[observation, action].add(learning_rate * error)
     return q_table1
