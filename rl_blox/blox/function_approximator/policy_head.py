@@ -46,14 +46,35 @@ class DeterministicTanhPolicy(nnx.Module):
 
 
 class StochasticPolicyBase(nnx.Module):
-    """Base class for probabilistic policies."""
+    """Base class for probabilistic policies.
+
+    A subclass must define the functions
+
+    * :func:`~StochasticPolicyBase.__call__`
+    * :func:`~StochasticPolicyBase.sample`
+    * :func:`~StochasticPolicyBase.log_probability`
+    """
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         """Compute action probabilities for given observation."""
         raise NotImplementedError("Subclasses must implement __call__ method.")
 
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        """Sample action from policy given observation."""
+        """Sample action from policy given observation.
+
+        Parameters
+        ----------
+        observation : array
+            Observation.
+
+        key : array
+            Pseudo random number generator key for sampling.
+
+        Returns
+        -------
+        action : array
+            Sampled action.
+        """
         raise NotImplementedError("Subclasses must implement sample method.")
 
     def log_probability(
@@ -61,7 +82,21 @@ class StochasticPolicyBase(nnx.Module):
         observation: jnp.ndarray,
         action: jnp.ndarray,
     ) -> jnp.ndarray:
-        """Compute log probability of action given observation."""
+        """Compute log probability of action given observation.
+
+        Parameters
+        ----------
+        observation : array
+            Observation.
+
+        action : array
+            Action.
+
+        Returns
+        -------
+        log_prob : array
+            Log probability of action given observation.
+        """
         raise NotImplementedError(
             "Subclasses must implement log_probability method."
         )
