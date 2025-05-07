@@ -10,8 +10,9 @@ import optax
 import tqdm
 from flax import nnx
 
-from ..logging.logger import LoggerBase
 from ..blox.function_approximator.mlp import MLP
+from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..logging.logger import LoggerBase
 
 
 # TODO consolidate replay buffer implementations
@@ -54,38 +55,6 @@ class ReplayBuffer:
 
     def __len__(self):
         return self.current_len
-
-
-class DeterministicPolicy(nnx.Module):
-    r"""Deterministic policy represented with a function approximator.
-
-    The deterministic policy directly maps observations to actions, hence,
-    represents the function :math:`\pi(o) = a`.
-    """
-
-    policy_net: nnx.Module
-    """Underlying function approximator."""
-
-    action_scale: nnx.Variable[jnp.ndarray]
-    """Scales for each component of the action."""
-
-    action_bias: nnx.Variable[jnp.ndarray]
-    """Offset for each component of the action."""
-
-    def __init__(self, policy_net: nnx.Module, action_space: gym.spaces.Box):
-        self.policy_net = policy_net
-        self.action_scale = nnx.Variable(
-            jnp.array((action_space.high - action_space.low) / 2.0)
-        )
-        self.action_bias = nnx.Variable(
-            jnp.array((action_space.high + action_space.low) / 2.0)
-        )
-
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        y = self.policy_net(observation)
-        return nnx.tanh(y) * jnp.broadcast_to(
-            self.action_scale.value, y.shape
-        ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
 
 def mse_action_value_loss(
@@ -300,7 +269,7 @@ def sample_actions(
     action_high: jnp.ndarray,
     action_scale: jnp.ndarray,
     exploration_noise: float,
-    policy: DeterministicPolicy,
+    policy: DeterministicTanhPolicy,
     obs: jnp.ndarray,
     key: jnp.ndarray,
 ) -> jnp.ndarray:
@@ -335,7 +304,7 @@ def create_ddpg_state(
         policy_activation,
         nnx.Rngs(seed),
     )
-    policy = DeterministicPolicy(policy_net, env.action_space)
+    policy = DeterministicTanhPolicy(policy_net, env.action_space)
     policy_optimizer = nnx.Optimizer(
         policy, optax.adam(learning_rate=policy_learning_rate)
     )
