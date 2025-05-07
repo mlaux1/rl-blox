@@ -3,7 +3,6 @@ from collections import namedtuple
 from collections.abc import Callable
 
 import chex
-import distrax
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -12,9 +11,13 @@ import optax
 import tqdm
 from flax import nnx
 
-from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
-from ..blox.function_approximator.policy_head import StochasticPolicyBase
+from ..blox.function_approximator.mlp import MLP
+from ..blox.function_approximator.policy_head import (
+    GaussianPolicy,
+    SoftmaxPolicy,
+    StochasticPolicyBase,
+)
 from ..logging.logger import LoggerBase
 
 
@@ -117,95 +120,6 @@ def discounted_reward_to_go(rewards: list[float], gamma: float) -> np.ndarray:
         accumulated_return += r
         discounted_returns.append(accumulated_return)
     return np.array(list(reversed(discounted_returns)))
-
-
-class GaussianPolicy(StochasticPolicyBase):
-    """Gaussian policy.
-
-    Wraps a Gaussian neural network that maps observations to a Gaussian
-    distribution over actions, i.e., mean vector and log variance vector.
-
-    Parameters
-    ----------
-    net : nnx.Module
-        Gaussian neural network.
-    """
-
-    net: nnx.Module
-
-    def __init__(self, net: nnx.Module):
-        self.net = net
-
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        return self.net(observation)[0]
-
-    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        """Sample action from Gaussian distribution."""
-        mean, log_var = self.net(observation)
-        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
-        std = jnp.exp(log_std)
-        # same as
-        # jax.random.normal(key, mean.shape)
-        # * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
-        # + mean
-        return distrax.MultivariateNormalDiag(loc=mean, scale_diag=std).sample(
-            seed=key,
-            sample_shape=(),
-        )
-
-    def log_probability(
-        self,
-        observation: jnp.ndarray,
-        action: jnp.ndarray,
-    ) -> jnp.ndarray:
-        """Compute log probability of action given observation."""
-        mean, log_var = self.net(observation)
-        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
-        std = jnp.exp(log_std)
-        # same as
-        # -jnp.log(std)
-        # - 0.5 * jnp.log(2.0 * jnp.pi)
-        # - 0.5 * ((action - mean) / std) ** 2
-        return distrax.MultivariateNormalDiag(
-            loc=mean, scale_diag=std
-        ).log_prob(action)
-
-
-class SoftmaxPolicy(StochasticPolicyBase):
-    r"""Softmax policy.
-
-    Wraps a softmax neural network that maps observations to the logits of each
-    action.
-
-    Parameters
-    ----------
-    net : nnx.Module
-        Gaussian neural network.
-    """
-
-    net: nnx.Module
-
-    def __init__(self, net: nnx.Module):
-        self.net = net
-
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        return nnx.softmax(self.logits(observation))
-
-    def logits(self, observation: jnp.ndarray) -> jnp.ndarray:
-        return self.net(observation)
-
-    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        return distrax.Categorical(logits=self.logits(observation)).sample(
-            seed=key,
-            sample_shape=(),
-        )
-
-    def log_probability(
-        self, observation: jnp.ndarray, action: jnp.ndarray
-    ) -> jnp.ndarray:
-        return distrax.Categorical(logits=self.logits(observation)).log_prob(
-            action
-        )
 
 
 @nnx.jit

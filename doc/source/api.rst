@@ -101,6 +101,8 @@ Data Blox
    function_approximator.policy_head.DeterministicTanhPolicy
    function_approximator.policy_head.StochasticPolicyBase
    function_approximator.policy_head.GaussianTanhPolicy
+   function_approximator.policy_head.GaussianPolicy
+   function_approximator.policy_head.SoftmaxPolicy
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
 
