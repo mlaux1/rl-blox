@@ -23,7 +23,7 @@ def test_actor_critic():
         ac_state.policy_optimizer,
         ac_state.value_function,
         ac_state.value_function_optimizer,
-        key=ac_state.key,
+        seed=42,
         total_timesteps=10,
     )
 

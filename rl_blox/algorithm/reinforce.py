@@ -444,8 +444,6 @@ def create_policy_gradient_continuous_state(
         value_function, value_network_optimizer(value_network_learning_rate)
     )
 
-    key = jax.random.key(seed)
-
     return namedtuple(
         "PolicyGradientState",
         [
@@ -453,9 +451,8 @@ def create_policy_gradient_continuous_state(
             "policy_optimizer",
             "value_function",
             "value_function_optimizer",
-            "key",
         ],
-    )(policy, policy_optimizer, value_function, value_function_optimizer, key)
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
 def create_policy_gradient_discrete_state(
@@ -498,8 +495,6 @@ def create_policy_gradient_discrete_state(
         value_function, value_network_optimizer(value_network_learning_rate)
     )
 
-    key = jax.random.key(seed)
-
     return namedtuple(
         "PolicyGradientState",
         [
@@ -507,9 +502,8 @@ def create_policy_gradient_discrete_state(
             "policy_optimizer",
             "value_function",
             "value_function_optimizer",
-            "key",
         ],
-    )(policy, policy_optimizer, value_function, value_function_optimizer, key)
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
 def train_reinforce(
