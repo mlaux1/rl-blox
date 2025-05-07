@@ -25,26 +25,19 @@ class MLP(nnx.Module):
 
     rngs : nnx.Rngs
         Random number generator.
-
-    Attributes
-    ----------
-    n_outputs : int
-        Number of output components.
-
-    activation : Callable
-        Activation function.
-
-    hidden_layers : list[nnx.Linear]
-        Hidden layers.
-
-    output_layer : nnx.Linear
-        Output layer.
     """
 
     n_outputs: int
+    """Number of output components."""
+
     activation: Callable[[jnp.ndarray], jnp.ndarray]
+    """Activation function."""
+
     hidden_layers: list[nnx.Linear]
+    """Hidden layers."""
+
     output_layer: nnx.Linear
+    """Output layer."""
 
     def __init__(
         self,

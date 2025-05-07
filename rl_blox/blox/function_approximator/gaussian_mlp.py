@@ -11,7 +11,7 @@ class GaussianMLP(nnx.Module):
     Parameters
     ----------
     shared_head : bool
-        All nodes of the last hidden layer are connected to mean AND log_std.
+        All nodes of the last hidden layer are connected to mean AND log_var.
 
     n_features : int
         Number of features.
@@ -28,30 +28,22 @@ class GaussianMLP(nnx.Module):
 
     rngs : nnx.Rngs
         Random number generator.
-
-    Attributes
-    ----------
-    shared_head : bool
-        All nodes of the last hidden layer are connected to mean AND log_std.
-
-    n_outputs : int
-        Number of output components.
-
-    activation : Callable
-        Activation function.
-
-    hidden_layers : list[nnx.Linear]
-        Hidden layers.
-
-    output_layers : list[nnx.Linear]
-        Output layers.
     """
 
     shared_head: bool
+    """All nodes of the last hidden layer are connected to mean AND log_var."""
+
     n_outputs: int
+    """Number of output components."""
+
     activation: Callable[[jnp.ndarray], jnp.ndarray]
+    """Activation function."""
+
     hidden_layers: list[nnx.Linear]
+    """Hidden layers."""
+
     output_layers: list[nnx.Linear]
+    """Output layers."""
 
     def __init__(
         self,
