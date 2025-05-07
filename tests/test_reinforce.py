@@ -35,7 +35,7 @@ def test_reinforce():
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
         reinforce_state.value_function_optimizer,
-        key=reinforce_state.key,
+        seed=42,
         total_timesteps=10,
     )
 

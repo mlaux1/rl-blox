@@ -11,14 +11,15 @@ from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 env_name = "CartPole-v1"
 # env_name = "MountainCar-v0"  # never reaches the goal -> never learns
 env = gym.make(env_name)
-env.reset(seed=42)
+seed = 42
+env.reset(seed=seed)
 
 hparams_model = dict(
     policy_hidden_nodes=[64, 64],
     policy_learning_rate=1e-4,
     value_network_hidden_nodes=[256, 256],
     value_network_learning_rate=1e-2,
-    seed=42,
+    seed=seed,
 )
 hparams_algorithm = dict(
     policy_gradient_steps=20,
@@ -27,6 +28,7 @@ hparams_algorithm = dict(
     steps_per_update=1_000,
     gamma=1.0,
     train_after_episode=False,
+    seed=seed,
 )
 
 logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
@@ -44,7 +46,6 @@ train_reinforce(
     reinforce_state.policy_optimizer,
     reinforce_state.value_function,
     reinforce_state.value_function_optimizer,
-    key=reinforce_state.key,
     **hparams_algorithm,
     logger=logger,
 )
