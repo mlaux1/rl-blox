@@ -63,9 +63,6 @@ Data Blox
    reinforce.GaussianPolicy
    reinforce.SoftmaxPolicy
    ddpg.ReplayBuffer
-   ddpg.DeterministicPolicy
-   sac.StochasticPolicyBase
-   sac.GaussianPolicy
    sac.EntropyCoefficient
    sac.EntropyControl
    pets.PETSMPCConfig
@@ -101,6 +98,9 @@ Data Blox
 
    function_approximator.mlp.MLP
    function_approximator.gaussian_mlp.GaussianMLP
+   function_approximator.policy_head.DeterministicTanhPolicy
+   function_approximator.policy_head.StochasticPolicyBase
+   function_approximator.policy_head.GaussianTanhPolicy
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
 
