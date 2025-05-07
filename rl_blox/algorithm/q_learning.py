@@ -1,4 +1,4 @@
-import gymnasium
+import gymnasium as gym
 import jax
 import tqdm
 from jax.typing import ArrayLike
@@ -9,7 +9,7 @@ from ..util.error_functions import td_error
 
 
 def train_q_learning(
-    env: gymnasium.Env,
+    env: gym.Env,
     q_table: ArrayLike,
     learning_rate: float = 0.1,
     epsilon: float = 0.05,
@@ -18,6 +18,43 @@ def train_q_learning(
     seed: int = 1,
     logger: LoggerBase | None = None,
 ) -> ArrayLike:
+    r"""Q-Learning.
+
+    This function implements the tabular Q-Learning algorithm as originally
+    described by Watkins in 1989. The algorithm is off-policy, uses an epsilon-
+    greedy exploration strategy and the temporal-difference error to update the
+    Q-tables.
+
+    Parameters
+    ----------
+    env : gym.Env
+        The environment to train on.
+    q_table : ArrayLike
+        The Q-table of shape (num_states, num_actions), containing current Q-values.
+    learning_rate : float
+        The learning rate, determining how much new information overrides old.
+    epsilon : float
+        The tradeoff for random exploration.
+    gamma : float
+        The discount factor.
+    total_timesteps : int
+        The number of time steps to train for.
+    seed : int
+        The random seed.
+    logger: LoggerBase, optional
+        Experiment Logger.
+
+    Returns
+    -------
+    q_table : jax.numpy.ndarray
+        The updated Q-table after training.
+
+    References
+    ----------
+    1.  Watkins, C.J.C.H., Dayan, P. Q-learning. Mach Learn 8, 279–292 (1992).
+        https://doi.org/10.1007/BF00992698
+    """
+
     key = jax.random.key(seed)
 
     if logger is not None:
