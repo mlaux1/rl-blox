@@ -1,69 +1,83 @@
-import gymnasium
-import jax.numpy as jnp
-from jax import Array, jit, random
-from jax.random import PRNGKey
+import gymnasium as gym
+import jax
+import tqdm
 from jax.typing import ArrayLike
-from tqdm import tqdm
 
 from ..blox.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ..logging.logger import LoggerBase
 from ..util.error_functions import td_error
 
 
-def q_learning(
-    key: PRNGKey,
-    env: gymnasium.Env,
+def train_q_learning(
+    env: gym.Env,
     q_table: ArrayLike,
-    alpha: float,
-    epsilon: float,
-    num_episodes: int,
-    gamma: float = 0.9999,
-) -> Array:
-    ep_rewards = jnp.zeros(num_episodes)
+    learning_rate: float = 0.1,
+    epsilon: float = 0.05,
+    gamma: float = 0.99,
+    total_timesteps: int = 100_000,
+    seed: int = 1,
+    logger: LoggerBase | None = None,
+) -> ArrayLike:
+    r"""Q-Learning.
 
-    for i in tqdm(range(num_episodes)):
-        key, subkey = random.split(key)
-        q_table, ep_reward = _q_learning_episode(
-            subkey, env, q_table, alpha, epsilon, gamma
-        )
-        ep_rewards = ep_rewards.at[i].add(ep_reward)
+    This function implements the tabular Q-Learning algorithm as originally
+    described by Watkins in 1989. The algorithm is off-policy, uses an epsilon-
+    greedy exploration strategy and the temporal-difference error to update the
+    Q-tables.
 
-    return q_table, ep_rewards
+    Parameters
+    ----------
+    env : gym.Env
+        The environment to train on.
+    q_table : ArrayLike
+        The Q-table of shape (num_states, num_actions), containing current Q-values.
+    learning_rate : float
+        The learning rate, determining how much new information overrides old.
+    epsilon : float
+        The tradeoff for random exploration.
+    gamma : float
+        The discount factor.
+    total_timesteps : int
+        The number of time steps to train for.
+    seed : int
+        The random seed.
+    logger: LoggerBase, optional
+        Experiment Logger.
 
+    Returns
+    -------
+    q_table : jax.numpy.ndarray
+        The updated Q-table after training.
 
-def _q_learning_episode(
-    key: PRNGKey,
-    env: gymnasium.Env,
-    q_table: ArrayLike,
-    alpha: float,
-    epsilon: float,
-    gamma: float = 0.9999,
-) -> float:
+    References
+    ----------
+    1.  Watkins, C.J.C.H., Dayan, P. Q-learning. Mach Learn 8, 279–292 (1992).
+        https://doi.org/10.1007/BF00992698
     """
-    Performs a single episode rollout.
 
-    :param gamma: Discount factor.
-    :return: Episode reward.
-    """
-    ep_reward = 0
-    truncated = False
-    terminated = False
+    key = jax.random.key(seed)
+
+    if logger is not None:
+        logger.start_new_episode()
+
     observation, _ = env.reset()
+    steps_per_episode = 0
 
-    while not terminated and not truncated:
-        key, subkey1, subkey2 = random.split(key, 3)
+    for i in tqdm.trange(total_timesteps):
+        steps_per_episode += 1
+        key, subkey1, subkey2 = jax.random.split(key, 3)
 
         action = get_epsilon_greedy_action(
             subkey1, q_table, observation, epsilon
         )
-        # get action from policy and perform environment step
-        next_observation, reward, terminated, truncated, _ = env.step(
+
+        next_observation, reward, terminated, truncated, info = env.step(
             int(action)
         )
-        # get next action
-        next_action = get_greedy_action(subkey2, q_table, observation)
 
-        # update target policy
-        q_table = _q_learning_update(
+        next_action = get_greedy_action(subkey2, q_table, next_observation)
+
+        q_table = _update_policy(
             q_table,
             observation,
             action,
@@ -71,18 +85,24 @@ def _q_learning_episode(
             next_observation,
             next_action,
             gamma,
-            alpha,
+            terminated,
+            learning_rate,
         )
 
-        # housekeeping
-        observation = next_observation
-        ep_reward += reward
+        if terminated or truncated:
+            if logger is not None:
+                logger.record_stat("return", info["episode"]["r"], step=i)
+                logger.stop_episode(steps_per_episode)
+            observation, _ = env.reset()
+            steps_per_episode = 0
+        else:
+            observation = next_observation
 
-    return q_table, ep_reward
+    return q_table
 
 
-@jit
-def _q_learning_update(
+@jax.jit
+def _update_policy(
     q_table,
     observation,
     action,
@@ -90,11 +110,12 @@ def _q_learning_update(
     next_observation,
     next_action,
     gamma,
-    alpha,
+    terminated,
+    learning_rate,
 ):
     val = q_table[observation, action]
-    next_val = q_table[next_observation, next_action]
+    next_val = (1 - terminated) * q_table[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)
-    q_table = q_table.at[observation, action].add(alpha * error)
+    q_table = q_table.at[observation, action].add(learning_rate * error)
 
     return q_table

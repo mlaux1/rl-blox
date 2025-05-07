@@ -1,70 +1,94 @@
 import gymnasium
-import jax.numpy as jnp
-from jax import Array, jit, random
-from jax.random import PRNGKey
+import jax
+import tqdm
 from jax.typing import ArrayLike
-from tqdm import tqdm
 
 from ..blox.value_policy import get_epsilon_greedy_action
+from ..logging.logger import LoggerBase
 from ..util.error_functions import td_error
 
 
-def sarsa(
-    key: PRNGKey,
+def train_sarsa(
     env: gymnasium.Env,
     q_table: ArrayLike,
-    alpha: float,
-    epsilon: float,
-    num_episodes: int,
-    gamma: float = 0.9999,
-) -> Array:
-    ep_rewards = jnp.zeros(num_episodes)
+    learning_rate: float = 0.1,
+    epsilon: float = 0.05,
+    gamma: float = 0.99,
+    total_timesteps: int = 100_000,
+    seed: int = 1,
+    logger: LoggerBase | None = None,
+) -> ArrayLike:
+    r"""
+    State-action-reward-state-action algorithm.
 
-    for i in tqdm(range(num_episodes)):
-        key, subkey = random.split(key)
-        q_table, ep_reward = _sarsa_episode(
-            subkey, env, q_table, alpha, epsilon, gamma
-        )
-        ep_rewards = ep_rewards.at[i].add(ep_reward)
+    This function implements the SARSA (State-Action-Reward-State-Action) update rule
+    in the context of tabular reinforcement learning using JAX. The update is
+    on-policy and uses the next action chosen by the current policy.
 
-    return q_table, ep_rewards
+    Parameters
+    ----------
+    env : gymnasium.Env
+        The environment to train on.
+    q_table : ArrayLike
+        The Q-table of shape (num_states, num_actions), containing current Q-values.
+    learning_rate : float
+        The learning rate, determining how much new information overrides old.
+    epsilon : float
+        The tradeoff for random exploration.
+    gamma : float
+        The discount factor, representing the importance of future rewards.
+    total_timesteps : int
+        The number of total timesteps to train for.
+    seed : int
+        The random seed.
+    logger : LoggerBase, optional
+        Experiment logger.
 
+    Returns
+    -------
+    q_table : jax.numpy.ndarray
+        The updated Q-table after applying the SARSA update rule.
 
-def _sarsa_episode(
-    key: PRNGKey,
-    env: gymnasium.Env,
-    q_table: ArrayLike,
-    alpha: float,
-    epsilon: float,
-    gamma: float = 0.9999,
-) -> float:
+    References
+    ----------
+    1. Rummery, G. A., & Niranjan, M. (1994). *On-line Q-learning using connectionist systems*.
+       Technical Report CUED/F-INFENG/TR 166, Department of Engineering, University of Cambridge.
+       URL: [https://mi.eng.cam.ac.uk/reports/svr-ftp/auto-pdf/rummery_tr166.pdf](https://mi.eng.cam.ac.uk/reports/svr-ftp/auto-pdf/rummery_tr166.pdf)
+
+    2. Sutton, R. S., & Barto, A. G. (1998). *Reinforcement Learning: An Introduction* (2nd ed.).
+       MIT Press. ISBN 978-0262039246.
+
+    3. Singh, S. P., & Sutton, R. S. (1996). *Reinforcement learning with replacing eligibility traces*.
+       Machine Learning, 22(1-3), 123–158.
+       DOI: [10.1007/BF00114726](https://link.springer.com/article/10.1007/BF00114726)
     """
-    Performs a single episode rollout.
 
-    :param gamma: Discount factor.
-    :return: Episode reward.
-    """
-    ep_reward = 0
-    truncated = False
-    terminated = False
+    key = jax.random.key(seed)
+
     observation, _ = env.reset()
 
-    key, subkey = random.split(key)
+    if logger is not None:
+        logger.start_new_episode()
 
-    action = get_epsilon_greedy_action(subkey, q_table, observation, epsilon)
+    steps_per_episode = 0
 
-    while not terminated and not truncated:
+    for i in tqdm.trange(total_timesteps):
         # get action from policy and perform environment step
-        next_observation, reward, terminated, truncated, _ = env.step(
-            int(action)
-        )
-        # get next action
-        key, subkey = random.split(key)
-        next_action = get_epsilon_greedy_action(
+        key, subkey = jax.random.split(key)
+        action = get_epsilon_greedy_action(
             subkey, q_table, observation, epsilon
         )
+        steps_per_episode += 1
+        next_observation, reward, terminated, truncated, info = env.step(
+            int(action)
+        )
 
-        # update target policy
+        # get next action
+        key, subkey = jax.random.split(key)
+        next_action = get_epsilon_greedy_action(
+            subkey, q_table, next_observation, epsilon
+        )
+
         q_table = _update_policy(
             q_table,
             observation,
@@ -73,18 +97,24 @@ def _sarsa_episode(
             next_observation,
             next_action,
             gamma,
-            alpha,
+            learning_rate,
+            terminated,
         )
 
-        # housekeeping
-        action = next_action
-        observation = next_observation
-        ep_reward += reward
+        if terminated or truncated:
+            if logger is not None:
+                logger.record_stat("return", info["episode"]["r"], step=i)
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+            steps_per_episode = 0
+            observation, _ = env.reset()
+        else:
+            observation = next_observation
 
-    return q_table, ep_reward
+    return q_table
 
 
-@jit
+@jax.jit
 def _update_policy(
     q_table,
     observation,
@@ -93,11 +123,12 @@ def _update_policy(
     next_observation,
     next_action,
     gamma,
-    alpha,
+    learning_rate,
+    terminated,
 ):
     val = q_table[observation, action]
-    next_val = q_table[next_observation, next_action]
+    next_val = (1 - terminated) * q_table[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)
-    q_table = q_table.at[observation, action].add(alpha * error)
+    q_table = q_table.at[observation, action].add(learning_rate * error)
 
     return q_table
