@@ -18,6 +18,7 @@ Algorithm Interface
    :toctree: _apidoc/
 
    q_learning.q_learning
+   dynaq.train_dynaq
    dqn.train_dqn
    reinforce.train_reinforce
    actor_critic.train_ac

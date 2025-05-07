@@ -122,7 +122,7 @@ def train_dynaq(
 ) -> jnp.ndarray:
     """Train tabular Dyna-Q for discrete state and action spaces.
 
-    Dyna-Q integrates trial-and-error learning and planning into a process
+    Dyna-Q [1]_ integrates trial-and-error learning and planning into a process
     operating alternately on the environment and on a model of the environment.
     The model is learned online in parallel to learning a policy. Policy
     learning is based on reinforcement learning and planning. The Q-function
@@ -165,6 +165,14 @@ def train_dynaq(
     -------
     q_table : array
         Tabular action-value function of the optimal policy.
+
+    References
+    ----------
+    .. [1] Sutton, Richard S. (1990). Integrated architecture for learning,
+       planning, and reacting based on approximating dynamic programming.
+       In Proceedings of the Seventh International Conference (1990) on Machine
+       Learning. Morgan Kaufmann Publishers Inc., San Francisco, CA, USA,
+       pp. 216–224.
     """
     key = jax.random.key(seed)
     n_states, n_actions = q_table.shape
