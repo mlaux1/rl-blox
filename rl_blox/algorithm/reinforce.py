@@ -14,6 +14,7 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
+from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..logging.logger import LoggerBase
 
 
@@ -116,28 +117,6 @@ def discounted_reward_to_go(rewards: list[float], gamma: float) -> np.ndarray:
         accumulated_return += r
         discounted_returns.append(accumulated_return)
     return np.array(list(reversed(discounted_returns)))
-
-
-class StochasticPolicyBase(nnx.Module):
-    """Base class for stochastic policies."""
-
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        """Compute action probabilities for given observation."""
-        raise NotImplementedError("Subclasses must implement __call__ method.")
-
-    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        """Sample action from policy given observation."""
-        raise NotImplementedError("Subclasses must implement sample method.")
-
-    def log_probability(
-        self,
-        observation: jnp.ndarray,
-        action: jnp.ndarray,
-    ) -> jnp.ndarray:
-        """Compute log probability of action given observation."""
-        raise NotImplementedError(
-            "Subclasses must implement log_probability method."
-        )
 
 
 class GaussianPolicy(StochasticPolicyBase):
