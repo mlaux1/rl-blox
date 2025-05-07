@@ -5,9 +5,9 @@ import tqdm
 from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
+from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..logging.logger import LoggerBase
 from .reinforce import (
-    StochasticPolicyBase,
     policy_gradient_pseudo_loss,
     sample_trajectories,
     train_value_function,

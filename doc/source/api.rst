@@ -59,15 +59,10 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
-   reinforce.GaussianMLP
    reinforce.StochasticPolicyBase
    reinforce.GaussianPolicy
    reinforce.SoftmaxPolicy
    ddpg.ReplayBuffer
-   ddpg.DeterministicPolicy
-   sac.GaussianMLP
-   sac.StochasticPolicyBase
-   sac.GaussianPolicy
    sac.EntropyCoefficient
    sac.EntropyControl
    pets.PETSMPCConfig
@@ -102,7 +97,12 @@ Data Blox
    :toctree: _apidoc/
 
    function_approximator.mlp.MLP
-   probabilistic_ensemble.GaussianMLP
+   function_approximator.gaussian_mlp.GaussianMLP
+   function_approximator.policy_head.DeterministicTanhPolicy
+   function_approximator.policy_head.StochasticPolicyBase
+   function_approximator.policy_head.GaussianTanhPolicy
+   function_approximator.policy_head.GaussianPolicy
+   function_approximator.policy_head.SoftmaxPolicy
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
 

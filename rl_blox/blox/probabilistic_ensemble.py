@@ -8,74 +8,7 @@ import optax
 from flax import nnx
 from jax.typing import ArrayLike
 
-
-class GaussianMLP(nnx.Module):
-    """Probabilistic neural network that predicts a Gaussian distribution.
-
-    Parameters
-    ----------
-    shared_head
-        All nodes of the last hidden layer are connected to mean AND log_std.
-
-    n_features
-        Number of features.
-
-    n_outputs
-        Number of output components.
-
-    hidden_nodes
-        Numbers of hidden nodes of the MLP.
-
-    rngs
-        Random number generator.
-    """
-
-    shared_head: bool
-    n_outputs: int
-    hidden_layers: list[nnx.Linear]
-    output_layers: list[nnx.Linear]
-
-    def __init__(
-        self,
-        shared_head: bool,
-        n_features: int,
-        n_outputs: int,
-        hidden_nodes: list[int],
-        rngs: nnx.Rngs,
-    ) -> None:
-        chex.assert_scalar_positive(n_features)
-        chex.assert_scalar_positive(n_outputs)
-
-        self.shared_head = shared_head
-        self.n_outputs = n_outputs
-
-        self.hidden_layers = []
-        n_in = n_features
-        for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
-            n_in = n_out
-
-        self.output_layers = []
-        if shared_head:
-            self.output_layers.append(
-                nnx.Linear(n_in, 2 * n_outputs, rngs=rngs)
-            )
-        else:
-            self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
-            self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
-
-    def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
-        for layer in self.hidden_layers:
-            x = nnx.swish(layer(x))
-
-        if self.shared_head:
-            y = self.output_layers[0](x)
-            mean, log_var = jnp.split(y, (self.n_outputs,), axis=-1)
-        else:
-            mean = self.output_layers[0](x)
-            log_var = self.output_layers[1](x)
-
-        return mean, log_var
+from .function_approximator.gaussian_mlp import GaussianMLP
 
 
 def constrained_param(
@@ -105,6 +38,10 @@ class GaussianMLPEnsemble(nnx.Module):
     hidden_nodes
         Numbers of hidden nodes of the MLP.
 
+    activation : str
+        Activation function. Has to be the name of a function defined in the
+        flax.nnx module.
+
     rngs
         Random number generator.
 
@@ -129,6 +66,7 @@ class GaussianMLPEnsemble(nnx.Module):
         n_features: int,
         n_outputs: int,
         hidden_nodes: list[int],
+        activation: str,
         rngs: nnx.Rngs,
     ) -> None:
         self.n_ensemble = n_ensemble
@@ -142,6 +80,7 @@ class GaussianMLPEnsemble(nnx.Module):
                 n_features=n_features,
                 n_outputs=n_outputs,
                 hidden_nodes=hidden_nodes,
+                activation=activation,
                 rngs=rngs,
             )
 

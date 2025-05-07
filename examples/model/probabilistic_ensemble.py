@@ -69,6 +69,7 @@ model = GaussianMLPEnsemble(
     n_features=1,
     n_outputs=1,
     hidden_nodes=[100, 50],
+    activation="swish",
     rngs=nnx.Rngs(seed),
 )
 opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))

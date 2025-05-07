@@ -1,18 +1,19 @@
 import gymnasium as gym
 import jax
-import pytest
 from flax import nnx
 from numpy.testing import assert_array_equal
 
-from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.algorithm.reinforce import (
-    GaussianMLP,
-    GaussianPolicy,
-    SoftmaxPolicy,
     create_policy_gradient_continuous_state,
     discounted_reward_to_go,
     sample_trajectories,
     train_reinforce,
+)
+from rl_blox.blox.function_approximator.gaussian_mlp import GaussianMLP
+from rl_blox.blox.function_approximator.mlp import MLP
+from rl_blox.blox.function_approximator.policy_head import (
+    GaussianPolicy,
+    SoftmaxPolicy,
 )
 
 
@@ -72,6 +73,7 @@ def test_data_collection_continuous():
             env.observation_space.shape[0],
             env.action_space.shape[0],
             [32, 32],
+            "swish",
             nnx.Rngs(42),
         )
     )

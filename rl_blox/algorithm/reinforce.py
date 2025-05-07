@@ -3,7 +3,6 @@ from collections import namedtuple
 from collections.abc import Callable
 
 import chex
-import distrax
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -12,7 +11,13 @@ import optax
 import tqdm
 from flax import nnx
 
+from ..blox.function_approximator.gaussian_mlp import GaussianMLP
 from ..blox.function_approximator.mlp import MLP
+from ..blox.function_approximator.policy_head import (
+    GaussianPolicy,
+    SoftmaxPolicy,
+    StochasticPolicyBase,
+)
 from ..logging.logger import LoggerBase
 
 
@@ -115,186 +120,6 @@ def discounted_reward_to_go(rewards: list[float], gamma: float) -> np.ndarray:
         accumulated_return += r
         discounted_returns.append(accumulated_return)
     return np.array(list(reversed(discounted_returns)))
-
-
-class GaussianMLP(nnx.Module):
-    """Probabilistic neural network that predicts a Gaussian distribution.
-
-    Parameters
-    ----------
-    shared_head
-        All nodes of the last hidden layer are connected to mean AND log_std.
-
-    n_features
-        Number of features.
-
-    n_outputs
-        Number of output components.
-
-    hidden_nodes
-        Numbers of hidden nodes of the MLP.
-
-    rngs
-        Random number generator.
-    """
-
-    shared_head: bool
-    n_outputs: int
-    hidden_layers: list[nnx.Linear]
-    output_layers: list[nnx.Linear]
-
-    def __init__(
-        self,
-        shared_head: bool,
-        n_features: int,
-        n_outputs: int,
-        hidden_nodes: list[int],
-        rngs: nnx.Rngs,
-    ):
-        chex.assert_scalar_positive(n_features)
-        chex.assert_scalar_positive(n_outputs)
-
-        self.shared_head = shared_head
-        self.n_outputs = n_outputs
-
-        self.hidden_layers = []
-        n_in = n_features
-        for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
-            n_in = n_out
-
-        self.output_layers = []
-        if shared_head:
-            self.output_layers.append(
-                nnx.Linear(n_in, 2 * n_outputs, rngs=rngs)
-            )
-        else:
-            self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
-            self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
-
-    def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
-        for layer in self.hidden_layers:
-            x = nnx.swish(layer(x))
-
-        if self.shared_head:
-            y = self.output_layers[0](x)
-            mean, log_var = jnp.split(y, (self.n_outputs,), axis=-1)
-        else:
-            mean = self.output_layers[0](x)
-            log_var = self.output_layers[1](x)
-
-        return mean, log_var
-
-
-class StochasticPolicyBase(nnx.Module):
-    """Base class for stochastic policies."""
-
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        """Compute action probabilities for given observation."""
-        raise NotImplementedError("Subclasses must implement __call__ method.")
-
-    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        """Sample action from policy given observation."""
-        raise NotImplementedError("Subclasses must implement sample method.")
-
-    def log_probability(
-        self,
-        observation: jnp.ndarray,
-        action: jnp.ndarray,
-    ) -> jnp.ndarray:
-        """Compute log probability of action given observation."""
-        raise NotImplementedError(
-            "Subclasses must implement log_probability method."
-        )
-
-
-class GaussianPolicy(StochasticPolicyBase):
-    """Gaussian policy.
-
-    Wraps a Gaussian neural network that maps observations to a Gaussian
-    distribution over actions, i.e., mean vector and log variance vector.
-
-    Parameters
-    ----------
-    net : nnx.Module
-        Gaussian neural network.
-    """
-
-    net: nnx.Module
-
-    def __init__(self, net: nnx.Module):
-        self.net = net
-
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        return self.net(observation)[0]
-
-    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        """Sample action from Gaussian distribution."""
-        mean, log_var = self.net(observation)
-        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
-        std = jnp.exp(log_std)
-        # same as
-        # jax.random.normal(key, mean.shape)
-        # * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
-        # + mean
-        return distrax.MultivariateNormalDiag(loc=mean, scale_diag=std).sample(
-            seed=key,
-            sample_shape=(),
-        )
-
-    def log_probability(
-        self,
-        observation: jnp.ndarray,
-        action: jnp.ndarray,
-    ) -> jnp.ndarray:
-        """Compute log probability of action given observation."""
-        mean, log_var = self.net(observation)
-        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
-        std = jnp.exp(log_std)
-        # same as
-        # -jnp.log(std)
-        # - 0.5 * jnp.log(2.0 * jnp.pi)
-        # - 0.5 * ((action - mean) / std) ** 2
-        return distrax.MultivariateNormalDiag(
-            loc=mean, scale_diag=std
-        ).log_prob(action)
-
-
-class SoftmaxPolicy(StochasticPolicyBase):
-    r"""Softmax policy.
-
-    Wraps a softmax neural network that maps observations to the logits of each
-    action.
-
-    Parameters
-    ----------
-    net : nnx.Module
-        Gaussian neural network.
-    """
-
-    net: nnx.Module
-
-    def __init__(self, net: nnx.Module):
-        self.net = net
-
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        return nnx.softmax(self.logits(observation))
-
-    def logits(self, observation: jnp.ndarray) -> jnp.ndarray:
-        return self.net(observation)
-
-    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        return distrax.Categorical(logits=self.logits(observation)).sample(
-            seed=key,
-            sample_shape=(),
-        )
-
-    def log_probability(
-        self, observation: jnp.ndarray, action: jnp.ndarray
-    ) -> jnp.ndarray:
-        return distrax.Categorical(logits=self.logits(observation)).log_prob(
-            action
-        )
 
 
 @nnx.jit
@@ -580,6 +405,7 @@ def create_policy_gradient_continuous_state(
     env: gym.Env,
     policy_shared_head: bool = True,
     policy_hidden_nodes: list[int] | tuple[int] = (32,),
+    policy_activation: str = "swish",
     policy_learning_rate: float = 1e-4,
     policy_optimizer: Callable = optax.adamw,
     value_network_hidden_nodes: list[int] | tuple[int] = (50, 50),
@@ -599,6 +425,7 @@ def create_policy_gradient_continuous_state(
         n_features=observation_space.shape[0],
         n_outputs=action_space.shape[0],
         hidden_nodes=list(policy_hidden_nodes),
+        activation=policy_activation,
         rngs=nnx.Rngs(seed),
     )
     policy = GaussianPolicy(policy_net)
