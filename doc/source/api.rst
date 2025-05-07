@@ -65,7 +65,6 @@ Data Blox
    reinforce.SoftmaxPolicy
    ddpg.ReplayBuffer
    ddpg.DeterministicPolicy
-   sac.GaussianMLP
    sac.StochasticPolicyBase
    sac.GaussianPolicy
    sac.EntropyCoefficient
@@ -102,6 +101,7 @@ Data Blox
    :toctree: _apidoc/
 
    function_approximator.mlp.MLP
+   function_approximator.gaussian_mlp.GaussianMLP
    probabilistic_ensemble.GaussianMLP
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
