@@ -172,7 +172,7 @@ def train_dynaq(
        planning, and reacting based on approximating dynamic programming.
        In Proceedings of the Seventh International Conference (1990) on Machine
        Learning. Morgan Kaufmann Publishers Inc., San Francisco, CA, USA,
-       pp. 216–224.
+       pp. 216–224. http://incompleteideas.net/papers/sutton-90.pdf
     """
     key = jax.random.key(seed)
     n_states, n_actions = q_table.shape
