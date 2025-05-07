@@ -1,7 +1,7 @@
 import gymnasium
 import jax
+import tqdm
 from jax.typing import ArrayLike
-from tqdm import tqdm
 
 from ..blox.value_policy import get_epsilon_greedy_action
 from ..logging.logger import LoggerBase
@@ -69,12 +69,18 @@ def train_sarsa(
 
     observation, _ = env.reset()
 
-    for i in tqdm(range(total_timesteps)):
+    if logger is not None:
+        logger.start_new_episode()
+
+    steps_per_episode = 0
+
+    for i in tqdm.trange(total_timesteps):
         # get action from policy and perform environment step
         key, subkey = jax.random.split(key)
         action = get_epsilon_greedy_action(
             subkey, q_table, observation, epsilon
         )
+        steps_per_episode += 1
         next_observation, reward, terminated, truncated, info = env.step(
             int(action)
         )
@@ -98,11 +104,15 @@ def train_sarsa(
         )
 
         if terminated or truncated:
-            observation, _ = env.reset()
             if logger is not None:
-                logger.record("return", info["episode"]["r"], step=i)
+                logger.record_stat("return", info["episode"]["r"], step=i)
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+            steps_per_episode = 0
+            observation, _ = env.reset()
         else:
             observation = next_observation
+
     return q_table
 
 
