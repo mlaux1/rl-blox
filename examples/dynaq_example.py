@@ -13,7 +13,7 @@ hparams = dict(
     gamma=0.99,
     learning_rate=0.05,
     epsilon=0.1,
-    n_planning_steps=3,
+    n_planning_steps=10,
     buffer_size=100,
     seed=1,
 )
@@ -25,7 +25,7 @@ q_table = train_dynaq(
     env,
     q_table,
     **hparams,
-    total_timesteps=10_000,
+    total_timesteps=5_000,
     logger=logger,
 )
 env.close()
