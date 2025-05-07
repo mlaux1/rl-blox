@@ -6,7 +6,9 @@ from flax import nnx
 
 
 class GaussianMLP(nnx.Module):
-    """Probabilistic neural network that predicts a Gaussian distribution.
+    """Neural network that predicts a Gaussian distribution.
+
+    The MLP will map inputs x to mean and log variance.
 
     Parameters
     ----------
