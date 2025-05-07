@@ -13,6 +13,11 @@ class DeterministicTanhPolicy(nnx.Module):
 
     The output of the underlying function approximator is scaled with tanh
     to [-1, 1] and then scaled to [action_space.low, action_space.high].
+
+    Parameters
+    ----------
+    net : nnx.Module
+        Neural network that maps observations to unscaled actions.
     """
 
     policy_net: nnx.Module
@@ -74,7 +79,8 @@ class GaussianTanhPolicy(StochasticPolicyBase):
     Parameters
     ----------
     net : nnx.Module
-        Gaussian neural network that maps observations to mean and log variance.
+        Gaussian neural network that maps observations to unscaled mean and log
+        variance.
     """
 
     net: nnx.Module
