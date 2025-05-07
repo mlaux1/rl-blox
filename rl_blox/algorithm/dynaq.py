@@ -115,11 +115,11 @@ def train_dynaq(
     learning_rate: float = 0.1,
     epsilon: float = 0.05,
     n_planning_steps: int = 5,
-    buffer_size: int = 100,
+    buffer_size: int = 1_000,
     total_timesteps: int = 1_000_000,
     seed: int = 0,
     logger: LoggerBase | None = None,
-):
+) -> jnp.ndarray:
     """Train tabular Dyna-Q for discrete state and action spaces.
 
     Dyna-Q integrates trial-and-error learning and planning into a process
@@ -160,6 +160,11 @@ def train_dynaq(
 
     logger : LoggerBase, optional
         Logger.
+
+    Returns
+    -------
+    q_table : array
+        Tabular action-value function of the optimal policy.
     """
     key = jax.random.key(seed)
     n_states, n_actions = q_table.shape
@@ -226,3 +231,5 @@ def train_dynaq(
                 logger.record_stat("return", accumulated_reward, step=t)
             obs, _ = env.reset()
             accumulated_reward = 0.0
+
+    return q_table
