@@ -375,6 +375,7 @@ def create_pets_state(
     seed: int,
     n_ensemble: int = 5,
     hidden_nodes: tuple[int] | list[int] = (500, 500, 500),
+    activation: str = "swish",
     learning_rate: float = 1e-3,
     weight_decay: float = 1e-3,
     train_size: float = 0.7,
@@ -386,6 +387,7 @@ def create_pets_state(
         n_outputs=env.observation_space.shape[0],
         shared_head=True,
         hidden_nodes=list(hidden_nodes),
+        activation=activation,
         rngs=nnx.Rngs(seed),
     )
     return EnsembleTrainState(

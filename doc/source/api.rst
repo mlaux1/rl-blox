@@ -59,7 +59,6 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
-   reinforce.GaussianMLP
    reinforce.StochasticPolicyBase
    reinforce.GaussianPolicy
    reinforce.SoftmaxPolicy
@@ -102,7 +101,6 @@ Data Blox
 
    function_approximator.mlp.MLP
    function_approximator.gaussian_mlp.GaussianMLP
-   probabilistic_ensemble.GaussianMLP
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
 
