@@ -383,7 +383,6 @@ def train_ddpg(
     gradient_steps: int = 1,
     exploration_noise: float = 0.1,
     learning_starts: int = 25_000,
-    policy_frequency: int = 2,
     policy_target: nnx.Optimizer | None = None,
     q_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
@@ -424,10 +423,6 @@ def train_ddpg(
     learning_starts
         Learning starts after this number of random steps was taken in the
         environment.
-    policy_frequency
-        The policy will only be updated after this number of steps. Target
-        policy and value function will be updated with the same frequency. The
-        value function will be updated after every step.
     policy_target
         Target policy. Only has to be set if we want to continue training
         from an old state.
@@ -554,29 +549,24 @@ def train_ddpg(
                     rewards,
                     terminations,
                 )
+                actor_loss_value = ddpg_update_actor(
+                    policy, policy_optimizer, q, observations
+                )
+                update_target(policy, policy_target, tau)
+                update_target(q, q_target, tau)
+
                 if logger is not None:
                     logger.record_stat("q loss", q_loss_value, step=global_step)
                     logger.record_epoch("q", q, step=global_step)
-
-                if global_step % policy_frequency == 0:
-                    actor_loss_value = ddpg_update_actor(
-                        policy, policy_optimizer, q, observations
+                    logger.record_stat(
+                        "policy loss", actor_loss_value, step=global_step
                     )
-
-                    update_target(policy, policy_target, tau)
-                    # TODO why is it updated less often than q?
-                    update_target(q, q_target, tau)
-
-                    if logger is not None:
-                        logger.record_stat(
-                            "policy loss", actor_loss_value, step=global_step
-                        )
-                        logger.record_epoch("policy", policy, step=global_step)
-                        logger.record_epoch(
-                            "policy_target", policy_target, step=global_step
-                        )
-                        logger.record_epoch(
-                            "q_target", q_target, step=global_step
-                        )
+                    logger.record_epoch("policy", policy, step=global_step)
+                    logger.record_epoch(
+                        "policy_target", policy_target, step=global_step
+                    )
+                    logger.record_epoch(
+                        "q_target", q_target, step=global_step
+                    )
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
