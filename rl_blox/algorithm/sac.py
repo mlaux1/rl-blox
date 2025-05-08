@@ -676,16 +676,16 @@ def sac_update_critic(
 
 
 def sac_q_target(
-    q1_target,
-    q2_target,
-    policy,
-    rewards,
-    next_observations,
-    terminations,
-    action_key,
-    alpha,
-    gamma,
-):
+    q1_target: nnx.Module,
+    q2_target: nnx.Module,
+    policy: StochasticPolicyBase,
+    rewards: jnp.ndarray,
+    next_observations: jnp.ndarray,
+    terminations: jnp.ndarray,
+    action_key: jnp.ndarray,
+    alpha: float,
+    gamma: float,
+) -> jnp.ndarray:
     r"""Target value for action-value functions in SAC.
 
     Uses the bootstrap estimate
