@@ -226,7 +226,7 @@ def q_deterministic_bootstrap_estimate(
     gamma: float,
     q: nnx.Module,
     next_observations: jnp.ndarray,
-):
+) -> jnp.ndarray:
     r"""Bootstrap estimate of action-value function with deterministic policy.
 
     .. math::
@@ -254,6 +254,11 @@ def q_deterministic_bootstrap_estimate(
 
     next_observations : array
         Next observations.
+
+    Returns
+    -------
+    q_bootstrap : array
+        Bootstrap estimate of action-value function.
     """
     next_actions = policy(next_observations)
     obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
@@ -407,8 +412,6 @@ def train_ddpg(
     q_optimizer: Optimizer for the Q network.
     seed: Seed for random number generators in Jax and NumPy.
     total_timesteps: Number of steps to execute in the environment.
-    actor_learning_rate: Learning rate of the actor.
-    q_learning_rate: Learning rate of the critic.
     buffer_size: Size of the replay buffer.
     gamma: Discount factor.
     tau
