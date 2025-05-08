@@ -66,10 +66,10 @@ def sac_actor_loss(
     actions = policy.sample(observations, action_key)
     log_prob = policy.log_probability(observations, actions)
     obs_act = jnp.concatenate((observations, actions), axis=-1)
-    qf1_pi = q1(obs_act).squeeze()
-    qf2_pi = q2(obs_act).squeeze()
-    min_qf_pi = jnp.minimum(qf1_pi, qf2_pi)
-    actor_loss = (alpha * log_prob - min_qf_pi).mean()
+    q1_value = q1(obs_act).squeeze()
+    q2_value = q2(obs_act).squeeze()
+    q_value = jnp.minimum(q1_value, q2_value)
+    actor_loss = (alpha * log_prob - q_value).mean()
     return actor_loss
 
 
