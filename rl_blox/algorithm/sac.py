@@ -647,16 +647,21 @@ def sac_update_critic(
     --------
     .ddpg.mse_action_value_loss
         The mean squared error loss.
+
+    sac_q_target
+        Generates target values for action-value functions.
     """
-    next_actions = policy.sample(next_observations, action_key)
-    next_log_pi = policy.log_probability(next_observations, next_actions)
-    next_obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
-    q1_next_target = q1_target(next_obs_act).squeeze()
-    q2_next_target = q2_target(next_obs_act).squeeze()
-    min_q_next_target = (
-        jnp.minimum(q1_next_target, q2_next_target) - alpha * next_log_pi
+    q_target_value = sac_q_target(
+        q1_target,
+        q2_target,
+        policy,
+        rewards,
+        next_observations,
+        terminations,
+        action_key,
+        alpha,
+        gamma,
     )
-    q_target_value = rewards + (1 - terminations) * gamma * min_q_next_target
 
     q1_loss_value, q1_grads = nnx.value_and_grad(
         mse_action_value_loss, argnums=3
@@ -668,3 +673,72 @@ def sac_update_critic(
     q2_optimizer.update(q2_grads)
 
     return q1_loss_value, q2_loss_value
+
+
+def sac_q_target(
+    q1_target,
+    q2_target,
+    policy,
+    rewards,
+    next_observations,
+    terminations,
+    action_key,
+    alpha,
+    gamma,
+):
+    r"""Target value for action-value functions in SAC.
+
+    Uses the bootstrap estimate
+
+    .. math::
+
+        r_{t+1} + \gamma
+        \left[\min(Q_1(o_{t+1}, a_{t+1}), Q_2(o_{t+1}, a_{t+1}))
+        - \alpha \log \pi(a_{t+1}|o_{t+1})\right]
+
+    based on the target networks of :math:`Q_1, Q_2` as a target value for the
+    Q network update with a mean squared error loss.
+
+    Parameters
+    ----------
+    q1_target : nnx.Module
+        Target network of q1.
+
+    q2_target : nnx.Module
+        Target network of q2.
+
+    policy : StochasticPolicyBase
+        Policy.
+
+    rewards : array
+        Rewards :math:`r_{t+1}`.
+
+    next_observations : array
+        Next observations :math:`o_{t+1}`.
+
+    terminations : array
+        Indicates if a terminal state was reached in this step.
+
+    action_key : array
+        Random key for action sampling.
+
+    alpha : float
+        Entropy coefficient.
+
+    gamma : float
+        Discount factor of discounted infinite horizon return model.
+
+    Returns
+    -------
+    q_target_value : array
+        Target values for action-value functions.
+    """
+    next_actions = policy.sample(next_observations, action_key)
+    next_log_pi = policy.log_probability(next_observations, next_actions)
+    next_obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
+    q1_next_target = q1_target(next_obs_act).squeeze()
+    q2_next_target = q2_target(next_obs_act).squeeze()
+    min_q_next_target = (
+        jnp.minimum(q1_next_target, q2_next_target) - alpha * next_log_pi
+    )
+    return rewards + (1 - terminations) * gamma * min_q_next_target

@@ -48,6 +48,7 @@ Functional Blox
    sac.sac_exploration_loss
    sac.sac_update_actor
    sac.sac_update_critic
+   sac.sac_q_target
    double_q_learning.double_q_learning
    pets.mpc_action
    pets.ts_inf
