@@ -207,11 +207,9 @@ def ddpg_update_critic(
     chex.assert_equal_shape_prefix((observations, terminations), prefix_len=1)
     chex.assert_equal_shape((rewards, terminations))
 
-    next_actions = policy_target(next_observations)
-    q_target_next = q_target(
-        jnp.concatenate((next_observations, next_actions), axis=-1)
-    ).squeeze()
-    q_bootstrap = rewards + (1 - terminations) * gamma * q_target_next
+    q_bootstrap = q_deterministic_bootstrap_estimate(
+        policy_target, rewards, terminations, gamma, q_target, next_observations
+    )
 
     q_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
         observations, actions, q_bootstrap, q
@@ -219,6 +217,47 @@ def ddpg_update_critic(
     q_optimizer.update(grads)
 
     return q_loss_value
+
+
+def q_deterministic_bootstrap_estimate(
+    policy: nnx.Module,
+    rewards: jnp.ndarray,
+    terminations: jnp.ndarray,
+    gamma: float,
+    q: nnx.Module,
+    next_observations: jnp.ndarray,
+):
+    r"""Bootstrap estimate of action-value function with deterministic policy.
+
+    .. math::
+
+        \mathbb{E}\left[R(o_t)\right]
+        \approx
+        r_{t+1} + \gamma Q(o_{t+1}, \pi(o_{t+1}))
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Deterministic policy for action selection.
+
+    rewards : array
+        Observed reward.
+
+    terminations : array
+        Indicates if a terminal state was reached in this step.
+
+    gamma : float
+        Discount factor.
+
+    q : nnx.Module
+        Action-value function.
+
+    next_observations : array
+        Next observations.
+    """
+    next_actions = policy(next_observations)
+    obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
+    return rewards + (1 - terminations) * gamma * q(obs_act).squeeze()
 
 
 @nnx.jit

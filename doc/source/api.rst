@@ -44,6 +44,7 @@ Functional Blox
    ddpg.update_target
    ddpg.ddpg_update_actor
    ddpg.ddpg_update_critic
+   ddpg.q_deterministic_bootstrap_estimate
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
