@@ -1,4 +1,5 @@
 import abc
+import atexit
 import contextlib
 import os
 import shutil
@@ -489,6 +490,7 @@ class AIMLogger(LoggerBase):
             experiment=f"{env_name}-{algorithm_name}",
             log_system_params=self.log_system_params,
         )
+        atexit.register(self.run.close)
         self.run["hparams"] = hparams if hparams is not None else {}
 
     def record_stat(
