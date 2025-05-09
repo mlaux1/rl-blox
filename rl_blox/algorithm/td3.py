@@ -341,7 +341,11 @@ def train_td3(
 
     References
     ----------
-    .. [1] TODO
+    .. [1] Fujimoto, S., Hoof, H. &amp; Meger, D.. (2018). Addressing Function
+       Approximation Error in Actor-Critic Methods. Proceedings of the 35th
+       International Conference on Machine Learning, in Proceedings of Machine
+       Learning Research 80:1587-1596 Available from
+       https://proceedings.mlr.press/v80/fujimoto18a.html.
     """
     rng = np.random.default_rng(seed)
     key = jax.random.key(seed)
