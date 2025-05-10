@@ -470,10 +470,14 @@ def train_sac(
                 entropy_control.alpha_,
             )
             if logger is not None:
-                logger.record_stat("q1 loss", q1_loss_value, step=global_step)
-                logger.record_epoch("q1", q1)
-                logger.record_stat("q2 loss", q2_loss_value, step=global_step)
-                logger.record_epoch("q2", q2)
+                logger.record_stat(
+                    "q1 loss", q1_loss_value, step=global_step + 1
+                )
+                logger.record_epoch("q1", q1, step=global_step + 1)
+                logger.record_stat(
+                    "q2 loss", q2_loss_value, step=global_step + 1
+                )
+                logger.record_epoch("q2", q2, step=global_step + 1)
 
             if global_step % policy_frequency == 0:
                 # compensate for delay by doing 'policy_frequency' updates
@@ -494,29 +498,37 @@ def train_sac(
                     )
                     if logger is not None:
                         logger.record_stat(
-                            "policy loss", policy_loss_value, step=global_step
+                            "policy loss",
+                            policy_loss_value,
+                            step=global_step + 1,
                         )
-                        logger.record_epoch("policy", policy, step=global_step)
+                        logger.record_epoch(
+                            "policy", policy, step=global_step + 1
+                        )
                         logger.record_stat(
                             "alpha",
                             float(entropy_control.alpha_[0]),
-                            step=global_step,
+                            step=global_step + 1,
                         )
                         if autotune:
                             logger.record_stat(
                                 "alpha loss",
                                 exploration_loss_value,
-                                step=global_step,
+                                step=global_step + 1,
                             )
                             logger.record_epoch(
-                                "alpha", alpha, step=global_step
+                                "alpha", alpha, step=global_step + 1
                             )
 
             if global_step % target_network_frequency == 0:
                 update_target(q1, q1_target, tau)
-                logger.record_epoch("q1_target", q1_target, step=global_step)
+                logger.record_epoch(
+                    "q1_target", q1_target, step=global_step + 1
+                )
                 update_target(q2, q2_target, tau)
-                logger.record_epoch("q2_target", q2_target, step=global_step)
+                logger.record_epoch(
+                    "q2_target", q2_target, step=global_step + 1
+                )
 
     return (
         policy,
