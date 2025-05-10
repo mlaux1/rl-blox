@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rl_blox.algorithm.td3 import create_td3_state, train_td3
-from rl_blox.logging.logger import AIMLogger
+from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 env_name = "Hopper-v5"
 env = gym.make(env_name)
@@ -35,12 +35,18 @@ if verbose:
         "This example uses the AIM logger. You will not see any output on "
         "stdout. Run 'aim up' to analyze the progress."
     )
-logger = AIMLogger()
+logger = LoggerList(
+    [AIMLogger(), StandardLogger(checkpoint_dir=".td3_example", verbose=0)]
+)
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="TD3",
     hparams=hparams_models | hparams_algorithm,
 )
+n_policy_epochs = (
+    hparams_algorithm["total_timesteps"] - hparams_algorithm["learning_starts"]
+) // hparams_algorithm["policy_delay"]
+logger.define_checkpoint_frequency("policy", n_policy_epochs)
 
 td3_state = create_td3_state(env, **hparams_models)
 
@@ -61,10 +67,10 @@ policy, _, _, q1, _, _, q2, _, _ = td3_result
 # Evaluation
 env = gym.make(env_name, render_mode="human")
 returns = []
-for _ in range(10):
+for i in range(10):
     done = False
     infos = {}
-    obs, _ = env.reset()
+    obs, _ = env.reset(seed=i)
     accumulated_reward = 0.0
     while not done:
         action = np.asarray(policy(jnp.asarray(obs)))
@@ -84,5 +90,7 @@ for _ in range(10):
     returns.append(accumulated_reward)
 env.close()
 print(f"{returns=}")
-print(f"{np.mean(returns)} +- {np.std(returns)}, "
-      f"[min={min(returns)}, max={max(returns)}]")
+print(
+    f"{np.mean(returns)} +- {np.std(returns)}, "
+    f"[min={min(returns)}, max={max(returns)}]"
+)

@@ -176,7 +176,7 @@ class StandardLogger(LoggerBase):
     checkpoint_path: dict[str, list[str]]
 
     def __init__(self, checkpoint_dir="/tmp/rl-blox/", verbose=0):
-        self.checkpoint_dir = checkpoint_dir
+        self.checkpoint_dir = os.path.abspath(checkpoint_dir)
         self.verbose = verbose
 
         self.env_name = None
@@ -399,8 +399,8 @@ class StandardLogger(LoggerBase):
             self._save_checkpoint(key, value)
 
     def _save_checkpoint(self, key: str, value: Any):
-        checkpoint_path = (
-            f"{self.checkpoint_dir}"
+        checkpoint_path = os.path.join(
+            f"{self.checkpoint_dir}",
             f"{self.start_time}_{self.env_name}_{self.algorithm_name}_"
             f"{key}_{self.epoch[key]}/"
         )
