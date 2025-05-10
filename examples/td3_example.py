@@ -42,16 +42,16 @@ logger.define_experiment(
     hparams=hparams_models | hparams_algorithm,
 )
 
-ddpg_state = create_td3_state(env, **hparams_models)
+td3_state = create_td3_state(env, **hparams_models)
 
 td3_result = train_td3(
     env,
-    ddpg_state.policy,
-    ddpg_state.policy_optimizer,
-    ddpg_state.q1,
-    ddpg_state.q1_optimizer,
-    ddpg_state.q2,
-    ddpg_state.q2_optimizer,
+    td3_state.policy,
+    td3_state.policy_optimizer,
+    td3_state.q1,
+    td3_state.q1_optimizer,
+    td3_state.q2,
+    td3_state.q2_optimizer,
     logger=logger,
     **hparams_algorithm,
 )
