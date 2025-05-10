@@ -265,73 +265,115 @@ def train_td3(
     """Twin Delayed DDPG (TD3).
 
     TD3 extends DDPG with three techniques to improve performance:
-    1. Clipped Double Q-Learning
-    2. Delayed policy updates
-    3. Target policy smoothing
+
+    1. Clipped Double Q-Learning to mitigate overestimation bias of the value
+    2. Delayed policy updates, controlled by the parameter `policy_delay`
+    3. Target policy smoothing, i.e., sampling from the behavior policy with
+       clipped noise (parameter `noise_clip`).
 
     Parameters
     ----------
-    env: Vectorized Gymnasium environments.
-    policy: Deterministic policy network.
-    policy_optimizer: Optimizer for the policy network.
-    q1: First Q network.
-    q1_optimizer: Optimizer for q1.
-    q2: Second Q network.
-    q2_optimizer: Optimizer for q2.
-    seed: Seed for random number generators in Jax and NumPy.
-    total_timesteps: Number of steps to execute in the environment.
-    buffer_size: Size of the replay buffer.
-    gamma: Discount factor.
-    tau
+    env : gymnasium.Env
+        Gymnasium environment.
+
+    policy : nnx.Module
+        Deterministic policy network.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for the policy network.
+
+    q1 : nnx.Module
+        First Q network.
+
+    q1_optimizer: nnx.Optimizer
+        Optimizer for q1.
+
+    q2 : nnx.Module
+        Second Q network.
+
+    q2_optimizer : nnx.Optimizer
+        Optimizer for q2.
+
+    seed : int, optional
+        Seed for random number generators in Jax and NumPy.
+
+    total_timesteps : int, optional
+        Number of steps to execute in the environment.
+
+    buffer_size : int, optional
+        Size of the replay buffer.
+
+    gamma : float, optional
+        Discount factor.
+
+    tau : float, optional
         Learning rate for polyak averaging of target policy and value function.
-    policy_delay
+
+    policy_delay : int, optional
         Delayed policy updates. The policy is updated every `policy_delay`
         steps.
-    batch_size
+
+    batch_size : int, optional
         Size of a batch during gradient computation.
-    gradient_steps
+
+    gradient_steps : int, optional
         Number of gradient steps during one training phase.
-    exploration_noise
+
+    exploration_noise : float, optional
         Exploration noise in action space. Will be scaled by half of the range
         of the action space.
-    noise_clip
+
+    noise_clip : float, optional
         Maximum absolute value of the exploration noise for sampling target
-        actions for the critic update.
-    learning_starts
+        actions for the critic update. Will be scaled by half of the range
+        of the action space.
+
+    learning_starts : int, optional
         Learning starts after this number of random steps was taken in the
         environment.
-    policy_target
+
+    policy_target : nnx.Module, optional
         Target policy. Only has to be set if we want to continue training
         from an old state.
-    q1_target
+
+    q1_target : nnx.Module, optional
         Target network. Only has to be set if we want to continue training
         from an old state.
-        from an old state.
-    q2_target
+
+    q2_target : nnx.Module, optional
         Target network. Only has to be set if we want to continue training
         from an old state.
+
     logger : LoggerBase, optional
         Experiment logger.
 
     Returns
     -------
-    policy
+    policy : nnx.Module
         Final policy.
-    policy_target
+
+    policy_target : nnx.Module
         Target policy.
-    policy_optimizer
+
+    policy_optimizer : nnx.Optimizer
         Policy optimizer.
-    q1
+
+    q1 : nnx.Module
         Final state-action value function.
-    q1_target
+
+    q1_target : nnx.Module
         Target network.
+
     q1_optimizer
         Optimizer for Q network.
-    q2
+
+    q2 : nnx.Module
         Final state-action value function.
-    q2_target
+
+    q2_target : nnx.Module
         Target network.
-    q2_optimizer
+
+    q2_optimizer : nnx.Optimizer
         Optimizer for Q network.
 
     References
@@ -341,6 +383,11 @@ def train_td3(
        International Conference on Machine Learning, in Proceedings of Machine
        Learning Research 80:1587-1596 Available from
        https://proceedings.mlr.press/v80/fujimoto18a.html.
+
+    See Also
+    --------
+    .ddpg.train_ddpg
+        DDPG without the extensions of TD3.
     """
     rng = np.random.default_rng(seed)
     key = jax.random.key(seed)
