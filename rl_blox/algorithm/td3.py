@@ -1,17 +1,24 @@
+from collections import namedtuple
+from functools import partial
+
 import gymnasium as gym
-from flax import nnx
-import numpy as np
 import jax
 import jax.numpy as jnp
-from functools import partial
-from collections import namedtuple
+import numpy as np
 import optax
 import tqdm
+from flax import nnx
 
-from ..logging.logger import LoggerBase
-from .ddpg import ReplayBuffer, sample_actions, ddpg_update_actor, update_target, mse_action_value_loss
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..logging.logger import LoggerBase
+from .ddpg import (
+    ReplayBuffer,
+    ddpg_update_actor,
+    mse_action_value_loss,
+    sample_actions,
+    update_target,
+)
 
 
 @nnx.jit
@@ -87,7 +94,13 @@ def td3_update_critic(
         The mean squared error loss.
     """
     q_bootstrap = double_q_deterministic_bootstrap_estimate(
-        rewards, terminations, gamma, q1_target, q2_target, next_observations, next_actions
+        rewards,
+        terminations,
+        gamma,
+        q1_target,
+        q2_target,
+        next_observations,
+        next_actions,
     )
 
     q1_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
@@ -260,7 +273,15 @@ def train_td3(
     q2_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
-    nnx.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
 ]:
     """Twin Delayed DDPG (TD3).
 
@@ -269,7 +290,7 @@ def train_td3(
     1. Clipped Double Q-Learning to mitigate overestimation bias of the value
     2. Delayed policy updates, controlled by the parameter `policy_delay`
     3. Target policy smoothing, i.e., sampling from the behavior policy with
-       clipped noise (parameter `noise_clip`).
+       clipped noise (parameter `noise_clip`) for the critic update.
 
     Parameters
     ----------
@@ -500,9 +521,13 @@ def train_td3(
                 )
 
                 if logger is not None:
-                    logger.record_stat("q1 loss", q1_loss_value, step=global_step)
+                    logger.record_stat(
+                        "q1 loss", q1_loss_value, step=global_step
+                    )
                     logger.record_epoch("q1", q1, step=global_step)
-                    logger.record_stat("q2 loss", q2_loss_value, step=global_step)
+                    logger.record_stat(
+                        "q2 loss", q2_loss_value, step=global_step
+                    )
                     logger.record_epoch("q2", q2, step=global_step)
 
                 if global_step % policy_delay == 0:
@@ -520,11 +545,17 @@ def train_td3(
                     logger.record_epoch(
                         "policy_target", policy_target, step=global_step
                     )
-                    logger.record_epoch(
-                        "q_target", q1_target, step=global_step
-                    )
-                    logger.record_epoch(
-                        "q_target", q2_target, step=global_step
-                    )
+                    logger.record_epoch("q_target", q1_target, step=global_step)
+                    logger.record_epoch("q_target", q2_target, step=global_step)
 
-    return policy, policy_target, policy_optimizer, q1, q1_target, q1_optimizer, q2, q2_target, q2_optimizer
+    return (
+        policy,
+        policy_target,
+        policy_optimizer,
+        q1,
+        q1_target,
+        q1_optimizer,
+        q2,
+        q2_target,
+        q2_optimizer,
+    )
