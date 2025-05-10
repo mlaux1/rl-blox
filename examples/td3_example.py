@@ -9,7 +9,7 @@ env_name = "Hopper-v5"
 env = gym.make(env_name)
 
 seed = 1
-verbose = 2
+verbose = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 
 hparams_models = dict(
@@ -60,13 +60,16 @@ policy, _, _, q1, _, _, q2, _, _ = td3_result
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")
-while True:
+returns = []
+for _ in range(10):
     done = False
     infos = {}
     obs, _ = env.reset()
+    accumulated_reward = 0.0
     while not done:
         action = np.asarray(policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
+        accumulated_reward += reward
         done = termination or truncation
         if verbose >= 2:
             q1_value = float(
@@ -78,3 +81,8 @@ while True:
             q_value = min(q1_value, q2_value)
             print(f"{q_value=:.3f} {q1_value=:.3f} {q2_value=:.3f}")
         obs = np.asarray(next_obs)
+    returns.append(accumulated_reward)
+env.close()
+print(f"{returns=}")
+print(f"{np.mean(returns)} +- {np.std(returns)}, "
+      f"[min={min(returns)}, max={max(returns)}]")
