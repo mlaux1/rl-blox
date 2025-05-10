@@ -26,7 +26,7 @@ hparams_algorithm = dict(
     gradient_steps=1,
     total_timesteps=1_000_000,
     buffer_size=1_000_000,
-    learning_starts=5_000,
+    learning_starts=25_000,
     seed=seed,
 )
 
