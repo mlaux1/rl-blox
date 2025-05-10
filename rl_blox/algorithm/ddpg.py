@@ -519,7 +519,7 @@ def train_ddpg(
             if logger is not None:
                 if "episode" in info:
                     logger.record_stat(
-                        "return", info["episode"]["r"], step=global_step
+                        "return", info["episode"]["r"], step=global_step + 1
                     )
                 logger.stop_episode(steps_per_episode)
                 logger.start_new_episode()
@@ -559,17 +559,19 @@ def train_ddpg(
                 update_target(q, q_target, tau)
 
                 if logger is not None:
-                    logger.record_stat("q loss", q_loss_value, step=global_step)
-                    logger.record_epoch("q", q, step=global_step)
                     logger.record_stat(
-                        "policy loss", actor_loss_value, step=global_step
+                        "q loss", q_loss_value, step=global_step + 1
                     )
-                    logger.record_epoch("policy", policy, step=global_step)
+                    logger.record_epoch("q", q, step=global_step + 1)
+                    logger.record_stat(
+                        "policy loss", actor_loss_value, step=global_step + 1
+                    )
+                    logger.record_epoch("policy", policy, step=global_step + 1)
                     logger.record_epoch(
-                        "policy_target", policy_target, step=global_step
+                        "policy_target", policy_target, step=global_step + 1
                     )
                     logger.record_epoch(
-                        "q_target", q_target, step=global_step
+                        "q_target", q_target, step=global_step + 1
                     )
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
