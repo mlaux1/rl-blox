@@ -34,9 +34,6 @@ def td3_update_critic(
 
     Parameters
     ----------
-    policy_target : nnx.Module
-        Target network of policy.
-
     q1 : nnx.Module
         Action-value function.
 
@@ -126,9 +123,6 @@ def double_q_deterministic_bootstrap_estimate(
 
     Parameters
     ----------
-    policy : nnx.Module
-        Deterministic policy for action selection.
-
     rewards : array
         Observed reward.
 
