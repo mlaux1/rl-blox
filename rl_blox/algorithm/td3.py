@@ -478,7 +478,7 @@ def train_td3(
             if logger is not None:
                 if "episode" in info:
                     logger.record_stat(
-                        "return", info["episode"]["r"], step=global_step
+                        "return", info["episode"]["r"], step=global_step + 1
                     )
                 logger.stop_episode(steps_per_episode)
                 logger.start_new_episode()
@@ -522,13 +522,13 @@ def train_td3(
 
                 if logger is not None:
                     logger.record_stat(
-                        "q1 loss", q1_loss_value, step=global_step
+                        "q1 loss", q1_loss_value, step=global_step + 1
                     )
-                    logger.record_epoch("q1", q1, step=global_step)
+                    logger.record_epoch("q1", q1, step=global_step + 1)
                     logger.record_stat(
-                        "q2 loss", q2_loss_value, step=global_step
+                        "q2 loss", q2_loss_value, step=global_step + 1
                     )
-                    logger.record_epoch("q2", q2, step=global_step)
+                    logger.record_epoch("q2", q2, step=global_step + 1)
 
                 if global_step % policy_delay == 0:
                     actor_loss_value = ddpg_update_actor(
@@ -539,14 +539,20 @@ def train_td3(
                     update_target(q2, q2_target, tau)
                     if logger is not None:
                         logger.record_stat(
-                            "policy loss", actor_loss_value, step=global_step
+                            "policy loss",
+                            actor_loss_value,
+                            step=global_step + 1,
                         )
-                    logger.record_epoch("policy", policy, step=global_step)
+                    logger.record_epoch("policy", policy, step=global_step + 1)
                     logger.record_epoch(
-                        "policy_target", policy_target, step=global_step
+                        "policy_target", policy_target, step=global_step + 1
                     )
-                    logger.record_epoch("q_target", q1_target, step=global_step)
-                    logger.record_epoch("q_target", q2_target, step=global_step)
+                    logger.record_epoch(
+                        "q_target", q1_target, step=global_step + 1
+                    )
+                    logger.record_epoch(
+                        "q_target", q2_target, step=global_step + 1
+                    )
 
     return (
         policy,
