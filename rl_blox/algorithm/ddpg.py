@@ -207,11 +207,9 @@ def ddpg_update_critic(
     chex.assert_equal_shape_prefix((observations, terminations), prefix_len=1)
     chex.assert_equal_shape((rewards, terminations))
 
-    next_actions = policy_target(next_observations)
-    q_target_next = q_target(
-        jnp.concatenate((next_observations, next_actions), axis=-1)
-    ).squeeze()
-    q_bootstrap = rewards + (1 - terminations) * gamma * q_target_next
+    q_bootstrap = q_deterministic_bootstrap_estimate(
+        policy_target, rewards, terminations, gamma, q_target, next_observations
+    )
 
     q_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
         observations, actions, q_bootstrap, q
@@ -219,6 +217,52 @@ def ddpg_update_critic(
     q_optimizer.update(grads)
 
     return q_loss_value
+
+
+def q_deterministic_bootstrap_estimate(
+    policy: nnx.Module,
+    rewards: jnp.ndarray,
+    terminations: jnp.ndarray,
+    gamma: float,
+    q: nnx.Module,
+    next_observations: jnp.ndarray,
+) -> jnp.ndarray:
+    r"""Bootstrap estimate of action-value function with deterministic policy.
+
+    .. math::
+
+        \mathbb{E}\left[R(o_t)\right]
+        \approx
+        r_{t+1} + \gamma Q(o_{t+1}, \pi(o_{t+1}))
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Deterministic policy for action selection.
+
+    rewards : array
+        Observed reward.
+
+    terminations : array
+        Indicates if a terminal state was reached in this step.
+
+    gamma : float
+        Discount factor.
+
+    q : nnx.Module
+        Action-value function.
+
+    next_observations : array
+        Next observations.
+
+    Returns
+    -------
+    q_bootstrap : array
+        Bootstrap estimate of action-value function.
+    """
+    next_actions = policy(next_observations)
+    obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
+    return rewards + (1 - terminations) * gamma * q(obs_act).squeeze()
 
 
 @nnx.jit
@@ -344,7 +388,6 @@ def train_ddpg(
     gradient_steps: int = 1,
     exploration_noise: float = 0.1,
     learning_starts: int = 25_000,
-    policy_frequency: int = 2,
     policy_target: nnx.Optimizer | None = None,
     q_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
@@ -369,8 +412,6 @@ def train_ddpg(
     q_optimizer: Optimizer for the Q network.
     seed: Seed for random number generators in Jax and NumPy.
     total_timesteps: Number of steps to execute in the environment.
-    actor_learning_rate: Learning rate of the actor.
-    q_learning_rate: Learning rate of the critic.
     buffer_size: Size of the replay buffer.
     gamma: Discount factor.
     tau
@@ -385,10 +426,6 @@ def train_ddpg(
     learning_starts
         Learning starts after this number of random steps was taken in the
         environment.
-    policy_frequency
-        The policy will only be updated after this number of steps. Target
-        policy and value function will be updated with the same frequency. The
-        value function will be updated after every step.
     policy_target
         Target policy. Only has to be set if we want to continue training
         from an old state.
@@ -482,7 +519,7 @@ def train_ddpg(
             if logger is not None:
                 if "episode" in info:
                     logger.record_stat(
-                        "return", info["episode"]["r"], step=global_step
+                        "return", info["episode"]["r"], step=global_step + 1
                     )
                 logger.stop_episode(steps_per_episode)
                 logger.start_new_episode()
@@ -493,7 +530,7 @@ def train_ddpg(
 
         obs = next_obs
 
-        if global_step > learning_starts:
+        if global_step >= learning_starts:
             for _ in range(gradient_steps):
                 (
                     observations,
@@ -515,29 +552,26 @@ def train_ddpg(
                     rewards,
                     terminations,
                 )
+                actor_loss_value = ddpg_update_actor(
+                    policy, policy_optimizer, q, observations
+                )
+                update_target(policy, policy_target, tau)
+                update_target(q, q_target, tau)
+
                 if logger is not None:
-                    logger.record_stat("q loss", q_loss_value, step=global_step)
-                    logger.record_epoch("q", q, step=global_step)
-
-                if global_step % policy_frequency == 0:
-                    actor_loss_value = ddpg_update_actor(
-                        policy, policy_optimizer, q, observations
+                    logger.record_stat(
+                        "q loss", q_loss_value, step=global_step + 1
                     )
-
-                    update_target(policy, policy_target, tau)
-                    # TODO why is it updated less often than q?
-                    update_target(q, q_target, tau)
-
-                    if logger is not None:
-                        logger.record_stat(
-                            "policy loss", actor_loss_value, step=global_step
-                        )
-                        logger.record_epoch("policy", policy, step=global_step)
-                        logger.record_epoch(
-                            "policy_target", policy_target, step=global_step
-                        )
-                        logger.record_epoch(
-                            "q_target", q_target, step=global_step
-                        )
+                    logger.record_epoch("q", q, step=global_step + 1)
+                    logger.record_stat(
+                        "policy loss", actor_loss_value, step=global_step + 1
+                    )
+                    logger.record_epoch("policy", policy, step=global_step + 1)
+                    logger.record_epoch(
+                        "policy_target", policy_target, step=global_step + 1
+                    )
+                    logger.record_epoch(
+                        "q_target", q_target, step=global_step + 1
+                    )
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
