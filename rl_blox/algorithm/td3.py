@@ -181,7 +181,8 @@ def sample_target_actions(
         jnp.diag(action_scale * exploration_noise),
         shape=(action.shape[0],),
     )
-    clipped_noise = jnp.clip(noise, -noise_clip, noise_clip)
+    scaled_noise_clip = action_scale * noise_clip
+    clipped_noise = jnp.clip(noise, -scaled_noise_clip, scaled_noise_clip)
     return jnp.clip(action + clipped_noise, action_low, action_high)
 
 
