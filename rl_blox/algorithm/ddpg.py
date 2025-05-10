@@ -530,7 +530,7 @@ def train_ddpg(
 
         obs = next_obs
 
-        if global_step > learning_starts:
+        if global_step >= learning_starts:
             for _ in range(gradient_steps):
                 (
                     observations,

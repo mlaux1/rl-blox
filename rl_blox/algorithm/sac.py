@@ -446,7 +446,7 @@ def train_sac(
 
         obs = next_obs
 
-        if global_step > learning_starts:
+        if global_step >= learning_starts:
             observations, actions, rewards, next_observations, terminations = (
                 rb.sample_batch(batch_size, rng)
             )
