@@ -405,49 +405,74 @@ def train_ddpg(
 
     Parameters
     ----------
-    env: Vectorized Gymnasium environments.
-    policy: Deterministic policy network.
-    policy_optimizer: Optimizer for the policy network.
-    q: Q network.
-    q_optimizer: Optimizer for the Q network.
-    seed: Seed for random number generators in Jax and NumPy.
-    total_timesteps: Number of steps to execute in the environment.
-    buffer_size: Size of the replay buffer.
-    gamma: Discount factor.
-    tau
+    env : gymnasium.Env
+        Gymnasium environment.
+
+    policy : nnx.Module
+        Deterministic policy network.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for the policy network.
+
+    q : nnx.Module
+        Q network.
+
+    q_optimizer : nnx.Optimizer
+        Optimizer for the Q network.
+
+    seed : int
+        Seed for random number generators in Jax and NumPy.
+
+    total_timesteps : int
+        Number of steps to execute in the environment.
+
+    buffer_size : int
+        Size of the replay buffer.
+
+    gamma : float
+        Discount factor.
+
+    tau : float
         Learning rate for polyak averaging of target policy and value function.
-    batch_size
+
+    batch_size : int
         Size of a batch during gradient computation.
-    gradient_steps
+
+    gradient_steps : int
         Number of gradient steps during one training phase.
-    exploration_noise
+
+    exploration_noise : float
         Exploration noise in action space. Will be scaled by half of the range
         of the action space.
-    learning_starts
+
+    learning_starts : int
         Learning starts after this number of random steps was taken in the
         environment.
-    policy_target
+
+    policy_target : nnx.Module
         Target policy. Only has to be set if we want to continue training
         from an old state.
-    q_target
+
+    q_target : nnx.Module
         Target network. Only has to be set if we want to continue training
         from an old state.
+
     logger : LoggerBase, optional
         Experiment logger.
 
     Returns
     -------
-    policy
+    policy : nnx.Module
         Final policy.
-    policy_target
+    policy_target : nnx.Module
         Target policy.
-    policy_optimizer
+    policy_optimizer : nnx.Optimizer
         Policy optimizer.
-    q
+    q : nnx.Module
         Final state-action value function.
-    q_target
+    q_target : nnx.Module
         Target network.
-    q_optimizer
+    q_optimizer : nnx.Optimizer
         Optimizer for Q network.
 
     References
