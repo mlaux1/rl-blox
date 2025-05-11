@@ -23,6 +23,7 @@ Algorithm Interface
    reinforce.train_reinforce
    actor_critic.train_ac
    ddpg.train_ddpg
+   td3.train_td3
    sac.train_sac
    pets.train_pets
 
@@ -45,7 +46,6 @@ Functional Blox
    ddpg.ddpg_update_actor
    ddpg.ddpg_update_critic
    ddpg.q_deterministic_bootstrap_estimate
-   td3.train_td3
    td3.td3_update_critic
    td3.double_q_deterministic_bootstrap_estimate
    td3.sample_target_actions
