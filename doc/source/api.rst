@@ -40,6 +40,7 @@ Functional Blox
    reinforce.policy_gradient_pseudo_loss
    reinforce.mse_value_loss
    actor_critic.actor_critic_policy_gradient
+   ddpg.sample_actions
    ddpg.mse_action_value_loss
    ddpg.deterministic_policy_value_loss
    ddpg.update_target
