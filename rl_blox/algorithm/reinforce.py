@@ -444,8 +444,6 @@ def create_policy_gradient_continuous_state(
         value_function, value_network_optimizer(value_network_learning_rate)
     )
 
-    key = jax.random.key(seed)
-
     return namedtuple(
         "PolicyGradientState",
         [
@@ -453,9 +451,8 @@ def create_policy_gradient_continuous_state(
             "policy_optimizer",
             "value_function",
             "value_function_optimizer",
-            "key",
         ],
-    )(policy, policy_optimizer, value_function, value_function_optimizer, key)
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
 def create_policy_gradient_discrete_state(
@@ -498,8 +495,6 @@ def create_policy_gradient_discrete_state(
         value_function, value_network_optimizer(value_network_learning_rate)
     )
 
-    key = jax.random.key(seed)
-
     return namedtuple(
         "PolicyGradientState",
         [
@@ -507,9 +502,8 @@ def create_policy_gradient_discrete_state(
             "policy_optimizer",
             "value_function",
             "value_function_optimizer",
-            "key",
         ],
-    )(policy, policy_optimizer, value_function, value_function_optimizer, key)
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
 def train_reinforce(
@@ -518,13 +512,13 @@ def train_reinforce(
     policy_optimizer: nnx.Optimizer,
     value_function: MLP | None = None,
     value_function_optimizer: nnx.Optimizer | None = None,
+    seed: int = 0,
     policy_gradient_steps: int = 1,
     value_gradient_steps: int = 1,
     total_timesteps: int = 1_000_000,
     gamma: float = 1.0,
     steps_per_update: int = 1_000,
     train_after_episode: bool = False,
-    key: jnp.ndarray | None = None,
     logger: LoggerBase | None = None,
 ):
     """Train with REINFORCE.
@@ -547,6 +541,9 @@ def train_reinforce(
     value_function_optimizer : nnx.Optimizer or None, optional
         Optimizer for value function network.
 
+    seed : int, optional
+        Seed for random number generation.
+
     policy_gradient_steps : int, optional
         Number of gradient descent steps for the policy network.
 
@@ -567,12 +564,10 @@ def train_reinforce(
         Train after each episode. Alternatively you can train after collecting
         a certain number of samples.
 
-    key : jnp.ndarray, optional
-        Pseudo random number generator key for action sampling.
-
     logger : LoggerBase, optional
         Experiment logger.
     """
+    key = jax.random.key(seed)
     progress = tqdm.tqdm(total=total_timesteps)
     step = 0
     while step < total_timesteps:

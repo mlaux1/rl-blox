@@ -78,13 +78,13 @@ def train_ac(
     policy_optimizer: nnx.Optimizer,
     value_function: MLP,
     value_function_optimizer: nnx.Optimizer,
+    seed: int = 0,
     policy_gradient_steps: int = 1,
     value_gradient_steps: int = 1,
     total_timesteps: int = 1_000_000,
     gamma: float = 1.0,
     steps_per_update: int = 1_000,
     train_after_episode: bool = False,
-    key: jnp.ndarray | None = None,
     logger: LoggerBase | None = None,
 ):
     """Train with actor-critic.
@@ -106,6 +106,9 @@ def train_ac(
 
     value_function_optimizer : nnx.Optimizer or None, optional
         Optimizer for value function network.
+
+    seed : int, optional
+        Seed for random number generation.
 
     policy_gradient_steps : int, optional
         Number of gradient descent steps for the policy network.
@@ -133,6 +136,7 @@ def train_ac(
     logger : logger.LoggerBase, optional
         Experiment logger.
     """
+    key = jax.random.key(seed)
     progress = tqdm.tqdm(total=total_timesteps)
     step = 0
     while step < total_timesteps:

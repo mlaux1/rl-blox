@@ -324,8 +324,6 @@ def train_sac(
         The batch size of sample from the reply memory.
     learning_starts
         Timestep to start learning.
-    policy_lr
-        The learning rate of the policy network optimizer.
     entropy_learning_rate
         The learning rate of the Q network optimizer.
     policy_frequency
