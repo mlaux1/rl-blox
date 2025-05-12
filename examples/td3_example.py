@@ -27,6 +27,7 @@ hparams_algorithm = dict(
     total_timesteps=1_000_000,
     buffer_size=1_000_000,
     learning_starts=25_000,
+    batch_size=256,
     seed=seed,
 )
 
