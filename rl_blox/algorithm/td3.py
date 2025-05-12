@@ -485,20 +485,6 @@ def train_td3(
             termination=termination,
         )
 
-        if termination or truncated:
-            if logger is not None:
-                if "episode" in info:
-                    logger.record_stat(
-                        "return", info["episode"]["r"], step=global_step + 1
-                    )
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
-
-            obs, _ = env.reset()
-            steps_per_episode = 0
-
-        obs = next_obs
-
         if global_step >= learning_starts:
             for _ in range(gradient_steps):
                 (
@@ -563,6 +549,20 @@ def train_td3(
                     logger.record_epoch(
                         "q_target", q2_target, step=global_step + 1
                     )
+
+        if termination or truncated:
+            if logger is not None:
+                if "episode" in info:
+                    logger.record_stat(
+                        "return", info["episode"]["r"], step=global_step + 1
+                    )
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+
+            obs, _ = env.reset()
+            steps_per_episode = 0
+        else:
+            obs = next_obs
 
     return (
         policy,

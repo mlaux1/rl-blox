@@ -434,17 +434,6 @@ def train_sac(
             termination=termination,
         )
 
-        if termination or truncation:
-            if logger is not None:
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
-                if "episode" in info:
-                    logger.record_stat("return", info["episode"]["r"])
-            obs, _ = env.reset()
-            steps_per_episode = 0
-
-        obs = next_obs
-
         if global_step >= learning_starts:
             observations, actions, rewards, next_observations, terminations = (
                 rb.sample_batch(batch_size, rng)
@@ -528,6 +517,17 @@ def train_sac(
                 logger.record_epoch(
                     "q2_target", q2_target, step=global_step + 1
                 )
+
+        if termination or truncation:
+            if logger is not None:
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+                if "episode" in info:
+                    logger.record_stat("return", info["episode"]["r"])
+            obs, _ = env.reset()
+            steps_per_episode = 0
+        else:
+            obs = next_obs
 
     return (
         policy,
