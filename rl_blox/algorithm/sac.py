@@ -426,16 +426,6 @@ def train_sac(
         next_obs, reward, termination, truncation, info = env.step(action)
         steps_per_episode += 1
 
-        done = termination or truncation
-        if done:
-            if logger is not None:
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
-                if "episode" in info:
-                    logger.record_stat("return", info["episode"]["r"])
-            obs, _ = env.reset()
-            steps_per_episode = 0
-
         rb.add_sample(
             observation=obs,
             action=action,
@@ -443,6 +433,15 @@ def train_sac(
             next_observation=next_obs,
             termination=termination,
         )
+
+        if termination or truncation:
+            if logger is not None:
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+                if "episode" in info:
+                    logger.record_stat("return", info["episode"]["r"])
+            obs, _ = env.reset()
+            steps_per_episode = 0
 
         obs = next_obs
 

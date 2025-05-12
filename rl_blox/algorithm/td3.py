@@ -485,8 +485,7 @@ def train_td3(
             termination=termination,
         )
 
-        done = termination or truncated
-        if done:
+        if termination or truncated:
             if logger is not None:
                 if "episode" in info:
                     logger.record_stat(
@@ -497,7 +496,6 @@ def train_td3(
 
             obs, _ = env.reset()
             steps_per_episode = 0
-            continue
 
         obs = next_obs
 
