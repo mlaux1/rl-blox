@@ -2,7 +2,6 @@ import abc
 import atexit
 import contextlib
 import os
-import shutil
 import time
 from typing import Any
 
@@ -152,7 +151,7 @@ class StandardLogger(LoggerBase):
 
         .. warning::
 
-            This directory will be deleted before the experiment starts!
+            This directory will be created if it does not exist.
 
     verbose : int, optional
         Verbosity level.
@@ -341,9 +340,8 @@ class StandardLogger(LoggerBase):
 
     def _init_checkpointer(self):
         self.checkpointer = ocp.StandardCheckpointer()
-        if os.path.exists(self.checkpoint_dir):
-            shutil.rmtree(self.checkpoint_dir)
-        os.makedirs(self.checkpoint_dir)
+        if not os.path.exists(self.checkpoint_dir):
+            os.makedirs(self.checkpoint_dir)
 
     def record_epoch(
         self,
