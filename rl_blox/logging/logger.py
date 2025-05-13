@@ -404,6 +404,7 @@ class StandardLogger(LoggerBase):
         )
         _, state = nnx.split(value)
         self.checkpointer.save(f"{checkpoint_path}", state)
+        self.checkpointer.wait_until_finished()
         self.checkpoint_path[key].append(checkpoint_path)
         if self.verbose:
             tqdm.tqdm.write(
