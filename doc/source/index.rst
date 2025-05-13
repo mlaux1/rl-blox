@@ -9,4 +9,6 @@ RL-BLOX
    :maxdepth: 1
    :caption: Contents:
 
+   aim
+   memory
    api
