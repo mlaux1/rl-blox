@@ -10,4 +10,5 @@ RL-BLOX
    :caption: Contents:
 
    aim
+   memory
    api
