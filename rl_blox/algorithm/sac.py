@@ -15,7 +15,7 @@ from ..blox.function_approximator.policy_head import (
     StochasticPolicyBase,
 )
 from ..logging.logger import LoggerBase
-from .ddpg import ReplayBuffer, mse_action_value_loss, update_target
+from .ddpg import ReplayBuffer, mse_action_value_loss, soft_target_net_update
 
 
 def sac_actor_loss(
@@ -509,11 +509,11 @@ def train_sac(
                             )
 
             if global_step % target_network_frequency == 0:
-                update_target(q1, q1_target, tau)
+                soft_target_net_update(q1, q1_target, tau)
                 logger.record_epoch(
                     "q1_target", q1_target, step=global_step + 1
                 )
-                update_target(q2, q2_target, tau)
+                soft_target_net_update(q2, q2_target, tau)
                 logger.record_epoch(
                     "q2_target", q2_target, step=global_step + 1
                 )

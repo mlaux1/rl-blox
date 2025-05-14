@@ -17,7 +17,7 @@ from .ddpg import (
     ddpg_update_actor,
     mse_action_value_loss,
     sample_actions,
-    update_target,
+    soft_target_net_update,
 )
 
 
@@ -530,9 +530,9 @@ def train_td3(
                     actor_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q1, observations
                     )
-                    update_target(policy, policy_target, tau)
-                    update_target(q1, q1_target, tau)
-                    update_target(q2, q2_target, tau)
+                    soft_target_net_update(policy, policy_target, tau)
+                    soft_target_net_update(q1, q1_target, tau)
+                    soft_target_net_update(q2, q2_target, tau)
                     if logger is not None:
                         logger.record_stat(
                             "policy loss",
