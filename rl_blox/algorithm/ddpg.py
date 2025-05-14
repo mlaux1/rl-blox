@@ -287,7 +287,9 @@ def ddpg_update_actor(
 
 
 @nnx.jit
-def soft_target_net_update(net: nnx.Module, target_net: nnx.Module, tau: float) -> None:
+def soft_target_net_update(
+    net: nnx.Module, target_net: nnx.Module, tau: float
+) -> None:
     r"""Inplace soft update for target network with Polyak averaging.
 
     The soft update for the target network is supposed to be applied with about
