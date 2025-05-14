@@ -297,7 +297,7 @@ def soft_target_net_update(net: nnx.Module, target_net: nnx.Module, tau: float) 
 
     .. math::
 
-        \theta \leftarrow \tau \theta + (1 - \tau) \theta'
+        \theta' \leftarrow \tau \theta + (1 - \tau) \theta'
 
     where :math:`\theta` are the weights of the live network and
     :math:`\theta'` are the weights of the target network.
