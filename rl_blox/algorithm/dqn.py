@@ -6,8 +6,8 @@ from flax import nnx
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
-from ..blox.replay_buffer import ReplayBuffer, Transition
 from ..blox.function_approximator.mlp import MLP
+from ..blox.replay_buffer import ReplayBuffer, Transition
 
 
 def linear_schedule(
@@ -104,6 +104,7 @@ def _train_step(
     q_net: MLP,
     optimizer: nnx.Optimizer,
     batch: ArrayLike,
+    gamma: float = 0.99,
 ) -> None:
     """Performs a single training step to optimise the Q-network.
 
@@ -113,11 +114,13 @@ def _train_step(
         The MLP to be updated.
     optimizer : nnx.Optimizer
         The optimizer to be used.
-    batch :
+    batch : ArrayLike
         The minibatch of transitions to compute the update from.
+    gamma : float, optional
+        The discount factor.
     """
     grad_fn = nnx.value_and_grad(critic_loss)
-    loss, grads = grad_fn(q_net, batch)
+    loss, grads = grad_fn(q_net, batch, gamma)
     optimizer.update(grads)
 
 
@@ -153,7 +156,7 @@ def train_dqn(
     env: gymnasium.Env,
     replay_buffer: ReplayBuffer,
     optimizer: nnx.Optimizer,
-    batch_size: int = 32,
+    batch_size: int = 64,
     total_timesteps: int = 1e4,
     gamma: float = 0.99,
     seed: int = 1,
@@ -217,11 +220,12 @@ def train_dqn(
 
     epsilon = linear_schedule(total_timesteps)
 
+    key, subkey = jax.random.split(key)
+    epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
+
     # for each step:
     for step in tqdm(range(total_timesteps)):
-        key, subkey = jax.random.split(key)
-        roll = jax.random.uniform(subkey)
-        if roll < epsilon[step]:
+        if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
             action = greedy_policy(q_net, obs)
@@ -233,7 +237,7 @@ def train_dqn(
         if step > batch_size:
             transition_batch = replay_buffer.sample(batch_size)
 
-            _train_step(q_net, optimizer, transition_batch)
+            _train_step(q_net, optimizer, transition_batch, gamma)
 
         # housekeeping
         if terminated or truncated:
