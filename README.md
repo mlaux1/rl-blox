@@ -30,7 +30,7 @@ The implementation of this project follows the following principles:
 
 ### Dependencies
 
-1. Our environment interface is Gymnasium.
+1. Our environment interface is [Gymnasium](https://github.com/Farama-Foundation/Gymnasium).
 2. We use [JAX](https://github.com/jax-ml/jax) for everything.
 3. We use [Chex](https://github.com/google-deepmind/chex) to write reliable code.
 4. For optimization algorithms we use [Optax](https://github.com/google-deepmind/optax).
