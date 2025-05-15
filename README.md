@@ -2,6 +2,7 @@
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 
 # RL-BLOX
+
 <p float="center">
     <img src="doc/source/_static/rl_blox_logo_v1.png" height="150px" />
 </p>
@@ -19,6 +20,7 @@ The goal of this project is for the authors to learn by reimplementing various R
 ## Design Principles
 
 The implementation of this project follows the following principles:
+
 1. Algorithms are functions!
 2. Algorithms are implemented in single files.
 3. Policies and values functions are data containers.
@@ -26,12 +28,12 @@ The implementation of this project follows the following principles:
 ### Dependencies
 
 1. Our environment interface is Gymnasium.
-2. We use JAX for everything.
-3. We use Chex to write reliable code.
-4. For optimization algorithms we use Optax.
-5. For probability distributions we use Distrax.
-6. For all neural networks we use Flax NNX.
-7. To save checkpoints we use Orbax.
+2. We use [JAX](https://github.com/jax-ml/jax) for everything.
+3. We use [Chex](https://github.com/google-deepmind/chex) to write reliable code.
+4. For optimization algorithms we use [Optax](https://github.com/google-deepmind/optax).
+5. For probability distributions we use [Distrax](https://github.com/google-deepmind/distrax).
+6. For all neural networks we use [Flax NNX](https://github.com/google/flax).
+7. To save checkpoints we use [Orbax](https://github.com/google/orbax).
 
 ## Installation
 
@@ -116,6 +118,7 @@ merge requests is the development branch. The development branch will be merged 
 questions about the software, you should ask them in the discussion section.
 
 The recommended workflow to add a new feature, add documentation, or fix a bug is the following:
+
 - Push your changes to a branch (e.g. feature/x, doc/y, or fix/z) of your fork of the RL-BLOX repository.
 - Open a pull request to the main branch.
 
@@ -135,7 +138,6 @@ pytest
 ### Semantic Versioning
 
 Semantic versioning must be used, that is, the major version number will be incremented when the API changes in a backwards incompatible way, the minor version will be incremented when new functionality is added in a backwards compatible manner, and the patch version is incremented for bugfixes, documentation, etc.
-
 
 ## Funding
 
