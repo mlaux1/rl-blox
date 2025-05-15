@@ -18,13 +18,13 @@ env.action_space.seed(seed)
 q_net = MLP(
     env.observation_space.shape[0],
     int(env.action_space.n),
-    [10],
+    [32, 32],
     "relu",
     nnx.Rngs(seed),
 )
 
 # Initialise the replay buffer
-rb = ReplayBuffer(30_000)
+rb = ReplayBuffer(50_000)
 
 # initialise optimiser
 optimizer = nnx.Optimizer(q_net, optax.rprop(0.003))
@@ -36,7 +36,7 @@ q, _ = train_dqn(
     rb,
     optimizer,
     seed=seed,
-    total_timesteps=30_000,
+    total_timesteps=50_000,
 )
 env.close()
 
