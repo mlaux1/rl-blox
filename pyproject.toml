@@ -29,7 +29,7 @@ classifiers = [
 dependencies = [
     "numpy",
     "gymnasium",
-    "jax",
+    "jax>=0.5",
     "jaxlib",
     "optax",
     "distrax",
