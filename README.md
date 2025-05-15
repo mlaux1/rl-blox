@@ -3,12 +3,15 @@
 
 # RL-BLOX
 
-<p float="center">
-    <img src="doc/source/_static/rl_blox_logo_v1.png" height="150px" />
-</p>
-
-This project contains modular implementations of various model-free and model-based RL algorithms and consists of deep neural network-based as well as tabular representation of Q-Values, policies, etc. which can be used interchangeably.
-The goal of this project is for the authors to learn by reimplementing various RL algorithms and to eventually provide an algorithmic toolbox for research purposes.
+<table>
+  <tr>
+    <td>
+        This project contains modular implementations of various model-free and model-based RL algorithms and consists of deep neural network-based as well as tabular representation of Q-Values, policies, etc. which can be used interchangeably.
+        The goal of this project is for the authors to learn by reimplementing various RL algorithms and to eventually provide an algorithmic toolbox for research purposes.
+    </td>
+    <td><img src="doc/source/_static/rl_blox_logo_v1.png" width=750px"/></td>
+  </tr>
+</table>
 
 > [!CAUTION]
 > This library is still experimental and under development. Using it will not
