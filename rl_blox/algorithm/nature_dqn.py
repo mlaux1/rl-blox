@@ -139,6 +139,8 @@ def train_nature_dqn(
         The trained Q-network.
     optimizer : nnx.Optimizer
         The Q-net optimiser.
+    q_target_net : MLP
+        The current target Q-network (required for continuing training).
 
     References
     ----------
@@ -191,4 +193,4 @@ def train_nature_dqn(
         else:
             obs = next_obs
 
-    return q_net, optimizer
+    return q_net, optimizer, q_target_net
