@@ -77,7 +77,7 @@ def _train_step(
         The discount factor.
     """
     grad_fn = nnx.value_and_grad(critic_loss)
-    loss, grads = grad_fn(q_net, batch, gamma)
+    loss, grads = grad_fn(q_net, target_q, batch, gamma)
     optimizer.update(grads)
 
 
