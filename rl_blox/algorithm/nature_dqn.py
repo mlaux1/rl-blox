@@ -15,6 +15,7 @@ from .dqn import _extract, greedy_policy
 @nnx.jit
 def critic_loss(
     q_net: MLP,
+    target_q: MLP,
     batch: list[Transition],
     gamma: float = 0.99,
 ) -> float:
@@ -25,6 +26,8 @@ def critic_loss(
     ----------
     q_net : MLP
         The Q-network to compute the loss for.
+    target_q : MLP
+        The target Q-Network.
     batch : list[Transition]
         The minibatch of transitions.
     gamma : float, default=0.99
@@ -37,7 +40,7 @@ def critic_loss(
     """
     obs, reward, action, terminated, next_obs = _extract(batch)
 
-    next_q = q_net(next_obs)
+    next_q = target_q(next_obs)
     max_next_q = jnp.max(next_q, axis=1)
 
     target = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
@@ -53,6 +56,7 @@ def critic_loss(
 @nnx.jit
 def _train_step(
     q_net: MLP,
+    target_q: MLP,
     optimizer: nnx.Optimizer,
     batch: ArrayLike,
     gamma: float = 0.99,
@@ -63,6 +67,8 @@ def _train_step(
     ----------
     q_net : MLP
         The MLP to be updated.
+    target_q : MLP
+        The target Q-Network.
     optimizer : nnx.Optimizer
         The optimizer to be used.
     batch : ArrayLike
@@ -75,7 +81,7 @@ def _train_step(
     optimizer.update(grads)
 
 
-def train_dqn(
+def train_nature_dqn(
     q_net: MLP,
     env: gymnasium.Env,
     replay_buffer: ReplayBuffer,
@@ -89,10 +95,11 @@ def train_dqn(
 ) -> tuple[MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
-    Implements the most basic version of DQN with experience replay as described
-    in Mnih et al. (2013) [1]_, which is an off-policy value-based RL algorithm.
+    Implements the most common version of DQN with experience replay as described
+    in Mnih et al. (2015) [1]_, which is an off-policy value-based RL algorithm.
     It uses a neural network to approximate the Q-function and samples
-    minibatches from the replay buffer to calculate updates.
+    minibatches from the replay buffer to calculate updates as well as target
+    networks that are copied regularly from the current Q-network.
 
     This implementation aims to be as close as possible to the original algorithm
     described in the paper while remaining not overly engineered towards a
@@ -134,9 +141,9 @@ def train_dqn(
 
     References
     ----------
-    .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I.,
-       Wierstra, D., & Riedmiller, M. (2013). Playing atari with deep
-       reinforcement learning. arXiv preprint arXiv:1312.5602.
+    [1] Mnih, V., Kavukcuoglu, K., Silver, D. et al. Human-level control
+    through deep reinforcement learning. Nature 518, 529–533 (2015).
+    https://doi.org/10.1038/nature14236
     """
 
     assert isinstance(
@@ -156,7 +163,6 @@ def train_dqn(
     key, subkey = jax.random.split(key)
     epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
 
-    # for each step:
     for step in tqdm(range(total_timesteps)):
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
@@ -166,12 +172,10 @@ def train_dqn(
         next_obs, reward, terminated, truncated, info = env.step(int(action))
         replay_buffer.push(obs, action, reward, next_obs, terminated)
 
-        # sample minibatch from replay buffer
-
         if step > batch_size:
             if step % update_frequency == 0:
                 transition_batch = replay_buffer.sample(batch_size)
-                _train_step(q_net, optimizer, transition_batch, gamma)
+                _train_step(q_net, target_q, optimizer, transition_batch, gamma)
 
             if step % target_update_frequency == 0:
                 q_net = target_q
