@@ -1,91 +1,53 @@
-import numpy as np
+import gymnasium as gym
+import jax
+import jax.numpy as jnp
+import tqdm
+from jax.typing import ArrayLike
 
-from ..blox.base_policy import GreedyQPolicy, UniformRandomPolicy
+from ..blox.value_policy import get_epsilon_greedy_action
+from ..logging.logger import LoggerBase
 
 
-class MonteCarlo:
-    """
-    Implements Every-Visit ann First-Visit On-Policy Monte Carlo Learning using Q-Values.
-    """
+def train_monte_carlo(
+    env: gym.Env,
+    q_table: ArrayLike,
+    total_timesteps: int,
+    learning_rate: float = 0.1,
+    epsilon: float = 0.1,
+    gamma: float = 0.99,
+    seed: int = 1,
+    logger: LoggerBase | None = None,
+) -> ArrayLike:
+    key = jax.random.key(seed)
 
-    def __init__(self, env, epsilon, update_mode="every_visit"):
-        self.epsilon = epsilon
-        self.env = env
+    observation, _ = env.reset()
 
-        assert update_mode in [
-            "every_visit",
-            "first_visit",
-        ], f"unknown update mode '{update_mode}'"
-        self.update_mode = update_mode
+    obs = jnp.empty(total_timesteps)
+    acts = jnp.empty(total_timesteps)
+    rews = jnp.empty(total_timesteps)
 
-        self.exploration_policy = UniformRandomPolicy(
-            env.observation_space, env.action_space
+    for i in tqdm.trange(total_timesteps):
+        obs[i] = observation
+        acts[i] = get_epsilon_greedy_action(key, q_table, observation, epsilon)
+        observation, rews[i], terminated, truncated, info = env.step(
+            int(acts[i])
         )
-        self.target_policy = GreedyQPolicy(
-            env.observation_space, env.action_space, 0.0
-        )
 
-        self.n_visits = np.full(
-            shape=(env.observation_space.n, env.action_space.n), fill_value=0.0
-        )
-        self.total_return = np.full(
-            shape=(env.observation_space.n, env.action_space.n), fill_value=0.0
-        )
+        if terminated or truncated:
+            q_table = update(q_table, rews, obs, acts)
+            observation, _ = env.reset()
 
-    def train(self, max_episodes: int) -> None:
-        for _ in range(max_episodes):
-            # collect episode
-            obs, acs, rews = self.collect_episode_rollout()
-
-            ep_return = sum(rews)
-
-            # get the visited state action pairs
-            state_action_pairs = zip(obs, acs, strict=False)
-
-            if self.update_mode == "first_visit":
-                state_action_pairs = list(set(state_action_pairs))
-
-            for idx in state_action_pairs:
-                self.n_visits[idx] += 1
-                self.total_return[idx] += ep_return
-                new_q_val = self.total_return[idx] / self.n_visits[idx]
-
-                state, action = idx
-                step = (
-                    new_q_val
-                    - self.target_policy.value_function.values[state][action]
-                )
-                self.target_policy.update(state, action, step)
-
-    def collect_episode_rollout(self):
+    def update(max_episodes: int) -> None:
+        # TODO: implement this
         """
-        Runs one full episode and returns the observations, actions and rewards.
-        """
+        for idx in state_action_pairs:
+            self.n_visits[idx] += 1
+            self.total_return[idx] += ep_return
+            new_q_val = self.total_return[idx] / self.n_visits[idx]
 
-        observation = self.env.reset()[0]
-        observations = [observation]
-        actions = []
-        rewards = []
-
-        # print(self.q_table.shape)
-        # print(observation)
-
-        while True:
-            if np.random.random_sample() < self.epsilon:
-                action = self.exploration_policy.get_action(observation)
-            else:
-                action = self.target_policy.get_action(observation)
-
-            observation, reward, terminated, truncated, info = self.env.step(
-                action
+            state, action = idx
+            step = (
+                new_q_val
+                - self.target_policy.value_function.values[state][action]
             )
-
-            observations.append(observation)
-            actions.append(action)
-            rewards.append(reward)
-
-            if terminated or truncated:
-                print("Terminated episode")
-                break
-
-        return observations, actions, rewards
+        """
