@@ -2,7 +2,6 @@ import abc
 import atexit
 import contextlib
 import os
-import shutil
 import time
 from typing import Any
 
@@ -152,7 +151,7 @@ class StandardLogger(LoggerBase):
 
         .. warning::
 
-            This directory will be deleted before the experiment starts!
+            This directory will be created if it does not exist.
 
     verbose : int, optional
         Verbosity level.
@@ -176,7 +175,7 @@ class StandardLogger(LoggerBase):
     checkpoint_path: dict[str, list[str]]
 
     def __init__(self, checkpoint_dir="/tmp/rl-blox/", verbose=0):
-        self.checkpoint_dir = checkpoint_dir
+        self.checkpoint_dir = os.path.abspath(checkpoint_dir)
         self.verbose = verbose
 
         self.env_name = None
@@ -341,9 +340,8 @@ class StandardLogger(LoggerBase):
 
     def _init_checkpointer(self):
         self.checkpointer = ocp.StandardCheckpointer()
-        if os.path.exists(self.checkpoint_dir):
-            shutil.rmtree(self.checkpoint_dir)
-        os.makedirs(self.checkpoint_dir)
+        if not os.path.exists(self.checkpoint_dir):
+            os.makedirs(self.checkpoint_dir)
 
     def record_epoch(
         self,
@@ -399,13 +397,14 @@ class StandardLogger(LoggerBase):
             self._save_checkpoint(key, value)
 
     def _save_checkpoint(self, key: str, value: Any):
-        checkpoint_path = (
-            f"{self.checkpoint_dir}"
+        checkpoint_path = os.path.join(
+            f"{self.checkpoint_dir}",
             f"{self.start_time}_{self.env_name}_{self.algorithm_name}_"
             f"{key}_{self.epoch[key]}/"
         )
         _, state = nnx.split(value)
         self.checkpointer.save(f"{checkpoint_path}", state)
+        self.checkpointer.wait_until_finished()
         self.checkpoint_path[key].append(checkpoint_path)
         if self.verbose:
             tqdm.tqdm.write(

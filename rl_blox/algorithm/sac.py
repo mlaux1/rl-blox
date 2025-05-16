@@ -15,7 +15,7 @@ from ..blox.function_approximator.policy_head import (
     StochasticPolicyBase,
 )
 from ..logging.logger import LoggerBase
-from .ddpg import ReplayBuffer, mse_action_value_loss, update_target
+from .ddpg import ReplayBuffer, mse_action_value_loss, soft_target_net_update
 
 
 def sac_actor_loss(
@@ -66,10 +66,10 @@ def sac_actor_loss(
     actions = policy.sample(observations, action_key)
     log_prob = policy.log_probability(observations, actions)
     obs_act = jnp.concatenate((observations, actions), axis=-1)
-    qf1_pi = q1(obs_act).squeeze()
-    qf2_pi = q2(obs_act).squeeze()
-    min_qf_pi = jnp.minimum(qf1_pi, qf2_pi)
-    actor_loss = (alpha * log_prob - min_qf_pi).mean()
+    q1_value = q1(obs_act).squeeze()
+    q2_value = q2(obs_act).squeeze()
+    q_value = jnp.minimum(q1_value, q2_value)
+    actor_loss = (alpha * log_prob - q_value).mean()
     return actor_loss
 
 
@@ -426,16 +426,6 @@ def train_sac(
         next_obs, reward, termination, truncation, info = env.step(action)
         steps_per_episode += 1
 
-        done = termination or truncation
-        if done:
-            if logger is not None:
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
-                if "episode" in info:
-                    logger.record_stat("return", info["episode"]["r"])
-            obs, _ = env.reset()
-            steps_per_episode = 0
-
         rb.add_sample(
             observation=obs,
             action=action,
@@ -444,9 +434,7 @@ def train_sac(
             termination=termination,
         )
 
-        obs = next_obs
-
-        if global_step > learning_starts:
+        if global_step >= learning_starts:
             observations, actions, rewards, next_observations, terminations = (
                 rb.sample_batch(batch_size, rng)
             )
@@ -470,10 +458,14 @@ def train_sac(
                 entropy_control.alpha_,
             )
             if logger is not None:
-                logger.record_stat("q1 loss", q1_loss_value, step=global_step)
-                logger.record_epoch("q1", q1)
-                logger.record_stat("q2 loss", q2_loss_value, step=global_step)
-                logger.record_epoch("q2", q2)
+                logger.record_stat(
+                    "q1 loss", q1_loss_value, step=global_step + 1
+                )
+                logger.record_epoch("q1", q1, step=global_step + 1)
+                logger.record_stat(
+                    "q2 loss", q2_loss_value, step=global_step + 1
+                )
+                logger.record_epoch("q2", q2, step=global_step + 1)
 
             if global_step % policy_frequency == 0:
                 # compensate for delay by doing 'policy_frequency' updates
@@ -494,29 +486,48 @@ def train_sac(
                     )
                     if logger is not None:
                         logger.record_stat(
-                            "policy loss", policy_loss_value, step=global_step
+                            "policy loss",
+                            policy_loss_value,
+                            step=global_step + 1,
                         )
-                        logger.record_epoch("policy", policy, step=global_step)
+                        logger.record_epoch(
+                            "policy", policy, step=global_step + 1
+                        )
                         logger.record_stat(
                             "alpha",
                             float(entropy_control.alpha_[0]),
-                            step=global_step,
+                            step=global_step + 1,
                         )
                         if autotune:
                             logger.record_stat(
                                 "alpha loss",
                                 exploration_loss_value,
-                                step=global_step,
+                                step=global_step + 1,
                             )
                             logger.record_epoch(
-                                "alpha", alpha, step=global_step
+                                "alpha", alpha, step=global_step + 1
                             )
 
             if global_step % target_network_frequency == 0:
-                update_target(q1, q1_target, tau)
-                logger.record_epoch("q1_target", q1_target, step=global_step)
-                update_target(q2, q2_target, tau)
-                logger.record_epoch("q2_target", q2_target, step=global_step)
+                soft_target_net_update(q1, q1_target, tau)
+                logger.record_epoch(
+                    "q1_target", q1_target, step=global_step + 1
+                )
+                soft_target_net_update(q2, q2_target, tau)
+                logger.record_epoch(
+                    "q2_target", q2_target, step=global_step + 1
+                )
+
+        if termination or truncation:
+            if logger is not None:
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+                if "episode" in info:
+                    logger.record_stat("return", info["episode"]["r"])
+            obs, _ = env.reset()
+            steps_per_episode = 0
+        else:
+            obs = next_obs
 
     return (
         policy,
@@ -647,16 +658,21 @@ def sac_update_critic(
     --------
     .ddpg.mse_action_value_loss
         The mean squared error loss.
+
+    sac_q_target
+        Generates target values for action-value functions.
     """
-    next_actions = policy.sample(next_observations, action_key)
-    next_log_pi = policy.log_probability(next_observations, next_actions)
-    next_obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
-    q1_next_target = q1_target(next_obs_act).squeeze()
-    q2_next_target = q2_target(next_obs_act).squeeze()
-    min_q_next_target = (
-        jnp.minimum(q1_next_target, q2_next_target) - alpha * next_log_pi
+    q_target_value = sac_q_target(
+        q1_target,
+        q2_target,
+        policy,
+        rewards,
+        next_observations,
+        terminations,
+        action_key,
+        alpha,
+        gamma,
     )
-    q_target_value = rewards + (1 - terminations) * gamma * min_q_next_target
 
     q1_loss_value, q1_grads = nnx.value_and_grad(
         mse_action_value_loss, argnums=3
@@ -668,3 +684,72 @@ def sac_update_critic(
     q2_optimizer.update(q2_grads)
 
     return q1_loss_value, q2_loss_value
+
+
+def sac_q_target(
+    q1_target: nnx.Module,
+    q2_target: nnx.Module,
+    policy: StochasticPolicyBase,
+    rewards: jnp.ndarray,
+    next_observations: jnp.ndarray,
+    terminations: jnp.ndarray,
+    action_key: jnp.ndarray,
+    alpha: float,
+    gamma: float,
+) -> jnp.ndarray:
+    r"""Target value for action-value functions in SAC.
+
+    Uses the bootstrap estimate
+
+    .. math::
+
+        r_{t+1} + \gamma
+        \left[\min(Q_1(o_{t+1}, a_{t+1}), Q_2(o_{t+1}, a_{t+1}))
+        - \alpha \log \pi(a_{t+1}|o_{t+1})\right]
+
+    based on the target networks of :math:`Q_1, Q_2` as a target value for the
+    Q network update with a mean squared error loss.
+
+    Parameters
+    ----------
+    q1_target : nnx.Module
+        Target network of q1.
+
+    q2_target : nnx.Module
+        Target network of q2.
+
+    policy : StochasticPolicyBase
+        Policy.
+
+    rewards : array
+        Rewards :math:`r_{t+1}`.
+
+    next_observations : array
+        Next observations :math:`o_{t+1}`.
+
+    terminations : array
+        Indicates if a terminal state was reached in this step.
+
+    action_key : array
+        Random key for action sampling.
+
+    alpha : float
+        Entropy coefficient.
+
+    gamma : float
+        Discount factor of discounted infinite horizon return model.
+
+    Returns
+    -------
+    q_target_value : array
+        Target values for action-value functions.
+    """
+    next_actions = policy.sample(next_observations, action_key)
+    next_log_pi = policy.log_probability(next_observations, next_actions)
+    next_obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
+    q1_next_target = q1_target(next_obs_act).squeeze()
+    q2_next_target = q2_target(next_obs_act).squeeze()
+    min_q_next_target = (
+        jnp.minimum(q1_next_target, q2_next_target) - alpha * next_log_pi
+    )
+    return rewards + (1 - terminations) * gamma * min_q_next_target
