@@ -15,7 +15,7 @@ from .dqn import _extract, greedy_policy
 @nnx.jit
 def critic_loss(
     q_net: MLP,
-    target_q: MLP,
+    q_target: MLP,
     batch: list[Transition],
     gamma: float = 0.99,
 ) -> float:
@@ -26,7 +26,7 @@ def critic_loss(
     ----------
     q_net : MLP
         The Q-network to compute the loss for.
-    target_q : MLP
+    q_target : MLP
         The target Q-Network.
     batch : list[Transition]
         The minibatch of transitions.
@@ -40,7 +40,7 @@ def critic_loss(
     """
     obs, reward, action, terminated, next_obs = _extract(batch)
 
-    next_q = target_q(next_obs)
+    next_q = q_target(next_obs)
     max_next_q = jnp.max(next_q, axis=1)
 
     target = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
@@ -56,7 +56,7 @@ def critic_loss(
 @nnx.jit
 def _train_step(
     q_net: MLP,
-    target_q: MLP,
+    q_target: MLP,
     optimizer: nnx.Optimizer,
     batch: ArrayLike,
     gamma: float = 0.99,
@@ -67,7 +67,7 @@ def _train_step(
     ----------
     q_net : MLP
         The MLP to be updated.
-    target_q : MLP
+    q_target : MLP
         The target Q-Network.
     optimizer : nnx.Optimizer
         The optimizer to be used.
@@ -77,7 +77,7 @@ def _train_step(
         The discount factor.
     """
     grad_fn = nnx.value_and_grad(critic_loss)
-    loss, grads = grad_fn(q_net, target_q, batch, gamma)
+    loss, grads = grad_fn(q_net, q_target, batch, gamma)
     optimizer.update(grads)
 
 
@@ -91,6 +91,7 @@ def train_nature_dqn(
     gamma: float = 0.99,
     update_frequency: int = 4,
     target_update_frequency: int = 1000,
+    q_target_net: MLP | None = None,
     seed: int = 1,
 ) -> tuple[MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
@@ -114,7 +115,7 @@ def train_nature_dqn(
     q_net : MLP
         The Q-network to be optimised.
     env: gymnasium
-        The envrionment to train the Q-network on.
+        The environment to train the Q-network on.
     replay_buffer : ReplayBuffer
         The replay buffer used for storing collected transitions.
     optimizer : nnx.Optimizer
@@ -125,10 +126,10 @@ def train_nature_dqn(
         The number of time steps after which the target net is updated.
     total_timesteps : int
         The number of environment sets to train for.
-    learning_rate : float
-        The learning rate for updating the weights of the Q-net.
     gamma : float
         The discount factor.
+    q_target_net : MLP, optional
+        The target Q-network. Only needed when continuing prior training.
     seed : int
         The random seed, which can be set to reproduce results.
 
@@ -153,7 +154,8 @@ def train_nature_dqn(
     key = jax.random.key(seed)
 
     # intialise the target network
-    target_q = nnx.clone(q_net)
+    if q_target_net is None:
+        q_target_net = nnx.clone(q_net)
 
     # initialise episode
     obs, _ = env.reset(seed=seed)
@@ -175,11 +177,13 @@ def train_nature_dqn(
         if step > batch_size:
             if step % update_frequency == 0:
                 transition_batch = replay_buffer.sample(batch_size)
-                _train_step(q_net, target_q, optimizer, transition_batch, gamma)
+                _train_step(
+                    q_net, q_target_net, optimizer, transition_batch, gamma
+                )
 
             if step % target_update_frequency == 0:
-                q_net = target_q
-                target_q = nnx.clone(q_net)
+                q_net = q_target_net
+                q_target_net = nnx.clone(q_net)
 
         # housekeeping
         if terminated or truncated:
