@@ -495,7 +495,7 @@ def train_sac(
                         )
                         logger.record_stat(
                             "alpha",
-                            float(entropy_control.alpha_[0]),
+                            float(entropy_control.alpha_),
                             step=global_step + 1,
                         )
                         if autotune:
