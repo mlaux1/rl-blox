@@ -42,12 +42,63 @@ def mse_continuous_action_value_loss(
     Returns
     -------
     loss : array, shape ()
-        Mean squared distance between predicted and actual action values.
+        Mean squared error between predicted and actual action values.
     """
     chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
     chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
 
     q_predicted = q(jnp.concatenate((observation, action), axis=-1)).squeeze()
+    chex.assert_equal_shape((q_predicted, q_target_values))
+
+    return optax.squared_error(
+        predictions=q_predicted, targets=q_target_values
+    ).mean()
+
+
+def mse_discrete_action_value_loss(
+    observation: jnp.ndarray,
+    action: jnp.ndarray,
+    q_target_values: jnp.ndarray,
+    q: nnx.Module,
+) -> jnp.ndarray:
+    r"""Mean squared error loss for discrete action-value function.
+
+    For a given action-value function :math:`q(o, a)` and target values
+    :math:`R(o, a)`, the loss is defined as
+
+    .. math::
+
+        \mathcal{L}(q)
+        = \frac{1}{2 N} \sum_{i=1}^{N} (q(o_i, a_i) - R(o_i, a_i))^2.
+
+    :math:`R(o, a)` could be the Monte Carlo return.
+
+    Parameters
+    ----------
+    observation : array, shape (n_samples, n_observation_features)
+        Batch of observations.
+
+    action : array, shape (n_samples,)
+        Batch of selected actions.
+
+    q_target_values : array, shape (n_samples,)
+        Actual action values that should be approximated.
+
+    q : nnx.Module
+        Q network that maps observation to the action-values of each action of
+        the discrete action space.
+
+    Returns
+    -------
+    loss : array, shape ()
+        Mean squared error between predicted and actual action values.
+    """
+    chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
+    chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
+
+    q_predicted = q(observation)[
+        jnp.arange(len(observation), dtype=int), action.astype(int)
+    ]
     chex.assert_equal_shape((q_predicted, q_target_values))
 
     return optax.squared_error(

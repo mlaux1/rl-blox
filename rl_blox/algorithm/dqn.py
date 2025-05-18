@@ -2,12 +2,12 @@ import gymnasium
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 from flax import nnx
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
 from ..blox.function_approximator.mlp import MLP
+from ..blox.losses import mse_discrete_action_value_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..logging.logger import LoggerBase
 
@@ -57,17 +57,12 @@ def critic_loss(
     """
     obs, action, reward, next_obs, terminated = batch
 
-    next_q = q_net(next_obs)
+    next_q = jax.lax.stop_gradient(q_net(next_obs))
     max_next_q = jnp.max(next_q, axis=1)
 
-    target = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
+    q_target_values = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
 
-    pred = q_net(obs)
-    pred = pred[jnp.arange(len(pred), dtype=int), action.astype(int)]
-
-    loss = optax.squared_error(pred, target).mean()
-
-    return loss
+    return mse_discrete_action_value_loss(obs, action, q_target_values, q_net)
 
 
 @nnx.jit
