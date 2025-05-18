@@ -6,9 +6,47 @@ from flax import nnx
 from .function_approximator.policy_head import StochasticPolicyBase
 
 
+def mse_action_value_loss(
+    observation: jnp.ndarray,
+    action: jnp.ndarray,
+    q_target_values: jnp.ndarray,
+    q: nnx.Module,
+) -> jnp.ndarray:
+    """Mean squared error loss function for action-value function.
+
+    Parameters
+    ----------
+    observation : array, shape (n_samples, n_observation_features)
+        Batch of observations.
+
+    action : array, shape (n_samples, n_action_dims)
+        Batch of selected actions.
+
+    q_target_values : array, shape (n_samples,)
+        Actual action values that should be approximated.
+
+    q : nnx.Module
+        Q network.
+
+    Returns
+    -------
+    loss : array, shape ()
+        Mean squared distance between predicted and actual action values.
+    """
+    chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
+    chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
+
+    q_predicted = q(jnp.concatenate((observation, action), axis=-1)).squeeze()
+    chex.assert_equal_shape((q_predicted, q_target_values))
+
+    return optax.squared_error(
+        predictions=q_predicted, targets=q_target_values
+    ).mean()
+
+
 def mse_value_loss(
     observations: jnp.ndarray,
-    v_target: jnp.ndarray,
+    v_target_values: jnp.ndarray,
     v: nnx.Module,
 ) -> jnp.ndarray:
     r"""Mean squared error as loss for a value function network.
@@ -27,7 +65,7 @@ def mse_value_loss(
     observations : array, shape (n_samples, n_observation_features)
         Observations.
 
-    v_target : array, shape (n_samples,)
+    v_target_values : array, shape (n_samples,)
         Target values, obtained, e.g., through Monte Carlo sampling.
 
     v : nnx.Module
@@ -39,8 +77,8 @@ def mse_value_loss(
         Value function loss.
     """
     values = v(observations).squeeze()  # squeeze Nx1-D -> N-D
-    chex.assert_equal_shape((values, v_target))
-    return optax.l2_loss(predictions=values, targets=v_target).mean()
+    chex.assert_equal_shape((values, v_target_values))
+    return optax.l2_loss(predictions=values, targets=v_target_values).mean()
 
 
 def stochastic_policy_gradient_pseudo_loss(

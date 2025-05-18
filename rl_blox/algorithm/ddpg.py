@@ -12,50 +12,10 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.losses import mse_action_value_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
-
-
-def mse_action_value_loss(
-    observations: jnp.ndarray,
-    actions: jnp.ndarray,
-    q_target_values: jnp.ndarray,
-    q: nnx.Module,
-) -> jnp.ndarray:
-    """Mean squared error loss function for action-value function.
-
-    Parameters
-    ----------
-    observations : array, shape (n_samples, n_observation_features)
-        Batch of observations.
-
-    actions : array, shape (n_samples, n_action_dims)
-        Batch of selected actions.
-
-    q_target_values : array, shape (n_samples,)
-        Actual action values that should be approximated.
-
-    q : nnx.Module
-        Q network.
-
-    Returns
-    -------
-    loss : array, shape ()
-        Mean squared distance between predicted and actual action values.
-    """
-    chex.assert_equal_shape_prefix((observations, actions), prefix_len=1)
-    chex.assert_equal_shape_prefix(
-        (observations, q_target_values), prefix_len=1
-    )
-
-    q_predicted = q(jnp.concatenate((observations, actions), axis=-1)).squeeze()
-    chex.assert_equal_shape((q_predicted, q_target_values))
-
-    return (
-        2.0
-        * optax.l2_loss(predictions=q_predicted, targets=q_target_values).mean()
-    )
 
 
 def deterministic_policy_value_loss(
