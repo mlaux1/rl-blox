@@ -1,3 +1,4 @@
+import chex
 import optax
 from flax import nnx
 
@@ -30,8 +31,10 @@ def soft_target_net_update(
 
     tau : float
         The step size :math:`\tau`, i.e., the coefficient with which the live
-        network's parameters will be multiplied.
+        network's parameters will be multiplied. Must be in [0, 1]. Often
+        :math:`\tau = 0.005` is used.
     """
+    chex.assert_scalar_in(tau, 0.0, 1.0)
     params = nnx.state(net)
     target_params = nnx.state(target_net)
     target_params = optax.incremental_update(params, target_params, tau)
