@@ -12,7 +12,7 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.losses import mse_action_value_loss
+from ..blox.losses import mse_continuous_action_value_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
@@ -101,14 +101,14 @@ def td3_update_critic(
         next_actions,
     )
 
-    q1_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
-        observations, actions, q_bootstrap, q1
-    )
+    q1_loss_value, grads = nnx.value_and_grad(
+        mse_continuous_action_value_loss, argnums=3
+    )(observations, actions, q_bootstrap, q1)
     q1_optimizer.update(grads)
 
-    q2_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
-        observations, actions, q_bootstrap, q2
-    )
+    q2_loss_value, grads = nnx.value_and_grad(
+        mse_continuous_action_value_loss, argnums=3
+    )(observations, actions, q_bootstrap, q2)
     q2_optimizer.update(grads)
 
     return q1_loss_value, q2_loss_value

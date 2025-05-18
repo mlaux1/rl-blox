@@ -6,13 +6,13 @@ from flax import nnx
 from .function_approximator.policy_head import StochasticPolicyBase
 
 
-def mse_action_value_loss(
+def mse_continuous_action_value_loss(
     observation: jnp.ndarray,
     action: jnp.ndarray,
     q_target_values: jnp.ndarray,
     q: nnx.Module,
 ) -> jnp.ndarray:
-    r"""Mean squared error loss function for action-value function.
+    r"""Mean squared error loss for continuous action-value function.
 
     For a given action-value function :math:`q(o, a)` and target values
     :math:`R(o, a)`, the loss is defined as
@@ -36,7 +36,8 @@ def mse_action_value_loss(
         Actual action values that should be approximated.
 
     q : nnx.Module
-        Q network.
+        Q network that maps a pair of observation and action to the action
+        value. These networks are used for continuous action spaces.
 
     Returns
     -------
