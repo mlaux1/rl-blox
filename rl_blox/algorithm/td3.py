@@ -12,10 +12,10 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import (
-    ReplayBuffer,
     ddpg_update_actor,
     mse_action_value_loss,
     sample_actions,

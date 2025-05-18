@@ -15,9 +15,10 @@ from ..blox.function_approximator.policy_head import (
     GaussianTanhPolicy,
     StochasticPolicyBase,
 )
+from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
-from .ddpg import ReplayBuffer, mse_action_value_loss
+from .ddpg import mse_action_value_loss
 
 
 def sac_actor_loss(
