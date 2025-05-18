@@ -62,9 +62,6 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
-   reinforce.StochasticPolicyBase
-   reinforce.GaussianPolicy
-   reinforce.SoftmaxPolicy
    sac.EntropyCoefficient
    sac.EntropyControl
    pets.PETSMPCConfig
