@@ -1,6 +1,7 @@
 import contextlib
 from collections import namedtuple
 from collections.abc import Callable
+from functools import partial
 
 import chex
 import gymnasium as gym
@@ -18,6 +19,7 @@ from ..blox.function_approximator.policy_head import (
     SoftmaxPolicy,
     StochasticPolicyBase,
 )
+from ..blox.losses import mse_value_loss
 from ..logging.logger import LoggerBase
 
 
@@ -122,44 +124,6 @@ def discounted_reward_to_go(rewards: list[float], gamma: float) -> np.ndarray:
     return np.array(list(reversed(discounted_returns)))
 
 
-@nnx.jit
-def mse_value_loss(
-    observations: jnp.ndarray,
-    returns: jnp.ndarray,
-    value_function: nnx.Module,
-) -> jnp.ndarray:
-    r"""Mean squared error as loss for a value function network.
-
-    For a given value function :math:`v(o)` and target values :math:`R(o)`, the
-    loss is defined as
-
-    .. math::
-
-        \mathcal{L}(v) = \frac{1}{2 N} \sum_{i=1}^{N} (v(o_i) - R(o_i))^2.
-
-    :math:`R(o)` could be the Monte Carlo return.
-
-    Parameters
-    ----------
-    observations : array, shape (n_samples, n_observation_features)
-        Observations.
-
-    returns : array, shape (n_samples,)
-        Target values, obtained, e.g., through Monte Carlo sampling.
-
-    value_function : nnx.Module
-        Value function that maps observations to expected returns.
-
-    Returns
-    -------
-    loss : float
-        Value function loss.
-    """
-    values = value_function(observations).squeeze()  # squeeze Nx1-D -> N-D
-    chex.assert_equal_shape((values, returns))
-    return optax.l2_loss(predictions=values, targets=returns).mean()
-
-
 def policy_gradient_pseudo_loss(
     observations: jnp.ndarray,
     actions: jnp.ndarray,
@@ -218,7 +182,6 @@ def policy_gradient_pseudo_loss(
     )  # - to perform gradient ascent with a minimizer
 
 
-@nnx.jit
 def reinforce_gradient(
     policy: StochasticPolicyBase,
     value_function: nnx.Module | None,
@@ -707,9 +670,7 @@ with contextlib.suppress(ImportError):
     collect_samples = deprecated(collect_samples)
 
 
-mse_value_loss_and_grad = nnx.jit(nnx.value_and_grad(mse_value_loss, argnums=2))
-
-
+@partial(nnx.jit, static_argnames=["value_gradient_steps"])
 def train_value_function(
     value_function,
     value_function_optimizer,
@@ -719,13 +680,14 @@ def train_value_function(
 ):
     v_loss = 0.0
     for _ in range(value_gradient_steps):
-        v_loss, v_grad = mse_value_loss_and_grad(
+        v_loss, v_grad = nnx.value_and_grad(mse_value_loss, argnums=2)(
             observations, returns, value_function
         )
         value_function_optimizer.update(v_grad)
     return v_loss
 
 
+@partial(nnx.jit, static_argnames=["policy_gradient_steps"])
 def train_policy_reinforce(
     policy,
     policy_optimizer,
