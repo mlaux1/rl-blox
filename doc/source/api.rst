@@ -39,7 +39,6 @@ Functional Blox
    reinforce.reinforce_gradient
    actor_critic.actor_critic_policy_gradient
    ddpg.sample_actions
-   ddpg.mse_action_value_loss
    ddpg.deterministic_policy_value_loss
    ddpg.ddpg_update_actor
    ddpg.ddpg_update_critic
@@ -94,6 +93,7 @@ Functional Blox
    probabilistic_ensemble.gaussian_ensemble_loss
    probabilistic_ensemble.train_ensemble
    probabilistic_ensemble.restore_checkpoint
+   losses.mse_action_value_loss
    losses.mse_value_loss
    losses.stochastic_policy_gradient_pseudo_loss
 
