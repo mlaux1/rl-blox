@@ -1,4 +1,4 @@
-from collections import OrderedDict, namedtuple
+from collections import namedtuple
 from functools import partial
 
 import chex
@@ -12,50 +12,9 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
-
-
-# TODO consolidate replay buffer implementations
-class ReplayBuffer:
-    buffer: OrderedDict[str, np.typing.NDArray[float]]
-
-    def __init__(self, buffer_size: int, keys: list[str] | None = None):
-        if keys is None:
-            keys = [
-                "observation",
-                "action",
-                "reward",
-                "next_observation",
-                "termination",
-            ]
-        self.buffer = OrderedDict()
-        for k in keys:
-            self.buffer[k] = np.empty(0, dtype=float)
-        self.buffer_size = buffer_size
-        self.current_len = 0
-        self.insert_idx = 0
-
-    def add_sample(self, **sample):
-        if self.current_len == 0:
-            for k, v in sample.items():
-                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
-                self.buffer[k] = np.empty(
-                    (self.buffer_size,) + np.asarray(v).shape, dtype=float
-                )
-        for k, v in sample.items():
-            self.buffer[k][self.insert_idx] = v
-        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
-        self.current_len = min(self.current_len + 1, self.buffer_size)
-
-    def sample_batch(
-        self, batch_size: int, rng: np.random.Generator
-    ) -> list[jnp.ndarray]:
-        indices = rng.integers(0, self.current_len, batch_size)
-        return [jnp.asarray(self.buffer[k][indices]) for k in self.buffer]
-
-    def __len__(self):
-        return self.current_len
 
 
 def mse_action_value_loss(

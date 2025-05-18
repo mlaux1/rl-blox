@@ -1,6 +1,5 @@
 import random
-from collections import deque, namedtuple
-from typing import Tuple
+from collections import OrderedDict, deque, namedtuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -12,7 +11,7 @@ Transition = namedtuple(
 )
 
 
-class ReplayBuffer:
+class ReplayBuffer:  # TODO remove
     def __init__(self, size: int):
         self.buffer = deque(maxlen=size)
 
@@ -28,7 +27,7 @@ class ReplayBuffer:
 
 
 class ReplayBufferJax:
-    buffer: deque[Tuple[ArrayLike, ArrayLike, float, ArrayLike, bool]]
+    buffer: deque[tuple[ArrayLike, ArrayLike, float, ArrayLike, bool]]
 
     def __init__(self, n_samples):
         self.buffer = deque(maxlen=n_samples)
@@ -47,7 +46,7 @@ class ReplayBufferJax:
 
     def sample_batch(
         self, batch_size: int, rng: np.random.Generator
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         indices = rng.integers(0, len(self.buffer), batch_size)
         observations = jnp.vstack([self.buffer[i][0] for i in indices])
         actions = jnp.stack([self.buffer[i][1] for i in indices])
@@ -55,3 +54,44 @@ class ReplayBufferJax:
         next_observations = jnp.vstack([self.buffer[i][3] for i in indices])
         dones = jnp.hstack([self.buffer[i][4] for i in indices])
         return observations, actions, rewards, next_observations, dones
+
+
+class ReplayBuffer:
+    buffer: OrderedDict[str, np.typing.NDArray[float]]
+
+    def __init__(self, buffer_size: int, keys: list[str] | None = None):
+        if keys is None:
+            keys = [
+                "observation",
+                "action",
+                "reward",
+                "next_observation",
+                "termination",
+            ]
+        self.buffer = OrderedDict()
+        for k in keys:
+            self.buffer[k] = np.empty(0, dtype=float)
+        self.buffer_size = buffer_size
+        self.current_len = 0
+        self.insert_idx = 0
+
+    def add_sample(self, **sample):
+        if self.current_len == 0:
+            for k, v in sample.items():
+                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
+                self.buffer[k] = np.empty(
+                    (self.buffer_size,) + np.asarray(v).shape, dtype=float
+                )
+        for k, v in sample.items():
+            self.buffer[k][self.insert_idx] = v
+        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+        self.current_len = min(self.current_len + 1, self.buffer_size)
+
+    def sample_batch(
+        self, batch_size: int, rng: np.random.Generator
+    ) -> list[jnp.ndarray]:
+        indices = rng.integers(0, self.current_len, batch_size)
+        return [jnp.asarray(self.buffer[k][indices]) for k in self.buffer]
+
+    def __len__(self):
+        return self.current_len

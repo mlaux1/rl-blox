@@ -69,7 +69,6 @@ Data Blox
    reinforce.StochasticPolicyBase
    reinforce.GaussianPolicy
    reinforce.SoftmaxPolicy
-   ddpg.ReplayBuffer
    sac.EntropyCoefficient
    sac.EntropyControl
    pets.PETSMPCConfig
@@ -104,6 +103,7 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   replay_buffer.ReplayBuffer
    function_approximator.mlp.MLP
    function_approximator.gaussian_mlp.GaussianMLP
    function_approximator.policy_head.DeterministicTanhPolicy

@@ -7,7 +7,7 @@ from jax.typing import ArrayLike
 from tqdm import tqdm
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.replay_buffer import ReplayBuffer, Transition
+from ..blox.replay_buffer import ReplayBuffer
 
 
 def linear_schedule(
