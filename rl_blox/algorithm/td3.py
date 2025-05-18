@@ -1,6 +1,7 @@
 from collections import namedtuple
 from functools import partial
 
+import chex
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -11,13 +12,13 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import (
     ReplayBuffer,
     ddpg_update_actor,
     mse_action_value_loss,
     sample_actions,
-    soft_target_net_update,
 )
 
 
@@ -428,6 +429,7 @@ def train_td3(
     assert isinstance(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
+    chex.assert_scalar_in(tau, 0.0, 1.0)
 
     env.observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)
