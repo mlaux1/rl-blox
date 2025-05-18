@@ -12,7 +12,17 @@ def mse_action_value_loss(
     q_target_values: jnp.ndarray,
     q: nnx.Module,
 ) -> jnp.ndarray:
-    """Mean squared error loss function for action-value function.
+    r"""Mean squared error loss function for action-value function.
+
+    For a given action-value function :math:`q(o, a)` and target values
+    :math:`R(o, a)`, the loss is defined as
+
+    .. math::
+
+        \mathcal{L}(q)
+        = \frac{1}{2 N} \sum_{i=1}^{N} (q(o_i, a_i) - R(o_i, a_i))^2.
+
+    :math:`R(o, a)` could be the Monte Carlo return.
 
     Parameters
     ----------
@@ -134,6 +144,42 @@ def stochastic_policy_gradient_pseudo_loss(
     """
     logp = policy.log_probability(observation, action)
     chex.assert_equal_shape((weight, logp))
-    return -jnp.mean(
-        weight * logp
-    )  # - to perform gradient ascent with a minimizer
+    # - to perform gradient ascent with a minimizer
+    return -jnp.mean(weight * logp)
+
+
+def deterministic_policy_gradient_loss(
+    q: nnx.Module,
+    observation: jnp.ndarray,
+    policy: nnx.Module,
+) -> jnp.ndarray:
+    r"""Loss function for the deterministic policy gradient.
+
+    .. math::
+
+        \mathcal{L}(\theta)
+        =
+        \frac{1}{N}
+        \sum_{o \in \mathcal{D}}
+        -Q_{\theta}(o, \pi(o))
+
+    Parameters
+    ----------
+    q : nnx.Module
+        Q network.
+
+    observation : array, shape (n_samples, n_observation_features)
+        Batch of observations.
+
+    policy : nnx.Module
+        Deterministic policy :math:`\pi(o) = a` represented by neural network.
+
+    Returns
+    -------
+    loss : float
+        Negative value of the actions selected by the policy for the given
+        observations.
+    """
+    obs_act = jnp.concatenate((observation, policy(observation)), axis=-1)
+    # - to perform gradient ascent with a minimizer
+    return -q(obs_act).mean()

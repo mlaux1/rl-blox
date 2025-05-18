@@ -12,47 +12,13 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.losses import mse_action_value_loss
+from ..blox.losses import (
+    deterministic_policy_gradient_loss,
+    mse_action_value_loss,
+)
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
-
-
-def deterministic_policy_value_loss(
-    q: nnx.Module,
-    observations: jnp.ndarray,
-    policy: nnx.Module,
-) -> jnp.ndarray:
-    r"""Loss function for the deterministic policy of the actor.
-
-    .. math::
-
-        \mathcal{L}(\theta)
-        =
-        \frac{1}{N}
-        \sum_{o \in \mathcal{D}}
-        -Q_{\theta}(o, \pi(o))
-
-    Parameters
-    ----------
-    q : nnx.Module
-        Q network.
-
-    observations : array, shape (n_samples, n_observation_features)
-        Batch of observations.
-
-    policy : nnx.Module
-        Deterministic policy represented by neural network.
-
-    Returns
-    -------
-    loss
-        Negative value of the actions selected by the policy for the given
-        observations.
-    """
-    return -q(
-        jnp.concatenate((observations, policy(observations)), axis=-1)
-    ).mean()
 
 
 @nnx.jit
@@ -190,18 +156,18 @@ def ddpg_update_actor(
     policy: nnx.Module,
     policy_optimizer: nnx.Optimizer,
     q: nnx.Module,
-    observations: jnp.ndarray,
+    observation: jnp.ndarray,
 ) -> float:
     """DDPG actor update.
 
     See also
     --------
-    deterministic_policy_value_loss
+    .blox.losses.deterministic_policy_gradient_loss
         The loss function used during the optimization step.
     """
     actor_loss_value, grads = nnx.value_and_grad(
-        deterministic_policy_value_loss, argnums=2
-    )(q, observations, policy)
+        deterministic_policy_gradient_loss, argnums=2
+    )(q, observation, policy)
     policy_optimizer.update(grads)
     return actor_loss_value
 

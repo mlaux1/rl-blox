@@ -39,7 +39,6 @@ Functional Blox
    reinforce.reinforce_gradient
    actor_critic.actor_critic_policy_gradient
    ddpg.sample_actions
-   ddpg.deterministic_policy_value_loss
    ddpg.ddpg_update_actor
    ddpg.ddpg_update_critic
    ddpg.q_deterministic_bootstrap_estimate
@@ -96,6 +95,7 @@ Functional Blox
    losses.mse_action_value_loss
    losses.mse_value_loss
    losses.stochastic_policy_gradient_pseudo_loss
+   losses.deterministic_policy_gradient_loss
 
 Data Blox
 ---------
