@@ -23,7 +23,7 @@ def mse_action_value_loss(
     q_target_values: jnp.ndarray,
     q: nnx.Module,
 ) -> jnp.ndarray:
-    """Mean squared eror loss function for action-value function.
+    """Mean squared error loss function for action-value function.
 
     Parameters
     ----------
