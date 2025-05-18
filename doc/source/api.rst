@@ -43,7 +43,6 @@ Functional Blox
    ddpg.sample_actions
    ddpg.mse_action_value_loss
    ddpg.deterministic_policy_value_loss
-   ddpg.soft_target_net_update
    ddpg.ddpg_update_actor
    ddpg.ddpg_update_critic
    ddpg.q_deterministic_bootstrap_estimate
@@ -90,6 +89,7 @@ Functional Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   target_net.soft_target_net_update
    cross_entropy_method.cem_sample
    cross_entropy_method.cem_update
    probabilistic_ensemble.gaussian_nll

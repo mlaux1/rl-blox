@@ -1,0 +1,38 @@
+import optax
+from flax import nnx
+
+
+@nnx.jit
+def soft_target_net_update(
+    net: nnx.Module, target_net: nnx.Module, tau: float
+) -> None:
+    r"""Inplace soft update for target network with Polyak averaging.
+
+    The soft update for the target network is supposed to be applied with about
+    the same frequency as the update for the live network.
+
+    Update formula:
+
+    .. math::
+
+        \theta' \leftarrow \tau \theta + (1 - \tau) \theta'
+
+    where :math:`\theta` are the weights of the live network and
+    :math:`\theta'` are the weights of the target network.
+
+    Parameters
+    ----------
+    net : nnx.Module
+        Live network with weights :math:`\theta`.
+
+    target_net : nnx.Module
+        Target network with weights :math:`\theta'`.
+
+    tau : float
+        The step size :math:`\tau`, i.e., the coefficient with which the live
+        network's parameters will be multiplied.
+    """
+    params = nnx.state(net)
+    target_params = nnx.state(target_net)
+    target_params = optax.incremental_update(params, target_params, tau)
+    nnx.update(target_net, target_params)
