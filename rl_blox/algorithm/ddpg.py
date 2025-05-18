@@ -489,6 +489,7 @@ def train_ddpg(
     assert isinstance(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
+    chex.assert_scalar_in(tau, 0.0, 1.0)
 
     env.observation_space.dtype = np.float32
     rb = ReplayBuffer(buffer_size)

@@ -1,5 +1,6 @@
 from collections import namedtuple
 
+import chex
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -389,6 +390,7 @@ def train_sac(
     assert isinstance(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
+    chex.assert_scalar_in(tau, 0.0, 1.0)
 
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
