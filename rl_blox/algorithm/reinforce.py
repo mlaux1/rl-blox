@@ -3,7 +3,6 @@ from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
 
-import chex
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -19,7 +18,7 @@ from ..blox.function_approximator.policy_head import (
     SoftmaxPolicy,
     StochasticPolicyBase,
 )
-from ..blox.losses import mse_value_loss
+from ..blox.losses import mse_value_loss, stochastic_policy_gradient_pseudo_loss
 from ..logging.logger import LoggerBase
 
 
@@ -122,64 +121,6 @@ def discounted_reward_to_go(rewards: list[float], gamma: float) -> np.ndarray:
         accumulated_return += r
         discounted_returns.append(accumulated_return)
     return np.array(list(reversed(discounted_returns)))
-
-
-def policy_gradient_pseudo_loss(
-    observations: jnp.ndarray,
-    actions: jnp.ndarray,
-    weights: jnp.ndarray,
-    policy: nnx.Module,
-) -> jnp.ndarray:
-    r"""Pseudo loss for the policy gradient.
-
-    For a given probabilistic policy network :math:`\pi(a|o)`,
-    observations :math:`o_i`, actions :math:`a_i`, and corresponding weights
-    :math:`w_i`, the pseudo loss is defined as
-
-    .. math::
-
-        \mathcal{L}(\pi)
-        =
-        -\frac{1}{N} \sum_{i=1}^{N} w_i \log \pi(a_i|o_i).
-
-    The calculation of weights depends on the specific algorithm. We take the
-    negative value of the pseudo loss, because we want to perform gradient
-    ascent with the policy gradient, but we use a gradient descent optimizer.
-
-    Parameters
-    ----------
-    observations : array, shape (n_samples, n_observation_features)
-        Observations.
-
-    actions : array, shape (n_samples, n_action_features)
-        Actions.
-
-    weights : array, shape (n_samples,)
-        Weights for the policy gradient.
-
-    policy : nnx.Module
-        Policy :math:`\pi(a|o)`. We have to be able to compute
-        :math:`\log \pi(a|o)` with
-        `policy.log_probability(observations, actions)`.
-
-    Returns
-    -------
-    loss : float
-        Pseudo loss for the policy gradient.
-
-    See also
-    --------
-    reinforce_gradient
-        Uses this function to calculate the REINFORCE policy gradient.
-
-    .actor_critic.actor_critic_policy_gradient
-        Uses this function to calculate the actor-critic policy gradient.
-    """
-    logp = policy.log_probability(observations, actions)
-    chex.assert_equal_shape((weights, logp))
-    return -jnp.mean(
-        weights * logp
-    )  # - to perform gradient ascent with a minimizer
 
 
 def reinforce_gradient(
@@ -339,9 +280,9 @@ def reinforce_gradient(
     grad
         REINFORCE policy gradient.
 
-    See also
+    See Also
     --------
-    policy_gradient_pseudo_loss
+    .blox.losses.stochastic_policy_gradient_pseudo_loss
         The pseudo loss that is used to compute the REINFORCE gradient. As
         weights for the pseudo loss we use R(o), the Monte Carlo return for the
         observation o. If a value function is provided, we use the difference
@@ -359,9 +300,9 @@ def reinforce_gradient(
     if gamma_discount is not None:
         weights *= gamma_discount
 
-    return nnx.value_and_grad(policy_gradient_pseudo_loss, argnums=3)(
-        observations, actions, weights, policy
-    )
+    return nnx.value_and_grad(
+        stochastic_policy_gradient_pseudo_loss, argnums=3
+    )(observations, actions, weights, policy)
 
 
 def create_policy_gradient_continuous_state(

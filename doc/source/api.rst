@@ -37,7 +37,6 @@ Functional Blox
    dqn.greedy_policy
    reinforce.discounted_reward_to_go
    reinforce.reinforce_gradient
-   reinforce.policy_gradient_pseudo_loss
    actor_critic.actor_critic_policy_gradient
    ddpg.sample_actions
    ddpg.mse_action_value_loss
@@ -96,6 +95,7 @@ Functional Blox
    probabilistic_ensemble.train_ensemble
    probabilistic_ensemble.restore_checkpoint
    losses.mse_value_loss
+   losses.stochastic_policy_gradient_pseudo_loss
 
 Data Blox
 ---------
