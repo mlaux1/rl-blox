@@ -1,3 +1,5 @@
+from functools import partial
+
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -11,7 +13,6 @@ from ..logging.logger import LoggerBase
 from .reinforce import sample_trajectories, train_value_function
 
 
-@nnx.jit
 def actor_critic_policy_gradient(
     policy: StochasticPolicyBase,
     value_function: nnx.Module,
@@ -187,6 +188,7 @@ def train_ac(
     progress.close()
 
 
+@partial(nnx.jit, static_argnames=["policy_gradient_steps", "gamma"])
 def train_policy_actor_critic(
     policy,
     policy_optimizer,
