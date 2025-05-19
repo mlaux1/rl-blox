@@ -5,10 +5,10 @@ import math
 import jax
 import jax.numpy as jnp
 import numpy as np
+import tqdm
 from flax import nnx
 from jax.typing import ArrayLike
 from scipy.spatial.distance import pdist
-import tqdm
 
 from ..logging.logger import LoggerBase
 
