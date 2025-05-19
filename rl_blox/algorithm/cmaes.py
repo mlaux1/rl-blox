@@ -437,6 +437,8 @@ class CMAES:
 def flat_params(net: nnx.Module):
     """Return parameters of a neural net as flat parameter vector.
 
+    Only variables of the type ``nnx.Param`` will be extracted.
+
     Parameters
     ----------
     net : nnx.Module
@@ -456,6 +458,8 @@ def flat_params(net: nnx.Module):
 @nnx.jit
 def set_params(net: nnx.Module, params: jnp.ndarray):
     """Set parameters of a neural net (inplace) from a flat parameter vector.
+
+    Only variables of the type ``nnx.Param`` will be updated.
 
     Parameters
     ----------
