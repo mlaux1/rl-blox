@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 
-from rl_blox.algorithms.model_free.cmaes import MLPPolicy, train_cmaes
+from rl_blox.algorithm.cmaes import MLPPolicy, train_cmaes
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
