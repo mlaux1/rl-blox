@@ -124,28 +124,20 @@ class CMAES:
         self.key = key
         self.verbose = verbose
 
-    def init(self, n_params):
-        """Initialize the behavior search.
-
-        Parameters
-        ----------
-        n_params : int
-            dimension of the parameter vector
-        """
         if self.key is None:
             self.key = jax.random.key(0)
 
-        self.n_params = n_params
+        self.n_params = len(self.initial_params)
         self.it = 0
         self.eigen_decomp_updated = 0
 
         if self.initial_params is None:
-            self.initial_params = jnp.zeros(n_params)
+            self.initial_params = jnp.zeros(self.n_params)
         else:
             self.initial_params = jnp.asarray(self.initial_params).copy()
-        if n_params != len(self.initial_params):
+        if self.n_params != len(self.initial_params):
             raise ValueError(
-                f"Number of dimensions ({n_params}) does not match "
+                f"Number of dimensions ({self.n_params}) does not match "
                 f"number of initial parameters ({len(self.initial_params)})."
             )
 
@@ -576,7 +568,6 @@ def train_cmaes(
         key=key,
         verbose=0,
     )
-    opt.init(len(init_params))
 
     @nnx.jit
     def policy_action(policy, observation):
