@@ -460,41 +460,6 @@ class CMAES:
             return self.best_fitness
 
 
-class PolicyScaler:
-    """Scales the output of a policy network."""
-
-    def __init__(self, net, action_scale, action_bias):
-        self.net = net
-        self.action_scale = action_scale
-        self.action_bias = action_bias
-
-    def __call__(self, x):
-        return self.net(x) * self.action_scale + self.action_bias
-
-
-class MLPPolicy(nnx.Module):
-    def __init__(
-        self,
-        env,
-        hidden_nodes: list[int],
-        rngs: nnx.Rngs,
-    ):
-        self.layers = []
-        if len(env.observation_space.shape) > 1:
-            raise ValueError("TODO update MLP to accept nd inputs")
-        n_in = env.observation_space.shape[0]
-        for n_out in hidden_nodes:
-            self.layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
-            n_in = n_out
-        n_out = env.action_space.shape[0]
-        self.output_layer = nnx.Linear(n_in, n_out, rngs=rngs)
-
-    def __call__(self, x):
-        for layer in self.layers:
-            x = nnx.tanh(layer(x))
-        return nnx.tanh(self.output_layer(x))  # range [-1, 1]
-
-
 def flat_params(net):
     _, state = nnx.split(net)
     leaves = jax.tree_util.tree_leaves(state)
@@ -595,13 +560,7 @@ def train_cmaes(
         in Evolution Strategies. In: Evolutionary Computation, 9(2), pp.
         159-195. https://www.lri.fr/~hansen/cmaartic.pdf
     """
-    policy = PolicyScaler(
-        policy,
-        0.5 * (env.action_space.high - env.action_space.low),
-        0.5 * (env.action_space.high + env.action_space.low),
-    )
-
-    init_params = flat_params(policy.net)
+    init_params = flat_params(policy)
     key = jax.random.key(seed)
     opt = CMAES(
         initial_params=init_params,
@@ -618,7 +577,7 @@ def train_cmaes(
     obs, _ = env.reset(seed=seed)
 
     for ep in range(total_episodes):
-        policy.net = set_params(policy.net, opt.get_next_parameters())
+        policy = set_params(policy, opt.get_next_parameters())
         ret = 0.0
         done = False
         while not done:  # episode
@@ -638,5 +597,5 @@ def train_cmaes(
         opt.set_evaluation_feedback(ret)
 
     print(f"[CMA-ES] {opt.best_fitness=}")
-    policy.net = set_params(policy.net, opt.get_best_parameters(method="mean"))
+    policy = set_params(policy, opt.get_best_parameters(method="mean"))
     return policy
