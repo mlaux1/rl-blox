@@ -1,13 +1,10 @@
-from functools import partial
-
 import gymnasium as gym
 import jax
 from gymnasium.wrappers import RecordEpisodeStatistics
 
 from rl_blox.algorithm.sarsa import train_sarsa
-from rl_blox.blox.value_policy import get_epsilon_greedy_action, make_q_table
+from rl_blox.blox.value_policy import epsilon_greedy_policy, make_q_table
 from rl_blox.logging.logger import AIMLogger
-from rl_blox.util.experiment_helper import generate_rollout
 
 NUM_TIMESTEPS = 200_00
 LEARNING_RATE = 0.1
@@ -34,17 +31,19 @@ q_table = train_sarsa(
 
 env.close()
 
+# Show the final policy
+eval_env = gym.make(ENV_NAME, render_mode="human")
+obs, _ = eval_env.reset()
+
+key = jax.random.key(42)
+
+while True:
+    action = int(epsilon_greedy_policy(q_table, obs, EPSILON, key))
+    next_obs, reward, terminated, truncated, info = eval_env.step(action)
+
+    if terminated or truncated:
+        obs, _ = eval_env.reset()
+    else:
+        obs = next_obs
+
 logger.run.close()
-
-# create and run the final policy
-policy = partial(
-    get_epsilon_greedy_action,
-    q_table=q_table,
-    epsilon=0.2,
-    key=jax.random.key(42),
-)
-
-
-test_env = gym.make(ENV_NAME, render_mode="human")
-generate_rollout(test_env, policy)
-test_env.close()

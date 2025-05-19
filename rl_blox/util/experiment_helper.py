@@ -1,11 +1,15 @@
 import gymnasium as gym
-import numpy as np
-from numpy.typing import ArrayLike
+import jax
+import jax.numpy as jnp
 
 
 def generate_rollout(
-    env: gym.Env, policy
-) -> tuple[ArrayLike, ArrayLike, ArrayLike]:
+    env: gym.Env,
+    policy,
+    seed: int = 42,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    key = jax.random.key(seed)
+
     observation, _ = env.reset()
     terminated = False
     truncated = False
@@ -17,13 +21,13 @@ def generate_rollout(
     obs.append(observation)
 
     while not terminated or truncated:
-        action = policy(observation=observation)
-        observation, reward, terminated, truncated, info = env.step(
-            int(action)
-        )  # TODO: adapt to non-int actions
+        key, subkey = jax.random.split(key)
+
+        action = policy(observation=observation, key=subkey)
+        observation, reward, terminated, truncated, info = env.step(int(action))
 
         obs.append(observation)
         actions.append(action)
         rewards.append(reward)
 
-    return np.array(obs), np.array(actions), np.array(rewards)
+    return jnp.array(obs), jnp.array(actions), jnp.array(rewards)

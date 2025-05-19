@@ -3,7 +3,7 @@ import jax
 import tqdm
 from jax.typing import ArrayLike
 
-from ..blox.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ..blox.value_policy import epsilon_greedy_policy, greedy_policy
 from ..logging.logger import LoggerBase
 from ..util.error_functions import td_error
 
@@ -69,9 +69,7 @@ def train_double_q_learning(
         key, subkey1, subkey2, subkey3 = jax.random.split(key, 4)
 
         q_table = q_table1 + q_table2
-        action = get_epsilon_greedy_action(
-            subkey1, q_table, observation, epsilon
-        )
+        action = epsilon_greedy_policy(q_table, observation, epsilon, subkey1)
         steps_per_episode += 1
         next_observation, reward, terminated, truncated, info = env.step(
             int(action)
@@ -131,7 +129,7 @@ def _dql_update(
     learning_rate,
     terminated,
 ):
-    next_action = get_greedy_action(key, q_table1, observation)
+    next_action = greedy_policy(q_table1, observation)
     val = q_table1[observation, action]
     next_val = (1 - terminated) * q_table2[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)
