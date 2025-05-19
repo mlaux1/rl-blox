@@ -25,7 +25,11 @@ def train_monte_carlo(
     if n_visits is None:
         n_visits = jnp.zeros_like(q_table)
 
-    obs, acts, rews = [], [], []
+    obs_arr = jnp.empty((total_timesteps,), dtype=jnp.int32)
+    act_arr = jnp.empty((total_timesteps,), dtype=jnp.int32)
+    rew_arr = jnp.empty((total_timesteps,), dtype=jnp.float32)
+
+    start_t = 0
 
     for i in tqdm.trange(total_timesteps):
         key, action_key = jax.random.split(key)
@@ -33,26 +37,27 @@ def train_monte_carlo(
             action_key, q_table, observation, epsilon
         )
 
-        obs.append(observation)
-        acts.append(int(action))
+        obs_arr = obs_arr.at[i].set(int(observation))
         observation, reward, terminated, truncated, info = env.step(int(action))
 
-        rews.append(reward)
+        act_arr = act_arr.at[i].set(int(action))
+        rew_arr = rew_arr.at[i].set(float(reward))
 
         if terminated or truncated:
             q_table, n_visits = update(
                 q_table,
                 n_visits,
-                jnp.array(rews),
-                jnp.array(obs),
-                jnp.array(acts),
+                rew_arr[start_t : i + 1],
+                obs_arr[start_t : i + 1],
+                act_arr[start_t : i + 1],
                 gamma,
             )
             observation, _ = env.reset()
-            obs, acts, rews = [], [], []
+            start_t = i + 1
     return q_table, n_visits
 
 
+@jax.jit
 def update(
     q_table: ArrayLike,
     n_visits: ArrayLike,
@@ -61,12 +66,15 @@ def update(
     actions: jnp.ndarray,
     gamma: float,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    ep_return = 0
+    ep_len = rewards.shape[0]
 
-    for i in range(len(rewards) - 1, -1, -1):
-        obs = observations[i]
-        act = actions[i]
-        rew = rewards[i]
+    def _update_body(i, state):
+        q_table, n_visits, ep_return = state
+        idx = ep_len - 1 - i
+
+        obs = observations[idx]
+        act = actions[idx]
+        rew = rewards[idx]
 
         ep_return = rew + gamma * ep_return
         n_visits = n_visits.at[obs, act].add(1)
@@ -74,5 +82,11 @@ def update(
         q_table = q_table.at[obs, act].add(
             1.0 / n_visits[obs, act] * pred_error
         )
+
+        return (q_table, n_visits, ep_return)
+
+    q_table, n_visits, _ = jax.lax.fori_loop(
+        0, ep_len, _update_body, (q_table, n_visits, 0.0)
+    )
 
     return q_table, n_visits
