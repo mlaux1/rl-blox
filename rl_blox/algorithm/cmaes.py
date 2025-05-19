@@ -311,7 +311,7 @@ def set_evaluation_feedback(config, state, population, feedback: ArrayLike):
     state.it += 1
 
 
-def update_search_distribution(config, state, population) -> Population:
+def update_search_distribution(config, state, population):
     """Update search distribution of CMA-ES.
 
     Parameters
@@ -410,8 +410,6 @@ def update_search_distribution(config, state, population) -> Population:
     if state.it - state.eigen_decomp_updated > config.eigen_update_freq:
         state.invsqrtC = inv_sqrt(state.cov)[0]
         state.eigen_decomp_updated = state.it
-
-    return Population.create(samples=sample_population(config, state))
 
 
 def is_cmaes_finished(
@@ -735,13 +733,15 @@ def train_cmaes(
             stopped = is_cmaes_finished(config, state, population, logger)
             if stopped:
                 break
-            population = update_search_distribution(config, state, population)
+            update_search_distribution(config, state, population)
+            population = Population.create(
+                samples=sample_population(config, state)
+            )
 
         if logger is not None:
             logger.stop_episode(step_counter)
             logger.start_new_episode()
             logger.record_stat("return", ret)
-            logger.record_stat("variance", state.var)
             logger.record_epoch("policy", policy)
 
         step_counter = 0
