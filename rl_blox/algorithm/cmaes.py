@@ -1,16 +1,205 @@
 # Author: Alexander Fabisch <afabisch@informatik.uni-bremen.de>
 
+import dataclasses
 import math
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import tqdm
-from flax import nnx
+from flax import nnx, struct
 from jax.typing import ArrayLike
 from scipy.spatial.distance import pdist
 
 from ..logging.logger import LoggerBase
+
+
+@struct.dataclass
+class CMAESConfig:
+    """Configuration of CMA-ES."""
+
+    active: bool
+    """Active CMA-ES with negative weighted covariance matrix update."""
+    bounds: jnp.ndarray | None
+    """Upper and lower bounds for each parameter."""
+    maximize: bool
+    """Maximize return or minimize cost?"""
+    min_variance: float
+    """Minimum variance before restart."""
+    min_fitness_dist: float
+    """Minimum distance between fitness values before restart."""
+    max_condition: float
+    """Maximum condition of covariance matrix."""
+    n_samples_per_update: int
+    """Number of samples from the search distribution (population size)."""
+    n_params: int
+    """Dimensionality of the search space."""
+    mu: int
+    """Number of samples to update the search distribution."""
+    weights: jnp.ndarray
+    """Sample weights for mean recombination."""
+    mueff: float
+    """Effective sample size for update."""
+    cc: float
+    """Time constant for cumulation of the covariance."""
+    cs: float
+    """Time constant for cumulation for sigma control."""
+    c1: float
+    """Learning rate for rank-one update."""
+    cmu: float
+    """Learning rate for rank-mu update."""
+    damps: float
+    """Damping for sigma."""
+    ps_update_weight: float
+    """Update weight for evolution path of sigma."""
+    hsig_threshold: float
+    """Is used to update the covariance evolution path."""
+    eigen_update_freq: int
+    """Update frequency for inverse square root of covariance matrix."""
+    alpha_old: float
+    """Constant for rank-mu update in aCMA-ES."""
+    neg_cmu: float
+    """Learning rate for active rank-mu update."""
+
+    @classmethod
+    def create(
+        cls,
+        active: bool,
+        bounds: jnp.ndarray | None,
+        maximize: bool,
+        min_variance: float,
+        min_fitness_dist: float,
+        max_condition: float,
+        n_params: int,
+        n_samples_per_update: int,
+    ):
+        if bounds is not None:
+            bounds = jnp.asarray(bounds)
+
+        if n_samples_per_update is None:
+            n_samples_per_update = 4 + int(3 * math.log(n_params))
+
+        mu = n_samples_per_update / 2.0
+        weights = math.log(mu + 0.5) - jnp.log1p(jnp.arange(int(mu)))
+        mu = int(mu)
+        weights = weights / jnp.sum(weights)
+        mueff = 1.0 / float(jnp.sum(weights**2))
+
+        cc = (4 + mueff / n_params) / (n_params + 4 + 2 * mueff / n_params)
+        cs = (mueff + 2) / (n_params + mueff + 5)
+        c1 = 2 / ((n_params + 1.3) ** 2 + mueff)
+        cmu = min(1 - c1, 2 * mueff - 2 + 1.0 / mueff) / (
+            (n_params + 2) ** 2 + mueff
+        )
+        damps = (
+            1 + 2 * max(0.0, math.sqrt((mueff - 1) / (n_params + 1)) - 1) + cs
+        )
+
+        ps_update_weight = math.sqrt(cs * (2 - cs) * mueff)
+        hsig_threshold = 2 + 4.0 / (n_params + 1)
+        eigen_update_freq = int(
+            n_samples_per_update / ((c1 + cmu) * n_params * 10)
+        )
+
+        alpha_old = 0.5
+        neg_cmu = (
+            (1.0 - cmu) * 0.25 * mueff / ((n_params + 2) ** 1.5 + 2.0 * mueff)
+        )
+
+        return cls(
+            active=active,
+            bounds=bounds,
+            maximize=maximize,
+            min_variance=min_variance,
+            min_fitness_dist=min_fitness_dist,
+            max_condition=max_condition,
+            n_samples_per_update=n_samples_per_update,
+            n_params=n_params,
+            mu=mu,
+            weights=weights,
+            mueff=mueff,
+            cc=cc,
+            cs=cs,
+            c1=c1,
+            cmu=cmu,
+            damps=damps,
+            ps_update_weight=ps_update_weight,
+            hsig_threshold=hsig_threshold,
+            eigen_update_freq=eigen_update_freq,
+            alpha_old=alpha_old,
+            neg_cmu=neg_cmu,
+        )
+
+
+@dataclasses.dataclass(frozen=False)
+class CMAESState:
+    """State of CMA-ES."""
+
+    key: jnp.ndarray
+    """Key for PRNG."""
+    it: int
+    """Current iteration."""
+    eigen_decomp_updated: int
+    """Iteration when inverse square root of covariance matrix was updated."""
+    mean: jnp.ndarray
+    """Mean of search distribution."""
+    last_mean: jnp.ndarray
+    """Last mean of search distribution."""
+    var: float
+    """Variance of search distribution."""
+    cov: jnp.ndarray
+    """Covariance of search distribution."""
+    invsqrtC: jnp.ndarray
+    """Inverse square root of covariance."""
+    best_fitness: float
+    """Best fitness obtained so far."""
+    best_fitness_it: int
+    """Iteration of best obtained fitness."""
+    best_params: jnp.ndarray
+    """Best parameters obtained so far."""
+    pc: jnp.ndarray
+    """Evolution path for covariance."""
+    ps: jnp.ndarray
+    """Evolution path for sigma"""
+
+    @classmethod
+    def create(
+        cls,
+        key: jnp.ndarray | None,
+        initial_params: jnp.ndarray,
+        variance: float,
+        covariance: jnp.ndarray | None,
+    ):
+        if key is None:
+            key = jax.random.key(0)
+
+        mean = jnp.asarray(initial_params).copy()
+
+        if covariance is None:
+            cov = jnp.eye(len(mean))
+        else:
+            cov = jnp.asarray(covariance).copy()
+            if cov.ndim == 1:
+                cov = jnp.diag(cov)
+
+        pc = jnp.zeros(len(mean))
+        ps = jnp.zeros(len(mean))
+
+        return cls(
+            key=key,
+            it=0,
+            eigen_decomp_updated=0,
+            mean=mean,
+            last_mean=jnp.copy(mean),
+            var=variance,
+            cov=cov,
+            invsqrtC=inv_sqrt(cov)[0],
+            best_fitness=jnp.inf,
+            best_fitness_it=0,
+            best_params=jnp.copy(mean),
+            pc=pc,
+            ps=ps,
+        )
 
 
 def inv_sqrt(cov):
@@ -61,14 +250,8 @@ class CMAES:
     max_condition : float optional (default: 1e7)
         Maximum condition of covariance matrix
 
-    log_to_file: boolean or string, optional (default: False)
-        Log results to given file, it will be located in the $BL_LOG_PATH
-
-    log_to_stdout: boolean, optional (default: False)
-        Log to standard output
-
-    random_state : int or RandomState, optional (default: None)
-        Seed for the random number generator or RandomState object.
+    key : jnp.ndarray, optional
+        Key for PRNG.
 
     logger : LoggerBase, optional
         Logger for experiment tracking.
@@ -76,6 +259,11 @@ class CMAES:
     verbose : int, optional (default: 0)
         Verbosity level.
     """
+
+    config: CMAESConfig
+    state: CMAESState
+    samples: jnp.ndarray
+    fitness: list[float]
 
     def __init__(
         self,
@@ -93,127 +281,45 @@ class CMAES:
         logger: LoggerBase | None = None,
         verbose: int = 0,
     ):
-        self.initial_params = initial_params
-        self.variance = variance
-        self.covariance = covariance
-        self.n_samples_per_update = n_samples_per_update
-        self.active = active
-        self.bounds = bounds
-        self.maximize = maximize
-        self.min_variance = min_variance
-        self.min_fitness_dist = min_fitness_dist
-        self.max_condition = max_condition
-        self.key = key
         self.logger = logger
         self.verbose = verbose
 
-        if self.key is None:
-            self.key = jax.random.key(0)
+        self.config = CMAESConfig.create(
+            active=active,
+            bounds=bounds,
+            maximize=maximize,
+            min_variance=min_variance,
+            min_fitness_dist=min_fitness_dist,
+            max_condition=max_condition,
+            n_params=len(initial_params),
+            n_samples_per_update=n_samples_per_update,
+        )
+        if verbose:
+            print(f"[CMA-ES] {self.config.n_samples_per_update=}")
+        self.state = CMAESState.create(
+            key=key,
+            initial_params=initial_params,
+            covariance=covariance,
+            variance=variance,
+        )
 
-        self.n_params = len(self.initial_params)
-        self.it = 0
-        self.eigen_decomp_updated = 0
-
-        if self.initial_params is None:
-            self.initial_params = jnp.zeros(self.n_params)
-        else:
-            self.initial_params = jnp.asarray(self.initial_params).copy()
-        if self.n_params != len(self.initial_params):
-            raise ValueError(
-                f"Number of dimensions ({self.n_params}) does not match "
-                f"number of initial parameters ({len(self.initial_params)})."
-            )
-
-        if self.covariance is None:
-            self.covariance = jnp.eye(self.n_params)
-        else:
-            self.covariance = jnp.asarray(self.covariance).copy()
-        if self.covariance.ndim == 1:
-            self.covariance = jnp.diag(self.covariance)
-
-        self.best_fitness = jnp.inf
-        self.best_fitness_it = self.it
-        self.best_params = self.initial_params.copy()
-
-        self.var = self.variance
-
-        if self.n_samples_per_update is None:
-            self.n_samples_per_update = 4 + int(3 * math.log(self.n_params))
-            if self.verbose:
-                print(f"[CMA-ES] {self.n_samples_per_update=}")
-
-        if self.bounds is not None:
-            self.bounds = jnp.asarray(self.bounds)
-
-        self.mean: jnp.ndarray = self.initial_params.copy()
-        self.cov: jnp.ndarray = self.covariance.copy()
-
-        self.samples: jnp.ndarray = self._sample(self.n_samples_per_update)
+        self.samples: jnp.ndarray = self._sample(
+            self.config.n_samples_per_update
+        )
         self.fitness: list[float] = []
 
-        # Sample weights for mean recombination
-        self.mu: float = self.n_samples_per_update / 2.0
-        self.weights: jnp.ndarray = math.log(self.mu + 0.5) - jnp.log1p(
-            jnp.arange(int(self.mu))
-        )
-        self.mu: int = int(self.mu)
-        self.weights: jnp.ndarray = self.weights / jnp.sum(self.weights)
-        self.mueff = 1.0 / float(jnp.sum(self.weights**2))
-
-        # Time constant for cumulation of the covariance
-        self.cc: float = (4 + self.mueff / self.n_params) / (
-            self.n_params + 4 + 2 * self.mueff / self.n_params
-        )
-        # Time constant for cumulation for sigma control
-        self.cs: float = (self.mueff + 2) / (self.n_params + self.mueff + 5)
-        # Learning rate for rank-one update
-        self.c1: float = 2 / ((self.n_params + 1.3) ** 2 + self.mueff)
-        # Learning rate for rank-mu update
-        self.cmu: float = min(
-            1 - self.c1, 2 * self.mueff - 2 + 1.0 / self.mueff
-        ) / ((self.n_params + 2) ** 2 + self.mueff)
-        # Damping for sigma
-        self.damps: float = (
-            1
-            + 2
-            * max(0.0, math.sqrt((self.mueff - 1) / (self.n_params + 1)) - 1)
-            + self.cs
-        )
-
-        # Misc constants
-        self.ps_update_weight: float = math.sqrt(
-            self.cs * (2 - self.cs) * self.mueff
-        )
-        self.hsig_threshold: float = 2 + 4.0 / (self.n_params + 1)
-        self.eigen_update_freq: int = int(
-            self.n_samples_per_update
-            / ((self.c1 + self.cmu) * self.n_params * 10)
-        )
-
-        # Evolution path for covariance
-        self.pc: jnp.ndarray = jnp.zeros(self.n_params)
-        # Evolution path for sigma
-        self.ps: jnp.ndarray = jnp.zeros(self.n_params)
-
-        if self.active:
-            self.alpha_old: float = 0.5
-            self.neg_cmu: float = (
-                (1.0 - self.cmu)
-                * 0.25
-                * self.mueff
-                / ((self.n_params + 2) ** 1.5 + 2.0 * self.mueff)
-            )
-
-        self.invsqrtC: jnp.ndarray = inv_sqrt(self.cov)[0]
-        self.eigen_decomp_updated: int = self.it
-
     def _sample(self, n_samples):
-        self.key, sampling_key = jax.random.split(self.key, 2)
+        self.state.key, sampling_key = jax.random.split(self.state.key, 2)
         samples = jax.random.multivariate_normal(
-            sampling_key, self.mean, self.var * self.cov, (n_samples,)
+            sampling_key,
+            self.state.mean,
+            self.state.var * self.state.cov,
+            (n_samples,),
         )
-        if self.bounds is not None:
-            samples = jnp.clip(samples, self.bounds[:, 0], self.bounds[:, 1])
+        if self.config.bounds is not None:
+            samples = jnp.clip(
+                samples, self.config.bounds[:, 0], self.config.bounds[:, 1]
+            )
         return samples
 
     def get_next_parameters(self):
@@ -224,7 +330,7 @@ class CMAES:
         params : array, shape (n_params,)
             Parameter vector
         """
-        k = self.it % self.n_samples_per_update
+        k = self.state.it % self.config.n_samples_per_update
         return self.samples[k]
 
     def set_evaluation_feedback(self, feedback: ArrayLike):
@@ -235,60 +341,64 @@ class CMAES:
         feedback : list of float
             feedbacks for each step or for the episode, depends on the problem
         """
-        k = self.it % self.n_samples_per_update
+        k = self.state.it % self.config.n_samples_per_update
         fitness_k = float(jnp.sum(feedback))
-        if self.maximize:
+        if self.config.maximize:
             fitness_k = -fitness_k
 
         self.fitness.append(fitness_k)
 
-        if fitness_k <= self.best_fitness:
-            self.best_fitness = fitness_k
-            self.best_fitness_it = self.it
-            self.best_params = self.samples[k]
+        if fitness_k <= self.state.best_fitness:
+            self.state.best_fitness = fitness_k
+            self.state.best_fitness_it = self.state.it
+            self.state.best_params = self.samples[k]
 
-        self.it += 1
+        self.state.it += 1
 
         if self.logger is not None:
-            self.logger.record_stat("variance", self.var)
+            self.logger.record_stat("variance", self.state.var)
 
-        if self.it % self.n_samples_per_update == 0:
-            self._update(self.samples, jnp.asarray(self.fitness), self.it)
+        if self.state.it % self.config.n_samples_per_update == 0:
+            self._update(self.samples, jnp.asarray(self.fitness), self.state.it)
             self.fitness = []
 
     def _update(self, samples, fitness, it):
         # 1) Update sample distribution mean
 
-        self.last_mean = self.mean
+        self.state.last_mean = self.state.mean
         ranking = jnp.argsort(fitness, axis=0)
-        update_samples = samples[ranking[: self.mu]]
-        self.mean = jnp.sum(
-            self.weights[:, jnp.newaxis] * update_samples, axis=0
+        update_samples = samples[ranking[: self.config.mu]]
+        self.state.mean = jnp.sum(
+            self.config.weights[:, jnp.newaxis] * update_samples, axis=0
         )
 
-        mean_diff = self.mean - self.last_mean
-        sigma = jnp.sqrt(self.var)
+        mean_diff = self.state.mean - self.state.last_mean
+        sigma = jnp.sqrt(self.state.var)
 
         # 2) Cumulation: update evolution paths
 
         # Isotropic (step size) evolution path
-        self.ps += (
-            -self.cs * self.ps
-            + self.ps_update_weight / sigma * self.invsqrtC.dot(mean_diff)
+        self.state.ps += (
+            -self.config.cs * self.state.ps
+            + self.config.ps_update_weight
+            / sigma
+            * self.state.invsqrtC.dot(mean_diff)
         )
         # Anisotropic (covariance) evolution path
-        ps_norm_2 = jnp.linalg.norm(self.ps) ** 2  # Temporary constant
-        generation = it / self.n_samples_per_update
+        ps_norm_2 = jnp.linalg.norm(self.state.ps) ** 2  # Temporary constant
+        generation = it / self.config.n_samples_per_update
         hsig = int(
             ps_norm_2
-            / self.n_params
-            / jnp.sqrt(1 - (1 - self.cs) ** (2 * generation))
-            < self.hsig_threshold
+            / self.config.n_params
+            / jnp.sqrt(1 - (1 - self.config.cs) ** (2 * generation))
+            < self.config.hsig_threshold
         )
-        self.pc *= 1 - self.cc
-        self.pc += (
+        self.state.pc *= 1 - self.config.cc
+        self.state.pc += (
             hsig
-            * jnp.sqrt(self.cc * (2 - self.cc) * self.mueff)
+            * jnp.sqrt(
+                self.config.cc * (2 - self.config.cc) * self.config.mueff
+            )
             * mean_diff
             / sigma
         )
@@ -296,51 +406,61 @@ class CMAES:
         # 3) Update sample distribution covariance
 
         # Rank-1 update
-        rank_one_update = jnp.outer(self.pc, self.pc)
+        rank_one_update = jnp.outer(self.state.pc, self.state.pc)
 
         # Rank-mu update
-        noise = (update_samples - self.last_mean) / sigma
-        rank_mu_update = noise.T.dot(jnp.diag(self.weights)).dot(noise)
+        noise = (update_samples - self.state.last_mean) / sigma
+        rank_mu_update = noise.T.dot(jnp.diag(self.config.weights)).dot(noise)
 
         # Correct variance loss by hsig
-        c1a = self.c1 * (1 - (1 - hsig) * self.cc * (2.0 - self.cc))
+        c1a = self.config.c1 * (
+            1 - (1 - hsig) * self.config.cc * (2.0 - self.config.cc)
+        )
 
-        if self.active:
-            neg_update = samples[ranking[::-1][: self.mu]]
-            neg_update -= self.last_mean
+        if self.config.active:
+            neg_update = samples[ranking[::-1][: self.config.mu]]
+            neg_update -= self.state.last_mean
             neg_update /= sigma
-            neg_rank_mu_update = neg_update.T.dot(jnp.diag(self.weights)).dot(
-                neg_update
-            )
+            neg_rank_mu_update = neg_update.T.dot(
+                jnp.diag(self.config.weights)
+            ).dot(neg_update)
 
-            self.cov *= 1.0 - c1a - self.cmu + self.neg_cmu * self.alpha_old
-            self.cov += rank_one_update * self.c1
-            self.cov += rank_mu_update * (
-                self.cmu + self.neg_cmu * (1.0 - self.alpha_old)
+            self.state.cov *= (
+                1.0
+                - c1a
+                - self.config.cmu
+                + self.config.neg_cmu * self.config.alpha_old
             )
-            self.cov -= neg_rank_mu_update * self.neg_cmu
+            self.state.cov += rank_one_update * self.config.c1
+            self.state.cov += rank_mu_update * (
+                self.config.cmu
+                + self.config.neg_cmu * (1.0 - self.config.alpha_old)
+            )
+            self.state.cov -= neg_rank_mu_update * self.config.neg_cmu
         else:
-            self.cov *= 1.0 - c1a - self.cmu
-            self.cov += rank_one_update * self.c1
-            self.cov += rank_mu_update * self.cmu
+            self.state.cov *= 1.0 - c1a - self.config.cmu
+            self.state.cov += rank_one_update * self.config.c1
+            self.state.cov += rank_mu_update * self.config.cmu
 
         # NOTE here is a bug: it should be cs / (2 * damps), however, that
         #      breaks unit tests and does not improve results
-        log_step_size_update = (self.cs / self.damps) * (
-            ps_norm_2 / self.n_params - 1
+        log_step_size_update = (self.config.cs / self.config.damps) * (
+            ps_norm_2 / self.config.n_params - 1
         )
         # NOTE some implementations of CMA-ES use the denominator
-        # np.sqrt(self.n_params) * (1.0 - 1.0 / (4 * self.n_params) +
-        #                           1.0 / (21 * self.n_params ** 2))
-        # instead of self.n_params, in this case cs / damps is correct
+        # np.sqrt(n_params) * (1.0 - 1.0 / (4 * n_params) +
+        #                           1.0 / (21 * n_params ** 2))
+        # instead of n_params, in this case cs / damps is correct
         # Adapt step size with factor <= exp(0.6)
-        self.var = self.var * jnp.exp(min((0.6, log_step_size_update))) ** 2
+        self.state.var = (
+            self.state.var * jnp.exp(min((0.6, log_step_size_update))) ** 2
+        )
 
-        if it - self.eigen_decomp_updated > self.eigen_update_freq:
-            self.invsqrtC = inv_sqrt(self.cov)[0]
-            self.eigen_decomp_updated = self.it
+        if it - self.state.eigen_decomp_updated > self.config.eigen_update_freq:
+            self.state.invsqrtC = inv_sqrt(self.state.cov)[0]
+            self.state.eigen_decomp_updated = self.state.it
 
-        self.samples = self._sample(self.n_samples_per_update)
+        self.samples = self._sample(self.config.n_samples_per_update)
 
     def is_behavior_learning_done(self):
         """Check if the optimization is finished.
@@ -350,7 +470,7 @@ class CMAES:
         finished : bool
             Is the learning of a behavior finished?
         """
-        if self.it <= self.n_samples_per_update:
+        if self.state.it <= self.config.n_samples_per_update:
             return False
 
         if not jnp.all(jnp.isfinite(self.fitness)):
@@ -358,9 +478,9 @@ class CMAES:
 
         # Check for invalid values
         if not (
-            jnp.all(jnp.isfinite(self.invsqrtC))
-            and jnp.all(jnp.isfinite(self.cov))
-            and jnp.all(jnp.isfinite(self.mean))
+            jnp.all(jnp.isfinite(self.state.invsqrtC))
+            and jnp.all(jnp.isfinite(self.state.cov))
+            and jnp.all(jnp.isfinite(self.state.mean))
             and jnp.isfinite(self.var)
         ):
             if self.verbose:
@@ -368,23 +488,24 @@ class CMAES:
             return True
 
         if (
-            self.min_variance is not None
-            and jnp.max(jnp.diag(self.cov)) * self.var <= self.min_variance
+            self.config.min_variance is not None
+            and jnp.max(jnp.diag(self.state.cov)) * self.var
+            <= self.config.min_variance
         ):
             if self.verbose:
                 print(f"[CMA-ES] Stopping: {self.var} < min_variance")
             return True
 
         max_dist = jnp.max(pdist(self.fitness[:, jnp.newaxis]))
-        if max_dist < self.min_fitness_dist:
+        if max_dist < self.config.min_fitness_dist:
             if self.verbose:
                 print(f"[CMA-ES] Stopping: {max_dist} < min_fitness_dist")
             return True
 
-        cov_diag = jnp.diag(self.cov)
-        if self.max_condition is not None and jnp.max(
+        cov_diag = jnp.diag(self.state.cov)
+        if self.config.max_condition is not None and jnp.max(
             cov_diag
-        ) > self.max_condition * jnp.min(cov_diag):
+        ) > self.config.max_condition * jnp.min(cov_diag):
             if self.verbose:
                 print(
                     f"[CMA-ES] Stopping: "
@@ -408,9 +529,9 @@ class CMAES:
             Best parameters
         """
         if method == "best":
-            return self.best_params
+            return self.state.best_params
         else:
-            return self.mean
+            return self.state.mean
 
     def get_best_fitness(self):
         """Get the best observed fitness.
@@ -423,10 +544,10 @@ class CMAES:
             maximize=True, this is the highest observed fitness, and for
             maximize=False, this is the lowest observed fitness.
         """
-        if self.maximize:
-            return -self.best_fitness
+        if self.config.maximize:
+            return -self.state.best_fitness
         else:
-            return self.best_fitness
+            return self.state.best_fitness
 
 
 @nnx.jit
