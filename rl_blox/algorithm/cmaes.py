@@ -686,12 +686,6 @@ def train_cmaes(
         n_params=len(init_params),
         n_samples_per_update=n_samples_per_update,
     )
-    if (
-        logger is not None
-        and hasattr(logger, "hparams")
-        and logger.hparams is not None
-    ):
-        logger.hparams["n_samples_per_update"] = config.n_samples_per_update
     state = CMAESState.create(
         key=key,
         initial_params=init_params,
@@ -706,10 +700,9 @@ def train_cmaes(
     def policy_action(policy, observation):
         return policy(observation)
 
-    obs, _ = env.reset(seed=seed)
-
     stopped = False
 
+    obs, _ = env.reset(seed=seed)
     step_counter = 0
     if logger is not None:
         logger.start_new_episode()
