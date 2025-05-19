@@ -457,6 +457,18 @@ class CMAES:
 
 @nnx.jit
 def flat_params(net):
+    """Return parameters of a neural net as flat parameter vector.
+
+    Parameters
+    ----------
+    net : nnx.Module
+        Neural net.
+
+    Returns
+    -------
+    params : jnp.ndarray, shape (n_params,)
+        Flat parameter vector.
+    """
     _, state = nnx.split(net)
     leaves = jax.tree_util.tree_leaves(state)
     flat_leaves = list(map(lambda x: x.ravel(), leaves))
@@ -464,7 +476,17 @@ def flat_params(net):
 
 
 @nnx.jit
-def set_params(net, params):
+def set_params(net: nnx.Module, params: jnp.ndarray):
+    """Set parameters of a neural net (inplace) from a flat parameter vector.
+
+    Parameters
+    ----------
+    net : nnx.Module
+        Neural net.
+
+    params : jnp.ndarray, shape (n_params,)
+        Flat parameter vector.
+    """
     state = nnx.state(net)
     leaves = jax.tree_util.tree_leaves(state)
     treedef = jax.tree_util.tree_structure(state)
