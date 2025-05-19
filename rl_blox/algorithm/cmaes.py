@@ -279,7 +279,12 @@ def get_next_parameters(
     return population.samples[k]
 
 
-def set_evaluation_feedback(config, state, population, feedback: ArrayLike):
+def set_evaluation_feedback(
+    config: CMAESConfig,
+    state: CMAESState,
+    population: Population,
+    feedback: ArrayLike,
+):
     """Set feedbacks for the parameter vector.
 
     Parameters
@@ -311,7 +316,9 @@ def set_evaluation_feedback(config, state, population, feedback: ArrayLike):
     state.it += 1
 
 
-def update_search_distribution(config, state, population):
+def update_search_distribution(
+    config: CMAESConfig, state: CMAESState, population: Population
+):
     """Update search distribution of CMA-ES.
 
     Parameters
@@ -495,42 +502,6 @@ def is_cmaes_finished(
         return True
 
     return False
-
-
-def get_best_parameters(state, method="best"):
-    """Get the best parameters.
-
-    Parameters
-    ----------
-    method : string, optional (default: 'best')
-        Either 'best' or 'mean'
-
-    Returns
-    -------
-    best_params : array-like, shape (n_params,)
-        Best parameters
-    """
-    if method == "best":
-        return state.best_params
-    else:
-        return state.mean
-
-
-def get_best_fitness(config, state):
-    """Get the best observed fitness.
-
-    Returns
-    -------
-    best_fitness : float
-        Best fitness (sum of feedbacks) so far. Corresponds to the
-        parameters obtained by get_best_parameters(method='best'). For
-        maximize=True, this is the highest observed fitness, and for
-        maximize=False, this is the lowest observed fitness.
-    """
-    if config.maximize:
-        return -state.best_fitness
-    else:
-        return state.best_fitness
 
 
 @nnx.jit
@@ -739,5 +710,11 @@ def train_cmaes(
 
         step_counter = 0
 
-    set_params(policy, get_best_parameters(state, method="mean"))
-    return policy, get_best_fitness(config, state), stopped
+    set_params(policy, state.mean)
+
+    if config.maximize:
+        best_fitness = -state.best_fitness
+    else:
+        best_fitness = state.best_fitness
+
+    return policy, best_fitness, stopped
