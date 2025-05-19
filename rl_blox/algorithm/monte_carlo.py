@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import tqdm
 from jax.typing import ArrayLike
 
-from ..blox.value_policy import get_epsilon_greedy_action
+from ..blox.value_policy import epsilon_greedy_policy
 from ..logging.logger import LoggerBase
 
 
@@ -15,9 +15,9 @@ def train_monte_carlo(
     n_visits: ArrayLike | None = None,
     epsilon: float = 0.3,
     gamma: float = 0.99,
-    seed: int = 1,
+    seed: int = 42,
     logger: LoggerBase | None = None,
-) -> ArrayLike:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     key = jax.random.key(seed)
 
     observation, _ = env.reset()
@@ -33,8 +33,8 @@ def train_monte_carlo(
 
     for i in tqdm.trange(total_timesteps):
         key, action_key = jax.random.split(key)
-        action = get_epsilon_greedy_action(
-            action_key, q_table, observation, epsilon
+        action = epsilon_greedy_policy(
+            q_table, observation, epsilon, action_key
         )
 
         obs_arr = obs_arr.at[i].set(int(observation))
