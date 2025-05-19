@@ -202,6 +202,14 @@ class CMAESState:
         )
 
 
+@dataclasses.dataclass(frozen=False)
+class Population:
+    """Sampled population."""
+
+    samples: jnp.ndarray
+    fitness: list[float]
+
+
 def inv_sqrt(cov):
     """Compute inverse square root of a covariance matrix."""
     cov = jnp.triu(cov) + jnp.triu(cov, 1).T
@@ -262,8 +270,7 @@ class CMAES:
 
     config: CMAESConfig
     state: CMAESState
-    samples: jnp.ndarray
-    fitness: list[float]
+    population: Population
 
     def __init__(
         self,
@@ -278,10 +285,8 @@ class CMAES:
         min_fitness_dist: float = 2 * jnp.finfo(float).eps,
         max_condition: float = 1e7,
         key: jnp.ndarray | None = None,
-        logger: LoggerBase | None = None,
         verbose: int = 0,
     ):
-        self.logger = logger
         self.verbose = verbose
 
         self.config = CMAESConfig.create(
@@ -303,251 +308,283 @@ class CMAES:
             variance=variance,
         )
 
-        self.samples: jnp.ndarray = self._sample(
-            self.config.n_samples_per_update
-        )
-        self.fitness: list[float] = []
-
-    def _sample(self, n_samples):
-        self.state.key, sampling_key = jax.random.split(self.state.key, 2)
-        samples = jax.random.multivariate_normal(
-            sampling_key,
-            self.state.mean,
-            self.state.var * self.state.cov,
-            (n_samples,),
-        )
-        if self.config.bounds is not None:
-            samples = jnp.clip(
-                samples, self.config.bounds[:, 0], self.config.bounds[:, 1]
-            )
-        return samples
-
-    def get_next_parameters(self):
-        """Get next individual/parameter vector for evaluation.
-
-        Returns
-        -------
-        params : array, shape (n_params,)
-            Parameter vector
-        """
-        k = self.state.it % self.config.n_samples_per_update
-        return self.samples[k]
-
-    def set_evaluation_feedback(self, feedback: ArrayLike):
-        """Set feedbacks for the parameter vector.
-
-        Parameters
-        ----------
-        feedback : list of float
-            feedbacks for each step or for the episode, depends on the problem
-        """
-        k = self.state.it % self.config.n_samples_per_update
-        fitness_k = float(jnp.sum(feedback))
-        if self.config.maximize:
-            fitness_k = -fitness_k
-
-        self.fitness.append(fitness_k)
-
-        if fitness_k <= self.state.best_fitness:
-            self.state.best_fitness = fitness_k
-            self.state.best_fitness_it = self.state.it
-            self.state.best_params = self.samples[k]
-
-        self.state.it += 1
-
-        if self.logger is not None:
-            self.logger.record_stat("variance", self.state.var)
-
-        if self.state.it % self.config.n_samples_per_update == 0:
-            self._update(self.samples, jnp.asarray(self.fitness), self.state.it)
-            self.fitness = []
-
-    def _update(self, samples, fitness, it):
-        # 1) Update sample distribution mean
-
-        self.state.last_mean = self.state.mean
-        ranking = jnp.argsort(fitness, axis=0)
-        update_samples = samples[ranking[: self.config.mu]]
-        self.state.mean = jnp.sum(
-            self.config.weights[:, jnp.newaxis] * update_samples, axis=0
+        self.population = Population(
+            samples=_sample(self, self.config.n_samples_per_update),
+            fitness=[],
         )
 
-        mean_diff = self.state.mean - self.state.last_mean
-        sigma = jnp.sqrt(self.state.var)
 
-        # 2) Cumulation: update evolution paths
-
-        # Isotropic (step size) evolution path
-        self.state.ps += (
-            -self.config.cs * self.state.ps
-            + self.config.ps_update_weight
-            / sigma
-            * self.state.invsqrtC.dot(mean_diff)
+def _sample(self, n_samples):
+    self.state.key, sampling_key = jax.random.split(self.state.key, 2)
+    samples = jax.random.multivariate_normal(
+        sampling_key,
+        self.state.mean,
+        self.state.var * self.state.cov,
+        (n_samples,),
+    )
+    if self.config.bounds is not None:
+        samples = jnp.clip(
+            samples, self.config.bounds[:, 0], self.config.bounds[:, 1]
         )
-        # Anisotropic (covariance) evolution path
-        ps_norm_2 = jnp.linalg.norm(self.state.ps) ** 2  # Temporary constant
-        generation = it / self.config.n_samples_per_update
-        hsig = int(
-            ps_norm_2
-            / self.config.n_params
-            / jnp.sqrt(1 - (1 - self.config.cs) ** (2 * generation))
-            < self.config.hsig_threshold
-        )
-        self.state.pc *= 1 - self.config.cc
-        self.state.pc += (
-            hsig
-            * jnp.sqrt(
-                self.config.cc * (2 - self.config.cc) * self.config.mueff
-            )
-            * mean_diff
-            / sigma
-        )
+    return samples
 
-        # 3) Update sample distribution covariance
 
-        # Rank-1 update
-        rank_one_update = jnp.outer(self.state.pc, self.state.pc)
+def get_next_parameters(self):
+    """Get next individual/parameter vector for evaluation.
 
-        # Rank-mu update
-        noise = (update_samples - self.state.last_mean) / sigma
-        rank_mu_update = noise.T.dot(jnp.diag(self.config.weights)).dot(noise)
+    Returns
+    -------
+    params : array, shape (n_params,)
+        Parameter vector
+    """
+    k = self.state.it % self.config.n_samples_per_update
+    return self.population.samples[k]
 
-        # Correct variance loss by hsig
-        c1a = self.config.c1 * (
-            1 - (1 - hsig) * self.config.cc * (2.0 - self.config.cc)
-        )
 
-        if self.config.active:
-            neg_update = samples[ranking[::-1][: self.config.mu]]
-            neg_update -= self.state.last_mean
-            neg_update /= sigma
-            neg_rank_mu_update = neg_update.T.dot(
-                jnp.diag(self.config.weights)
-            ).dot(neg_update)
+def set_evaluation_feedback(
+    self, feedback: ArrayLike, logger: LoggerBase | None
+):
+    """Set feedbacks for the parameter vector.
 
-            self.state.cov *= (
-                1.0
-                - c1a
-                - self.config.cmu
-                + self.config.neg_cmu * self.config.alpha_old
-            )
-            self.state.cov += rank_one_update * self.config.c1
-            self.state.cov += rank_mu_update * (
-                self.config.cmu
-                + self.config.neg_cmu * (1.0 - self.config.alpha_old)
-            )
-            self.state.cov -= neg_rank_mu_update * self.config.neg_cmu
-        else:
-            self.state.cov *= 1.0 - c1a - self.config.cmu
-            self.state.cov += rank_one_update * self.config.c1
-            self.state.cov += rank_mu_update * self.config.cmu
+    Parameters
+    ----------
+    feedback : list of float
+        feedbacks for each step or for the episode, depends on the problem
 
-        # NOTE here is a bug: it should be cs / (2 * damps), however, that
-        #      breaks unit tests and does not improve results
-        log_step_size_update = (self.config.cs / self.config.damps) * (
-            ps_norm_2 / self.config.n_params - 1
-        )
-        # NOTE some implementations of CMA-ES use the denominator
-        # np.sqrt(n_params) * (1.0 - 1.0 / (4 * n_params) +
-        #                           1.0 / (21 * n_params ** 2))
-        # instead of n_params, in this case cs / damps is correct
-        # Adapt step size with factor <= exp(0.6)
-        self.state.var = (
-            self.state.var * jnp.exp(min((0.6, log_step_size_update))) ** 2
+    logger : LoggerBase | None
+        Logger for experiment tracking.
+    """
+    k = self.state.it % self.config.n_samples_per_update
+    fitness_k = float(jnp.sum(feedback))
+    if self.config.maximize:
+        fitness_k = -fitness_k
+
+    self.population.fitness.append(fitness_k)
+
+    if fitness_k <= self.state.best_fitness:
+        self.state.best_fitness = fitness_k
+        self.state.best_fitness_it = self.state.it
+        self.state.best_params = self.population.samples[k]
+
+    self.state.it += 1
+
+    if logger is not None:
+        logger.record_stat("variance", self.state.var)
+
+    if self.state.it % self.config.n_samples_per_update == 0:
+        _update(
+            self,
+            self.population.samples,
+            jnp.asarray(self.population.fitness),
+            self.state.it,
         )
 
-        if it - self.state.eigen_decomp_updated > self.config.eigen_update_freq:
-            self.state.invsqrtC = inv_sqrt(self.state.cov)[0]
-            self.state.eigen_decomp_updated = self.state.it
 
-        self.samples = self._sample(self.config.n_samples_per_update)
+def _update(self, samples, fitness, it):
+    # 1) Update sample distribution mean
 
-    def is_behavior_learning_done(self):
-        """Check if the optimization is finished.
+    self.state.last_mean = self.state.mean
+    ranking = jnp.argsort(fitness, axis=0)
+    update_samples = samples[ranking[: self.config.mu]]
+    self.state.mean = jnp.sum(
+        self.config.weights[:, jnp.newaxis] * update_samples, axis=0
+    )
 
-        Returns
-        -------
-        finished : bool
-            Is the learning of a behavior finished?
-        """
-        if self.state.it <= self.config.n_samples_per_update:
-            return False
+    mean_diff = self.state.mean - self.state.last_mean
+    sigma = jnp.sqrt(self.state.var)
 
-        if not jnp.all(jnp.isfinite(self.fitness)):
-            return True
+    # 2) Cumulation: update evolution paths
 
-        # Check for invalid values
-        if not (
-            jnp.all(jnp.isfinite(self.state.invsqrtC))
-            and jnp.all(jnp.isfinite(self.state.cov))
-            and jnp.all(jnp.isfinite(self.state.mean))
-            and jnp.isfinite(self.var)
-        ):
-            if self.verbose:
-                print("[CMA-ES] Stopping: infs or nans")
-            return True
+    # Isotropic (step size) evolution path
+    self.state.ps += (
+        -self.config.cs * self.state.ps
+        + self.config.ps_update_weight
+        / sigma
+        * self.state.invsqrtC.dot(mean_diff)
+    )
+    # Anisotropic (covariance) evolution path
+    ps_norm_2 = jnp.linalg.norm(self.state.ps) ** 2  # Temporary constant
+    generation = it / self.config.n_samples_per_update
+    hsig = int(
+        ps_norm_2
+        / self.config.n_params
+        / jnp.sqrt(1 - (1 - self.config.cs) ** (2 * generation))
+        < self.config.hsig_threshold
+    )
+    self.state.pc *= 1 - self.config.cc
+    self.state.pc += (
+        hsig
+        * jnp.sqrt(self.config.cc * (2 - self.config.cc) * self.config.mueff)
+        * mean_diff
+        / sigma
+    )
 
-        if (
-            self.config.min_variance is not None
-            and jnp.max(jnp.diag(self.state.cov)) * self.var
-            <= self.config.min_variance
-        ):
-            if self.verbose:
-                print(f"[CMA-ES] Stopping: {self.var} < min_variance")
-            return True
+    # 3) Update sample distribution covariance
 
-        max_dist = jnp.max(pdist(self.fitness[:, jnp.newaxis]))
-        if max_dist < self.config.min_fitness_dist:
-            if self.verbose:
-                print(f"[CMA-ES] Stopping: {max_dist} < min_fitness_dist")
-            return True
+    # Rank-1 update
+    rank_one_update = jnp.outer(self.state.pc, self.state.pc)
 
-        cov_diag = jnp.diag(self.state.cov)
-        if self.config.max_condition is not None and jnp.max(
-            cov_diag
-        ) > self.config.max_condition * jnp.min(cov_diag):
-            if self.verbose:
-                print(
-                    f"[CMA-ES] Stopping: "
-                    f"{jnp.max(cov_diag)} / {jnp.min(cov_diag)} > max_condition"
-                )
-            return True
+    # Rank-mu update
+    noise = (update_samples - self.state.last_mean) / sigma
+    rank_mu_update = noise.T.dot(jnp.diag(self.config.weights)).dot(noise)
 
+    # Correct variance loss by hsig
+    c1a = self.config.c1 * (
+        1 - (1 - hsig) * self.config.cc * (2.0 - self.config.cc)
+    )
+
+    if self.config.active:
+        neg_update = samples[ranking[::-1][: self.config.mu]]
+        neg_update -= self.state.last_mean
+        neg_update /= sigma
+        neg_rank_mu_update = neg_update.T.dot(
+            jnp.diag(self.config.weights)
+        ).dot(neg_update)
+
+        self.state.cov *= (
+            1.0
+            - c1a
+            - self.config.cmu
+            + self.config.neg_cmu * self.config.alpha_old
+        )
+        self.state.cov += rank_one_update * self.config.c1
+        self.state.cov += rank_mu_update * (
+            self.config.cmu
+            + self.config.neg_cmu * (1.0 - self.config.alpha_old)
+        )
+        self.state.cov -= neg_rank_mu_update * self.config.neg_cmu
+    else:
+        self.state.cov *= 1.0 - c1a - self.config.cmu
+        self.state.cov += rank_one_update * self.config.c1
+        self.state.cov += rank_mu_update * self.config.cmu
+
+    # NOTE here is a bug: it should be cs / (2 * damps), however, that
+    #      breaks unit tests and does not improve results
+    log_step_size_update = (self.config.cs / self.config.damps) * (
+        ps_norm_2 / self.config.n_params - 1
+    )
+    # NOTE some implementations of CMA-ES use the denominator
+    # np.sqrt(n_params) * (1.0 - 1.0 / (4 * n_params) +
+    #                           1.0 / (21 * n_params ** 2))
+    # instead of n_params, in this case cs / damps is correct
+    # Adapt step size with factor <= exp(0.6)
+    self.state.var = (
+        self.state.var * jnp.exp(min((0.6, log_step_size_update))) ** 2
+    )
+
+    if it - self.state.eigen_decomp_updated > self.config.eigen_update_freq:
+        self.state.invsqrtC = inv_sqrt(self.state.cov)[0]
+        self.state.eigen_decomp_updated = self.state.it
+
+    self.population.samples = _sample(self, self.config.n_samples_per_update)
+    self.population.fitness = []
+
+
+def is_behavior_learning_done(
+    config: CMAESConfig, state: CMAESState, population: Population, verbose: int
+):
+    """Check if the optimization is finished.
+
+    Parameters
+    ----------
+    config : CMAESConfig
+        Configuration of CMA-ES.
+
+    state : CMAESState
+        State of CMA-ES.
+
+    population : Population
+        Current population.
+
+    verbose : int
+        Verbosity level.
+
+    Returns
+    -------
+    finished : bool
+        Is the learning of a behavior finished?
+    """
+    if state.it <= config.n_samples_per_update:
         return False
 
-    def get_best_parameters(self, method="best"):
-        """Get the best parameters.
+    fitness = jnp.asarray(population.fitness)
 
-        Parameters
-        ----------
-        method : string, optional (default: 'best')
-            Either 'best' or 'mean'
+    if not jnp.all(jnp.isfinite(fitness)):
+        return True
 
-        Returns
-        -------
-        best_params : array-like, shape (n_params,)
-            Best parameters
-        """
-        if method == "best":
-            return self.state.best_params
-        else:
-            return self.state.mean
+    # Check for invalid values
+    if not (
+        jnp.all(jnp.isfinite(state.invsqrtC))
+        and jnp.all(jnp.isfinite(state.cov))
+        and jnp.all(jnp.isfinite(state.mean))
+        and jnp.isfinite(state.var)
+    ):
+        if verbose:
+            print("[CMA-ES] Stopping: infs or nans")
+        return True
 
-    def get_best_fitness(self):
-        """Get the best observed fitness.
+    if (
+        config.min_variance is not None
+        and jnp.max(jnp.diag(state.cov)) * state.var <= config.min_variance
+    ):
+        if verbose:
+            print(f"[CMA-ES] Stopping: {state.var} < min_variance")
+        return True
 
-        Returns
-        -------
-        best_fitness : float
-            Best fitness (sum of feedbacks) so far. Corresponds to the
-            parameters obtained by get_best_parameters(method='best'). For
-            maximize=True, this is the highest observed fitness, and for
-            maximize=False, this is the lowest observed fitness.
-        """
-        if self.config.maximize:
-            return -self.state.best_fitness
-        else:
-            return self.state.best_fitness
+    max_dist = jnp.max(pdist(fitness[:, jnp.newaxis]))
+    if max_dist < config.min_fitness_dist:
+        if verbose:
+            print(f"[CMA-ES] Stopping: {max_dist} < min_fitness_dist")
+        return True
+
+    cov_diag = jnp.diag(state.cov)
+    if config.max_condition is not None and jnp.max(
+        cov_diag
+    ) > config.max_condition * jnp.min(cov_diag):
+        if verbose:
+            print(
+                f"[CMA-ES] Stopping: "
+                f"{jnp.max(cov_diag)} / {jnp.min(cov_diag)} > max_condition"
+            )
+        return True
+
+    return False
+
+
+def get_best_parameters(self, method="best"):
+    """Get the best parameters.
+
+    Parameters
+    ----------
+    method : string, optional (default: 'best')
+        Either 'best' or 'mean'
+
+    Returns
+    -------
+    best_params : array-like, shape (n_params,)
+        Best parameters
+    """
+    if method == "best":
+        return self.state.best_params
+    else:
+        return self.state.mean
+
+
+def get_best_fitness(self):
+    """Get the best observed fitness.
+
+    Returns
+    -------
+    best_fitness : float
+        Best fitness (sum of feedbacks) so far. Corresponds to the
+        parameters obtained by get_best_parameters(method='best'). For
+        maximize=True, this is the highest observed fitness, and for
+        maximize=False, this is the lowest observed fitness.
+    """
+    if self.config.maximize:
+        return -self.state.best_fitness
+    else:
+        return self.state.best_fitness
 
 
 @nnx.jit
@@ -694,7 +731,6 @@ def train_cmaes(
         active=active,
         maximize=True,
         key=key,
-        logger=logger,
         verbose=0,
     )
 
@@ -708,7 +744,7 @@ def train_cmaes(
     if logger is not None:
         logger.start_new_episode()
     for _ in tqdm.trange(total_episodes):
-        set_params(policy, opt.get_next_parameters())
+        set_params(policy, get_next_parameters(opt))
         ret = 0.0
         done = False
         while not done:  # episode
@@ -727,8 +763,10 @@ def train_cmaes(
             logger.record_stat("return", ret)
             logger.record_epoch("policy", policy)
         step_counter = 0
-        opt.set_evaluation_feedback(ret)
+        set_evaluation_feedback(opt, ret, logger)
+        # TODO activate + logging:
+        # is_behavior_learning_done(opt.config, opt.state, opt.population, 0)
 
-    print(f"[CMA-ES] {opt.best_fitness=}")
-    set_params(policy, opt.get_best_parameters(method="mean"))
+    print(f"[CMA-ES] {opt.state.best_fitness=}")
+    set_params(policy, get_best_parameters(opt, method="mean"))
     return policy
