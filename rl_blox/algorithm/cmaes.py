@@ -468,7 +468,7 @@ def flat_params(net):
 
 
 def set_params(net, params):
-    graphdef, state = nnx.split(net)
+    state = nnx.state(net)
     leaves = jax.tree_util.tree_leaves(state)
     treedef = jax.tree_util.tree_structure(state)
     n_params_set = 0
@@ -481,7 +481,7 @@ def set_params(net, params):
         new_leaves.append(new_leaf)
         n_params_set += n_params_leaf
     state = jax.tree_util.tree_unflatten(treedef, new_leaves)
-    return nnx.merge(graphdef, state)
+    nnx.update(net, state)
 
 
 def train_cmaes(
@@ -577,7 +577,7 @@ def train_cmaes(
     obs, _ = env.reset(seed=seed)
 
     for ep in range(total_episodes):
-        policy = set_params(policy, opt.get_next_parameters())
+        set_params(policy, opt.get_next_parameters())
         ret = 0.0
         done = False
         while not done:  # episode
@@ -597,5 +597,5 @@ def train_cmaes(
         opt.set_evaluation_feedback(ret)
 
     print(f"[CMA-ES] {opt.best_fitness=}")
-    policy = set_params(policy, opt.get_best_parameters(method="mean"))
+    set_params(policy, opt.get_best_parameters(method="mean"))
     return policy
