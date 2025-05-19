@@ -21,9 +21,9 @@ hparams_model = dict(
 )
 hparams_algorithm = dict(
     n_samples_per_update=None,
-    variance=5.0,
+    variance=0.3,
     active=False,
-    total_episodes=1_000,
+    total_episodes=10_000,
     seed=seed,
 )
 policy_net = MLP(
