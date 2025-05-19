@@ -8,7 +8,7 @@ from rl_blox.blox.value_policy import get_greedy_action, make_q_table
 from rl_blox.util.experiment_helper import generate_rollout
 
 ENV_NAME = "CliffWalking-v0"
-NUM_STEPS = 20_000
+NUM_STEPS = 50_000
 
 
 train_env = gym.make(ENV_NAME)
