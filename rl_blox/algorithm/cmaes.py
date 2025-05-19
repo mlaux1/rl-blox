@@ -26,22 +26,6 @@ def inv_sqrt(cov):
 class CMAES:
     """Covariance Matrix Adaptation Evolution Strategy.
 
-    Plain CMA-ES [1]_ is considered to be useful for
-
-    * non-convex,
-    * non-separable,
-    * ill-conditioned,
-    * or noisy
-
-    objective functions. However, in some cases CMA-ES will be outperformed
-    by other methods:
-
-    * if the search space dimension is very small (e.g. less than 5),
-      downhill simplex or surrogate-assisted methods will be better
-    * easy functions (separable, nearly quadratic, etc.) will usually be
-      solved faster by NEWUOA
-    * multimodal objective functions require restart strategies
-
     Parameters
     ----------
     initial_params : array-like, shape = (n_params,), optional (default: 0s)
@@ -88,12 +72,6 @@ class CMAES:
 
     verbose : int, optional (default: 0)
         Verbosity level.
-
-    References
-    ----------
-    .. [1] Hansen, N.; Ostermeier, A. Completely Derandomized Self-Adaptation
-        in Evolution Strategies. In: Evolutionary Computation, 9(2), pp.
-        159-195. https://www.lri.fr/~hansen/cmaartic.pdf
     """
 
     def __init__(
@@ -533,7 +511,14 @@ def train_cmaes(
     * ill-conditioned,
     * or noisy
 
-    objective functions.
+    objective functions. However, in some cases CMA-ES will be outperformed
+    by other methods:
+
+    * if the search space dimension is very small (e.g. less than 5),
+      downhill simplex or surrogate-assisted methods will be better
+    * easy functions (separable, nearly quadratic, etc.) will usually be
+      solved faster by NEWUOA
+    * multimodal objective functions require restart strategies
 
     Parameters
     ----------
