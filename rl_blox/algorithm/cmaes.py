@@ -2,7 +2,9 @@
 
 import dataclasses
 import math
+import warnings
 
+import gymnasium
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -224,7 +226,22 @@ def inv_sqrt(cov: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     return B.dot(jnp.diag(1.0 / D)).dot(B.T), B, D
 
 
-def sample_population(config: CMAESConfig, state: CMAESState):
+def sample_population(config: CMAESConfig, state: CMAESState) -> jnp.ndarray:
+    """Sample population from search distribution.
+
+    Parameters
+    ----------
+    config : CMAESConfig
+        CMA-ES configuration.
+
+    state : CMAESState
+        State of CMA-ES.
+
+    Returns
+    -------
+    samples : array, shape (n_samples_per_update, n_params)
+        Samples from search distribution of CMA-ES.
+    """
     state.key, sampling_key = jax.random.split(state.key, 2)
     samples = jax.random.multivariate_normal(
         sampling_key,
@@ -237,8 +254,21 @@ def sample_population(config: CMAESConfig, state: CMAESState):
     return samples
 
 
-def get_next_parameters(config, state, population):
+def get_next_parameters(
+    config: CMAESConfig, state: CMAESState, population: Population
+) -> jnp.ndarray:
     """Get next individual/parameter vector for evaluation.
+
+    Parameters
+    ----------
+    config : CMAESConfig
+        CMA-ES configuration.
+
+    state : CMAESState
+        State of CMA-ES.
+
+    population : Population
+        Current population.
 
     Returns
     -------
@@ -254,11 +284,17 @@ def set_evaluation_feedback(config, state, population, feedback: ArrayLike):
 
     Parameters
     ----------
-    feedback : list of float
-        feedbacks for each step or for the episode, depends on the problem
+    config : CMAESConfig
+        CMA-ES configuration.
 
-    logger : LoggerBase | None
-        Logger for experiment tracking.
+    state : CMAESState
+        State of CMA-ES.
+
+    population : Population
+        Current population.
+
+    feedback : array-like
+        Feedbacks for each step or for the episode, depends on the problem.
     """
     k = state.it % config.n_samples_per_update
     fitness_k = float(jnp.sum(feedback))
@@ -275,7 +311,20 @@ def set_evaluation_feedback(config, state, population, feedback: ArrayLike):
     state.it += 1
 
 
-def _update(config, state, population) -> Population:
+def update_search_distribution(config, state, population) -> Population:
+    """Update search distribution of CMA-ES.
+
+    Parameters
+    ----------
+    config : CMAESConfig
+        CMA-ES configuration.
+
+    state : CMAESState
+        State of CMA-ES.
+
+    population : Population
+        Current population.
+    """
     samples = population.samples
     fitness = jnp.asarray(population.fitness)
 
@@ -360,14 +409,17 @@ def _update(config, state, population) -> Population:
 
     if state.it - state.eigen_decomp_updated > config.eigen_update_freq:
         state.invsqrtC = inv_sqrt(state.cov)[0]
-        state.eigen_decomp_updated = state.state.it
+        state.eigen_decomp_updated = state.it
 
     return Population.create(samples=sample_population(config, state))
 
 
-def is_behavior_learning_done(
-    config: CMAESConfig, state: CMAESState, population: Population, verbose: int
-):
+def is_cmaes_finished(
+    config: CMAESConfig,
+    state: CMAESState,
+    population: Population,
+    logger: LoggerBase | None,
+) -> bool:
     """Check if the optimization is finished.
 
     Parameters
@@ -381,9 +433,6 @@ def is_behavior_learning_done(
     population : Population
         Current population.
 
-    verbose : int
-        Verbosity level.
-
     Returns
     -------
     finished : bool
@@ -393,6 +442,20 @@ def is_behavior_learning_done(
         return False
 
     fitness = jnp.asarray(population.fitness)
+
+    total_variance = jnp.max(jnp.diag(state.cov)) * state.var
+    max_fitness_dist = jnp.max(pdist(fitness[:, jnp.newaxis]))
+
+    cov_diag = jnp.diag(state.cov)
+    condition_number = jnp.max(cov_diag)
+    min_cov_diag = jnp.min(cov_diag)
+    if min_cov_diag > 0.0:
+        condition_number /= min_cov_diag
+
+    if logger is not None:
+        logger.record_stat("total_variance", total_variance)
+        logger.record_stat("max_fitness_dist", max_fitness_dist)
+        logger.record_stat("condition_number", condition_number)
 
     if not jnp.all(jnp.isfinite(fitness)):
         return True
@@ -404,33 +467,33 @@ def is_behavior_learning_done(
         and jnp.all(jnp.isfinite(state.mean))
         and jnp.isfinite(state.var)
     ):
-        if verbose:
-            print("[CMA-ES] Stopping: infs or nans")
+        warnings.warn("[CMA-ES] Stopping: infs or nans", stacklevel=2)
         return True
 
     if (
         config.min_variance is not None
-        and jnp.max(jnp.diag(state.cov)) * state.var <= config.min_variance
+        and total_variance <= config.min_variance
     ):
-        if verbose:
-            print(f"[CMA-ES] Stopping: {state.var} < min_variance")
+        warnings.warn(
+            f"[CMA-ES] Stopping: {state.var} < min_variance", stacklevel=2
+        )
         return True
 
-    max_dist = jnp.max(pdist(fitness[:, jnp.newaxis]))
-    if max_dist < config.min_fitness_dist:
-        if verbose:
-            print(f"[CMA-ES] Stopping: {max_dist} < min_fitness_dist")
+    if max_fitness_dist < config.min_fitness_dist:
+        warnings.warn(
+            f"[CMA-ES] Stopping: {max_fitness_dist} < min_fitness_dist",
+            stacklevel=2,
+        )
         return True
 
-    cov_diag = jnp.diag(state.cov)
     if config.max_condition is not None and jnp.max(
         cov_diag
     ) > config.max_condition * jnp.min(cov_diag):
-        if verbose:
-            print(
-                f"[CMA-ES] Stopping: "
-                f"{jnp.max(cov_diag)} / {jnp.min(cov_diag)} > max_condition"
-            )
+        warnings.warn(
+            f"[CMA-ES] Stopping: "
+            f"{jnp.max(cov_diag)} / {jnp.min(cov_diag)} > max_condition",
+            stacklevel=2,
+        )
         return True
 
     return False
@@ -525,16 +588,16 @@ def set_params(net: nnx.Module, params: jnp.ndarray):
 
 
 def train_cmaes(
-    env,
-    policy,
+    env: gymnasium.Env,
+    policy: nnx.Module,
     total_episodes: int,
-    seed: int,
+    seed: int = 0,
     variance: float = 1.0,
     covariance: ArrayLike | None = None,
     n_samples_per_update: int | None = None,
     active: bool = False,
     logger: LoggerBase | None = None,
-):
+) -> tuple[nnx.Module, float, bool]:
     """Train policy using Covariance Matrix Adaptation Evolution Strategy.
 
     Covariance Matrix Adaptation Evolution Strategy (CMA-ES) is a black-box
@@ -600,6 +663,12 @@ def train_cmaes(
     policy : nnx.Module
         Trained policy network.
 
+    best_fitness : float
+        Best fitness observed in any episode.
+
+    stopped : bool
+        If the optimizer was stopped before all episodes were run.
+
     References
     ----------
     .. [1] Hansen, N.; Ostermeier, A. Completely Derandomized Self-Adaptation
@@ -613,8 +682,8 @@ def train_cmaes(
         active=active,
         bounds=None,
         maximize=True,
-        min_variance=2 * jnp.finfo(float).eps ** 2,
-        min_fitness_dist=2 * jnp.finfo(float).eps,
+        min_variance=2 * jnp.finfo(jnp.float32).eps ** 2,
+        min_fitness_dist=2 * jnp.finfo(jnp.float32).eps,
         max_condition=1e7,
         n_params=len(init_params),
         n_samples_per_update=n_samples_per_update,
@@ -641,6 +710,8 @@ def train_cmaes(
 
     obs, _ = env.reset(seed=seed)
 
+    stopped = False
+
     step_counter = 0
     if logger is not None:
         logger.start_new_episode()
@@ -661,7 +732,10 @@ def train_cmaes(
         set_evaluation_feedback(config, state, population, ret)
 
         if state.it % config.n_samples_per_update == 0:
-            population = _update(config, state, population)
+            stopped = is_cmaes_finished(config, state, population, logger)
+            if stopped:
+                break
+            population = update_search_distribution(config, state, population)
 
         if logger is not None:
             logger.stop_episode(step_counter)
@@ -672,9 +746,5 @@ def train_cmaes(
 
         step_counter = 0
 
-        # TODO activate + logging:
-        # is_behavior_learning_done(opt.config, opt.state, opt.population, 0)
-
-    print(f"[CMA-ES] {state.best_fitness=}")
     set_params(policy, get_best_parameters(state, method="mean"))
-    return policy
+    return policy, get_best_fitness(config, state), stopped

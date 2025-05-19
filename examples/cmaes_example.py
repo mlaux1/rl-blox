@@ -41,7 +41,7 @@ logger.define_experiment(
     hparams=hparams_model | hparams_algorithm,
 )
 
-policy = train_cmaes(env, policy, **hparams_algorithm, logger=logger)
+policy, _, _ = train_cmaes(env, policy, **hparams_algorithm, logger=logger)
 env.close()
 
 # Evaluation
