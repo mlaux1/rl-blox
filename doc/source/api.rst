@@ -26,6 +26,7 @@ Algorithm Interface
    td3.train_td3
    sac.train_sac
    pets.train_pets
+   cmaes.train_cmaes
 
 Functional Blox
 ---------------
@@ -60,6 +61,8 @@ Functional Blox
    pets.ts_inf
    pets.evaluate_plans
    pets.update_dynamics_model
+   cmaes.flat_params
+   cmaes.set_params
 
 Data Blox
 ---------
