@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
-from rl_blox.algorithm.dqn import train_dqn
+from rl_blox.algorithm.nature_dqn import train_nature_dqn
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.replay_buffer import ReplayBuffer
 
@@ -30,7 +30,7 @@ rb = ReplayBuffer(50_000)
 optimizer = nnx.Optimizer(q_net, optax.rprop(0.003))
 
 # Train
-q, _ = train_dqn(
+q, _ = train_nature_dqn(
     q_net,
     env,
     rb,
