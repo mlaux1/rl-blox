@@ -6,30 +6,40 @@ from flax import nnx
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.function_approximator.policy_head import DeterministicTanhPolicy
 from rl_blox.algorithm.cmaes import train_cmaes
+from rl_blox.logging.logger import StandardLogger
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
 seed = 1
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
-policy_net = MLP(
-    env.observation_space.shape[0],
-    env.action_space.shape[0],
-    [32, 32],
-    "relu",
-    nnx.Rngs(seed),
+hparams_model = dict(
+    hidden_nodes=[32, 32],
+    activation="relu",
 )
-policy = DeterministicTanhPolicy(policy_net, env.action_space)
-policy = train_cmaes(
-    env,
-    policy,
-    10000,
-    seed,
+hparams_algorithm = dict(
     n_samples_per_update=40,
     variance=1.0,
     active=True,
-    verbose=2,
+    total_episodes=10_000,
+    seed=seed,
 )
+policy_net = MLP(
+    env.observation_space.shape[0],
+    env.action_space.shape[0],
+    **hparams_model,
+    rngs=nnx.Rngs(seed),
+)
+policy = DeterministicTanhPolicy(policy_net, env.action_space)
+
+logger = StandardLogger(verbose=1)
+logger.define_experiment(
+    env_name,
+    "CMA-ES",
+    hparams=hparams_model | hparams_algorithm,
+)
+
+policy = train_cmaes(env, policy, **hparams_algorithm, logger=logger)
 env.close()
 
 # Evaluation

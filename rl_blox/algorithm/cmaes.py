@@ -9,6 +9,8 @@ from flax import nnx
 from jax.typing import ArrayLike
 from scipy.spatial.distance import pdist
 
+from ..logging.logger import LoggerBase
+
 
 def inv_sqrt(cov):
     """Compute inverse square root of a covariance matrix."""
@@ -460,6 +462,7 @@ class CMAES:
             return self.best_fitness
 
 
+@nnx.jit
 def flat_params(net):
     _, state = nnx.split(net)
     leaves = jax.tree_util.tree_leaves(state)
@@ -467,6 +470,7 @@ def flat_params(net):
     return jnp.concatenate(flat_leaves, axis=0)
 
 
+@nnx.jit
 def set_params(net, params):
     state = nnx.state(net)
     leaves = jax.tree_util.tree_leaves(state)
@@ -493,7 +497,7 @@ def train_cmaes(
     covariance: ArrayLike | None = None,
     n_samples_per_update: int | None = None,
     active: bool = False,
-    verbose: int = 0,
+    logger: LoggerBase | None = None,
 ):
     """Train policy using Covariance Matrix Adaptation Evolution Strategy.
 
@@ -522,8 +526,7 @@ def train_cmaes(
         Environment.
 
     policy : nnx.Module
-        The policy network should map observations to actions. The output
-        should be in the range [-1, 1] and will be scaled to the action range.
+        The policy network should map observations to actions.
 
     total_episodes : int
         Total number of episodes.
@@ -546,13 +549,13 @@ def train_cmaes(
         Active CMA-ES (aCMA-ES) with negative weighted covariance matrix
         update
 
-    verbose : int, optional (default: 0)
-        Verbosity level.
+    logger : LoggerBase, optional
+        Logger for experiment tracking.
 
     Returns
     -------
-    policy
-        Trained policy network. Automatically scales outputs to action range.
+    policy : nnx.Module
+        Trained policy network.
 
     References
     ----------
@@ -570,30 +573,39 @@ def train_cmaes(
         active=active,
         maximize=True,
         key=key,
-        verbose=verbose,
+        verbose=0,
     )
     opt.init(len(init_params))
 
+    @nnx.jit
+    def policy_action(policy, observation):
+        return policy(observation)
+
     obs, _ = env.reset(seed=seed)
 
+    step_counter = 0
+    if logger is not None:
+        logger.start_new_episode()
     for ep in range(total_episodes):
         set_params(policy, opt.get_next_parameters())
         ret = 0.0
         done = False
         while not done:  # episode
-            action = np.asarray(policy(jnp.asarray(obs)))
+            action = np.asarray(policy_action(policy, jnp.asarray(obs)))
 
             next_obs, reward, termination, truncation, info = env.step(action)
+            step_counter += 1
             obs = next_obs
             ret += reward
             done = termination or truncation
 
-        print(
-            f"{ep=}, length={info['episode']['l']}, "
-            f"return={info['episode']['r']}"
-        )
-
         obs, _ = env.reset()
+        if logger is not None:
+            logger.stop_episode(step_counter)
+            logger.start_new_episode()
+            logger.record_stat("return", ret)
+            logger.record_epoch("policy", policy)
+        step_counter = 0
         opt.set_evaluation_feedback(ret)
 
     print(f"[CMA-ES] {opt.best_fitness=}")
