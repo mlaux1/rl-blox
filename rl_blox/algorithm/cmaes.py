@@ -130,12 +130,6 @@ class CMAES:
         self.best_fitness_it = self.it
         self.best_params = self.initial_params.copy()
 
-        self._reinit()
-
-    def _reinit(self):
-        # Iteration of last reinitialization
-        self.initial_it = self.it
-
         self.var = self.variance
 
         if self.n_samples_per_update is None:
@@ -256,7 +250,7 @@ class CMAES:
                 f"variance {self.var}"
             )
 
-        if (self.it - self.initial_it) % self.n_samples_per_update == 0:
+        if self.it % self.n_samples_per_update == 0:
             self._update(self.samples, jnp.asarray(self.fitness), self.it)
             self.fitness = []
 
