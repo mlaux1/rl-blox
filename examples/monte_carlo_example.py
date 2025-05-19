@@ -4,7 +4,7 @@ import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics
 
 from rl_blox.algorithm.monte_carlo import train_monte_carlo
-from rl_blox.blox.value_policy import get_greedy_action, make_q_table
+from rl_blox.blox.value_policy import get_epsilon_greedy_action, make_q_table
 from rl_blox.util.experiment_helper import generate_rollout
 
 ENV_NAME = "CliffWalking-v0"
@@ -22,7 +22,7 @@ train_env.close()
 
 print(q_table)
 
-policy = partial(get_greedy_action, key=42, q_table=q_table)
+policy = partial(get_epsilon_greedy_action, key=42, q_table=q_table)
 
 test_env = gym.make(ENV_NAME, render_mode="human")
 generate_rollout(test_env, policy)
