@@ -12,8 +12,8 @@ def train_monte_carlo(
     env: gym.Env,
     q_table: ArrayLike,
     total_timesteps: int,
-    learning_rate: float = 0.1,
-    epsilon: float = 0.1,
+    n_visits: ArrayLike | None = None,
+    epsilon: float = 0.5,
     gamma: float = 0.99,
     seed: int = 1,
     logger: LoggerBase | None = None,
@@ -22,32 +22,57 @@ def train_monte_carlo(
 
     observation, _ = env.reset()
 
-    obs = jnp.empty(total_timesteps)
-    acts = jnp.empty(total_timesteps)
-    rews = jnp.empty(total_timesteps)
+    if n_visits is None:
+        n_visits = jnp.zeros_like(q_table)
+
+    obs, acts, rews = [], [], []
 
     for i in tqdm.trange(total_timesteps):
-        obs[i] = observation
-        acts[i] = get_epsilon_greedy_action(key, q_table, observation, epsilon)
-        observation, rews[i], terminated, truncated, info = env.step(
-            int(acts[i])
+        key, action_key = jax.random.split(key)
+        action = get_epsilon_greedy_action(
+            action_key, q_table, observation, epsilon
         )
 
+        obs.append(observation)
+        acts.append(int(action))
+        observation, reward, terminated, truncated, info = env.step(int(action))
+
+        rews.append(reward)
+
         if terminated or truncated:
-            q_table = update(q_table, rews, obs, acts)
-            observation, _ = env.reset()
-
-    def update(max_episodes: int) -> None:
-        # TODO: implement this
-        """
-        for idx in state_action_pairs:
-            self.n_visits[idx] += 1
-            self.total_return[idx] += ep_return
-            new_q_val = self.total_return[idx] / self.n_visits[idx]
-
-            state, action = idx
-            step = (
-                new_q_val
-                - self.target_policy.value_function.values[state][action]
+            q_table, n_visits = update(
+                q_table,
+                n_visits,
+                jnp.array(rews),
+                jnp.array(obs),
+                jnp.array(acts),
+                gamma,
             )
-        """
+            observation, _ = env.reset()
+            obs, acts, rews = [], [], []
+    return q_table, n_visits
+
+
+def update(
+    q_table: ArrayLike,
+    n_visits: ArrayLike,
+    rewards: jnp.ndarray,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    gamma: float,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    ep_return = 0
+
+    for i in range(len(rewards) - 1, -1, -1):
+        obs = observations[i]
+        act = actions[i]
+        rew = rewards[i]
+
+        ep_return = rew + gamma * ep_return
+        n_visits = n_visits.at[obs, act].add(1)
+        pred_error = ep_return - q_table[obs, act]
+        q_table = q_table.at[obs, act].add(
+            1.0 / n_visits[obs, act] * pred_error
+        )
+
+    return q_table, n_visits
