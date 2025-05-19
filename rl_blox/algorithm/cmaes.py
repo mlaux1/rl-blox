@@ -313,26 +313,24 @@ class CMAES:
         )
 
         self.population = Population.create(
-            samples=_sample(self, self.config.n_samples_per_update),
+            samples=sample_population(self.config, self.state),
         )
 
 
-def _sample(self, n_samples):
-    self.state.key, sampling_key = jax.random.split(self.state.key, 2)
+def sample_population(config: CMAESConfig, state: CMAESState):
+    state.key, sampling_key = jax.random.split(state.key, 2)
     samples = jax.random.multivariate_normal(
         sampling_key,
-        self.state.mean,
-        self.state.var * self.state.cov,
-        (n_samples,),
+        state.mean,
+        state.var * state.cov,
+        (config.n_samples_per_update,),
     )
-    if self.config.bounds is not None:
-        samples = jnp.clip(
-            samples, self.config.bounds[:, 0], self.config.bounds[:, 1]
-        )
+    if config.bounds is not None:
+        samples = jnp.clip(samples, config.bounds[:, 0], config.bounds[:, 1])
     return samples
 
 
-def get_next_parameters(self):
+def get_next_parameters(config, state, population):
     """Get next individual/parameter vector for evaluation.
 
     Returns
@@ -340,13 +338,11 @@ def get_next_parameters(self):
     params : array, shape (n_params,)
         Parameter vector
     """
-    k = self.state.it % self.config.n_samples_per_update
-    return self.population.samples[k]
+    k = state.it % config.n_samples_per_update
+    return population.samples[k]
 
 
-def set_evaluation_feedback(
-    self, feedback: ArrayLike, logger: LoggerBase | None
-):
+def set_evaluation_feedback(config, state, population, feedback: ArrayLike):
     """Set feedbacks for the parameter vector.
 
     Parameters
@@ -357,67 +353,57 @@ def set_evaluation_feedback(
     logger : LoggerBase | None
         Logger for experiment tracking.
     """
-    k = self.state.it % self.config.n_samples_per_update
+    k = state.it % config.n_samples_per_update
     fitness_k = float(jnp.sum(feedback))
-    if self.config.maximize:
+    if config.maximize:
         fitness_k = -fitness_k
 
-    self.population.fitness[k] = fitness_k
+    population.fitness[k] = fitness_k
 
-    if fitness_k <= self.state.best_fitness:
-        self.state.best_fitness = fitness_k
-        self.state.best_fitness_it = self.state.it
-        self.state.best_params = self.population.samples[k]
+    if fitness_k <= state.best_fitness:
+        state.best_fitness = fitness_k
+        state.best_fitness_it = state.it
+        state.best_params = population.samples[k]
 
-    self.state.it += 1
-
-    if logger is not None:
-        logger.record_stat("variance", self.state.var)
-
-    if self.state.it % self.config.n_samples_per_update == 0:
-        _update(
-            self,
-            self.population.samples,
-            jnp.asarray(self.population.fitness),
-            self.state.it,
-        )
+    state.it += 1
 
 
-def _update(self, samples, fitness, it):
+def _update(config, state, population) -> Population:
+    samples = population.samples
+    fitness = jnp.asarray(population.fitness)
+
     # 1) Update sample distribution mean
 
-    self.state.last_mean = self.state.mean
+    state.last_mean = state.mean
     ranking = jnp.argsort(fitness, axis=0)
-    update_samples = samples[ranking[: self.config.mu]]
-    self.state.mean = jnp.sum(
-        self.config.weights[:, jnp.newaxis] * update_samples, axis=0
+    update_samples = samples[ranking[: config.mu]]
+    state.mean = jnp.sum(
+        config.weights[:, jnp.newaxis] * update_samples, axis=0
     )
 
-    mean_diff = self.state.mean - self.state.last_mean
-    sigma = jnp.sqrt(self.state.var)
+    mean_diff = state.mean - state.last_mean
+    sigma = jnp.sqrt(state.var)
 
     # 2) Cumulation: update evolution paths
 
     # Isotropic (step size) evolution path
-    self.state.ps += (
-        -self.config.cs * self.state.ps
-        + self.config.ps_update_weight
-        / sigma
-        * self.state.invsqrtC.dot(mean_diff)
+    state.ps += (
+        -config.cs * state.ps
+        + config.ps_update_weight / sigma * state.invsqrtC.dot(mean_diff)
     )
     # Anisotropic (covariance) evolution path
-    ps_norm_2 = jnp.linalg.norm(self.state.ps) ** 2  # Temporary constant
-    generation = it / self.config.n_samples_per_update
+    ps_norm_2 = jnp.linalg.norm(state.ps) ** 2  # Temporary constant
+    generation = state.it / config.n_samples_per_update
     hsig = int(
         ps_norm_2
-        / self.config.n_params
-        / jnp.sqrt(1 - (1 - self.config.cs) ** (2 * generation))
-        < self.config.hsig_threshold
+        / config.n_params
+        / jnp.sqrt(1 - (1 - config.cs) ** (2 * generation))
+        < config.hsig_threshold
     )
-    self.state.pc *= 1 - self.config.cc
-    self.state.pc += (
+    state.pc *= 1 - config.cc
+    state.pc += (
         hsig
-        * jnp.sqrt(self.config.cc * (2 - self.config.cc) * self.config.mueff)
+        * jnp.sqrt(config.cc * (2 - config.cc) * config.mueff)
         * mean_diff
         / sigma
     )
@@ -425,63 +411,51 @@ def _update(self, samples, fitness, it):
     # 3) Update sample distribution covariance
 
     # Rank-1 update
-    rank_one_update = jnp.outer(self.state.pc, self.state.pc)
+    rank_one_update = jnp.outer(state.pc, state.pc)
 
     # Rank-mu update
-    noise = (update_samples - self.state.last_mean) / sigma
-    rank_mu_update = noise.T.dot(jnp.diag(self.config.weights)).dot(noise)
+    noise = (update_samples - state.last_mean) / sigma
+    rank_mu_update = noise.T.dot(jnp.diag(config.weights)).dot(noise)
 
     # Correct variance loss by hsig
-    c1a = self.config.c1 * (
-        1 - (1 - hsig) * self.config.cc * (2.0 - self.config.cc)
-    )
+    c1a = config.c1 * (1 - (1 - hsig) * config.cc * (2.0 - config.cc))
 
-    if self.config.active:
-        neg_update = samples[ranking[::-1][: self.config.mu]]
-        neg_update -= self.state.last_mean
+    if config.active:
+        neg_update = samples[ranking[::-1][: config.mu]]
+        neg_update -= state.last_mean
         neg_update /= sigma
-        neg_rank_mu_update = neg_update.T.dot(
-            jnp.diag(self.config.weights)
-        ).dot(neg_update)
+        neg_rank_mu_update = neg_update.T.dot(jnp.diag(config.weights)).dot(
+            neg_update
+        )
 
-        self.state.cov *= (
-            1.0
-            - c1a
-            - self.config.cmu
-            + self.config.neg_cmu * self.config.alpha_old
+        state.cov *= 1.0 - c1a - config.cmu + config.neg_cmu * config.alpha_old
+        state.cov += rank_one_update * config.c1
+        state.cov += rank_mu_update * (
+            config.cmu + config.neg_cmu * (1.0 - config.alpha_old)
         )
-        self.state.cov += rank_one_update * self.config.c1
-        self.state.cov += rank_mu_update * (
-            self.config.cmu
-            + self.config.neg_cmu * (1.0 - self.config.alpha_old)
-        )
-        self.state.cov -= neg_rank_mu_update * self.config.neg_cmu
+        state.cov -= neg_rank_mu_update * config.neg_cmu
     else:
-        self.state.cov *= 1.0 - c1a - self.config.cmu
-        self.state.cov += rank_one_update * self.config.c1
-        self.state.cov += rank_mu_update * self.config.cmu
+        state.cov *= 1.0 - c1a - config.cmu
+        state.cov += rank_one_update * config.c1
+        state.cov += rank_mu_update * config.cmu
 
     # NOTE here is a bug: it should be cs / (2 * damps), however, that
     #      breaks unit tests and does not improve results
-    log_step_size_update = (self.config.cs / self.config.damps) * (
-        ps_norm_2 / self.config.n_params - 1
+    log_step_size_update = (config.cs / config.damps) * (
+        ps_norm_2 / config.n_params - 1
     )
     # NOTE some implementations of CMA-ES use the denominator
     # np.sqrt(n_params) * (1.0 - 1.0 / (4 * n_params) +
     #                           1.0 / (21 * n_params ** 2))
     # instead of n_params, in this case cs / damps is correct
     # Adapt step size with factor <= exp(0.6)
-    self.state.var = (
-        self.state.var * jnp.exp(min((0.6, log_step_size_update))) ** 2
-    )
+    state.var = state.var * jnp.exp(min((0.6, log_step_size_update))) ** 2
 
-    if it - self.state.eigen_decomp_updated > self.config.eigen_update_freq:
-        self.state.invsqrtC = inv_sqrt(self.state.cov)[0]
-        self.state.eigen_decomp_updated = self.state.it
+    if state.it - state.eigen_decomp_updated > config.eigen_update_freq:
+        state.invsqrtC = inv_sqrt(state.cov)[0]
+        state.eigen_decomp_updated = state.state.it
 
-    self.population = Population.create(
-        samples=_sample(self, self.config.n_samples_per_update)
-    )
+    return Population.create(samples=sample_population(config, state))
 
 
 def is_behavior_learning_done(
@@ -555,7 +529,7 @@ def is_behavior_learning_done(
     return False
 
 
-def get_best_parameters(self, method="best"):
+def get_best_parameters(state, method="best"):
     """Get the best parameters.
 
     Parameters
@@ -569,12 +543,12 @@ def get_best_parameters(self, method="best"):
         Best parameters
     """
     if method == "best":
-        return self.state.best_params
+        return state.best_params
     else:
-        return self.state.mean
+        return state.mean
 
 
-def get_best_fitness(self):
+def get_best_fitness(config, state):
     """Get the best observed fitness.
 
     Returns
@@ -585,10 +559,10 @@ def get_best_fitness(self):
         maximize=True, this is the highest observed fitness, and for
         maximize=False, this is the lowest observed fitness.
     """
-    if self.config.maximize:
-        return -self.state.best_fitness
+    if config.maximize:
+        return -state.best_fitness
     else:
-        return self.state.best_fitness
+        return state.best_fitness
 
 
 @nnx.jit
@@ -748,7 +722,9 @@ def train_cmaes(
     if logger is not None:
         logger.start_new_episode()
     for _ in tqdm.trange(total_episodes):
-        set_params(policy, get_next_parameters(opt))
+        set_params(
+            policy, get_next_parameters(opt.config, opt.state, opt.population)
+        )
         ret = 0.0
         done = False
         while not done:  # episode
@@ -761,16 +737,23 @@ def train_cmaes(
             done = termination or truncation
 
         obs, _ = env.reset()
+        set_evaluation_feedback(opt.config, opt.state, opt.population, ret)
+
+        if opt.state.it % opt.config.n_samples_per_update == 0:
+            opt.population = _update(opt.config, opt.state, opt.population)
+
         if logger is not None:
             logger.stop_episode(step_counter)
             logger.start_new_episode()
             logger.record_stat("return", ret)
+            logger.record_stat("variance", opt.state.var)
             logger.record_epoch("policy", policy)
+
         step_counter = 0
-        set_evaluation_feedback(opt, ret, logger)
+
         # TODO activate + logging:
         # is_behavior_learning_done(opt.config, opt.state, opt.population, 0)
 
     print(f"[CMA-ES] {opt.state.best_fitness=}")
-    set_params(policy, get_best_parameters(opt, method="mean"))
+    set_params(policy, get_best_parameters(opt.state, method="mean"))
     return policy
