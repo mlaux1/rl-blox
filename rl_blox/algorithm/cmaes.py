@@ -70,6 +70,9 @@ class CMAES:
     random_state : int or RandomState, optional (default: None)
         Seed for the random number generator or RandomState object.
 
+    logger : LoggerBase, optional
+        Logger for experiment tracking.
+
     verbose : int, optional (default: 0)
         Verbosity level.
     """
@@ -87,6 +90,7 @@ class CMAES:
         min_fitness_dist: float = 2 * jnp.finfo(float).eps,
         max_condition: float = 1e7,
         key: jnp.ndarray | None = None,
+        logger: LoggerBase | None = None,
         verbose: int = 0,
     ):
         self.initial_params = initial_params
@@ -100,6 +104,7 @@ class CMAES:
         self.min_fitness_dist = min_fitness_dist
         self.max_condition = max_condition
         self.key = key
+        self.logger = logger
         self.verbose = verbose
 
         if self.key is None:
@@ -244,11 +249,8 @@ class CMAES:
 
         self.it += 1
 
-        if self.verbose >= 2:
-            print(
-                f"[CMA-ES] Iteration #{self.it}, fitness: {fitness_k}, "
-                f"variance {self.var}"
-            )
+        if self.logger is not None:
+            self.logger.record_stat("variance", self.var)
 
         if self.it % self.n_samples_per_update == 0:
             self._update(self.samples, jnp.asarray(self.fitness), self.it)
@@ -571,6 +573,7 @@ def train_cmaes(
         active=active,
         maximize=True,
         key=key,
+        logger=logger,
         verbose=0,
     )
 
