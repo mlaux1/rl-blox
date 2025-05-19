@@ -214,7 +214,7 @@ class Population:
         return cls(samples=samples, fitness=[np.inf] * len(samples))
 
 
-def inv_sqrt(cov):
+def inv_sqrt(cov: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Compute inverse square root of a covariance matrix."""
     cov = jnp.triu(cov) + jnp.triu(cov, 1).T
     D, B = jnp.linalg.eigh(cov)
@@ -222,99 +222,6 @@ def inv_sqrt(cov):
     D = jnp.maximum(D, jnp.finfo(float).eps)
     D = jnp.sqrt(D)
     return B.dot(jnp.diag(1.0 / D)).dot(B.T), B, D
-
-
-class CMAES:
-    """Covariance Matrix Adaptation Evolution Strategy.
-
-    Parameters
-    ----------
-    initial_params : array-like, shape = (n_params,), optional (default: 0s)
-        Initial parameter vector.
-
-    variance : float, optional (default: 1.0)
-        Initial exploration variance.
-
-    covariance : array-like, optional (default: None)
-        Either a diagonal (with shape (n_params,)) or a full covariance matrix
-        (with shape (n_params, n_params)). A full covariance can contain
-        information about the correlation of variables.
-
-    n_samples_per_update : integer, optional (default: 4+int(3*log(n_params)))
-        Number of roll-outs that are required for a parameter update.
-
-    active : bool, optional (default: False)
-        Active CMA-ES (aCMA-ES) with negative weighted covariance matrix
-        update
-
-    bounds : array-like, shape (n_params, 2), optional (default: None)
-        Upper and lower bounds for each parameter.
-
-    maximize : boolean, optional (default: True)
-        Maximize return or minimize cost?
-
-    min_variance : float, optional (default: 2 * np.finfo(float).eps ** 2)
-        Minimum variance before restart
-
-    min_fitness_dist : float, optional (default: 2 * np.finfo(float).eps)
-        Minimum distance between fitness values before restart
-
-    max_condition : float optional (default: 1e7)
-        Maximum condition of covariance matrix
-
-    key : jnp.ndarray, optional
-        Key for PRNG.
-
-    logger : LoggerBase, optional
-        Logger for experiment tracking.
-
-    verbose : int, optional (default: 0)
-        Verbosity level.
-    """
-
-    config: CMAESConfig
-    state: CMAESState
-    population: Population
-
-    def __init__(
-        self,
-        initial_params: ArrayLike | None = None,
-        variance: float = 1.0,
-        covariance: ArrayLike | None = None,
-        n_samples_per_update: int | None = None,
-        active: bool = False,
-        bounds: jnp.ndarray | None = None,
-        maximize: bool = True,
-        min_variance: float = 2 * jnp.finfo(float).eps ** 2,
-        min_fitness_dist: float = 2 * jnp.finfo(float).eps,
-        max_condition: float = 1e7,
-        key: jnp.ndarray | None = None,
-        verbose: int = 0,
-    ):
-        self.verbose = verbose
-
-        self.config = CMAESConfig.create(
-            active=active,
-            bounds=bounds,
-            maximize=maximize,
-            min_variance=min_variance,
-            min_fitness_dist=min_fitness_dist,
-            max_condition=max_condition,
-            n_params=len(initial_params),
-            n_samples_per_update=n_samples_per_update,
-        )
-        if verbose:
-            print(f"[CMA-ES] {self.config.n_samples_per_update=}")
-        self.state = CMAESState.create(
-            key=key,
-            initial_params=initial_params,
-            covariance=covariance,
-            variance=variance,
-        )
-
-        self.population = Population.create(
-            samples=sample_population(self.config, self.state),
-        )
 
 
 def sample_population(config: CMAESConfig, state: CMAESState):
@@ -701,15 +608,31 @@ def train_cmaes(
     """
     init_params = flat_params(policy)
     key = jax.random.key(seed)
-    opt = CMAES(
-        initial_params=init_params,
-        variance=variance,
-        covariance=covariance,
-        n_samples_per_update=n_samples_per_update,
+
+    config = CMAESConfig.create(
         active=active,
+        bounds=None,
         maximize=True,
+        min_variance=2 * jnp.finfo(float).eps ** 2,
+        min_fitness_dist=2 * jnp.finfo(float).eps,
+        max_condition=1e7,
+        n_params=len(init_params),
+        n_samples_per_update=n_samples_per_update,
+    )
+    if (
+        logger is not None
+        and hasattr(logger, "hparams")
+        and logger.hparams is not None
+    ):
+        logger.hparams["n_samples_per_update"] = config.n_samples_per_update
+    state = CMAESState.create(
         key=key,
-        verbose=0,
+        initial_params=init_params,
+        covariance=covariance,
+        variance=variance,
+    )
+    population = Population.create(
+        samples=sample_population(config, state),
     )
 
     @nnx.jit
@@ -722,12 +645,10 @@ def train_cmaes(
     if logger is not None:
         logger.start_new_episode()
     for _ in tqdm.trange(total_episodes):
-        set_params(
-            policy, get_next_parameters(opt.config, opt.state, opt.population)
-        )
+        set_params(policy, get_next_parameters(config, state, population))
         ret = 0.0
         done = False
-        while not done:  # episode
+        while not done:
             action = np.asarray(policy_action(policy, jnp.asarray(obs)))
 
             next_obs, reward, termination, truncation, info = env.step(action)
@@ -737,16 +658,16 @@ def train_cmaes(
             done = termination or truncation
 
         obs, _ = env.reset()
-        set_evaluation_feedback(opt.config, opt.state, opt.population, ret)
+        set_evaluation_feedback(config, state, population, ret)
 
-        if opt.state.it % opt.config.n_samples_per_update == 0:
-            opt.population = _update(opt.config, opt.state, opt.population)
+        if state.it % config.n_samples_per_update == 0:
+            population = _update(config, state, population)
 
         if logger is not None:
             logger.stop_episode(step_counter)
             logger.start_new_episode()
             logger.record_stat("return", ret)
-            logger.record_stat("variance", opt.state.var)
+            logger.record_stat("variance", state.var)
             logger.record_epoch("policy", policy)
 
         step_counter = 0
@@ -754,6 +675,6 @@ def train_cmaes(
         # TODO activate + logging:
         # is_behavior_learning_done(opt.config, opt.state, opt.population, 0)
 
-    print(f"[CMA-ES] {opt.state.best_fitness=}")
-    set_params(policy, get_best_parameters(opt.state, method="mean"))
+    print(f"[CMA-ES] {state.best_fitness=}")
+    set_params(policy, get_best_parameters(state, method="mean"))
     return policy
