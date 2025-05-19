@@ -13,7 +13,7 @@ def train_monte_carlo(
     q_table: ArrayLike,
     total_timesteps: int,
     n_visits: ArrayLike | None = None,
-    epsilon: float = 0.5,
+    epsilon: float = 0.3,
     gamma: float = 0.99,
     seed: int = 1,
     logger: LoggerBase | None = None,

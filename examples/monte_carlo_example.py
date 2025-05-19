@@ -1,6 +1,7 @@
 from functools import partial
 
 import gymnasium as gym
+import jax
 from gymnasium.wrappers import RecordEpisodeStatistics
 
 from rl_blox.algorithm.monte_carlo import train_monte_carlo
@@ -15,14 +16,15 @@ train_env = gym.make(ENV_NAME)
 train_env = RecordEpisodeStatistics(train_env)
 
 q_table = make_q_table(train_env)
-
 q_table, _ = train_monte_carlo(train_env, q_table, total_timesteps=NUM_STEPS)
-
 train_env.close()
 
-print(q_table)
-
-policy = partial(get_epsilon_greedy_action, key=42, q_table=q_table)
+policy = partial(
+    get_epsilon_greedy_action,
+    epsilon=0.5,
+    key=jax.random.key(42),
+    q_table=q_table,
+)
 
 test_env = gym.make(ENV_NAME, render_mode="human")
 generate_rollout(test_env, policy)
