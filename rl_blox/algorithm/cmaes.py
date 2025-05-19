@@ -209,6 +209,10 @@ class Population:
     samples: jnp.ndarray
     fitness: list[float]
 
+    @classmethod
+    def create(cls, samples):
+        return cls(samples=samples, fitness=[np.inf] * len(samples))
+
 
 def inv_sqrt(cov):
     """Compute inverse square root of a covariance matrix."""
@@ -308,9 +312,8 @@ class CMAES:
             variance=variance,
         )
 
-        self.population = Population(
+        self.population = Population.create(
             samples=_sample(self, self.config.n_samples_per_update),
-            fitness=[],
         )
 
 
@@ -359,7 +362,7 @@ def set_evaluation_feedback(
     if self.config.maximize:
         fitness_k = -fitness_k
 
-    self.population.fitness.append(fitness_k)
+    self.population.fitness[k] = fitness_k
 
     if fitness_k <= self.state.best_fitness:
         self.state.best_fitness = fitness_k
@@ -476,8 +479,9 @@ def _update(self, samples, fitness, it):
         self.state.invsqrtC = inv_sqrt(self.state.cov)[0]
         self.state.eigen_decomp_updated = self.state.it
 
-    self.population.samples = _sample(self, self.config.n_samples_per_update)
-    self.population.fitness = []
+    self.population = Population.create(
+        samples=_sample(self, self.config.n_samples_per_update)
+    )
 
 
 def is_behavior_learning_done(
