@@ -8,6 +8,7 @@ import numpy as np
 from flax import nnx
 from jax.typing import ArrayLike
 from scipy.spatial.distance import pdist
+import tqdm
 
 from ..logging.logger import LoggerBase
 
@@ -586,7 +587,7 @@ def train_cmaes(
     step_counter = 0
     if logger is not None:
         logger.start_new_episode()
-    for ep in range(total_episodes):
+    for _ in tqdm.trange(total_episodes):
         set_params(policy, opt.get_next_parameters())
         ret = 0.0
         done = False
