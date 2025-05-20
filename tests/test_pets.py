@@ -18,4 +18,4 @@ def test_pets():
         total_timesteps=10,
     )
 
-    env.close
+    env.close()
