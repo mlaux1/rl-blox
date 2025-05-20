@@ -149,21 +149,30 @@ def stochastic_policy_gradient_pseudo_loss(
     weight: jnp.ndarray,
     policy: StochasticPolicyBase,
 ) -> jnp.ndarray:
-    r"""Pseudo loss for the policy gradient.
+    r"""Pseudo loss for the stochastic policy gradient.
 
-    For a given stochastic policy :math:`\pi(a|o)`, observations :math:`o_i`,
-    actions :math:`a_i`, and corresponding weights :math:`w_i`, the pseudo loss
-    is defined as
+    For a given stochastic policy :math:`\pi_{\theta}(a|o)`, observations
+    :math:`o_i`, actions :math:`a_i`, and corresponding weights :math:`w_i`,
+    the pseudo loss is defined as
 
     .. math::
 
-        \mathcal{L}(\pi)
-        =
-        -\frac{1}{N} \sum_{i=1}^{N} w_i \log \pi(a_i|o_i).
+        \mathcal{L}(\theta)
+        = -\frac{1}{N} \sum_{i=1}^{N} w_i \ln \pi_{\theta}(a_i|o_i)
+        \approx -\mathbb{E} \left[ w \ln \pi_{\theta}(a|o) \right]
 
-    The calculation of weights depends on the specific algorithm. We take the
-    negative value of the pseudo loss, because we want to perform gradient
-    ascent with the policy gradient, but we use a gradient descent optimizer.
+    where :math:`w` depends on the algorithm:
+
+    * REINFORCE: :math:`w = \gamma^t R_0` or :math:`w = \gamma^t R_t`
+      (causality trick, less variance) or
+      :math:`w = \gamma^t (R_t - \hat{v}(o_t))` (with baseline, even less
+      variance)
+    * Actor-Critic:
+      :math:`w = \gamma^t (R_t + \gamma \hat{v}(o_{t+1}) - \hat{v}(o_t))`
+
+    We take the negative value of the pseudo loss, because we want to perform
+    gradient ascent with the policy gradient, but we use a gradient descent
+    optimizer.
 
     Parameters
     ----------
