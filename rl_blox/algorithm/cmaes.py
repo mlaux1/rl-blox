@@ -711,10 +711,5 @@ def train_cmaes(
         step_counter = 0
 
     set_params(policy, state.mean)
-
-    if config.maximize:
-        best_fitness = -state.best_fitness
-    else:
-        best_fitness = state.best_fitness
-
+    best_fitness = -state.best_fitness
     return policy, best_fitness, stopped
