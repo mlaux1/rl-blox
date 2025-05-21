@@ -181,14 +181,52 @@ def sample_actions(
     obs: jnp.ndarray,
     key: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Sample actions with deterministic policy and Gaussian action noise.
+    r"""Sample actions with deterministic policy and Gaussian action noise.
 
-    Actions will be clipped to [action_low, action_high].
+    Given a policy :math:`\pi(o) = a`, we will generate an action
+
+    .. math::
+
+        a = \texttt{clip}(\pi(o) + \epsilon, a_{low}, a_{high})
+
+    with added noise :math:`\epsilon \sim \mathcal{N}(0, \sigma^2)`
+    (standard deviation ``action_scale * exploration_noise``) and the
+    action range :math:`\left[a_{low}, a_{high}\right]` (parameters
+    ``action_low`` and ``action_high``).
+
+    Parameters
+    ----------
+    action_low : array, shape (n_action_dims,)
+        Lower bound on actions.
+
+    action_high : array, shape (n_action_dims,)
+        Upper bound on actions.
+
+    action_scale : array, shape (n_action_dims,)
+        Scale of action dimensions.
+
+    exploration_noise : float
+        Scaling factor for exploration noise.
+
+    policy : DeterministicTanhPolicy
+        Deterministic policy.
+
+    obs : array, shape (n_observations_dims,)
+        Observation.
+
+    key : array
+        Key for PRNG.
+
+    Returns
+    -------
+    action : array, shape (n_action_dims,)
+        Exploration action.
     """
     action = policy(obs)
-    exploring_action = jax.random.multivariate_normal(
-        key, action, jnp.diag(action_scale * exploration_noise)
+    eps = (
+        exploration_noise * action_scale * jax.random.normal(key, action.shape)
     )
+    exploring_action = action + eps
     return jnp.clip(exploring_action, action_low, action_high)
 
 
