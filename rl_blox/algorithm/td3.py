@@ -239,7 +239,7 @@ def create_td3_state(
     q_learning_rate: float = 1e-3,
     seed: int = 0,
 ) -> namedtuple:
-    """Create components for SAC algorithm with default configuration."""
+    """Create components for TD3 algorithm with default configuration."""
     env.action_space.seed(seed)
 
     policy_net = MLP(
