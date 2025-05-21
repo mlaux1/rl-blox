@@ -175,20 +175,58 @@ def sample_target_actions(
     obs: jnp.ndarray,
     key: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Sample target actions with truncated Gaussian noise.
+    r"""Sample target actions with truncated Gaussian noise.
 
-    Actions will be clipped to [action_low, action_high].
+    Given a deterministic policy :math:`\pi(o) = a`, we will generate an action
+
+    .. math::
+
+        a = \texttt{clip}(
+        \pi(o) + \texttt{clip}(\epsilon, -c, c),
+        a_{low}, a_{high})
+
+    with added clipped noise :math:`\texttt{clip}(\epsilon, -c, c)`
+    (:math:`c` is ``action_scale * noise_clip``) sampled through
+    :math:`\epsilon \sim \mathcal{N}(0, \sigma^2)` (standard deviation
+    ``action_scale * exploration_noise``) and clipped to
+    the action range :math:`\left[a_{low}, a_{high}\right]` (parameters
+    ``action_low`` and ``action_high``).
+
+    Parameters
+    ----------
+    action_low : array, shape (n_action_dims,)
+        Lower bound on actions.
+
+    action_high : array, shape (n_action_dims,)
+        Upper bound on actions.
+
+    action_scale : array, shape (n_action_dims,)
+        Scale of action dimensions.
+
+    exploration_noise : float
+        Scaling factor for exploration noise.
+
+    policy : DeterministicTanhPolicy
+        Deterministic policy.
+
+    obs : array, shape (n_observations_dims,)
+        Observation.
+
+    key : array
+        Key for PRNG.
+
+    Returns
+    -------
+    action : array, shape (n_action_dims,)
+        Exploration action.
     """
     action = policy(obs)
-    noise = jax.random.multivariate_normal(
-        key,
-        jnp.zeros_like(action[0]),
-        jnp.diag(action_scale * exploration_noise),
-        shape=(action.shape[0],),
+    eps = (
+        exploration_noise * action_scale * jax.random.normal(key, action.shape)
     )
     scaled_noise_clip = action_scale * noise_clip
-    clipped_noise = jnp.clip(noise, -scaled_noise_clip, scaled_noise_clip)
-    return jnp.clip(action + clipped_noise, action_low, action_high)
+    clipped_eps = jnp.clip(eps, -scaled_noise_clip, scaled_noise_clip)
+    return jnp.clip(action + clipped_eps, action_low, action_high)
 
 
 def create_td3_state(
