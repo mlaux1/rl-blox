@@ -183,15 +183,15 @@ def sample_actions(
 ) -> jnp.ndarray:
     r"""Sample actions with deterministic policy and Gaussian action noise.
 
-    Given a policy :math:`\pi(o) = a`, we will generate an action
+    Given a deterministic policy :math:`\pi(o) = a`, we will generate an action
 
     .. math::
 
         a = \texttt{clip}(\pi(o) + \epsilon, a_{low}, a_{high})
 
     with added noise :math:`\epsilon \sim \mathcal{N}(0, \sigma^2)`
-    (standard deviation ``action_scale * exploration_noise``) and the
-    action range :math:`\left[a_{low}, a_{high}\right]` (parameters
+    (standard deviation ``action_scale * exploration_noise``) and clipped to
+    the action range :math:`\left[a_{low}, a_{high}\right]` (parameters
     ``action_low`` and ``action_high``).
 
     Parameters
