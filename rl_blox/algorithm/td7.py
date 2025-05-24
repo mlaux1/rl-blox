@@ -494,26 +494,27 @@ def train_td7(
                     actor_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q1, observations
                     )
-                    soft_target_net_update(policy, policy_target, tau)
-                    soft_target_net_update(q1, q1_target, tau)
-                    soft_target_net_update(q2, q2_target, tau)
                     if logger is not None:
                         logger.record_stat(
                             "policy loss",
                             actor_loss_value,
                             step=global_step + 1,
                         )
-                    logger.record_epoch("policy", policy, step=global_step + 1)
-                    logger.record_epoch(
-                        "policy_target", policy_target, step=global_step + 1
-                    )
-                    logger.record_epoch(
-                        "q1_target", q1_target, step=global_step + 1
-                    )
-                    logger.record_epoch(
-                        "q2_target", q2_target, step=global_step + 1
-                    )
                 """
+                soft_target_net_update(actor, actor_target, tau)
+                soft_target_net_update(critic1, critic1_target, tau)
+                soft_target_net_update(critic2, critic2_target, tau)
+                if logger is not None:
+                    logger.record_epoch("policy", actor, step=global_step + 1)
+                    logger.record_epoch(
+                        "policy_target", actor_target, step=global_step + 1
+                    )
+                    logger.record_epoch(
+                        "q1_target", critic1_target, step=global_step + 1
+                    )
+                    logger.record_epoch(
+                        "q2_target", critic2_target, step=global_step + 1
+                    )
 
         if termination or truncated:
             if logger is not None:
