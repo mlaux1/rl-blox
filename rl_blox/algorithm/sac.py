@@ -305,45 +305,73 @@ def train_sac(
 
     Parameters
     ----------
-    env
+    env : gymnasium.Env
         Gymnasium environment.
-    policy
+
+    policy : StochasticPolicyBase
         Stochastic policy.
-    q1
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy.
+
+    q1 : nnx.Module
         First soft Q network.
-    q2
+
+    q1_optimizer : nnx.Optimizer
+        Optimizer for first critic.
+
+    q2 : nnx.Module
         Second soft Q network.
+
+    q2_optimizer : nnx.Optimizer
+        Optimizer for second critic.
+
     seed : int
         Seed for random number generation.
-    total_timesteps
+
+    total_timesteps : int
         Total timesteps of the experiments.
-    buffer_size
+
+    buffer_size : int
         The replay memory buffer size.
-    gamma
+
+    gamma  float
         The discount factor gamma.
+
     tau : float, optional (default: 0.005)
         Target smoothing coefficient.
-    batch_size
+
+    batch_size : int
         The batch size of sample from the reply memory.
-    learning_starts
+
+    learning_starts : int
         Timestep to start learning.
-    entropy_learning_rate
+
+    entropy_learning_rate : float
         The learning rate of the Q network optimizer.
-    policy_delay
+
+    policy_delay : int
         Delayed policy updates. The policy is updated every ``policy_delay``
         steps.
-    target_network_delay
+
+    target_network_delay : int
         The target networks are updated every ``target_network_delay`` steps.
-    alpha
+
+    alpha : float
         Entropy regularization coefficient.
-    autotune
+
+    autotune : bool
         Automatic tuning of the entropy coefficient.
-    q1_target
+
+    q1_target : nnx.Module
         Target network for q1.
-    q2_target
+
+    q2_target : nnx.Module
         Target network for q2.
-    entropy_control
+
+    entropy_control : EntropyControl
         State of entropy tuning.
+
     logger : LoggerBase, optional
         Experiment logger.
 
@@ -606,10 +634,41 @@ def sac_update_actor(
     q1: nnx.Module,
     q2: nnx.Module,
     action_key: jnp.ndarray,
-    observations: jnp.ndarray,
+    observation: jnp.ndarray,
     alpha: jnp.ndarray,
 ) -> float:
     """SAC update of actor.
+
+    Uses ``policy_optimizer`` to update ``policy`` with the
+    :func:`sac_actor_loss`.
+
+    Parameters
+    ----------
+    policy : StochasticPolicyBase
+        Policy.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy.
+
+    q1 : nnx.Module
+        First soft Q network.
+
+    q2 : nnx.Module
+        Second soft Q network.
+
+    action_key : jnp.ndarray
+        PRNG Key for action sampling.
+
+    observation : jnp.ndarray
+        Observations from mini-batch.
+
+    alpha : jnp.ndarray
+        Entropy coefficient.
+
+    Returns
+    -------
+    loss : float
+        Actor loss.
 
     See also
     --------
@@ -617,7 +676,7 @@ def sac_update_actor(
         The loss function used during the optimization step.
     """
     loss, grads = nnx.value_and_grad(sac_actor_loss, argnums=0)(
-        policy, q1, q2, alpha, action_key, observations
+        policy, q1, q2, alpha, action_key, observation
     )
     policy_optimizer.update(grads)
     return loss
