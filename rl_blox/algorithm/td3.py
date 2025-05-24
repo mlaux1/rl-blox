@@ -141,8 +141,8 @@ def double_q_deterministic_bootstrap_estimate(
         \gamma \min(Q_1(o_{t+1}, a_{t+1}), Q_2(o_{t+1}, a_{t+1})),
 
     where :math:`r_i` (``reward``) is the immediate reward obtained in the
-    transition, :math:`o_{i+1}` (``next_observations``) is the observation
-    after the transition, :math:`a_{t+1}` (``next_actions``) is the next action,
+    transition, :math:`o_{i+1}` (``next_observation``) is the observation
+    after the transition, :math:`a_{t+1}` (``next_action``) is the next action,
     :math:`\gamma` (``gamma``) is the discount factor, and :math:`t_i`
     (``terminated``) indicates if a terminal state was reached in this
     transition.
