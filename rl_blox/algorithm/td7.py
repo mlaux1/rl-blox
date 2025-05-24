@@ -16,6 +16,7 @@ from ..blox.losses import (
     deterministic_policy_gradient_loss,
     mse_continuous_action_value_loss,
 )
+from .td3 import double_q_deterministic_bootstrap_estimate
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
@@ -74,12 +75,10 @@ class CriticSALE(nnx.Module):
         self.q_net = q_net
         self.q0 = nnx.Linear(n_state_features + n_action_features, hidden_nodes, rngs=rngs)
 
-    def __call__(self, state: jnp.ndarray, action: jnp.ndarray, zsa: jnp.ndarray, zs: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, sa: jnp.ndarray, zsa: jnp.ndarray, zs: jnp.ndarray) -> jnp.ndarray:
         """Q(s, a, zsa, zs)."""
-        sa = jnp.concatenate((state, action), axis=-1)
-        embeddings = jnp.concatenate((zsa, zs), axis=-1)
-
         h = avg_l1_norm(self.q0(sa))
+        embeddings = jnp.concatenate((zsa, zs), axis=-1)
         he = jnp.concatenate((h, embeddings), axis=-1)  # hidden_nodes + 2 * n_embedding_dimensions
         return self.q_net(he)
 
@@ -113,7 +112,95 @@ def state_action_embedding_loss(
     return optax.squared_error(predictions=zsa, targets=zsp)
 
 
-def create_td3_state(
+def sample_actions(
+    action_low: jnp.ndarray,
+    action_high: jnp.ndarray,
+    action_scale: jnp.ndarray,
+    exploration_noise: float,
+    embedding: SALE,
+    actor: ActorSALE,
+    obs: jnp.ndarray,
+    key: jnp.ndarray,
+) -> jnp.ndarray:
+    """TODO"""
+    action = actor(obs, embedding.state_embedding(obs))
+    eps = (
+        exploration_noise * action_scale * jax.random.normal(key, action.shape)
+    )
+    exploring_action = action + eps
+    return jnp.clip(exploring_action, action_low, action_high)
+
+
+def sample_target_actions(
+    action_low: jnp.ndarray,
+    action_high: jnp.ndarray,
+    action_scale: jnp.ndarray,
+    exploration_noise: float,
+    noise_clip: float,
+    embedding: SALE,
+    actor: ActorSALE,
+    obs: jnp.ndarray,
+    key: jnp.ndarray,
+) -> jnp.ndarray:
+    """TODO"""
+    action = actor(obs, embedding.state_embedding(obs))
+    eps = (
+        exploration_noise * action_scale * jax.random.normal(key, action.shape)
+    )
+    scaled_noise_clip = action_scale * noise_clip
+    clipped_eps = jnp.clip(eps, -scaled_noise_clip, scaled_noise_clip)
+    return jnp.clip(action + clipped_eps, action_low, action_high)
+
+
+@nnx.jit
+def td7_update_critic(
+    embedding: SALE,
+    critic1: nnx.Module,
+    critic1_target: nnx.Module,
+    critic1_optimizer: nnx.Optimizer,
+    critic2: nnx.Module,
+    critic2_target: nnx.Module,
+    critic2_optimizer: nnx.Optimizer,
+    gamma: float,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    next_observations: jnp.ndarray,
+    next_actions: jnp.ndarray,
+    rewards: jnp.ndarray,
+    terminations: jnp.ndarray,
+) -> tuple[float, float]:
+    """TODO"""
+    zsa, zs = embedding(observations, actions)
+    next_zsa, next_zs = embedding(next_observations, next_actions)
+
+    q1_target = partial(critic1_target, zsa=next_zsa, zs=next_zs)
+    q2_target = partial(critic2_target, zsa=next_zsa, zs=next_zs)
+    q_bootstrap = double_q_deterministic_bootstrap_estimate(
+        rewards,
+        terminations,
+        gamma,
+        q1_target,
+        q2_target,
+        next_observations,
+        next_actions,
+    )
+
+    q1 = partial(critic1, zsa=zsa, zs=zs)
+    q1_loss_value, grads = nnx.value_and_grad(
+        mse_continuous_action_value_loss, argnums=3
+    )(observations, actions, q_bootstrap, q1)
+    critic1_optimizer.update(grads)
+
+    q2 = partial(critic2, zsa=zsa, zs=zs)
+    q2_loss_value, grads = nnx.value_and_grad(
+        mse_continuous_action_value_loss, argnums=3
+    )(observations, actions, q_bootstrap, q2)
+    critic2_optimizer.update(grads)
+
+    return q1_loss_value, q2_loss_value
+
+
+def create_td7_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     n_embedding_dimensions = 256,
     state_embedding_hidden_nodes: list[int] | tuple[int] = (256,),
@@ -240,11 +327,13 @@ def train_td7(
     exploration_noise: float = 0.2,
     noise_clip: float = 0.5,
     learning_starts: int = 25_000,
-    policy_target: nnx.Module | None = None,
+    actor_target: nnx.Module | None = None,
     critic1_target: nnx.Module | None = None,
-    q2_target: nnx.Optimizer | None = None,
+    critic2_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
+    nnx.Module,
+    nnx.Optimizer,
     nnx.Module,
     nnx.Module,
     nnx.Optimizer,
@@ -331,12 +420,12 @@ def train_td7(
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
 
-    if policy_target is None:
-        policy_target = nnx.clone(policy)
-    if q1_target is None:
-        q1_target = nnx.clone(q1)
-    if q2_target is None:
-        q2_target = nnx.clone(q2)
+    if actor_target is None:
+        actor_target = nnx.clone(actor)
+    if critic1_target is None:
+        critic1_target = nnx.clone(critic1)
+    if critic2_target is None:
+        critic2_target = nnx.clone(critic2)
 
     for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
@@ -344,7 +433,7 @@ def train_td7(
         else:
             key, action_key = jax.random.split(key, 2)
             action = np.asarray(
-                _sample_actions(policy, jnp.asarray(obs), action_key)
+                _sample_actions(actor, embedding, jnp.asarray(obs), action_key)
             )
 
         next_obs, reward, termination, truncated, info = env.step(action)
@@ -371,15 +460,16 @@ def train_td7(
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
                 next_actions = _sample_target_actions(
-                    policy_target, next_observations, sampling_key
+                    embedding, actor_target, next_observations, sampling_key
                 )
-                q1_loss_value, q2_loss_value = td3_update_critic(
-                    q1,
-                    q1_target,
-                    q1_optimizer,
-                    q2,
-                    q2_target,
-                    q2_optimizer,
+                q1_loss_value, q2_loss_value = td7_update_critic(
+                    embedding,
+                    critic1,
+                    critic1_target,
+                    critic1_optimizer,
+                    critic2,
+                    critic2_target,
+                    critic2_optimizer,
                     gamma,
                     observations,
                     actions,
@@ -393,12 +483,13 @@ def train_td7(
                     logger.record_stat(
                         "q1 loss", q1_loss_value, step=global_step + 1
                     )
-                    logger.record_epoch("q1", q1, step=global_step + 1)
+                    logger.record_epoch("q1", critic1, step=global_step + 1)
                     logger.record_stat(
                         "q2 loss", q2_loss_value, step=global_step + 1
                     )
-                    logger.record_epoch("q2", q2, step=global_step + 1)
+                    logger.record_epoch("q2", critic2, step=global_step + 1)
 
+                """ TODO activate and port
                 if global_step % policy_delay == 0:
                     actor_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q1, observations
@@ -422,6 +513,7 @@ def train_td7(
                     logger.record_epoch(
                         "q2_target", q2_target, step=global_step + 1
                     )
+                """
 
         if termination or truncated:
             if logger is not None:
@@ -438,13 +530,15 @@ def train_td7(
             obs = next_obs
 
     return (
-        policy,
-        policy_target,
-        policy_optimizer,
-        q1,
-        q1_target,
-        q1_optimizer,
-        q2,
-        q2_target,
-        q2_optimizer,
+        embedding,
+        embedding_optimizer,
+        actor,
+        actor_target,
+        actor_optimizer,
+        critic1,
+        critic1_target,
+        critic1_optimizer,
+        critic2,
+        critic2_target,
+        critic2_optimizer,
     )
