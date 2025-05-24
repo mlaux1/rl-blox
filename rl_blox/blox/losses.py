@@ -15,14 +15,14 @@ def mse_continuous_action_value_loss(
     r"""Mean squared error loss for continuous action-value function.
 
     For a given action-value function :math:`q(o, a)` and target values
-    :math:`R(o, a)`, the loss is defined as
+    :math:`y_i`, the loss is defined as
 
     .. math::
 
         \mathcal{L}(q)
-        = \frac{1}{2 N} \sum_{i=1}^{N} (q(o_i, a_i) - R(o_i, a_i))^2.
+        = \frac{1}{N} \sum_{i=1}^{N} (q(o_i, a_i) - y_i)^2.
 
-    :math:`R(o, a)` could be the Monte Carlo return.
+    :math:`y_i` could be the Monte Carlo return.
 
     Parameters
     ----------
@@ -33,7 +33,7 @@ def mse_continuous_action_value_loss(
         Batch of selected actions.
 
     q_target_values : array, shape (n_samples,)
-        Actual action values that should be approximated.
+        Target action values :math:`y_i` that should be approximated.
 
     q : nnx.Module
         Q network that maps a pair of observation and action to the action
@@ -64,14 +64,14 @@ def mse_discrete_action_value_loss(
     r"""Mean squared error loss for discrete action-value function.
 
     For a given action-value function :math:`q(o, a)` and target values
-    :math:`R(o, a)`, the loss is defined as
+    :math:`y_i`, the loss is defined as
 
     .. math::
 
         \mathcal{L}(q)
-        = \frac{1}{2 N} \sum_{i=1}^{N} (q(o_i, a_i) - R(o_i, a_i))^2.
+        = \frac{1}{N} \sum_{i=1}^{N} (q(o_i, a_i) - y_i)^2.
 
-    :math:`R(o, a)` could be the Monte Carlo return.
+    :math:`y_i` could be the Monte Carlo return.
 
     Parameters
     ----------
@@ -82,7 +82,7 @@ def mse_discrete_action_value_loss(
         Batch of selected actions.
 
     q_target_values : array, shape (n_samples,)
-        Actual action values that should be approximated.
+        Target action values :math:`y_i` that should be approximated.
 
     q : nnx.Module
         Q network that maps observation to the action-values of each action of
