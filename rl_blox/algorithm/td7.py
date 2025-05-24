@@ -153,6 +153,22 @@ def sample_target_actions(
 
 
 @nnx.jit
+def td7_update_embedding(
+    embedding: SALE,
+    embedding_optimizer: nnx.Optimizer,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    next_observations: jnp.ndarray,
+) -> float:
+    """TODO"""
+    embedding_loss_value, grads = nnx.value_and_grad(
+        state_action_embedding_loss, argnums=0
+    )(embedding, observations, actions, next_observations)
+    embedding_optimizer.update(grads)
+    return embedding_loss_value
+
+
+@nnx.jit
 def td7_update_critic(
     embedding: SALE,
     critic1: nnx.Module,
@@ -501,9 +517,18 @@ def train_td7(
                             step=global_step + 1,
                         )
                 """
+
+                embedding_loss_value = td7_update_embedding(embedding, embedding_optimizer, observations, actions, next_observations)
+                if logger is not None:
+                    logger.record_stat(
+                        "embedding loss", embedding_loss_value, step=global_step + 1
+                    )
+                    logger.record_epoch("embedding", actor, step=global_step + 1)
+
                 soft_target_net_update(actor, actor_target, tau)
                 soft_target_net_update(critic1, critic1_target, tau)
                 soft_target_net_update(critic2, critic2_target, tau)
+
                 if logger is not None:
                     logger.record_epoch("policy", actor, step=global_step + 1)
                     logger.record_epoch(
