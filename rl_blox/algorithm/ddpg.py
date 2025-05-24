@@ -107,29 +107,36 @@ def ddpg_update_critic(
 
 def q_deterministic_bootstrap_estimate(
     policy: nnx.Module,
-    rewards: jnp.ndarray,
-    terminations: jnp.ndarray,
+    reward: jnp.ndarray,
+    terminated: jnp.ndarray,
     gamma: float,
     q: nnx.Module,
-    next_observations: jnp.ndarray,
+    next_observation: jnp.ndarray,
 ) -> jnp.ndarray:
     r"""Bootstrap estimate of action-value function with deterministic policy.
 
+    For a mini-batch, we calculate target values :math:`y_i` for the critic
+
     .. math::
 
-        \mathbb{E}\left[R_t\right]
-        \approx
-        r_{t+1} + \gamma Q(o_{t+1}, \pi(o_{t+1}))
+        y_i = r_i + (1 - t_i) \gamma Q(o_{i+1}, \pi(o_{i+1})),
+
+    where :math:`r_i` (``reward``) is the immediate reward obtained in the
+    transition, :math:`o_{i+1}` (``next_observations``) is the observation
+    after the transition, :math:`\pi` is the deterministic policy network,
+    :math:`\gamma` (``gamma``) is the discount factor, and :math:`t_i`
+    (``terminated``) indicates if a terminal state was reached in this
+    transition.
 
     Parameters
     ----------
     policy : nnx.Module
         Deterministic policy for action selection.
 
-    rewards : array
+    reward : array
         Observed reward.
 
-    terminations : array
+    terminated : array
         Indicates if a terminal state was reached in this step.
 
     gamma : float
@@ -138,7 +145,7 @@ def q_deterministic_bootstrap_estimate(
     q : nnx.Module
         Action-value function.
 
-    next_observations : array
+    next_observation : array
         Next observations.
 
     Returns
@@ -146,9 +153,9 @@ def q_deterministic_bootstrap_estimate(
     q_bootstrap : array
         Bootstrap estimate of action-value function.
     """
-    next_actions = policy(next_observations)
-    obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
-    return rewards + (1 - terminations) * gamma * q(obs_act).squeeze()
+    next_actions = policy(next_observation)
+    obs_act = jnp.concatenate((next_observation, next_actions), axis=-1)
+    return reward + (1 - terminated) * gamma * q(obs_act).squeeze()
 
 
 @nnx.jit
@@ -160,7 +167,29 @@ def ddpg_update_actor(
 ) -> float:
     """DDPG actor update.
 
-    See also
+    Uses ``policy_optimizer`` to update ``policy`` with the
+    :func:`~.blox.losses.deterministic_policy_gradient_loss`.
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Policy network for deterministic target policy :math:`\pi`.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy network.
+
+    q : nnx.Module
+        Critic network.
+
+    observation : jnp.ndarray (batch_size,) + observation_space.shape
+        Mini-batch of observations.
+
+    Returns
+    -------
+    actor_loss_value : float
+        Loss value.
+
+    See Also
     --------
     .blox.losses.deterministic_policy_gradient_loss
         The loss function used during the optimization step.
