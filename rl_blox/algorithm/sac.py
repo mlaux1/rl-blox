@@ -262,8 +262,8 @@ def train_sac(
     batch_size: int = 256,
     learning_starts: float = 5_000,
     entropy_learning_rate: float = 1e-3,
-    policy_frequency: int = 2,
-    target_network_frequency: int = 1,
+    policy_delay: int = 2,
+    target_network_delay: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
     q1_target: nnx.Module | None = None,
@@ -329,10 +329,11 @@ def train_sac(
         Timestep to start learning.
     entropy_learning_rate
         The learning rate of the Q network optimizer.
-    policy_frequency
-        Frequency of training policy (delayed).
-    target_network_frequency
-        The frequency of updates for the target networks.
+    policy_delay
+        Delayed policy updates. The policy is updated every ``policy_delay``
+        steps.
+    target_network_delay
+        The target networks are updated every ``target_network_delay`` steps.
     alpha
         Entropy regularization coefficient.
     autotune
@@ -366,6 +367,58 @@ def train_sac(
         Optimizer of q2.
     entropy_control
         State of entropy tuning.
+
+    Notes
+    -----
+
+    Parameters
+
+    * :math:`\pi(a|o)` with weights :math:`\theta^{\pi}` - stochastic ``policy``
+    * :math:`Q_1(s, a)` with weights :math:`\theta^{Q_1}` - critic network
+      ``q1``
+    * :math:`Q_1'(s, a)` with weights :math:`\theta^{Q_1'}` - first target
+      network ``q1_target``, initialized as a copy of ``q1``
+    * :math:`Q_2(s, a)` with weights :math:`\theta^{Q_2}` - critic network
+      ``q2``
+    * :math:`Q_2'(s, a)` with weights :math:`\theta^{Q_2'}` - second target
+      network ``q2_target``, initialized as a copy of ``q2``
+
+    Algorithm
+
+    * Initialize replay buffer :math:`R`
+    * Randomly sample ``learning_starts`` actions and record transitions in
+      replay buffer
+    * For each step :math:`t`
+
+      * Sample :math:`a_t \sim \pi(a_t|o_t)`
+      * Take a step in the environment ``env`` and observe result
+      * Store transition :math:`(o_t, a_t, r_t, o_{t+1}, d_{t+1})` in :math:`R`,
+        where :math:`d` indicates if a terminal state was reached
+      * Sample mini-batch of ``batch_size`` transitions from :math:`R` to
+        update the networks
+      * Update critic networks with :func:`sac_update_critic`
+      * If ``t % policy_delay == 0``
+
+        * Update actor ``policy_delay`` times with :func:`sac_update_actor`
+        * Update temperature with :class:`EntropyControl`
+      * If ``t % target_network_delay == 0``
+
+        * Update target networks :math:`Q_1', Q_2'` with
+          :func:`~.blox.target_net.soft_target_net_update`
+
+    Logging
+
+    * ``q1 loss`` - value of the loss function for ``q1``
+    * ``q2 loss`` - value of the loss function for ``q2``
+    * ``policy loss`` - value of the loss function for the actor
+
+    Checkpointing
+
+    * ``q1`` - first critic
+    * ``q2`` - second critic
+    * ``policy`` - target policy
+    * ``q1_target`` - target network for the first critic
+    * ``q2_target`` - target network for the second critic
 
     References
     ----------
@@ -471,9 +524,9 @@ def train_sac(
                 )
                 logger.record_epoch("q2", q2, step=global_step + 1)
 
-            if global_step % policy_frequency == 0:
+            if global_step % policy_delay == 0:
                 # compensate for delay by doing 'policy_frequency' updates
-                for _ in range(policy_frequency):
+                for _ in range(policy_delay):
                     key, action_key = jax.random.split(key, 2)
                     policy_loss_value = sac_update_actor(
                         policy,
@@ -512,7 +565,7 @@ def train_sac(
                                 "alpha", alpha, step=global_step + 1
                             )
 
-            if global_step % target_network_frequency == 0:
+            if global_step % target_network_delay == 0:
                 soft_target_net_update(q1, q1_target, tau)
                 logger.record_epoch(
                     "q1_target", q1_target, step=global_step + 1
