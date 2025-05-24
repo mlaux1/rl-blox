@@ -26,7 +26,7 @@ def avg_l1_norm(x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
     return x / jnp.maximum(np.mean(jnp.abs(x), axis=-1), eps)
 
 
-class Embedding(nnx.Module):
+class SALE(nnx.Module):
     """SALE: state-action learned embedding.
 
     Although the embeddings are learned by considering the dynamics of the
@@ -46,10 +46,10 @@ class Embedding(nnx.Module):
         zs = self.state_embedding(state)
         zs_action = jnp.concatenate((zs, action), axis=-1)
         zsa = self.state_action_embedding(zs_action)
-        return zs, zsa
+        return zsa, zs
 
 
-class Actor(nnx.Module):
+class ActorSALE(nnx.Module):
     """TODO"""
     policy_net: nnx.Module
     l0: nnx.Linear
@@ -59,19 +59,33 @@ class Actor(nnx.Module):
         self.l0 = nnx.Linear(n_state_features, hidden_nodes, rngs=rngs)
 
     def __call__(self, state: jnp.ndarray, zs: jnp.ndarray) -> jnp.ndarray:
-        state_hidden = avg_l1_norm(self.l0(state))
-        state_hidden_zs = jnp.concatenate((state_hidden, zs), axis=-1)
-        return self.policy_net(state_hidden_zs)
+        """pi(state, zs)."""
+        h = avg_l1_norm(self.l0(state))
+        he = jnp.concatenate((h, zs), axis=-1)  # hidden_nodes + n_embedding_dimensions
+        return self.policy_net(he)
 
 
-class Critic(nnx.Module):
+class CriticSALE(nnx.Module):
     """TODO"""
-    # see Figure 1
-    # https://github.com/sfujim/TD7/blob/main/TD7.py#L115
+    q_net: nnx.Module
+    q0: nnx.Linear
+
+    def __init__(self, q_net: nnx.Module, n_state_features: int, n_action_features: int, hidden_nodes: int, rngs: nnx.Rngs):
+        self.q_net = q_net
+        self.q0 = nnx.Linear(n_state_features + n_action_features, hidden_nodes, rngs=rngs)
+
+    def __call__(self, state: jnp.ndarray, action: jnp.ndarray, zsa: jnp.ndarray, zs: jnp.ndarray) -> jnp.ndarray:
+        """Q(s, a, zsa, zs)."""
+        sa = jnp.concatenate((state, action), axis=-1)
+        embeddings = jnp.concatenate((zsa, zs), axis=-1)
+
+        h = avg_l1_norm(self.q0(sa))
+        he = jnp.concatenate((h, embeddings), axis=-1)  # hidden_nodes + 2 * n_embedding_dimensions
+        return self.q_net(he)
 
 
 def state_action_embedding_loss(
-    embedding: Embedding,
+    embedding: SALE,
     observation,
     action,
     next_observation,
@@ -94,7 +108,7 @@ def state_action_embedding_loss(
     needed by the value function and policy, such as features related to the
     reward, current policy, or task horizon.
     """
-    _, zsa = embedding(observation, action)
+    zsa, _ = embedding(observation, action)
     zsp = jax.lax.stop_gradient(embedding.state_embedding(next_observation))
     return optax.squared_error(predictions=zsa, targets=zsp)
 
@@ -133,20 +147,20 @@ def create_td3_state(
         embedding_activation,
         rngs,
     )
-    embedding = Embedding(state_embedding, state_action_embedding)
+    embedding = SALE(state_embedding, state_action_embedding)
     embedding_optimizer = nnx.Optimizer(
         embedding, optax.adam(learning_rate=embedding_learning_rate)
     )
 
     policy_net = MLP(
-        n_embedding_dimensions + 100,  # TODO configurable (see below too)
+        100 + n_embedding_dimensions,  # TODO configurable (see below too)
         env.action_space.shape[0],
         policy_hidden_nodes,
         policy_activation,
         rngs,
     )
     policy = DeterministicTanhPolicy(policy_net, env.action_space)
-    actor = Actor(
+    actor = ActorSALE(
         policy_net,
         env.observation_space.shape[0],
         100,  # TODO configurable
@@ -156,27 +170,51 @@ def create_td3_state(
         policy, optax.adam(learning_rate=policy_learning_rate)
     )
 
-    n_q_inputs = 2 * n_embedding_dimensions + env.observation_space.shape[0] + env.action_space.shape[0]
-    q = MLP(
+    n_q_inputs = 100 + 2 * n_embedding_dimensions  # TODO configure
+    q1 = MLP(
         n_q_inputs,
         1,
         q_hidden_nodes,
         q_activation,
         rngs,
     )
-    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
+    critic1 = CriticSALE(
+        q1,
+        env.observation_space.shape[0],
+        env.action_space.shape[0],
+        100,  # TODO configure
+        rngs,
+    )
+    critic1_optimizer = nnx.Optimizer(critic1, optax.adam(learning_rate=q_learning_rate))
+    q2 = MLP(
+        n_q_inputs,
+        1,
+        q_hidden_nodes,
+        q_activation,
+        rngs,
+    )
+    critic2 = CriticSALE(
+        q2,
+        env.observation_space.shape[0],
+        env.action_space.shape[0],
+        100,  # TODO configure
+        rngs,
+    )
+    critic2_optimizer = nnx.Optimizer(critic2, optax.adam(learning_rate=q_learning_rate))
 
     return namedtuple(
         "TD7State",
         [
             "embedding",
             "embedding_optimizer",
-            "policy",
-            "policy_optimizer",
-            "q",
-            "q_optimizer",
+            "actor",
+            "actor_optimizer",
+            "critic1",
+            "critic1_optimizer",
+            "critic2",
+            "critic2_optimizer",
         ],
-    )(embedding, embedding_optimizer, policy, policy_optimizer, q, q_optimizer)
+    )(embedding, embedding_optimizer, actor, actor_optimizer, critic1, critic1_optimizer, critic2, critic2_optimizer)
 
 
 def train_td7(
