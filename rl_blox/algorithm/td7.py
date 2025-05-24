@@ -115,13 +115,13 @@ def state_action_embedding_loss(
 
 def create_td3_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    n_embedding_dimensions = 100,
-    state_embedding_hidden_nodes: list[int] | tuple[int] = (256, 256),
-    state_action_embedding_hidden_nodes: list[int] | tuple[int] = (256, 256),
-    embedding_activation: str = "relu",
+    n_embedding_dimensions = 256,
+    state_embedding_hidden_nodes: list[int] | tuple[int] = (256,),
+    state_action_embedding_hidden_nodes: list[int] | tuple[int] = (256,),
+    embedding_activation: str = "elu",
     embedding_learning_rate: float = 1e-3,
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
-    policy_activation: str = "relu",
+    policy_activation: str = "elu",
     policy_learning_rate: float = 1e-3,
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
     q_activation: str = "relu",
@@ -152,8 +152,9 @@ def create_td3_state(
         embedding, optax.adam(learning_rate=embedding_learning_rate)
     )
 
+    n_linear_encoding_nodes = policy_hidden_nodes[0]
     policy_net = MLP(
-        100 + n_embedding_dimensions,  # TODO configurable (see below too)
+        n_linear_encoding_nodes + n_embedding_dimensions,
         env.action_space.shape[0],
         policy_hidden_nodes,
         policy_activation,
@@ -163,14 +164,15 @@ def create_td3_state(
     actor = ActorSALE(
         policy_net,
         env.observation_space.shape[0],
-        100,  # TODO configurable
+        n_linear_encoding_nodes,
         rngs,
     )
     actor_optimizer = nnx.Optimizer(
         policy, optax.adam(learning_rate=policy_learning_rate)
     )
 
-    n_q_inputs = 100 + 2 * n_embedding_dimensions  # TODO configure
+    n_linear_encoding_nodes = q_hidden_nodes[0]
+    n_q_inputs = n_linear_encoding_nodes + 2 * n_embedding_dimensions
     q1 = MLP(
         n_q_inputs,
         1,
@@ -182,7 +184,7 @@ def create_td3_state(
         q1,
         env.observation_space.shape[0],
         env.action_space.shape[0],
-        100,  # TODO configure
+        n_linear_encoding_nodes,
         rngs,
     )
     critic1_optimizer = nnx.Optimizer(critic1, optax.adam(learning_rate=q_learning_rate))
@@ -197,7 +199,7 @@ def create_td3_state(
         q2,
         env.observation_space.shape[0],
         env.action_space.shape[0],
-        100,  # TODO configure
+        n_linear_encoding_nodes,
         rngs,
     )
     critic2_optimizer = nnx.Optimizer(critic2, optax.adam(learning_rate=q_learning_rate))
