@@ -122,7 +122,7 @@ def q_deterministic_bootstrap_estimate(
         y_i = r_i + (1 - t_i) \gamma Q(o_{i+1}, \pi(o_{i+1})),
 
     where :math:`r_i` (``reward``) is the immediate reward obtained in the
-    transition, :math:`o_{i+1}` (``next_observations``) is the observation
+    transition, :math:`o_{i+1}` (``next_observation``) is the observation
     after the transition, :math:`\pi` is the deterministic policy network,
     :math:`\gamma` (``gamma``) is the discount factor, and :math:`t_i`
     (``terminated``) indicates if a terminal state was reached in this
