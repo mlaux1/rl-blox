@@ -382,7 +382,7 @@ def train_td3(
         Learning rate for polyak averaging of target policy and value function.
 
     policy_delay : int, optional
-        Delayed policy updates. The policy is updated every `policy_delay`
+        Delayed policy updates. The policy is updated every ``policy_delay``
         steps.
 
     batch_size : int, optional
