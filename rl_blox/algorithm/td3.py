@@ -319,9 +319,9 @@ def train_td3(
     exploration_noise: float = 0.2,
     noise_clip: float = 0.5,
     learning_starts: int = 25_000,
-    policy_target: nnx.Optimizer | None = None,
-    q1_target: nnx.Optimizer | None = None,
-    q2_target: nnx.Optimizer | None = None,
+    policy_target: nnx.Module | None = None,
+    q1_target: nnx.Module | None = None,
+    q2_target: nnx.Module | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
