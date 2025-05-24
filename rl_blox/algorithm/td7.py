@@ -449,7 +449,7 @@ def train_td7(
         else:
             key, action_key = jax.random.split(key, 2)
             action = np.asarray(
-                _sample_actions(actor, embedding, jnp.asarray(obs), action_key)
+                _sample_actions(embedding, actor, jnp.asarray(obs), action_key)
             )
 
         next_obs, reward, termination, truncated, info = env.step(action)
