@@ -1,3 +1,5 @@
+from functools import partial
+
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -6,15 +8,11 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
+from ..blox.losses import stochastic_policy_gradient_pseudo_loss
 from ..logging.logger import LoggerBase
-from .reinforce import (
-    policy_gradient_pseudo_loss,
-    sample_trajectories,
-    train_value_function,
-)
+from .reinforce import sample_trajectories, train_value_function
 
 
-@nnx.jit
 def actor_critic_policy_gradient(
     policy: StochasticPolicyBase,
     value_function: nnx.Module,
@@ -54,22 +52,22 @@ def actor_critic_policy_gradient(
     grad
         Actor-critic policy gradient.
 
-    See also
+    See Also
     --------
-    .reinforce.policy_gradient_pseudo_loss
+    .blox.losses.stochastic_policy_gradient_pseudo_loss
         The pseudo loss that is used to compute the policy gradient. As
-        weights for the pseudo loss we use the TD error bootstrap estimate
-        :math:`r_t + \gamma v(o_{t+1}) - v(o_t)` multiplied by the discounting
-        factor for the step of the episode.
+        weights for the pseudo loss we use the TD error
+        :math:`\delta_t = r_t + \gamma v(o_{t+1}) - v(o_t)` multiplied by the
+        discounting factor for the step of the episode.
     """
     v = value_function(observations).squeeze()
     v_next = value_function(next_observations).squeeze()
     td_bootstrap_estimate = rewards + gamma * v_next - v
     weights = gamma_discount * td_bootstrap_estimate
 
-    return nnx.value_and_grad(policy_gradient_pseudo_loss, argnums=3)(
-        observations, actions, weights, policy
-    )
+    return nnx.value_and_grad(
+        stochastic_policy_gradient_pseudo_loss, argnums=3
+    )(observations, actions, weights, policy)
 
 
 def train_ac(
@@ -190,6 +188,7 @@ def train_ac(
     progress.close()
 
 
+@partial(nnx.jit, static_argnames=["policy_gradient_steps", "gamma"])
 def train_policy_actor_critic(
     policy,
     policy_optimizer,
