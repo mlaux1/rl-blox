@@ -221,12 +221,14 @@ def create_td3_state(
 
 def train_td7(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    policy: nnx.Module,
-    policy_optimizer: nnx.Optimizer,
-    q1: nnx.Module,
-    q1_optimizer: nnx.Optimizer,
-    q2: nnx.Module,
-    q2_optimizer: nnx.Optimizer,
+    embedding: nnx.Module,
+    embedding_optimizer: nnx.Optimizer,
+    actor: nnx.Module,
+    actor_optimizer: nnx.Optimizer,
+    critic1: nnx.Module,
+    critic1_optimizer: nnx.Optimizer,
+    critic2: nnx.Module,
+    critic2_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
@@ -238,8 +240,8 @@ def train_td7(
     exploration_noise: float = 0.2,
     noise_clip: float = 0.5,
     learning_starts: int = 25_000,
-    policy_target: nnx.Optimizer | None = None,
-    q1_target: nnx.Optimizer | None = None,
+    policy_target: nnx.Module | None = None,
+    critic1_target: nnx.Module | None = None,
     q2_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
@@ -292,3 +294,157 @@ def train_td7(
        Systems 36, pp. 61573-61624. Available from
        https://proceedings.neurips.cc/paper_files/paper/2023/hash/c20ac0df6c213db6d3a930fe9c7296c8-Abstract-Conference.html
     """
+    rng = np.random.default_rng(seed)
+    key = jax.random.key(seed)
+
+    assert isinstance(
+        env.action_space, gym.spaces.Box
+    ), "only continuous action space is supported"
+    chex.assert_scalar_in(tau, 0.0, 1.0)
+
+    env.observation_space.dtype = np.float32
+    rb = ReplayBuffer(buffer_size)
+
+    action_scale = 0.5 * (env.action_space.high - env.action_space.low)
+    _sample_actions = nnx.jit(
+        partial(
+            sample_actions,
+            env.action_space.low,
+            env.action_space.high,
+            action_scale,
+            exploration_noise,
+        )
+    )
+    _sample_target_actions = nnx.jit(
+        partial(
+            sample_target_actions,
+            env.action_space.low,
+            env.action_space.high,
+            action_scale,
+            exploration_noise,
+            noise_clip,
+        )
+    )
+
+    if logger is not None:
+        logger.start_new_episode()
+    obs, _ = env.reset(seed=seed)
+    steps_per_episode = 0
+
+    if policy_target is None:
+        policy_target = nnx.clone(policy)
+    if q1_target is None:
+        q1_target = nnx.clone(q1)
+    if q2_target is None:
+        q2_target = nnx.clone(q2)
+
+    for global_step in tqdm.trange(total_timesteps):
+        if global_step < learning_starts:
+            action = env.action_space.sample()
+        else:
+            key, action_key = jax.random.split(key, 2)
+            action = np.asarray(
+                _sample_actions(policy, jnp.asarray(obs), action_key)
+            )
+
+        next_obs, reward, termination, truncated, info = env.step(action)
+        steps_per_episode += 1
+
+        rb.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=termination,
+        )
+
+        if global_step >= learning_starts:
+            for _ in range(gradient_steps):
+                (
+                    observations,
+                    actions,
+                    rewards,
+                    next_observations,
+                    terminations,
+                ) = rb.sample_batch(batch_size, rng)
+
+                # policy smoothing: sample next actions from target policy
+                key, sampling_key = jax.random.split(key, 2)
+                next_actions = _sample_target_actions(
+                    policy_target, next_observations, sampling_key
+                )
+                q1_loss_value, q2_loss_value = td3_update_critic(
+                    q1,
+                    q1_target,
+                    q1_optimizer,
+                    q2,
+                    q2_target,
+                    q2_optimizer,
+                    gamma,
+                    observations,
+                    actions,
+                    next_observations,
+                    next_actions,
+                    rewards,
+                    terminations,
+                )
+
+                if logger is not None:
+                    logger.record_stat(
+                        "q1 loss", q1_loss_value, step=global_step + 1
+                    )
+                    logger.record_epoch("q1", q1, step=global_step + 1)
+                    logger.record_stat(
+                        "q2 loss", q2_loss_value, step=global_step + 1
+                    )
+                    logger.record_epoch("q2", q2, step=global_step + 1)
+
+                if global_step % policy_delay == 0:
+                    actor_loss_value = ddpg_update_actor(
+                        policy, policy_optimizer, q1, observations
+                    )
+                    soft_target_net_update(policy, policy_target, tau)
+                    soft_target_net_update(q1, q1_target, tau)
+                    soft_target_net_update(q2, q2_target, tau)
+                    if logger is not None:
+                        logger.record_stat(
+                            "policy loss",
+                            actor_loss_value,
+                            step=global_step + 1,
+                        )
+                    logger.record_epoch("policy", policy, step=global_step + 1)
+                    logger.record_epoch(
+                        "policy_target", policy_target, step=global_step + 1
+                    )
+                    logger.record_epoch(
+                        "q1_target", q1_target, step=global_step + 1
+                    )
+                    logger.record_epoch(
+                        "q2_target", q2_target, step=global_step + 1
+                    )
+
+        if termination or truncated:
+            if logger is not None:
+                if "episode" in info:
+                    logger.record_stat(
+                        "return", info["episode"]["r"], step=global_step + 1
+                    )
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+
+            obs, _ = env.reset()
+            steps_per_episode = 0
+        else:
+            obs = next_obs
+
+    return (
+        policy,
+        policy_target,
+        policy_optimizer,
+        q1,
+        q1_target,
+        q1_optimizer,
+        q2,
+        q2_target,
+        q2_optimizer,
+    )
