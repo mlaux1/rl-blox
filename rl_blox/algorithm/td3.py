@@ -650,7 +650,9 @@ def train_td3(
             if logger is not None:
                 if "episode" in info:
                     logger.record_stat(
-                        "return", float(info["episode"]["r"]), step=global_step + 1
+                        "return",
+                        float(info["episode"]["r"]),
+                        step=global_step + 1,
                     )
                 logger.stop_episode(steps_per_episode)
                 logger.start_new_episode()
