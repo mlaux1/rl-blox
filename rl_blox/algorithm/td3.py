@@ -10,6 +10,7 @@ import optax
 import tqdm
 from flax import nnx
 
+from ..blox.double_qnet import ContinuousDoubleQNet
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.losses import mse_continuous_action_value_loss
@@ -21,12 +22,9 @@ from .ddpg import ddpg_update_actor, sample_actions
 
 @nnx.jit
 def td3_update_critic(
-    q1: nnx.Module,
-    q1_target: nnx.Module,
-    q1_optimizer: nnx.Optimizer,
-    q2: nnx.Module,
-    q2_target: nnx.Module,
-    q2_optimizer: nnx.Optimizer,
+    q: ContinuousDoubleQNet,
+    q_target: ContinuousDoubleQNet,
+    q_optimizer: nnx.Optimizer,
     gamma: float,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
@@ -34,7 +32,7 @@ def td3_update_critic(
     next_actions: jnp.ndarray,
     rewards: jnp.ndarray,
     terminations: jnp.ndarray,
-) -> tuple[float, float]:
+) -> float:
     r"""TD3 critic update.
 
     Uses ``q1_optimizer`` and ``q2_optimizer`` to update ``q1`` and ``q2``
@@ -46,22 +44,13 @@ def td3_update_critic(
 
     Parameters
     ----------
-    q1 : nnx.Module
-        Action-value function.
+    q : ContinuousDoubleQNet
+        Double Q network.
 
-    q1_target : nnx.Module
+    q_target : ContinuousDoubleQNet
         Target network of q.
 
-    q1_optimizer : nnx.Optimizer
-        Optimizer of q.
-
-    q2 : nnx.Module
-        Action-value function.
-
-    q2_target : nnx.Module
-        Target network of q.
-
-    q2_optimizer : nnx.Optimizer
+    q_optimizer : nnx.Optimizer
         Optimizer of q.
 
     gamma : float
@@ -103,31 +92,35 @@ def td3_update_critic(
         rewards,
         terminations,
         gamma,
-        q1_target,
-        q2_target,
+        q_target,
         next_observations,
         next_actions,
     )
 
-    q1_loss_value, grads = nnx.value_and_grad(
-        mse_continuous_action_value_loss, argnums=3
-    )(observations, actions, q_bootstrap, q1)
-    q1_optimizer.update(grads)
+    def sum_of_qnet_losses(q: ContinuousDoubleQNet):
+        return mse_continuous_action_value_loss(
+            observations,
+            actions,
+            q_bootstrap,
+            q.q1,
+        ) + mse_continuous_action_value_loss(
+            observations,
+            actions,
+            q_bootstrap,
+            q.q2,
+        )
 
-    q2_loss_value, grads = nnx.value_and_grad(
-        mse_continuous_action_value_loss, argnums=3
-    )(observations, actions, q_bootstrap, q2)
-    q2_optimizer.update(grads)
+    q_loss_value, grads = nnx.value_and_grad(sum_of_qnet_losses)(q)
+    q_optimizer.update(grads)
 
-    return q1_loss_value, q2_loss_value
+    return q_loss_value
 
 
 def double_q_deterministic_bootstrap_estimate(
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
     gamma: float,
-    q1: nnx.Module,
-    q2: nnx.Module,
+    q: ContinuousDoubleQNet,
     next_observation: jnp.ndarray,
     next_action: jnp.ndarray,
 ) -> jnp.ndarray:
@@ -158,10 +151,7 @@ def double_q_deterministic_bootstrap_estimate(
     gamma : float
         Discount factor.
 
-    q1 : nnx.Module
-        Action-value function.
-
-    q2 : nnx.Module
+    q : ContinuousDoubleQNet
         Action-value function.
 
     next_observation : array
@@ -175,9 +165,8 @@ def double_q_deterministic_bootstrap_estimate(
     double_q_bootstrap : array
         Double Q bootstrap estimate of action-value function.
     """
-    obs_act = jnp.concatenate((next_observation, next_action), axis=-1)
-    q_value = jnp.minimum(q1(obs_act).squeeze(), q2(obs_act).squeeze())
-    return reward + (1 - terminated) * gamma * q_value
+    next_obs_act = jnp.concatenate((next_observation, next_action), axis=-1)
+    return reward + (1 - terminated) * gamma * q(next_obs_act).squeeze()
 
 
 def sample_target_actions(
@@ -276,8 +265,6 @@ def create_td3_state(
         q_activation,
         nnx.Rngs(seed),
     )
-    q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_learning_rate))
-
     q2 = MLP(
         env.observation_space.shape[0] + env.action_space.shape[0],
         1,
@@ -285,29 +272,26 @@ def create_td3_state(
         q_activation,
         nnx.Rngs(seed + 1),
     )
-    q2_optimizer = nnx.Optimizer(q2, optax.adam(learning_rate=q_learning_rate))
+    q = ContinuousDoubleQNet(q1, q2)
+    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
 
     return namedtuple(
         "TD3State",
         [
             "policy",
             "policy_optimizer",
-            "q1",
-            "q1_optimizer",
-            "q2",
-            "q2_optimizer",
+            "q",
+            "q_optimizer",
         ],
-    )(policy, policy_optimizer, q1, q1_optimizer, q2, q2_optimizer)
+    )(policy, policy_optimizer, q, q_optimizer)
 
 
 def train_td3(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: nnx.Module,
     policy_optimizer: nnx.Optimizer,
-    q1: nnx.Module,
-    q1_optimizer: nnx.Optimizer,
-    q2: nnx.Module,
-    q2_optimizer: nnx.Optimizer,
+    q: ContinuousDoubleQNet,
+    q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
@@ -320,18 +304,14 @@ def train_td3(
     noise_clip: float = 0.5,
     learning_starts: int = 25_000,
     policy_target: nnx.Module | None = None,
-    q1_target: nnx.Module | None = None,
-    q2_target: nnx.Module | None = None,
+    q_target: ContinuousDoubleQNet | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
     nnx.Optimizer,
-    nnx.Module,
-    nnx.Module,
-    nnx.Optimizer,
-    nnx.Module,
-    nnx.Module,
+    ContinuousDoubleQNet,
+    ContinuousDoubleQNet,
     nnx.Optimizer,
 ]:
     r"""Twin Delayed DDPG (TD3).
@@ -354,17 +334,11 @@ def train_td3(
     policy_optimizer : nnx.Optimizer
         Optimizer for the policy network.
 
-    q1 : nnx.Module
-        First Q network.
+    q : ContinuousDoubleQNet
+        Double Q network.
 
-    q1_optimizer: nnx.Optimizer
-        Optimizer for q1.
-
-    q2 : nnx.Module
-        Second Q network.
-
-    q2_optimizer : nnx.Optimizer
-        Optimizer for q2.
+    q_optimizer: nnx.Optimizer
+        Optimizer for q network.
 
     seed : int, optional
         Seed for random number generators in Jax and NumPy.
@@ -408,11 +382,7 @@ def train_td3(
         Target policy. Only has to be set if we want to continue training
         from an old state.
 
-    q1_target : nnx.Module, optional
-        Target network. Only has to be set if we want to continue training
-        from an old state.
-
-    q2_target : nnx.Module, optional
+    q_target : ContinuousDoubleQNet, optional
         Target network. Only has to be set if we want to continue training
         from an old state.
 
@@ -430,22 +400,13 @@ def train_td3(
     policy_optimizer : nnx.Optimizer
         Policy optimizer.
 
-    q1 : nnx.Module
+    q : ContinuousDoubleQNet
         Final state-action value function.
 
-    q1_target : nnx.Module
+    q_target : ContinuousDoubleQNet
         Target network.
 
-    q1_optimizer
-        Optimizer for Q network.
-
-    q2 : nnx.Module
-        Final state-action value function.
-
-    q2_target : nnx.Module
-        Target network.
-
-    q2_optimizer : nnx.Optimizer
+    q_optimizer : nnx.Optimizer
         Optimizer for Q network.
 
     Notes
@@ -491,18 +452,15 @@ def train_td3(
 
     Logging
 
-    * ``q1 loss`` - value of the loss function for ``q1``
-    * ``q2 loss`` - value of the loss function for ``q2``
+    * ``q loss`` - value of the loss function for ``q``
     * ``policy loss`` - value of the loss function for the actor
 
     Checkpointing
 
-    * ``q1`` - first critic
-    * ``q2`` - second critic
-    * ``policy`` - target policy
-    * ``q1_target`` - target network for the first critic
-    * ``q2_target`` - target network for the second critic
-    * ``policy_target`` - target network for policy
+    * ``q`` - double Q network, critic
+    * ``policy`` - target policy, actor
+    * ``q_target`` - target network for the critic
+    * ``policy_target`` - target network for the actor
 
     References
     ----------
@@ -556,10 +514,8 @@ def train_td3(
 
     if policy_target is None:
         policy_target = nnx.clone(policy)
-    if q1_target is None:
-        q1_target = nnx.clone(q1)
-    if q2_target is None:
-        q2_target = nnx.clone(q2)
+    if q_target is None:
+        q_target = nnx.clone(q)
 
     for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
@@ -596,13 +552,10 @@ def train_td3(
                 next_actions = _sample_target_actions(
                     policy_target, next_observations, sampling_key
                 )
-                q1_loss_value, q2_loss_value = td3_update_critic(
-                    q1,
-                    q1_target,
-                    q1_optimizer,
-                    q2,
-                    q2_target,
-                    q2_optimizer,
+                q_loss_value = td3_update_critic(
+                    q,
+                    q_target,
+                    q_optimizer,
                     gamma,
                     observations,
                     actions,
@@ -614,21 +567,16 @@ def train_td3(
 
                 if logger is not None:
                     logger.record_stat(
-                        "q1 loss", q1_loss_value, step=global_step + 1
+                        "q loss", q_loss_value, step=global_step + 1
                     )
-                    logger.record_epoch("q1", q1, step=global_step + 1)
-                    logger.record_stat(
-                        "q2 loss", q2_loss_value, step=global_step + 1
-                    )
-                    logger.record_epoch("q2", q2, step=global_step + 1)
+                    logger.record_epoch("q", q, step=global_step + 1)
 
                 if global_step % policy_delay == 0:
                     actor_loss_value = ddpg_update_actor(
-                        policy, policy_optimizer, q1, observations
+                        policy, policy_optimizer, q, observations
                     )
                     soft_target_net_update(policy, policy_target, tau)
-                    soft_target_net_update(q1, q1_target, tau)
-                    soft_target_net_update(q2, q2_target, tau)
+                    soft_target_net_update(q, q_target, tau)
                     if logger is not None:
                         logger.record_stat(
                             "policy loss",
@@ -640,10 +588,7 @@ def train_td3(
                         "policy_target", policy_target, step=global_step + 1
                     )
                     logger.record_epoch(
-                        "q1_target", q1_target, step=global_step + 1
-                    )
-                    logger.record_epoch(
-                        "q2_target", q2_target, step=global_step + 1
+                        "q_target", q_target, step=global_step + 1
                     )
 
         if termination or truncated:
@@ -666,10 +611,7 @@ def train_td3(
         policy,
         policy_target,
         policy_optimizer,
-        q1,
-        q1_target,
-        q1_optimizer,
-        q2,
-        q2_target,
-        q2_optimizer,
+        q,
+        q_target,
+        q_optimizer,
     )
