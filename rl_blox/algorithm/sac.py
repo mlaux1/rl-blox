@@ -283,11 +283,13 @@ def train_sac(
         \right],
 
     where :math:`\alpha` is the temperature parameter that determines the
-    relative importance of the optimal policy.
+    relative importance of the entropy term :math:`\mathcal{H}` against the
+    reward.
 
     In addition, this implementation allows to automatically tune the
-    temperature :math:`\alpha.`, uses double Q learning [3]_, and uses target
-    networks [4]_ for both Q networks.
+    temperature :math:`\alpha.`, uses a
+    :class:`~.blox.double_qnet.ContinuousDoubleQNet`, and uses target networks
+    [3]_ for both Q networks.
 
     Parameters
     ----------
@@ -375,6 +377,7 @@ def train_sac(
     * :math:`\pi(a|o)` with weights :math:`\theta^{\pi}` - stochastic ``policy``
     * :math:`Q(o, a)` with weights :math:`\theta^{Q}` - critic network
       ``q``, composed of two q networks :math:`Q_i(o, a)` with index i
+      (see :class:`~.blox.double_qnet.ContinuousDoubleQNet`)
     * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
       ``q_target``, initialized as a copy of ``q``
 
@@ -410,7 +413,7 @@ def train_sac(
 
     * ``q`` - critic
     * ``policy`` - target policy
-    * ``q_target`` - target network for the first critic
+    * ``q_target`` - target network for the critic
 
     References
     ----------
@@ -425,11 +428,7 @@ def train_sac(
        Soft Actor-Critic Algorithms and Applications. arXiv.
        http://arxiv.org/abs/1812.05905
 
-    .. [3] Hasselt, H. (2010). Double Q-learning. In Advances in Neural
-       Information Processing Systems 23.
-       https://papers.nips.cc/paper_files/paper/2010/hash/091d584fced301b442654dd8c23b3fc9-Abstract.html
-
-    .. [4] Mnih, V., Kavukcuoglu, K., Silver, D. et al. (2015). Human-level
+    .. [3] Mnih, V., Kavukcuoglu, K., Silver, D. et al. (2015). Human-level
        control through deep reinforcement learning. Nature 518, 529–533.
        https://doi.org/10.1038/nature14236
     """

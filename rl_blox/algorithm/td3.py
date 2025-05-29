@@ -315,9 +315,10 @@ def train_td3(
     TD3 [1]_ extends DDPG with three techniques to improve performance:
 
     1. Clipped Double Q-Learning to mitigate overestimation bias of the value
-    2. Delayed policy updates, controlled by the parameter `policy_delay`
+       (see :class:`~.blox.double_qnet.ContinuousDoubleQNet`)
+    2. Delayed policy updates, controlled by the parameter ``policy_delay``
     3. Target policy smoothing, i.e., sampling from the behavior policy with
-       clipped noise (parameter `noise_clip`) for the critic update.
+       clipped noise (parameter ``noise_clip``) for the critic update.
 
     Parameters
     ----------
@@ -334,7 +335,7 @@ def train_td3(
         Double Q network.
 
     q_optimizer: nnx.Optimizer
-        Optimizer for q network.
+        Optimizer for q.
 
     seed : int, optional
         Seed for random number generators in Jax and NumPy.
@@ -416,6 +417,7 @@ def train_td3(
       (``policy_target``), initialized as a copy of ``policy``
     * :math:`Q(o, a)` with weights :math:`\theta^{Q}` - critic network
       ``q``, composed of two q networks :math:`Q_i(o, a)` with index i
+      (see :class:`~.blox.double_qnet.ContinuousDoubleQNet`)
     * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
       ``q_target``, initialized as a copy of ``q``
 
