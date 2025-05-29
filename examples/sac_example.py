@@ -42,15 +42,13 @@ sac_result = train_sac(
     env,
     sac_state.policy,
     sac_state.policy_optimizer,
-    sac_state.q1,
-    sac_state.q1_optimizer,
-    sac_state.q2,
-    sac_state.q2_optimizer,
+    sac_state.q,
+    sac_state.q_optimizer,
     logger=logger,
     **hparams_algorithm,
 )
 env.close()
-policy, _, q1, _, _, q2, _, _, _ = sac_result
+policy, _, q, _, _, _ = sac_result
 
 
 # Evaluation
@@ -66,11 +64,7 @@ while True:
         obs = np.asarray(next_obs)
 
         if verbose >= 2:
-            q1_value = float(
-                q1(jnp.concatenate((obs, action), axis=-1)).squeeze()
+            q_value = float(
+                q(jnp.concatenate((obs, action), axis=-1)).squeeze()
             )
-            q2_value = float(
-                q2(jnp.concatenate((obs, action), axis=-1)).squeeze()
-            )
-            q_value = min(q1_value, q2_value)
-            print(f"{q_value=:.3f} {q1_value=:.3f} {q2_value=:.3f}")
+            print(f"{q_value=:.3f}")
