@@ -418,14 +418,10 @@ def train_td3(
       target ``policy``, maps observations to actions
     * :math:`\pi'` with weights :math:`\theta^{\pi'}` - policy target network
       (``policy_target``), initialized as a copy of ``policy``
-    * :math:`Q_1(s, a)` with weights :math:`\theta^{Q_1}` - critic network
-      ``q1``
-    * :math:`Q_1'(s, a)` with weights :math:`\theta^{Q_1'}` - first target
-      network ``q1_target``, initialized as a copy of ``q1``
-    * :math:`Q_2(s, a)` with weights :math:`\theta^{Q_2}` - critic network
-      ``q2``
-    * :math:`Q_2'(s, a)` with weights :math:`\theta^{Q_2'}` - second target
-      network ``q2_target``, initialized as a copy of ``q2``
+    * :math:`Q(o, a)` with weights :math:`\theta^{Q}` - critic network
+      ``q``, composed of two q networks :math:`Q_i(o, a)` with index i
+    * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
+      ``q_target``, initialized as a copy of ``q``
 
     Algorithm
 
@@ -447,7 +443,7 @@ def train_td3(
       * If ``t % policy_delay == 0`` (delayed policy update)
 
         * Update actor with :func:`.ddpg.ddpg_update_actor`
-        * Update target networks :math:`Q_1', Q_2', \pi'` with
+        * Update target networks :math:`Q', \pi'` with
           :func:`~.blox.target_net.soft_target_net_update`
 
     Logging
