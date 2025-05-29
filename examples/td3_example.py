@@ -5,7 +5,7 @@ import numpy as np
 from rl_blox.algorithm.td3 import create_td3_state, train_td3
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
-env_name = "Pendulum-v1"  # "Hopper-v5"
+env_name = "Hopper-v5"
 env = gym.make(env_name)
 
 seed = 1
@@ -24,9 +24,9 @@ hparams_algorithm = dict(
     exploration_noise=0.2,
     noise_clip=0.5,
     gradient_steps=1,
-    total_timesteps=15_000,
+    total_timesteps=1_000_000,
     buffer_size=1_000_000,
-    learning_starts=5_000,
+    learning_starts=25_000,
     batch_size=256,
     seed=seed,
 )
