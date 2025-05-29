@@ -39,5 +39,5 @@ class ContinuousDoubleQNet(nnx.Module):
         self.q1 = q1
         self.q2 = q2
 
-    def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         return jnp.minimum(self.q1(x), self.q2(x))
