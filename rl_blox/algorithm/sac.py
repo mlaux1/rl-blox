@@ -9,6 +9,7 @@ import optax
 import tqdm
 from flax import nnx
 
+from ..blox.double_qnet import ContinuousDoubleQNet
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import (
@@ -23,8 +24,7 @@ from ..logging.logger import LoggerBase
 
 def sac_actor_loss(
     policy: StochasticPolicyBase,
-    q1: nnx.Module,
-    q2: nnx.Module,
+    q: ContinuousDoubleQNet,
     alpha: float,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
@@ -46,11 +46,8 @@ def sac_actor_loss(
     policy : StochasticPolicyBase
         Policy.
 
-    q1 : nnx.Module
-        First action-value function.
-
-    q2 : nnx.Module
-        Second action-value function.
+    q : ContinuousDoubleQNet
+        Action-value function represented by double Q network.
 
     alpha : float
         Entropy coefficient.
@@ -69,9 +66,7 @@ def sac_actor_loss(
     actions = policy.sample(observations, action_key)
     log_prob = policy.log_probability(observations, actions)
     obs_act = jnp.concatenate((observations, actions), axis=-1)
-    q1_value = q1(obs_act).squeeze()
-    q2_value = q2(obs_act).squeeze()
-    q_value = jnp.minimum(q1_value, q2_value)
+    q_value = q(obs_act).squeeze()
     actor_loss = (alpha * log_prob - q_value).mean()
     return actor_loss
 
@@ -222,7 +217,6 @@ def create_sac_state(
         q_activation,
         nnx.Rngs(seed),
     )
-    q1_optimizer = nnx.Optimizer(q1, optax.adam(learning_rate=q_learning_rate))
 
     q2 = MLP(
         env.observation_space.shape[0] + env.action_space.shape[0],
@@ -231,29 +225,26 @@ def create_sac_state(
         q_activation,
         nnx.Rngs(seed + 1),
     )
-    q2_optimizer = nnx.Optimizer(q2, optax.adam(learning_rate=q_learning_rate))
+    q = ContinuousDoubleQNet(q1, q2)
+    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
 
     return namedtuple(
         "SACState",
         [
             "policy",
             "policy_optimizer",
-            "q1",
-            "q1_optimizer",
-            "q2",
-            "q2_optimizer",
+            "q",
+            "q_optimizer",
         ],
-    )(policy, policy_optimizer, q1, q1_optimizer, q2, q2_optimizer)
+    )(policy, policy_optimizer, q, q_optimizer)
 
 
 def train_sac(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
-    q1: nnx.Module,
-    q1_optimizer: nnx.Optimizer,
-    q2: nnx.Module,
-    q2_optimizer: nnx.Optimizer,
+    q: ContinuousDoubleQNet,
+    q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
@@ -266,14 +257,10 @@ def train_sac(
     target_network_delay: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
-    q1_target: nnx.Module | None = None,
-    q2_target: nnx.Module | None = None,
+    q_target: ContinuousDoubleQNet | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
-    nnx.Module,
-    nnx.Optimizer,
-    nnx.Module,
     nnx.Module,
     nnx.Optimizer,
     nnx.Module,
@@ -300,8 +287,7 @@ def train_sac(
 
     In addition, this implementation allows to automatically tune the
     temperature :math:`\alpha.`, uses double Q learning [3]_, and uses target
-    networks [4]_ for both Q networks. In total, there are four action-value
-    networks q1, q1_target, q2, and q2_target as well as one policy network.
+    networks [4]_ for both Q networks.
 
     Parameters
     ----------
@@ -314,17 +300,11 @@ def train_sac(
     policy_optimizer : nnx.Optimizer
         Optimizer for policy.
 
-    q1 : nnx.Module
-        First soft Q network.
+    q : ContinuousDoubleQNet
+        Double soft Q network.
 
-    q1_optimizer : nnx.Optimizer
-        Optimizer for first critic.
-
-    q2 : nnx.Module
-        Second soft Q network.
-
-    q2_optimizer : nnx.Optimizer
-        Optimizer for second critic.
+    q_optimizer : nnx.Optimizer
+        Optimizer for critic.
 
     seed : int
         Seed for random number generation.
@@ -363,11 +343,8 @@ def train_sac(
     autotune : bool
         Automatic tuning of the entropy coefficient.
 
-    q1_target : nnx.Module
-        Target network for q1.
-
-    q2_target : nnx.Module
-        Target network for q2.
+    q_target : ContinuousDoubleQNet
+        Target network for q.
 
     entropy_control : EntropyControl
         State of entropy tuning.
@@ -381,18 +358,12 @@ def train_sac(
         Final policy.
     policy_optimizer
         Policy optimizer.
-    q1
-        First soft Q network.
-    q1_target
-        Target network of q1.
-    q1_optimizer
-        Optimizer of q1.
-    q2
-        Second soft Q network.
-    q2_target
-        Target network of q2.
-    q2_optimizer
-        Optimizer of q2.
+    q
+        Double soft Q network.
+    q_target
+        Target network of q.
+    q_optimizer
+        Optimizer of q.
     entropy_control
         State of entropy tuning.
 
@@ -402,14 +373,10 @@ def train_sac(
     Parameters
 
     * :math:`\pi(a|o)` with weights :math:`\theta^{\pi}` - stochastic ``policy``
-    * :math:`Q_1(s, a)` with weights :math:`\theta^{Q_1}` - critic network
-      ``q1``
-    * :math:`Q_1'(s, a)` with weights :math:`\theta^{Q_1'}` - first target
-      network ``q1_target``, initialized as a copy of ``q1``
-    * :math:`Q_2(s, a)` with weights :math:`\theta^{Q_2}` - critic network
-      ``q2``
-    * :math:`Q_2'(s, a)` with weights :math:`\theta^{Q_2'}` - second target
-      network ``q2_target``, initialized as a copy of ``q2``
+    * :math:`Q(o, a)` with weights :math:`\theta^{Q}` - critic network
+      ``q``, composed of two q networks :math:`Q_i(o, a)` with index i
+    * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
+      ``q_target``, initialized as a copy of ``q``
 
     Algorithm
 
@@ -431,22 +398,19 @@ def train_sac(
         * Update temperature with :class:`EntropyControl`
       * If ``t % target_network_delay == 0``
 
-        * Update target networks :math:`Q_1', Q_2'` with
+        * Update target network :math:`Q'` with
           :func:`~.blox.target_net.soft_target_net_update`
 
     Logging
 
-    * ``q1 loss`` - value of the loss function for ``q1``
-    * ``q2 loss`` - value of the loss function for ``q2``
+    * ``q loss`` - value of the loss function for ``q``
     * ``policy loss`` - value of the loss function for the actor
 
     Checkpointing
 
-    * ``q1`` - first critic
-    * ``q2`` - second critic
+    * ``q`` - critic
     * ``policy`` - target policy
-    * ``q1_target`` - target network for the first critic
-    * ``q2_target`` - target network for the second critic
+    * ``q_target`` - target network for the first critic
 
     References
     ----------
@@ -477,10 +441,8 @@ def train_sac(
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
 
-    if q1_target is None:
-        q1_target = nnx.clone(q1)
-    if q2_target is None:
-        q2_target = nnx.clone(q2)
+    if q_target is None:
+        q_target = nnx.clone(q)
 
     if entropy_control is None:
         entropy_control = EntropyControl(
@@ -525,13 +487,10 @@ def train_sac(
             )
 
             key, action_key = jax.random.split(key, 2)
-            q1_loss_value, q2_loss_value = sac_update_critic(
-                q1,
-                q1_target,
-                q1_optimizer,
-                q2,
-                q2_target,
-                q2_optimizer,
+            q_loss_value = sac_update_critic(
+                q,
+                q_target,
+                q_optimizer,
                 policy,
                 gamma,
                 observations,
@@ -543,14 +502,8 @@ def train_sac(
                 entropy_control.alpha_,
             )
             if logger is not None:
-                logger.record_stat(
-                    "q1 loss", q1_loss_value, step=global_step + 1
-                )
-                logger.record_epoch("q1", q1, step=global_step + 1)
-                logger.record_stat(
-                    "q2 loss", q2_loss_value, step=global_step + 1
-                )
-                logger.record_epoch("q2", q2, step=global_step + 1)
+                logger.record_stat("q loss", q_loss_value, step=global_step + 1)
+                logger.record_epoch("q", q, step=global_step + 1)
 
             if global_step % policy_delay == 0:
                 # compensate for delay by doing 'policy_frequency' updates
@@ -559,8 +512,7 @@ def train_sac(
                     policy_loss_value = sac_update_actor(
                         policy,
                         policy_optimizer,
-                        q1,
-                        q2,
+                        q,
                         action_key,
                         observations,
                         entropy_control.alpha_,
@@ -594,14 +546,8 @@ def train_sac(
                             )
 
             if global_step % target_network_delay == 0:
-                soft_target_net_update(q1, q1_target, tau)
-                logger.record_epoch(
-                    "q1_target", q1_target, step=global_step + 1
-                )
-                soft_target_net_update(q2, q2_target, tau)
-                logger.record_epoch(
-                    "q2_target", q2_target, step=global_step + 1
-                )
+                soft_target_net_update(q, q_target, tau)
+                logger.record_epoch("q_target", q_target, step=global_step + 1)
 
         if termination or truncation:
             if logger is not None:
@@ -617,12 +563,9 @@ def train_sac(
     return (
         policy,
         policy_optimizer,
-        q1,
-        q1_target,
-        q1_optimizer,
-        q2,
-        q2_target,
-        q2_optimizer,
+        q,
+        q_target,
+        q_optimizer,
         entropy_control,
     )
 
@@ -631,8 +574,7 @@ def train_sac(
 def sac_update_actor(
     policy: nnx.Module,
     policy_optimizer: nnx.Optimizer,
-    q1: nnx.Module,
-    q2: nnx.Module,
+    q: ContinuousDoubleQNet,
     action_key: jnp.ndarray,
     observation: jnp.ndarray,
     alpha: jnp.ndarray,
@@ -650,11 +592,8 @@ def sac_update_actor(
     policy_optimizer : nnx.Optimizer
         Optimizer for policy.
 
-    q1 : nnx.Module
-        First soft Q network.
-
-    q2 : nnx.Module
-        Second soft Q network.
+    q : nnx.Module
+        Double soft Q network.
 
     action_key : jnp.ndarray
         PRNG Key for action sampling.
@@ -676,7 +615,7 @@ def sac_update_actor(
         The loss function used during the optimization step.
     """
     loss, grads = nnx.value_and_grad(sac_actor_loss, argnums=0)(
-        policy, q1, q2, alpha, action_key, observation
+        policy, q, alpha, action_key, observation
     )
     policy_optimizer.update(grads)
     return loss
@@ -684,12 +623,9 @@ def sac_update_actor(
 
 @nnx.jit
 def sac_update_critic(
-    q1: nnx.Module,
-    q1_target: nnx.Module,
-    q1_optimizer: nnx.Optimizer,
-    q2: nnx.Module,
-    q2_target: nnx.Module,
-    q2_optimizer: nnx.Optimizer,
+    q: ContinuousDoubleQNet,
+    q_target: ContinuousDoubleQNet,
+    q_optimizer: nnx.Optimizer,
     policy: StochasticPolicyBase,
     gamma: float,
     observations: jnp.ndarray,
@@ -702,31 +638,21 @@ def sac_update_critic(
 ) -> tuple[float, float]:
     r"""SAC update of critic.
 
-    Uses ``q1_optimizer`` and ``q2_optimizer`` to update ``q1`` and ``q2``
-    with the :func:`~.blox.losses.mse_continuous_action_value_loss`
-    respectively. The target values :math:`y_i` are generated by
-    :func:`sac_q_target` with the target networks ``q1_target`` and
-    ``q2_target``.
+    Uses ``q_optimizer`` to update ``q``
+    with the :func:`~.blox.losses.mse_continuous_action_value_loss`. The target
+    values :math:`y_i` are generated by :func:`soft_q_target` with the target
+    network ``q_target``.
 
     Parameters
     ----------
-    q1 : nnx.Module
-        First action-value network.
+    q : ContinuousDoubleQNet
+        Double soft q network.
 
-    q1_target : nnx.Module
-        Target network of q1.
+    q_target : ContinuousDoubleQNet
+        Target network of q.
 
-    q1_optimizer : nnx.Optimizer
-        Optimizer of q1.
-
-    q2 : nnx.Module
-        Second action-value network.
-
-    q2_target : nnx.Module
-        Target network of q2.
-
-    q2_optimizer : nnx.Optimizer
-        Optimizer of q2.
+    q_optimizer : nnx.Optimizer
+        Optimizer of q.
 
     policy : StochasticPolicyBase
         Policy.
@@ -757,11 +683,8 @@ def sac_update_critic(
 
     Returns
     -------
-    q1_loss_value : float
-        Loss for q1.
-
-    q2_loss_value : float
-        Loss for q2.
+    q_loss_value : float
+        Loss for q.
 
     See also
     --------
@@ -771,9 +694,8 @@ def sac_update_critic(
     sac_q_target
         Generates target values for action-value functions.
     """
-    q_target_value = sac_q_target(
-        q1_target,
-        q2_target,
+    q_target_value = soft_q_target(
+        q_target,
         policy,
         rewards,
         next_observations,
@@ -783,21 +705,27 @@ def sac_update_critic(
         gamma,
     )
 
-    q1_loss_value, q1_grads = nnx.value_and_grad(
-        mse_continuous_action_value_loss, argnums=3
-    )(observations, actions, q_target_value, q1)
-    q1_optimizer.update(q1_grads)
-    q2_loss_value, q2_grads = nnx.value_and_grad(
-        mse_continuous_action_value_loss, argnums=3
-    )(observations, actions, q_target_value, q2)
-    q2_optimizer.update(q2_grads)
+    def sum_of_qnet_losses(q: ContinuousDoubleQNet):
+        return mse_continuous_action_value_loss(
+            observations,
+            actions,
+            q_target_value,
+            q.q1,
+        ) + mse_continuous_action_value_loss(
+            observations,
+            actions,
+            q_target_value,
+            q.q2,
+        )
 
-    return q1_loss_value, q2_loss_value
+    q_loss_value, grads = nnx.value_and_grad(sum_of_qnet_losses)(q)
+    q_optimizer.update(grads)
+
+    return q_loss_value
 
 
-def sac_q_target(
-    q1_target: nnx.Module,
-    q2_target: nnx.Module,
+def soft_q_target(
+    q_target: ContinuousDoubleQNet,
     policy: StochasticPolicyBase,
     rewards: jnp.ndarray,
     next_observations: jnp.ndarray,
@@ -807,6 +735,10 @@ def sac_q_target(
     gamma: float,
 ) -> jnp.ndarray:
     r"""Target value for action-value functions in SAC.
+
+    The target values will be generated to estimate the soft Q function as
+    described in [1]_ with a target network. In addition, we use a double
+    network.
 
     For a mini-batch, we calculate target values :math:`y_i` for the critic
 
@@ -826,11 +758,8 @@ def sac_q_target(
 
     Parameters
     ----------
-    q1_target : nnx.Module
-        Target network of q1.
-
-    q2_target : nnx.Module
-        Target network of q2.
+    q_target : ContinuousDoubleQNet
+        Target network of q.
 
     policy : StochasticPolicyBase
         Policy.
@@ -857,13 +786,16 @@ def sac_q_target(
     -------
     q_target_value : array
         Target values for action-value functions.
+
+    References
+    ----------
+    .. [1] Haarnoja, T., Tang, H., Abbeel, P., Levine, S. (2017). Reinforcement
+       Learning with Deep Energy-Based Policies. In Proceedings of the 34th
+       International Conference on Machine Learning, PMLR 70:1352-1361, 2017.
+       https://proceedings.mlr.press/v70/haarnoja17a.html
     """
     next_actions = policy.sample(next_observations, action_key)
     next_log_pi = policy.log_probability(next_observations, next_actions)
     next_obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
-    q1_next_target = q1_target(next_obs_act).squeeze()
-    q2_next_target = q2_target(next_obs_act).squeeze()
-    min_q_next_target = (
-        jnp.minimum(q1_next_target, q2_next_target) - alpha * next_log_pi
-    )
-    return rewards + (1 - terminations) * gamma * min_q_next_target
+    q_next_target = q_target(next_obs_act).squeeze() - alpha * next_log_pi
+    return rewards + (1 - terminations) * gamma * q_next_target
