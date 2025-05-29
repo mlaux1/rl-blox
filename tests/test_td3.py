@@ -19,10 +19,8 @@ def test_td3():
         env,
         td3_state.policy,
         td3_state.policy_optimizer,
-        td3_state.q1,
-        td3_state.q1_optimizer,
-        td3_state.q2,
-        td3_state.q2_optimizer,
+        td3_state.q,
+        td3_state.q_optimizer,
         total_timesteps=10,
     )
 
