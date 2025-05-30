@@ -1776,7 +1776,7 @@ def train_crossq(
     model.learn(
         total_timesteps=total_timesteps,
         progress_bar=True,
-        log_interval=eval_freq,
+        log_interval=log_freq,
     )
 
     return model
