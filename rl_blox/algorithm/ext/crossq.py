@@ -1620,6 +1620,9 @@ class SAC(OffPolicyAlgorithmJax):
         """
         Write log data.
         """
+        if self.rlb_logger is None:
+            return
+
         assert self.ep_info_buffer is not None
         assert self.ep_success_buffer is not None
 
@@ -1639,9 +1642,9 @@ class SAC(OffPolicyAlgorithmJax):
 
 def train_crossq(
     env: gym.Env,
-    algo: str = "sac",
+    algo: str = "crossq",
     seed: int = 1,
-    log_freq: int = 300,
+    log_interval: int = 300,
     adam_b1: float = 0.5,
     bn: bool = True,
     bn_momentum: float = 0.99,
@@ -1664,8 +1667,17 @@ def train_crossq(
 
     Parameters
     ----------
-    env: gym.Env
+    env : gym.Env
         The environment to train on.
+
+    algo : str in ['droq', 'redq', 'td3', 'sac', 'crossq']
+        Algorithm name.
+
+    seed : int
+        Seed for PRNG.
+
+    log_interval : int
+        Interval between logging of episode statistics.
     """
     experiment_time = time.time()
 
@@ -1675,7 +1687,6 @@ def train_crossq(
     dropout_rate, layer_norm = None, False
     policy_q_reduce_fn = jax.numpy.min
     net_arch = {"pi": [256, 256], "qf": [n_neurons, n_neurons]}
-    eval_freq = max(total_timesteps // log_freq, 1)
     td3_mode = False
 
     if algo == "droq":
@@ -1776,7 +1787,7 @@ def train_crossq(
     model.learn(
         total_timesteps=total_timesteps,
         progress_bar=True,
-        log_interval=log_freq,
+        log_interval=log_interval,
     )
 
     return model
