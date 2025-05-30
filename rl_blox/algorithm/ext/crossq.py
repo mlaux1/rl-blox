@@ -25,6 +25,7 @@
 # THE SOFTWARE.
 
 import os
+import sys
 import time
 from collections.abc import Callable, Sequence
 from copy import deepcopy
@@ -72,7 +73,7 @@ from stable_baselines3.common.type_aliases import (
     MaybeCallback,
     Schedule,
 )
-from stable_baselines3.common.utils import is_vectorized_observation
+from stable_baselines3.common.utils import safe_mean, is_vectorized_observation
 
 from rl_blox.logging.logger import LoggerBase
 
@@ -1615,6 +1616,26 @@ class SAC(OffPolicyAlgorithmJax):
             {"params": self.ent_coef_state.params}
         )
 
+    def dump_logs(self) -> None:
+        """
+        Write log data.
+        """
+        assert self.ep_info_buffer is not None
+        assert self.ep_success_buffer is not None
+
+        time_elapsed = max((time.time_ns() - self.start_time) / 1e9, sys.float_info.epsilon)
+        fps = int((self.num_timesteps - self._num_timesteps_at_start) / time_elapsed)
+
+        episode = self._episode_num
+        step = self.num_timesteps
+
+        if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
+            mean_return = safe_mean([ep_info["r"] for ep_info in self.ep_info_buffer])
+            self.rlb_logger.record_stat("return", mean_return, step=step, episode=episode)
+            mean_length = safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer])
+            self.rlb_logger.record_stat("episode_length", mean_length, step=step, episode=episode)
+        self.rlb_logger.record_stat("time/fps", fps)
+
 
 def train_crossq(
     env: gym.Env,
@@ -1654,7 +1675,7 @@ def train_crossq(
     dropout_rate, layer_norm = None, False
     policy_q_reduce_fn = jax.numpy.min
     net_arch = {"pi": [256, 256], "qf": [n_neurons, n_neurons]}
-    eval_freq = max(5_000_000 // log_freq, 1)
+    eval_freq = max(total_timesteps // log_freq, 1)
     td3_mode = False
 
     if algo == "droq":
@@ -1755,6 +1776,7 @@ def train_crossq(
     model.learn(
         total_timesteps=total_timesteps,
         progress_bar=True,
+        log_interval=eval_freq,
     )
 
     return model
