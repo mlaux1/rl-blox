@@ -1634,7 +1634,7 @@ class SAC(OffPolicyAlgorithmJax):
             self.rlb_logger.record_stat("return", mean_return, step=step, episode=episode)
             mean_length = safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer])
             self.rlb_logger.record_stat("episode_length", mean_length, step=step, episode=episode)
-        self.rlb_logger.record_stat("time/fps", fps)
+        self.rlb_logger.record_stat("time/fps", fps, step=step, episode=episode)
 
 
 def train_crossq(
