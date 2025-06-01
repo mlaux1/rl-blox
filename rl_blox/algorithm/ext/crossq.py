@@ -1644,15 +1644,17 @@ def train_crossq(
     env: gym.Env,
     algo: str = "crossq",
     seed: int = 1,
-    log_interval: int = 300,
-    adam_b1: float = 0.5,
+    adam_b1: float = 0.9,
+    adam_b2: float = 0.999,
     bn: bool = True,
     bn_momentum: float = 0.99,
     bn_mode: str = "brn_actor",
+    buffer_size: int = 1_000_000,
     critic_activation: str = "relu",
     crossq_style: bool = True,
-    dropout: int = 1,  # TODO bool?
-    ln: float = 0.0,  # TODO bool?
+    gamma: float = 0.99,
+    dropout: bool = True,
+    ln: bool = False,
     lr: float = 1e-3,
     n_critics: int = 2,
     n_neurons: int = 256,
@@ -1660,7 +1662,9 @@ def train_crossq(
     tau: float = 0.005,
     utd: int = 1,
     total_timesteps: int = 5_000_000,
-    bnstats_live_net: int = 0,  # TODO bool?
+    bnstats_live_net: bool = False,
+    learning_starts: int = 5_000,
+    log_interval: int = 300,
     logger : LoggerBase | None = None,
 ) -> SAC:
     """CrossQ.
@@ -1670,21 +1674,97 @@ def train_crossq(
     env : gym.Env
         The environment to train on.
 
-    algo : str in ['droq', 'redq', 'td3', 'sac', 'crossq']
+    algo : str in ['droq', 'redq', 'td3', 'sac', 'crossq'], optional
         Algorithm name.
 
-    seed : int
+    seed : int, optional
         Seed for PRNG.
 
-    log_interval : int
+    adam_b1 : float, optional
+        b1 parameter for Adam optimizer.
+
+    adam_b2 : float, optional
+        b2 parameter for Adam optimizer.
+
+    bn : bool, optional
+        Use batch normalization.
+
+    bn_momentum : float, optional
+        Momentum parameter for batch normalization.
+
+    bn_mode : str in ['bn', 'brn_actor'], optional
+        Batch normalization model: standard batch normalization or
+        renormalization.
+
+    buffer_size : int, optional
+        Size of the replay buffer.
+
+    critic_activation : str, optional
+        Activation function for critic.
+
+    crossq_style : bool, optional
+        Turn off target networks and use a joint forward pass for the current
+        and next state-action pair.
+
+    gamma : float, optional
+        Discount factor for ininite horizon discounted reward model.
+
+    dropout: bool, optional
+        Use dropout.
+
+    ln : bool, optional
+        Use layer normalization in SAC or TD3.
+
+    lr : float, optional
+        Learning rate for critic and actor.
+
+    n_critics : int, optional
+        Number of networks for critic. Will be overwritten for droq, redq, and
+        crossq.
+
+    n_neurons : int, optional
+        Number of neurons in the two hidden layers of the critic. Will be
+        overwritten by crossq.
+
+    policy_delay : int, optional
+        Delay policy update by so many steps. Will be overwritten by droq,
+        redq, and crossq.
+
+    tau : int, optional
+        Learning rate for target networks. Will be ignored in crossq, since
+        it does not use target networks.
+
+    utd : int, optional
+        Update-to-data ration: how many gradient steps to we take per
+        environment step?
+
+    total_timesteps : int, optional
+        Total steps in the environment.
+
+    bnstats_live_net : bool, optional
+        Use batch normalization statistics from live net.
+
+    learning_starts : int, optional
+        Randomly sample so many steps before we start learning.
+
+    log_interval : int, optional
         Interval between logging of episode statistics.
+
+    logger : LoggerBase, optional
+        Logger for experiment statistics.
+
+    Returns
+    -------
+    model : SAC
+        Trained model.
     """
     experiment_time = time.time()
 
     algo = algo.lower()
     tau = tau if not crossq_style else 1.0
     bn_momentum = bn_momentum if bn else 0.0
-    dropout_rate, layer_norm = None, False
+    dropout_rate = None
+    layer_norm = False
     policy_q_reduce_fn = jax.numpy.min
     net_arch = {"pi": [256, 256], "qf": [n_neurons, n_neurons]}
     td3_mode = False
@@ -1694,16 +1774,12 @@ def train_crossq(
         layer_norm = True
         policy_q_reduce_fn = jax.numpy.mean
         n_critics = 2
-        # adam_b1 = 0.9  # adam default
-        adam_b2 = 0.999  # adam default
         policy_delay = 20
         utd = 20
         group = f'DroQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
     elif algo == "redq":
         policy_q_reduce_fn = jax.numpy.mean
         n_critics = 10
-        # adam_b1 = 0.9  # adam default
-        adam_b2 = 0.999  # adam default
         policy_delay = 20
         utd = 20
         group = f'REDQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
@@ -1755,7 +1831,7 @@ def train_crossq(
                 "net_arch": net_arch,
                 "optimizer_class": optax.adam,
                 "optimizer_kwargs": dict(
-                    {"b1": adam_b1, "b2": 0.999}  # default
+                    {"b1": adam_b1, "b2": adam_b2}
                 ),
             }
         ),
@@ -1765,13 +1841,13 @@ def train_crossq(
         td3_mode=td3_mode,
         use_bnstats_from_live_net=bool(bnstats_live_net),
         policy_q_reduce_fn=policy_q_reduce_fn,
-        learning_starts=5000,
+        learning_starts=learning_starts,
         learning_rate=lr,
         qf_learning_rate=lr,
         tau=tau,
-        gamma=0.99,
+        gamma=gamma,
         verbose=0,
-        buffer_size=1_000_000,
+        buffer_size=buffer_size,
         seed=seed,
         stats_window_size=1,  # don't smooth the episode return stats over time
         tensorboard_log=f"logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/",
