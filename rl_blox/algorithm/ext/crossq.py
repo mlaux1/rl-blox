@@ -1778,12 +1778,6 @@ def train_crossq(
         logger=logger,
     )
 
-    # Create log dir where evaluation results will be saved
-    eval_log_dir = f"./eval_logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/eval/"
-    qbias_log_dir = f"./eval_logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/qbias/"
-    os.makedirs(eval_log_dir, exist_ok=True)
-    os.makedirs(qbias_log_dir, exist_ok=True)
-
     model.learn(
         total_timesteps=total_timesteps,
         progress_bar=True,
