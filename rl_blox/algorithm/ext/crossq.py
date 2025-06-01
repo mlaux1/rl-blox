@@ -1757,6 +1757,11 @@ def train_crossq(
     -------
     model : SAC
         Trained model.
+
+    Raises
+    ------
+    ValueError
+        If the given algorithm name is unknown.
     """
     experiment_time = time.time()
 
@@ -1784,16 +1789,16 @@ def train_crossq(
         utd = 20
         group = f'REDQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
     elif algo == "td3":
-        # With the right hyperparameters, this here can run all the above algorithms
-        # and ablations.
+        # With the right hyperparameters, this here can run all the above
+        # algorithms and ablations.
         td3_mode = True
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
         group = f'TD3_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
     elif algo == "sac":
-        # With the right hyperparameters, this here can run all the above algorithms
-        # and ablations.
+        # With the right hyperparameters, this here can run all the above
+        # algorithms and ablations.
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
@@ -1810,7 +1815,7 @@ def train_crossq(
         tau = 1.0  # without target networks
         group = f"CrossQ_{env}"
     else:
-        raise NotImplementedError
+        raise ValueError(f"Algorithm {algo} is not supported.")
 
     if isinstance(env.observation_space, gym.spaces.Dict):
         policy = "MultiInputPolicy"
