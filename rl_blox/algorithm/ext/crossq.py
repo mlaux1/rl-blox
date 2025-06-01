@@ -1812,12 +1812,13 @@ def train_crossq(
     else:
         raise NotImplementedError
 
+    if isinstance(env.observation_space, gym.spaces.Dict):
+        policy = "MultiInputPolicy"
+    else:
+        policy = "MlpPolicy"
+
     model = SAC(
-        (
-            "MultiInputPolicy"
-            if isinstance(env.observation_space, gym.spaces.Dict)
-            else "MlpPolicy"
-        ),
+        policy,
         env,
         policy_kwargs=dict(
             {
