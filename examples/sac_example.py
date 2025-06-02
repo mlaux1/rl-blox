@@ -3,7 +3,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from rl_blox.algorithm.sac import create_sac_state, train_sac
-from rl_blox.logging.logger import AIMLogger
+from rl_blox.logging.checkpointer import OrbaxCheckpointer
+from rl_blox.logging.logger import AIMLogger, LoggerList
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -30,12 +31,16 @@ if verbose:
         "This example uses the AIM logger. You will not see any output on "
         "stdout. Run 'aim up' to analyze the progress."
     )
-logger = AIMLogger()
+logger = LoggerList([
+    AIMLogger(),
+    OrbaxCheckpointer("/tmp/rl-blox/sac_example/", verbose=verbose),
+])
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="SAC",
     hparams=hparams_models | hparams_algorithm,
 )
+logger.define_checkpoint_frequency("policy", 5_000)
 
 sac_state = create_sac_state(env, **hparams_models)
 sac_result = train_sac(

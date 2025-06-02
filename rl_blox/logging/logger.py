@@ -94,7 +94,7 @@ class LoggerBase(abc.ABC):
         """
 
     def define_checkpoint_frequency(  # noqa: B027
-        self, key: str, frequency: int
+        self, key: str, checkpoint_interval: int
     ):
         """Define the checkpoint frequency for a function approximator.
 
@@ -103,8 +103,9 @@ class LoggerBase(abc.ABC):
         key : str
             The name of the function approximator.
 
-        frequency : int
-            Frequency at which the function approximator should be saved.
+        checkpoint_interval : int
+            Number of steps after which the function approximator should be
+            saved.
         """
 
     def record_epoch(  # noqa: B027
@@ -327,7 +328,7 @@ class StandardLogger(LoggerBase):
         y = np.asarray(self.stats[key])
         return x, y
 
-    def define_checkpoint_frequency(self, key: str, frequency: int):
+    def define_checkpoint_frequency(self, key: str, checkpoint_interval: int):
         """Define the checkpoint frequency for a function approximator.
 
         Parameters
@@ -335,13 +336,14 @@ class StandardLogger(LoggerBase):
         key : str
             The name of the function approximator.
 
-        frequency : int
-            Frequency at which the function approximator should be saved.
+        checkpoint_interval : int
+            Number of steps after which the function approximator should be
+            saved.
         """
         if self.checkpointer is None:
             self._init_checkpointer()
 
-        self.checkpoint_frequencies[key] = frequency
+        self.checkpoint_frequencies[key] = checkpoint_interval
         self.checkpoint_path[key] = []
 
     def _init_checkpointer(self):
@@ -568,7 +570,18 @@ class MemoryLogger(LoggerBase):
         y = np.asarray(self.stats[key])
         return x, y
 
-    def define_checkpoint_frequency(self, key: str, frequency: int):
+    def define_checkpoint_frequency(self, key: str, checkpoint_interval: int):
+        """Define the checkpoint frequency for a function approximator.
+
+        Parameters
+        ----------
+        key : str
+            The name of the function approximator.
+
+        checkpoint_interval : int
+            Number of steps after which the function approximator should be
+            saved.
+        """
         """Does nothing."""
 
     def record_epoch(
@@ -701,7 +714,7 @@ class StdoutLogger(LoggerBase):
                 f"{format_str.format(value)}"
             )
 
-    def define_checkpoint_frequency(self, key: str, frequency: int):
+    def define_checkpoint_frequency(self, key: str, checkpoint_interval: int):
         """Does nothing."""
 
     def record_epoch(
@@ -933,7 +946,7 @@ class LoggerList(LoggerBase):
                 key, value, episode, step, t, verbose, format_str
             )
 
-    def define_checkpoint_frequency(self, key: str, frequency: int):
+    def define_checkpoint_frequency(self, key: str, checkpoint_interval: int):
         """Define the checkpoint frequency for a function approximator.
 
         Parameters
@@ -941,11 +954,12 @@ class LoggerList(LoggerBase):
         key : str
             The name of the function approximator.
 
-        frequency : int
-            Frequency at which the function approximator should be saved.
+        checkpoint_interval : int
+            Number of steps after which the function approximator should be
+            saved.
         """
         for logger in self.loggers:
-            logger.define_checkpoint_frequency(key, frequency)
+            logger.define_checkpoint_frequency(key, checkpoint_interval)
 
     def record_epoch(
         self,

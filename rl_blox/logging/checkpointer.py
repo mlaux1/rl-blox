@@ -111,7 +111,7 @@ class OrbaxCheckpointer(LoggerBase):
     ):
         """Does nothing."""
 
-    def define_checkpoint_frequency(self, key: str, frequency: int):
+    def define_checkpoint_frequency(self, key: str, checkpoint_interval: int):
         """Define the checkpoint frequency for a function approximator.
 
         Parameters
@@ -119,13 +119,14 @@ class OrbaxCheckpointer(LoggerBase):
         key : str
             The name of the function approximator.
 
-        frequency : int
-            Frequency at which the function approximator should be saved.
+        checkpoint_interval : int
+            Number of steps after which the function approximator should be
+            saved.
         """
         if self.checkpointer is None:
             self._init_checkpointer()
 
-        self.checkpoint_frequencies[key] = frequency
+        self.checkpoint_frequencies[key] = checkpoint_interval
         self.checkpoint_path[key] = []
 
     def _init_checkpointer(self):
@@ -170,7 +171,7 @@ class OrbaxCheckpointer(LoggerBase):
         if t is None:
             t = time.time() - self.start_time
         self.epoch[key] += 1
-        if self.verbose:
+        if self.verbose >= 2:
             tqdm.tqdm.write(
                 f"[{self.env_name}|{self.algorithm_name}] "
                 f"({episode:04d}|{step:06d}|{t:.2f}) E "  # E: epoch
