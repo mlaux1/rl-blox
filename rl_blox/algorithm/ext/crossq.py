@@ -45,7 +45,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+import orbax.checkpoint as ocp
 import tensorflow_probability.substrates.jax as tfp
+import tqdm
 from flax.linen.module import (
     Module,
     compact,
@@ -73,7 +75,7 @@ from stable_baselines3.common.type_aliases import (
     MaybeCallback,
     Schedule,
 )
-from stable_baselines3.common.utils import safe_mean, is_vectorized_observation
+from stable_baselines3.common.utils import is_vectorized_observation, safe_mean
 
 from rl_blox.logging.logger import LoggerBase
 
@@ -1053,7 +1055,7 @@ class SAC(OffPolicyAlgorithmJax):
 
     policy: SACPolicy
     action_space: spaces.Box  # type: ignore[assignment]
-    rlb_logger : LoggerBase | None
+    rlb_logger: LoggerBase | None
 
     def __init__(
         self,
@@ -1087,7 +1089,7 @@ class SAC(OffPolicyAlgorithmJax):
         device: str = "auto",
         _init_setup_model: bool = True,
         stats_window_size: int = 100,
-        logger : LoggerBase | None = None,
+        logger: LoggerBase | None = None,
     ) -> None:
         super().__init__(
             policy=policy,
@@ -1273,7 +1275,12 @@ class SAC(OffPolicyAlgorithmJax):
         self._n_updates += gradient_steps
         if self.rlb_logger is not None:
             for k, v in log_metrics.items():
-                self.rlb_logger.record_stat(k, v.item(), episode=self._episode_num, step=self.num_timesteps)
+                self.rlb_logger.record_stat(
+                    k,
+                    v.item(),
+                    episode=self._episode_num,
+                    step=self.num_timesteps,
+                )
 
         self.logger.record(
             "train/n_updates", self._n_updates, exclude="tensorboard"
@@ -1626,18 +1633,245 @@ class SAC(OffPolicyAlgorithmJax):
         assert self.ep_info_buffer is not None
         assert self.ep_success_buffer is not None
 
-        time_elapsed = max((time.time_ns() - self.start_time) / 1e9, sys.float_info.epsilon)
-        fps = int((self.num_timesteps - self._num_timesteps_at_start) / time_elapsed)
+        time_elapsed = max(
+            (time.time_ns() - self.start_time) / 1e9, sys.float_info.epsilon
+        )
+        fps = int(
+            (self.num_timesteps - self._num_timesteps_at_start) / time_elapsed
+        )
 
         episode = self._episode_num
         step = self.num_timesteps
 
         if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
-            mean_return = safe_mean([ep_info["r"] for ep_info in self.ep_info_buffer])
-            self.rlb_logger.record_stat("return", mean_return, step=step, episode=episode)
-            mean_length = safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer])
-            self.rlb_logger.record_stat("episode_length", mean_length, step=step, episode=episode)
+            mean_return = safe_mean(
+                [ep_info["r"] for ep_info in self.ep_info_buffer]
+            )
+            self.rlb_logger.record_stat(
+                "return", mean_return, step=step, episode=episode
+            )
+            mean_length = safe_mean(
+                [ep_info["l"] for ep_info in self.ep_info_buffer]
+            )
+            self.rlb_logger.record_stat(
+                "episode_length", mean_length, step=step, episode=episode
+            )
         self.rlb_logger.record_stat("time/fps", fps, step=step, episode=episode)
+
+
+class OrbaxLinenCheckpointer(LoggerBase):
+    """Checkpoint networks with Orbax for flax.linen.
+
+    This logger saves checkpoints to disk with Orbax. When the verbosity level
+    is > 0, it will also print on stdout.
+
+    Parameters
+    ----------
+    checkpoint_dir : str, optional
+        Directory in which we store checkpoints.
+
+        .. warning::
+
+            This directory will be created if it does not exist.
+
+    verbose : int, optional
+        Verbosity level.
+    """
+
+    checkpoint_dir: str
+    verbose: int
+    env_name: str | None
+    algorithm_name: str | None
+    start_time: float
+    _n_episodes: int
+    n_steps: int
+    lpad_keys: int
+    epoch: dict[str, int]
+    last_checkpoint_step: dict[str, int]
+    checkpointer: ocp.StandardCheckpointer | None
+    checkpoint_frequencies: dict[str, int]
+    checkpoint_path: dict[str, list[str]]
+
+    def __init__(self, checkpoint_dir="/tmp/rl-blox/", verbose=0):
+        self.checkpoint_dir = os.path.abspath(checkpoint_dir)
+        self.verbose = verbose
+
+        self.env_name = None
+        self.algorithm_name = None
+        self.start_time = 0.0
+        self._n_episodes = 0
+        self.n_steps = 0
+        self.lpad_keys = 0
+        self.epoch = {}
+        self.last_step = {}
+        self.checkpointer = ocp.StandardCheckpointer()
+        self.checkpoint_frequencies = {}
+        self.checkpoint_path = {}
+
+        self._make_checkpoint_dir()
+
+    def _make_checkpoint_dir(self):
+        if not os.path.exists(self.checkpoint_dir):
+            os.makedirs(self.checkpoint_dir)
+
+    @property
+    def n_episodes(self) -> int:
+        return self._n_episodes
+
+    def start_new_episode(self):
+        """Register start of new episode."""
+        self._n_episodes += 1
+
+    def stop_episode(self, total_steps: int):
+        """Register end of episode.
+
+        Increase step counter and records 'episode_length'.
+
+        Parameters
+        ----------
+        total_steps : int
+            Total number of steps in the episode that just terminated.
+        """
+        self.n_steps += total_steps
+
+    def define_experiment(
+        self,
+        env_name: str | None = None,
+        algorithm_name: str | None = None,
+        hparams: dict | None = None,
+    ):
+        """Define the experiment.
+
+        Parameters
+        ----------
+        env_name : str, optional
+            The name of the gym environment.
+
+        algorithm_name : str, optional
+            The name of the reinforcement learning algorithm.
+
+        hparams : dict, optional
+            Hyperparameters of the experiment.
+        """
+        self.env_name = env_name
+        self.algorithm_name = algorithm_name
+        self.start_time = time.time()
+
+    def record_stat(
+        self,
+        key: str,
+        value: Any,
+        episode: int | None = None,
+        step: int | None = None,
+        t: float | None = None,
+        verbose: int | None = None,
+        format_str: str = "{0:.3f}",
+    ):
+        """Does nothing."""
+
+    def define_checkpoint_frequency(self, key: str, checkpoint_interval: int):
+        """Define the checkpoint frequency for a function approximator.
+
+        Parameters
+        ----------
+        key : str
+            The name of the function approximator.
+
+        checkpoint_interval : int
+            Number of steps after which the function approximator should be
+            saved.
+        """
+        self.checkpoint_frequencies[key] = checkpoint_interval
+        self.checkpoint_path[key] = []
+        self.last_step[key] = 0
+
+    def record_epoch(
+        self,
+        key: str,
+        value: Any,
+        episode: int | None = None,
+        step: int | None = None,
+        t: float | None = None,
+    ):
+        """Record training epoch of function approximator.
+
+        Parameters
+        ----------
+        key : str
+            The name of the function approximator.
+
+        value : Any
+            Function approximator.
+
+        episode : int, optional
+            Episode which we record the statistic.
+
+        step : int, optional
+            Step at which we record the statistic.
+
+        t : float, optional
+            Wallclock time, measured with time.time().
+        """
+        if key not in self.epoch:
+            self.epoch[key] = 0
+            self.lpad_keys = max(self.lpad_keys, len(key))
+        self.epoch[key] += 1
+
+        if episode is None:
+            episode = self._n_episodes
+        if step is None:
+            step = self.n_steps
+
+        if self.verbose >= 2:
+            if t is None:
+                t = time.time() - self.start_time
+            tqdm.tqdm.write(
+                f"[{self.env_name}|{self.algorithm_name}] "
+                f"({episode:04d}|{step:06d}|{t:.2f}) E "  # E: epoch
+                f"{key.rjust(self.lpad_keys)}: "
+                f"{self.epoch[key]} epochs trained"
+            )
+
+        if key in self.checkpoint_frequencies:
+            # check if the step counter wrapped around as we cannot rely on
+            # x % y == 0 because of delayed updates (e.g., for the policy)
+            if (
+                self.last_step[key] % self.checkpoint_frequencies[key]
+                > step % self.checkpoint_frequencies[key]
+            ):
+                self._save_checkpoint(key, value, step)
+
+        self.last_step[key] = step
+
+    def _save_checkpoint(self, key: str, value: Any, step: int):
+        checkpoint_path = os.path.join(
+            f"{self.checkpoint_dir}",
+            f"{self.env_name}_{self.algorithm_name}_{self.start_time}_"
+            f"{key}_step_{step}_epoch_{self.epoch[key]}/",
+        )
+
+        self.save_model(checkpoint_path, value)
+
+        self.checkpoint_path[key].append(checkpoint_path)
+        if self.verbose:
+            tqdm.tqdm.write(
+                f"[{self.env_name}|{self.algorithm_name}] {key}: "
+                f"checkpoint saved at {checkpoint_path}"
+            )
+
+    def save_model(self, path: str, model: TrainState):
+        """Save model with Orbax.
+
+        Parameters
+        ----------
+        path : str
+            Full path to model.
+
+        model : nnx.Module
+            Function approximator to be stored.
+        """
+        self.checkpointer.save(path, model)
+        self.checkpointer.wait_until_finished()
 
 
 def train_crossq(
@@ -1665,8 +1899,8 @@ def train_crossq(
     bnstats_live_net: bool = False,
     learning_starts: int = 5_000,
     log_interval: int = 300,
-    logger : LoggerBase | None = None,
-) -> SAC:
+    logger: LoggerBase | None = None,
+) -> tuple[SAC, ActorTrainState, RLTrainState]:
     """CrossQ.
 
     Parameters
@@ -1758,13 +1992,78 @@ def train_crossq(
     model : SAC
         Trained model.
 
+    policy : ActorTrainState
+        Trained policy state.
+
+    q : RLTrainState
+        Trained critic state.
+
     Raises
     ------
     ValueError
         If the given algorithm name is unknown.
     """
-    experiment_time = time.time()
+    model = _configure_model(
+        env,
+        algo,
+        adam_b1,
+        adam_b2,
+        bn,
+        bn_momentum,
+        bn_mode,
+        buffer_size,
+        critic_activation,
+        crossq_style,
+        dropout,
+        gamma,
+        ln,
+        lr,
+        n_critics,
+        n_neurons,
+        seed,
+        policy_delay,
+        tau,
+        utd,
+        bnstats_live_net,
+        learning_starts,
+        logger,
+    )
 
+    model.learn(
+        total_timesteps=total_timesteps,
+        progress_bar=True,
+        log_interval=log_interval,
+    )
+
+    return model, model.policy.actor_state, model.policy.qf_state
+
+
+def _configure_model(
+    env,
+    algo,
+    adam_b1,
+    adam_b2,
+    bn,
+    bn_momentum,
+    bn_mode,
+    buffer_size,
+    critic_activation,
+    crossq_style,
+    dropout,
+    gamma,
+    ln,
+    lr,
+    n_critics,
+    n_neurons,
+    seed,
+    policy_delay,
+    tau,
+    utd,
+    bnstats_live_net,
+    learning_starts,
+    logger,
+):
+    experiment_time = time.time()
     algo = algo.lower()
     tau = tau if not crossq_style else 1.0
     bn_momentum = bn_momentum if bn else 0.0
@@ -1773,7 +2072,6 @@ def train_crossq(
     policy_q_reduce_fn = jax.numpy.min
     net_arch = {"pi": [256, 256], "qf": [n_neurons, n_neurons]}
     td3_mode = False
-
     if algo == "droq":
         dropout_rate = 0.01
         layer_norm = True
@@ -1816,12 +2114,10 @@ def train_crossq(
         group = f"CrossQ_{env}"
     else:
         raise ValueError(f"Algorithm {algo} is not supported.")
-
     if isinstance(env.observation_space, gym.spaces.Dict):
         policy = "MultiInputPolicy"
     else:
         policy = "MlpPolicy"
-
     model = SAC(
         policy,
         env,
@@ -1836,9 +2132,7 @@ def train_crossq(
                 "n_critics": n_critics,
                 "net_arch": net_arch,
                 "optimizer_class": optax.adam,
-                "optimizer_kwargs": dict(
-                    {"b1": adam_b1, "b2": adam_b2}
-                ),
+                "optimizer_kwargs": dict({"b1": adam_b1, "b2": adam_b2}),
             }
         ),
         gradient_steps=utd,
@@ -1859,11 +2153,69 @@ def train_crossq(
         tensorboard_log=f"logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/",
         logger=logger,
     )
+    return model
 
-    model.learn(
-        total_timesteps=total_timesteps,
-        progress_bar=True,
-        log_interval=log_interval,
+
+def load_checkpoint(
+    env: gym.Env,
+    policy_path: str | None = None,
+    q_path: str | None = None,
+    algo: str = "crossq",
+    seed: int = 1,
+    adam_b1: float = 0.9,
+    adam_b2: float = 0.999,
+    bn: bool = True,
+    bn_momentum: float = 0.99,
+    bn_mode: str = "brn_actor",
+    buffer_size: int = 1_000_000,
+    critic_activation: str = "relu",
+    crossq_style: bool = True,
+    gamma: float = 0.99,
+    dropout: bool = True,
+    ln: bool = False,
+    lr: float = 1e-3,
+    n_critics: int = 2,
+    n_neurons: int = 256,
+    policy_delay: int = 1,
+    tau: float = 0.005,
+    utd: int = 1,
+    bnstats_live_net: bool = False,
+    learning_starts: int = 5_000,
+    logger: LoggerBase | None = None,
+):
+    """Takes the same parameters as train_crossq."""
+    model = _configure_model(
+        env,
+        algo,
+        adam_b1,
+        adam_b2,
+        bn,
+        bn_momentum,
+        bn_mode,
+        buffer_size,
+        critic_activation,
+        crossq_style,
+        dropout,
+        gamma,
+        ln,
+        lr,
+        n_critics,
+        n_neurons,
+        seed,
+        policy_delay,
+        tau,
+        utd,
+        bnstats_live_net,
+        learning_starts,
+        logger,
     )
-
+    checkpointer = ocp.StandardCheckpointer()
+    if policy_path is not None:
+        policy_train_state = checkpointer.restore(
+            policy_path, model.policy.actor_state
+        )
+        model.policy.actor_state = policy_train_state
+    if q_path is not None:
+        q_train_state = checkpointer.restore(q_path, model.policy.qf_state)
+        model.policy.qf_state = q_train_state
     return model

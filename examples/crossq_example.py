@@ -1,8 +1,11 @@
 import gymnasium as gym
 
-from rl_blox.algorithm.ext.crossq import train_crossq
+from rl_blox.algorithm.ext.crossq import (
+    OrbaxLinenCheckpointer,
+    load_checkpoint,
+    train_crossq,
+)
 from rl_blox.logging.logger import AIMLogger
-
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -29,12 +32,25 @@ logger.define_experiment(
     hparams=hparams,
 )
 
-model = train_crossq(env, logger=logger, **hparams)
+model, policy, q = train_crossq(env, logger=logger, **hparams)
 env.close()
 
-# Evaluation
+checkpointer = OrbaxLinenCheckpointer(
+    checkpoint_dir="/tmp/rl-blox/crossq_example"
+)
+checkpointer.save_model(f"{checkpointer.checkpoint_dir}/policy", policy)
+checkpointer.save_model(f"{checkpointer.checkpoint_dir}/q", q)
+
 env = gym.make(env_name, render_mode="human")
 env = gym.wrappers.RecordEpisodeStatistics(env)
+model = load_checkpoint(
+    env,
+    policy_path=f"{checkpointer.checkpoint_dir}/policy",
+    q_path=f"{checkpointer.checkpoint_dir}/q",
+    algo="crossq",
+)
+
+# Evaluation
 while True:
     done = False
     infos = {}
