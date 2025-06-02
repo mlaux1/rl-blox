@@ -38,17 +38,19 @@ env.close()
 checkpointer = OrbaxLinenCheckpointer(
     checkpoint_dir="/tmp/rl-blox/crossq_example"
 )
-checkpointer.save_model(f"{checkpointer.checkpoint_dir}/policy", policy)
-checkpointer.save_model(f"{checkpointer.checkpoint_dir}/q", q)
+# uncomment to store checkpoint
+# checkpointer.save_model(f"{checkpointer.checkpoint_dir}/policy", policy)
+# checkpointer.save_model(f"{checkpointer.checkpoint_dir}/q", q)
 
 env = gym.make(env_name, render_mode="human")
 env = gym.wrappers.RecordEpisodeStatistics(env)
-model = load_checkpoint(
-    env,
-    policy_path=f"{checkpointer.checkpoint_dir}/policy",
-    q_path=f"{checkpointer.checkpoint_dir}/q",
-    algo="crossq",
-)
+# uncomment to load checkpoint
+# model = load_checkpoint(
+#     env,
+#     policy_path=f"{checkpointer.checkpoint_dir}/policy",
+#     q_path=f"{checkpointer.checkpoint_dir}/q",
+#     algo="crossq",
+# )
 
 # Evaluation
 while True:
