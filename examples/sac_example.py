@@ -31,16 +31,18 @@ if verbose:
         "This example uses the AIM logger. You will not see any output on "
         "stdout. Run 'aim up' to analyze the progress."
     )
+checkpointer = OrbaxCheckpointer("/tmp/rl-blox/sac_example/", verbose=verbose)
 logger = LoggerList([
     AIMLogger(),
-    OrbaxCheckpointer("/tmp/rl-blox/sac_example/", verbose=verbose),
+    # uncomment to store checkpoints
+    # checkpointer,
 ])
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="SAC",
     hparams=hparams_models | hparams_algorithm,
 )
-logger.define_checkpoint_frequency("policy", 5_000)
+logger.define_checkpoint_frequency("policy", 1_000)
 
 sac_state = create_sac_state(env, **hparams_models)
 sac_result = train_sac(
@@ -54,7 +56,8 @@ sac_result = train_sac(
 )
 env.close()
 policy, _, q, _, _, _ = sac_result
-
+# uncomment to save final policy
+# checkpointer.save_model("/tmp/rl-blox/sac_example/final_policy", policy)
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")

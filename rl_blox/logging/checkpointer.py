@@ -37,6 +37,7 @@ class OrbaxCheckpointer(LoggerBase):
     n_steps: int
     lpad_keys: int
     epoch: dict[str, int]
+    last_checkpoint_step: dict[str, int]
     checkpointer: ocp.StandardCheckpointer | None
     checkpoint_frequencies: dict[str, int]
     checkpoint_path: dict[str, list[str]]
@@ -52,9 +53,16 @@ class OrbaxCheckpointer(LoggerBase):
         self.n_steps = 0
         self.lpad_keys = 0
         self.epoch = {}
-        self.checkpointer = None
+        self.last_step = {}
+        self.checkpointer = ocp.StandardCheckpointer()
         self.checkpoint_frequencies = {}
         self.checkpoint_path = {}
+
+        self._make_checkpoint_dir()
+
+    def _make_checkpoint_dir(self):
+        if not os.path.exists(self.checkpoint_dir):
+            os.makedirs(self.checkpoint_dir)
 
     @property
     def n_episodes(self) -> int:
@@ -123,16 +131,9 @@ class OrbaxCheckpointer(LoggerBase):
             Number of steps after which the function approximator should be
             saved.
         """
-        if self.checkpointer is None:
-            self._init_checkpointer()
-
         self.checkpoint_frequencies[key] = checkpoint_interval
         self.checkpoint_path[key] = []
-
-    def _init_checkpointer(self):
-        self.checkpointer = ocp.StandardCheckpointer()
-        if not os.path.exists(self.checkpoint_dir):
-            os.makedirs(self.checkpoint_dir)
+        self.last_step[key] = 0
 
     def record_epoch(
         self,
@@ -164,14 +165,16 @@ class OrbaxCheckpointer(LoggerBase):
         if key not in self.epoch:
             self.epoch[key] = 0
             self.lpad_keys = max(self.lpad_keys, len(key))
+        self.epoch[key] += 1
+
         if episode is None:
             episode = self._n_episodes
         if step is None:
             step = self.n_steps
-        if t is None:
-            t = time.time() - self.start_time
-        self.epoch[key] += 1
+
         if self.verbose >= 2:
+            if t is None:
+                t = time.time() - self.start_time
             tqdm.tqdm.write(
                 f"[{self.env_name}|{self.algorithm_name}] "
                 f"({episode:04d}|{step:06d}|{t:.2f}) E "  # E: epoch
@@ -179,24 +182,44 @@ class OrbaxCheckpointer(LoggerBase):
                 f"{self.epoch[key]} epochs trained"
             )
 
-        if (
-            key in self.checkpoint_frequencies
-            and self.epoch[key] % self.checkpoint_frequencies[key] == 0
-        ):
-            self._save_checkpoint(key, value)
+        if key in self.checkpoint_frequencies:
+            # check if the step counter wrapped around as we cannot rely on
+            # x % y == 0 because of delayed updates (e.g., for the policy)
+            if (
+                self.last_step[key] % self.checkpoint_frequencies[key]
+                > step % self.checkpoint_frequencies[key]
+            ):
+                self._save_checkpoint(key, value, step)
 
-    def _save_checkpoint(self, key: str, value: Any):
+        self.last_step[key] = step
+
+    def _save_checkpoint(self, key: str, value: Any, step: int):
         checkpoint_path = os.path.join(
             f"{self.checkpoint_dir}",
-            f"{self.start_time}_{self.env_name}_{self.algorithm_name}_"
-            f"{key}_{self.epoch[key]}/",
+            f"{self.env_name}_{self.algorithm_name}_{self.start_time}_"
+            f"{key}_step_{step}_epoch_{self.epoch[key]}/",
         )
-        _, state = nnx.split(value)
-        self.checkpointer.save(f"{checkpoint_path}", state)
-        self.checkpointer.wait_until_finished()
+
+        self.save_model(checkpoint_path, value)
+
         self.checkpoint_path[key].append(checkpoint_path)
         if self.verbose:
             tqdm.tqdm.write(
                 f"[{self.env_name}|{self.algorithm_name}] {key}: "
                 f"checkpoint saved at {checkpoint_path}"
             )
+
+    def save_model(self, path: str, model: nnx.Module):
+        """Save model with Orbax.
+
+        Parameters
+        ----------
+        path : str
+            Full path to model.
+
+        model : nnx.Module
+            Function approximator to be stored.
+        """
+        state = nnx.state(model)
+        self.checkpointer.save(path, state)
+        self.checkpointer.wait_until_finished()
