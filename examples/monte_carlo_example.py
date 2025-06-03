@@ -8,7 +8,7 @@ from rl_blox.blox.value_policy import epsilon_greedy_policy, make_q_table
 from rl_blox.util.experiment_helper import generate_rollout
 
 ENV_NAME = "CliffWalking-v0"
-NUM_STEPS = 50_000
+NUM_STEPS = 500_000
 
 
 train_env = gym.make(ENV_NAME)
@@ -20,7 +20,7 @@ train_env.close()
 
 policy = partial(
     epsilon_greedy_policy,
-    epsilon=0.1,
+    epsilon=0.5,
     q_table=q_table,
 )
 
