@@ -9,6 +9,7 @@ from tqdm import tqdm
 from ..blox.function_approximator.mlp import MLP
 from ..blox.replay_buffer import ReplayBuffer, Transition
 from ..blox.schedules import linear_schedule
+from ..logging.logger import LoggerBase
 from .dqn import _extract, greedy_policy
 
 
@@ -93,6 +94,7 @@ def train_nature_dqn(
     target_update_frequency: int = 1000,
     q_target_net: MLP | None = None,
     seed: int = 1,
+    logger: LoggerBase | None = None,
 ) -> tuple[MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
@@ -132,6 +134,8 @@ def train_nature_dqn(
         The target Q-network. Only needed when continuing prior training.
     seed : int
         The random seed, which can be set to reproduce results.
+    logger : LoggerBase, optional
+        Experiment Logger.
 
     Returns
     -------
@@ -155,6 +159,9 @@ def train_nature_dqn(
 
     key = jax.random.key(seed)
 
+    if logger is not None:
+        logger.start_new_episode()
+
     # intialise the target network
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
@@ -167,7 +174,11 @@ def train_nature_dqn(
     key, subkey = jax.random.split(key)
     epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
 
+    steps_per_episode = 0
+
     for step in tqdm(range(total_timesteps)):
+        steps_per_episode += 1
+
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
@@ -189,6 +200,10 @@ def train_nature_dqn(
 
         # housekeeping
         if terminated or truncated:
+            if logger is not None:
+                logger.record_stat("return", info["episode"]["r"], step=i)
+                logger.stop_episode(steps_per_episode)
+            steps_per_episode = env.reset()
             obs, _ = env.reset()
         else:
             obs = next_obs
