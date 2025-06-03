@@ -18,7 +18,43 @@ def train_monte_carlo(
     seed: int = 42,
     logger: LoggerBase | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    r"""Monte-Carlo Learning.
+
+    This function implements tabular Monte-Carlo Learning as described by
+    Sutton and Barto. The algorithm uses epsilon-greedy exploration and the
+    incremental implementation to approximate the expected return of state-action
+    pairs. Training happens after each completed episode and is done "every-visit".
+
+    Parameters
+    ----------
+    env : gym.Env
+        The environment to train in.
+    q_table : ArrayLike
+        The Q-table of shape (num_states, num_actions), containing current Q-values.
+    total_timesteps : int
+        The number of time steps to train for.
+    gamma : float, optional
+        The discount factor.
+    epsilon : float, optional
+        The tradeoff for random exploration.
+    n_visits : ArrayLike, optional
+        The table of visits for each state action pair, only required when continuing prior training.
+    seed : int, optional
+        The random seed.
+    logger : LoggerBase, optional
+        Experiment Logger.
+
+    Returns
+    -------
+    q_table : jax.numpy.ndarray
+        The updated Q-table after training.
+    n_visits : jax.numpy.ndarray
+        The updated visitation table after training.
+    """
     key = jax.random.key(seed)
+
+    if logger is not None:
+        logger.start_new_episode()
 
     observation, _ = env.reset()
 
@@ -30,8 +66,10 @@ def train_monte_carlo(
     rew_arr = jnp.empty((total_timesteps,), dtype=jnp.float32)
 
     start_t = 0
+    steps_per_episode = 0
 
     for i in tqdm.trange(total_timesteps):
+        steps_per_episode += 1
         key, action_key = jax.random.split(key)
         action = epsilon_greedy_policy(
             q_table, observation, epsilon, action_key
@@ -52,7 +90,11 @@ def train_monte_carlo(
                 act_arr[start_t : i + 1],
                 gamma,
             )
+            if logger is not None:
+                logger.record_stat("return", info["episode"]["r"], step=i)
+                logger.stop_episode(steps_per_episode)
             observation, _ = env.reset()
+            steps_per_episode = 0
             start_t = i + 1
     return q_table, n_visits
 
