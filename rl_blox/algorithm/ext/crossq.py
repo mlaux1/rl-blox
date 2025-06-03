@@ -2062,6 +2062,8 @@ def _configure_model(
     bnstats_live_net,
     learning_starts,
     logger,
+    observation_space=None,
+    action_space=None,
 ):
     experiment_time = time.time()
     algo = algo.lower()
@@ -2114,6 +2116,14 @@ def _configure_model(
         group = f"CrossQ_{env}"
     else:
         raise ValueError(f"Algorithm {algo} is not supported.")
+
+    if env is None:
+        class DummyEnv(gym.Env):
+            def __init__(self):
+                self.observation_space = observation_space
+                self.action_space = action_space
+        env = DummyEnv()
+
     if isinstance(env.observation_space, gym.spaces.Dict):
         policy = "MultiInputPolicy"
     else:
@@ -2157,7 +2167,8 @@ def _configure_model(
 
 
 def load_checkpoint(
-    env: gym.Env,
+    observation_space: gym.spaces.Space,
+    action_space: gym.spaces.Space,
     policy_path: str | None = None,
     q_path: str | None = None,
     algo: str = "crossq",
@@ -2185,7 +2196,7 @@ def load_checkpoint(
 ):
     """Takes the same parameters as train_crossq."""
     model = _configure_model(
-        env,
+        None,
         algo,
         adam_b1,
         adam_b2,
@@ -2208,6 +2219,8 @@ def load_checkpoint(
         bnstats_live_net,
         learning_starts,
         logger,
+        observation_space=observation_space,
+        action_space=action_space,
     )
     checkpointer = ocp.StandardCheckpointer()
     if policy_path is not None:
