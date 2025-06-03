@@ -1,7 +1,7 @@
 import gymnasium as gym
 
 from rl_blox.algorithm.dynaq import train_dynaq
-from rl_blox.blox.value_policy import get_greedy_action, make_q_table
+from rl_blox.blox.value_policy import greedy_policy, make_q_table
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 env_name = "CliffWalking-v0"
@@ -36,7 +36,7 @@ for _ in range(5):
     done = False
     accumulated_reward = 0.0
     while not done:
-        act = int(get_greedy_action(None, q_table, obs))
+        act = int(greedy_policy(q_table, obs))
         obs, reward, terminated, truncated, _ = env.step(act)
         done = terminated or truncated
         accumulated_reward += reward

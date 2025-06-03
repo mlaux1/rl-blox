@@ -2,19 +2,14 @@ import gymnasium
 import jax.numpy as jnp
 from gymnasium.spaces.utils import flatdim
 from jax import Array, jit, random
-from jax.random import PRNGKey
 from jax.typing import ArrayLike
 
 from ..util import gymtools
 
 
 def make_q_table(env: gymnasium.Env) -> Array:
-    """
-    Creates a Q-table for the given environment.
+    """Creates a Q-table for the given environment."""
 
-    :param env: Environment.
-    :return: Q-table.
-    """
     obs_shape = gymtools.space_shape(env.observation_space)
     act_shape = (flatdim(env.action_space),)
     q_table = jnp.zeros(
@@ -25,38 +20,58 @@ def make_q_table(env: gymnasium.Env) -> Array:
 
 
 @jit
-def get_greedy_action(
-    key: PRNGKey, q_table: ArrayLike, observation: ArrayLike
-) -> Array:
-    """
-    Returns the greedy action for the given observation.
+def greedy_policy(
+    q_table: ArrayLike,
+    observation: ArrayLike,
+) -> jnp.ndarray:
+    """Greedy policy for tabular Q-functions.
 
-    :param key: PRNGKey.
-    :param q_table: Q-table.
-    :param observation: Observation.
-    :return: Greedy action.
+    Returns the greedy action for the given observation and tabular Q-function.
+
+    Parameters
+    ----------
+    q_table : ArrayLike
+        The tabular Q-function.
+    observation : ArrayLike
+        The observation.
+
+    Returns
+    -------
+    action : jnp.ndarray
+        The greedy action.
     """
-    # TODO: technically correct way is commented out because it is super slow
-    # true_indices = q_table[observation] == q_table[observation].max()
-    # return random.choice(key, jnp.flatnonzero(true_indices))
     return jnp.argmax(q_table[observation])
 
 
-def get_epsilon_greedy_action(
-    key: PRNGKey, q_table: ArrayLike, observation: ArrayLike, epsilon: float
-) -> Array:
-    """
-    Returns an epsilon-greedy action for the given observation.
+def epsilon_greedy_policy(
+    q_table: ArrayLike,
+    observation: ArrayLike,
+    epsilon: float,
+    key: jnp.ndarray,
+) -> jnp.ndarray:
+    """Epsilon-greedy policy for tabular Q-functions.
 
-    :param key: PRNGKey.
-    :param q_table: Q-table.
-    :param observation: Observation.
-    :param epsilon: Probability of randomly sampling an action
-    :return: The sampled action.
+    Returns the greedy action for the given observation and tabular Q-function.
+
+    Parameters
+    ----------
+    q_table : ArrayLike
+        The tabular Q-function.
+    observation : ArrayLike
+        The observation.
+    epsilon : float
+        The probability of selecting a random action uniformly.
+    key : int
+        The random key.
+
+    Returns
+    -------
+    action : jnp.ndarray
+        The greedy action.
     """
     key, subkey = random.split(key)
     roll = random.uniform(subkey)
     if roll < epsilon:
-        return random.choice(key, jnp.arange(len(q_table[observation])))
+        return random.choice(subkey, jnp.arange(len(q_table[observation])))
     else:
-        return get_greedy_action(key, q_table, observation)
+        return greedy_policy(q_table, observation)

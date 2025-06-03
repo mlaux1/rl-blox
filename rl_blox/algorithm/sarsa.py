@@ -3,7 +3,7 @@ import jax
 import tqdm
 from jax.typing import ArrayLike
 
-from ..blox.value_policy import get_epsilon_greedy_action
+from ..blox.value_policy import epsilon_greedy_policy
 from ..logging.logger import LoggerBase
 from ..util.error_functions import td_error
 
@@ -75,9 +75,7 @@ def train_sarsa(
     for i in tqdm.trange(total_timesteps):
         # get action from policy and perform environment step
         key, subkey = jax.random.split(key)
-        action = get_epsilon_greedy_action(
-            subkey, q_table, observation, epsilon
-        )
+        action = epsilon_greedy_policy(q_table, observation, epsilon, subkey)
         steps_per_episode += 1
         next_observation, reward, terminated, truncated, info = env.step(
             int(action)
@@ -85,8 +83,8 @@ def train_sarsa(
 
         # get next action
         key, subkey = jax.random.split(key)
-        next_action = get_epsilon_greedy_action(
-            subkey, q_table, next_observation, epsilon
+        next_action = epsilon_greedy_policy(
+            q_table, next_observation, epsilon, subkey
         )
 
         q_table = _update_policy(

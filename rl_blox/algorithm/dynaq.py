@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import tqdm
 
-from ..blox.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ..blox.value_policy import epsilon_greedy_policy, greedy_policy
 from ..logging.logger import LoggerBase
 
 
@@ -101,7 +101,7 @@ def q_learning_update(
     learning_rate: float,
     q_table: jnp.ndarray,
 ) -> jnp.ndarray:
-    next_act = get_greedy_action(None, q_table, next_obs)
+    next_act = greedy_policy(q_table, next_obs)
     q_target = reward + gamma * q_table[next_obs, next_act] - q_table[obs, act]
     return q_table.at[obs, act].set(
         q_table[obs, act] + learning_rate * q_target
@@ -198,9 +198,7 @@ def train_dynaq(
     accumulated_reward = 0.0
     for t in tqdm.trange(total_timesteps):
         key, sampling_key = jax.random.split(key, 2)
-        act = int(
-            get_epsilon_greedy_action(sampling_key, q_table, obs, epsilon)
-        )
+        act = int(epsilon_greedy_policy(q_table, obs, epsilon, sampling_key))
         next_obs, reward, terminated, truncated, _ = env.step(act)
         reward = float(reward)
         next_obs = int(next_obs)
