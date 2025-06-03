@@ -9,6 +9,7 @@ from tqdm import tqdm
 from ..blox.function_approximator.mlp import MLP
 from ..blox.replay_buffer import ReplayBuffer, Transition
 from ..blox.schedules import linear_schedule
+from ..logging.logger import LoggerBase
 
 
 @jax.jit
@@ -143,6 +144,7 @@ def train_dqn(
     total_timesteps: int = 1e4,
     gamma: float = 0.99,
     seed: int = 1,
+    logger: LoggerBase | None = None,
 ) -> tuple[MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
@@ -198,6 +200,9 @@ def train_dqn(
 
     key = jax.random.key(seed)
 
+    if logger is not None:
+        logger.start_new_episode()
+
     # initialise episode
     obs, _ = env.reset(seed=seed)
 
@@ -206,8 +211,11 @@ def train_dqn(
     key, subkey = jax.random.split(key)
     epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
 
+    steps_per_episode = 0
     # for each step:
     for step in tqdm(range(total_timesteps)):
+        steps_per_episode += 1
+
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
@@ -224,6 +232,10 @@ def train_dqn(
 
         # housekeeping
         if terminated or truncated:
+            if logger is not None:
+                logger.record_stat("return", info["episode"]["r"], step=step)
+                logger.stop_episode(steps_per_episode)
+            steps_per_episode = 0
             obs, _ = env.reset()
         else:
             obs = next_obs
