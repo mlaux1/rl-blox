@@ -201,7 +201,7 @@ def train_nature_dqn(
         # housekeeping
         if terminated or truncated:
             if logger is not None:
-                logger.record_stat("return", info["episode"]["r"], step=i)
+                logger.record_stat("return", info["episode"]["r"], step=step)
                 logger.stop_episode(steps_per_episode)
             steps_per_episode = env.reset()
             obs, _ = env.reset()
