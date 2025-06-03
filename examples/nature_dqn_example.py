@@ -24,13 +24,13 @@ q_net = MLP(
 )
 
 # Initialise the replay buffer
-rb = ReplayBuffer(50_000)
+rb = ReplayBuffer(200_000)
 
 # initialise optimiser
 optimizer = nnx.Optimizer(q_net, optax.rprop(0.003))
 
 # Train
-q, _ = train_nature_dqn(
+q, _, _ = train_nature_dqn(
     q_net,
     env,
     rb,
