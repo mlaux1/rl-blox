@@ -37,13 +37,8 @@ Functional Blox
    dqn.greedy_policy
    reinforce.discounted_reward_to_go
    reinforce.reinforce_gradient
-   reinforce.policy_gradient_pseudo_loss
-   reinforce.mse_value_loss
    actor_critic.actor_critic_policy_gradient
    ddpg.sample_actions
-   ddpg.mse_action_value_loss
-   ddpg.deterministic_policy_value_loss
-   ddpg.soft_target_net_update
    ddpg.ddpg_update_actor
    ddpg.ddpg_update_critic
    ddpg.q_deterministic_bootstrap_estimate
@@ -67,10 +62,6 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
-   reinforce.StochasticPolicyBase
-   reinforce.GaussianPolicy
-   reinforce.SoftmaxPolicy
-   ddpg.ReplayBuffer
    sac.EntropyCoefficient
    sac.EntropyControl
    pets.PETSMPCConfig
@@ -90,6 +81,7 @@ Functional Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   target_net.soft_target_net_update
    cross_entropy_method.cem_sample
    cross_entropy_method.cem_update
    probabilistic_ensemble.gaussian_nll
@@ -97,6 +89,11 @@ Functional Blox
    probabilistic_ensemble.gaussian_ensemble_loss
    probabilistic_ensemble.train_ensemble
    probabilistic_ensemble.restore_checkpoint
+   losses.mse_continuous_action_value_loss
+   losses.mse_discrete_action_value_loss
+   losses.mse_value_loss
+   losses.stochastic_policy_gradient_pseudo_loss
+   losses.deterministic_policy_gradient_loss
 
 Data Blox
 ---------
@@ -104,6 +101,7 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   replay_buffer.ReplayBuffer
    function_approximator.mlp.MLP
    function_approximator.gaussian_mlp.GaussianMLP
    function_approximator.policy_head.DeterministicTanhPolicy
