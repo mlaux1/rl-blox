@@ -1,23 +1,26 @@
 import gymnasium
 import jax
 import jax.numpy as jnp
-import optax
+import numpy as np
 from flax import nnx
 from jax.typing import ArrayLike
-from tqdm import tqdm
+from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.replay_buffer import ReplayBuffer, Transition
+from ..blox.losses import mse_discrete_action_value_loss
+from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
 from ..logging.logger import LoggerBase
-from .dqn import _extract, greedy_policy
+from .dqn import greedy_policy
 
 
 @nnx.jit
 def critic_loss(
     q_net: MLP,
     q_target: MLP,
-    batch: list[Transition],
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
     gamma: float = 0.99,
 ) -> float:
     """Calculates the loss of the given Q-net for a given minibatch of
@@ -39,19 +42,14 @@ def critic_loss(
     loss : float
         The computed loss for the given minibatch.
     """
-    obs, reward, action, terminated, next_obs = _extract(batch)
+    obs, action, reward, next_obs, terminated = batch
 
-    next_q = q_target(next_obs)
+    next_q = jax.lax.stop_gradient(q_target(next_obs))
     max_next_q = jnp.max(next_q, axis=1)
 
     target = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
 
-    pred = q_net(obs)
-    pred = pred[jnp.arange(len(pred)), action]
-
-    loss = optax.squared_error(pred, target).mean()
-
-    return loss
+    return mse_discrete_action_value_loss(obs, action, target, q_net)
 
 
 @nnx.jit
@@ -158,6 +156,7 @@ def train_nature_dqn(
     ), "DQN only supports discrete action spaces"
 
     key = jax.random.key(seed)
+    rng = np.random.default_rng(seed)
 
     if logger is not None:
         logger.start_new_episode()
@@ -174,25 +173,37 @@ def train_nature_dqn(
     key, subkey = jax.random.split(key)
     epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
 
-    steps_per_episode = 0
+    episode = 1
+    accumulated_reward = 0.0
 
-    for step in tqdm(range(total_timesteps)):
-        steps_per_episode += 1
-
+    for step in trange(total_timesteps):
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
             action = greedy_policy(q_net, obs)
 
         next_obs, reward, terminated, truncated, info = env.step(int(action))
-        replay_buffer.push(obs, action, reward, next_obs, terminated)
+        replay_buffer.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=terminated,
+        )
 
         if step > batch_size:
             if step % update_frequency == 0:
-                transition_batch = replay_buffer.sample(batch_size)
-                _train_step(
+                transition_batch = replay_buffer.sample_batch(batch_size, rng)
+                q_loss = _train_step(
                     q_net, q_target_net, optimizer, transition_batch, gamma
                 )
+                if logger is not None:
+                    logger.record_stat(
+                        "q_loss", q_loss, step=step + 1, episode=episode
+                    )
+                    logger.record_epoch(
+                        "q", q_net, step=step + 1, episode=episode
+                    )
 
             if step % target_update_frequency == 0:
                 q_net = q_target_net
@@ -201,9 +212,9 @@ def train_nature_dqn(
         # housekeeping
         if terminated or truncated:
             if logger is not None:
-                logger.record_stat("return", info["episode"]["r"], step=step)
-                logger.stop_episode(steps_per_episode)
-            steps_per_episode = 0
+                logger.record_stat(
+                    "return", accumulated_reward, step=step + 1, episode=episode
+                )
             obs, _ = env.reset()
         else:
             obs = next_obs
