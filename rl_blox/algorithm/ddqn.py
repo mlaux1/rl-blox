@@ -11,6 +11,7 @@ from ..blox.function_approximator.mlp import MLP
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
+from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
 
 
@@ -109,7 +110,7 @@ def train_ddqn(
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
-    Implements double DQN as originally described by van Hasselt et al. in 2016.
+    Implements double DQN as originally described by [1]_.
     It uses a neural network to approximate the Q-function and samples
     minibatches from the replay buffer to calculate updates as well as target
     networks that are copied regularly from the current Q-network. The only
@@ -160,7 +161,7 @@ def train_ddqn(
 
     References
     ----------
-    [1] van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement
+    .. [1] van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement
     Learning with Double Q-Learning. Proceedings of the AAAI Conference on
     Artificial Intelligence, 30(1). https://doi.org/10.1609/aaai.v30i1.10295
     """
@@ -221,7 +222,7 @@ def train_ddqn(
                     )
 
             if step % target_update_frequency == 0:
-                q_target_net = nnx.clone(q_net)
+                soft_target_net_update(q_net, q_target_net, 1.0)
 
         # housekeeping
         if terminated or truncated:

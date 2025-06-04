@@ -6,10 +6,12 @@ from flax import nnx
 def soft_target_net_update(
     net: nnx.Module, target_net: nnx.Module, tau: float
 ) -> None:
-    r"""Inplace soft update for target network with Polyak averaging.
+    r"""Inplace (soft) update for target network with Polyak averaging.
 
     The soft update for the target network is supposed to be applied with about
-    the same frequency as the update for the live network.
+    the same frequency as the update for the live network. Note that for a
+    :math:`\tau` value of 1, this turns into a hard replacement of the target
+    nets.
 
     Update formula:
 
