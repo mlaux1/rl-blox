@@ -6,6 +6,7 @@ from flax import nnx
 from rl_blox.algorithm.nature_dqn import train_nature_dqn
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.replay_buffer import ReplayBuffer
+from rl_blox.logging.logger import AIMLogger
 
 # Set up environment
 env_name = "CartPole-v1"
@@ -14,20 +15,36 @@ seed = 42
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
+hparams_model = dict(
+    activation="relu",
+    hidden_nodes=[128, 128],
+)
+hparams_algorithm = dict(
+    buffer_size=50_000,
+    total_timesteps=100_000,
+    learning_rate=0.003,
+    seed=seed,
+)
+
+logger = AIMLogger()
+logger.define_experiment(
+    env_name=env_name,
+    algorithm_name="DQN",
+    hparams=hparams_model | hparams_algorithm,
+)
 # Initialise the Q-Network
 q_net = MLP(
     env.observation_space.shape[0],
     int(env.action_space.n),
-    [128, 128],
-    "relu",
-    nnx.Rngs(seed),
+    rngs=nnx.Rngs(seed),
+    **hparams_model,
 )
 
 # Initialise the replay buffer
-rb = ReplayBuffer(10_000)
+rb = ReplayBuffer(hparams_algorithm["buffer_size"])
 
 # initialise optimiser
-optimizer = nnx.Optimizer(q_net, optax.adam(0.003))
+optimizer = nnx.Optimizer(q_net, optax.adam(hparams_algorithm["learning_rate"]))
 
 # Train
 q, _, _ = train_nature_dqn(
@@ -35,8 +52,8 @@ q, _, _ = train_nature_dqn(
     env,
     rb,
     optimizer,
-    seed=seed,
-    total_timesteps=200_000,
+    **hparams_algorithm,
+    logger=logger,
 )
 env.close()
 
