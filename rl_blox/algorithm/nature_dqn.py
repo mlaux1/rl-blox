@@ -59,7 +59,7 @@ def _train_step(
     optimizer: nnx.Optimizer,
     batch: ArrayLike,
     gamma: float = 0.99,
-) -> None:
+) -> float:
     """Performs a single training step to optimise the Q-network.
 
     Parameters
@@ -74,10 +74,17 @@ def _train_step(
         The minibatch of transitions to compute the update from.
     gamma : float, optional
         The discount factor.
+
+    Returns
+    -------
+    loss : float
+        The loss value.
     """
     grad_fn = nnx.value_and_grad(critic_loss)
     loss, grads = grad_fn(q_net, q_target, batch, gamma)
     optimizer.update(grads)
+
+    return loss
 
 
 def train_nature_dqn(
@@ -158,9 +165,6 @@ def train_nature_dqn(
     key = jax.random.key(seed)
     rng = np.random.default_rng(seed)
 
-    if logger is not None:
-        logger.start_new_episode()
-
     # intialise the target network
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
@@ -199,7 +203,7 @@ def train_nature_dqn(
                 )
                 if logger is not None:
                     logger.record_stat(
-                        "q_loss", q_loss, step=step + 1, episode=episode
+                        "q loss", q_loss, step=step + 1, episode=episode
                     )
                     logger.record_epoch(
                         "q", q_net, step=step + 1, episode=episode
