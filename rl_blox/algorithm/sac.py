@@ -531,7 +531,7 @@ def train_sac(
                         )
                         logger.record_stat(
                             "alpha",
-                            float(entropy_control.alpha_),
+                            float(jnp.array(entropy_control.alpha_).squeeze()),
                             step=global_step + 1,
                         )
                         if autotune:
