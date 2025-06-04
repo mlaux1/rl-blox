@@ -1,23 +1,26 @@
 import gymnasium
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax import nnx
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.replay_buffer import ReplayBuffer, Transition
+from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
 from ..logging.logger import LoggerBase
-from .dqn import _extract, greedy_policy
+from .dqn import greedy_policy
 
 
 @nnx.jit
 def ddqn_loss(
     q_net: MLP,
     q_target: MLP,
-    batch: list[Transition],
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
     gamma: float = 0.99,
 ) -> float:
     """Calculates the loss of the given Q-net for a given minibatch of
@@ -29,7 +32,7 @@ def ddqn_loss(
         The Q-network to compute the loss for.
     q_target : MLP
         The target Q-Network.
-    batch : list[Transition]
+    batch : tuple
         The minibatch of transitions.
     gamma : float, default=0.99
         The discount factor.
@@ -39,11 +42,11 @@ def ddqn_loss(
     loss : float
         The computed loss for the given minibatch.
     """
-    obs, reward, action, terminated, next_obs = _extract(batch)
+    obs, action, reward, next_obs, terminated = batch
 
-    next_q = q_net(next_obs)
+    next_q = jax.lax.stop_gradient(q_net(next_obs))
     indices = jnp.argmax(next_q, axis=1).reshape(-1, 1)
-    next_q_t = q_target(next_obs)
+    next_q_t = jax.lax.stop_gradient(q_target(next_obs))
     next_vals = jnp.take_along_axis(next_q_t, indices, axis=1).squeeze()
 
     target = jnp.array(reward) + (1 - terminated) * gamma * next_vals
@@ -63,7 +66,7 @@ def _train_step(
     optimizer: nnx.Optimizer,
     batch: ArrayLike,
     gamma: float = 0.99,
-) -> None:
+) -> float:
     """Performs a single training step to optimise the Q-network.
 
     Parameters
@@ -78,10 +81,16 @@ def _train_step(
         The minibatch of transitions to compute the update from.
     gamma : float, optional
         The discount factor.
+
+    Returns
+    -------
+    loss : float
+        Loss value.
     """
     grad_fn = nnx.value_and_grad(ddqn_loss)
     loss, grads = grad_fn(q_net, q_target, batch, gamma)
     optimizer.update(grads)
+    return loss
 
 
 def train_ddqn(
@@ -161,6 +170,7 @@ def train_ddqn(
     ), "DQN only supports discrete action spaces"
 
     key = jax.random.key(seed)
+    rng = np.random.default_rng(seed)
 
     if logger is not None:
         logger.start_new_episode()
@@ -177,22 +187,28 @@ def train_ddqn(
     key, subkey = jax.random.split(key)
     epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
 
-    steps_per_episode = 0
+    episode = 1
+    accumulated_reward = 0.0
 
     for step in tqdm(range(total_timesteps)):
-        steps_per_episode += 1
-
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
             action = greedy_policy(q_net, obs)
 
         next_obs, reward, terminated, truncated, info = env.step(int(action))
-        replay_buffer.push(obs, action, reward, next_obs, terminated)
+        accumulated_reward += reward
+        replay_buffer.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=terminated,
+        )
 
         if step > batch_size:
             if step % update_frequency == 0:
-                transition_batch = replay_buffer.sample(batch_size)
+                transition_batch = replay_buffer.sample_batch(batch_size, rng)
                 _train_step(
                     q_net, q_target_net, optimizer, transition_batch, gamma
                 )
@@ -204,10 +220,12 @@ def train_ddqn(
         # housekeeping
         if terminated or truncated:
             if logger is not None:
-                logger.record_stat("return", info["episode"]["r"], step=step)
-                logger.stop_episode(steps_per_episode)
-            steps_per_episode = 0
+                logger.record_stat(
+                    "return", accumulated_reward, step=step + 1, episode=episode
+                )
             obs, _ = env.reset()
+            accumulated_reward = 0.0
+            episode += 1
         else:
             obs = next_obs
 

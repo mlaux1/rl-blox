@@ -24,10 +24,10 @@ q_net = MLP(
 )
 
 # Initialise the replay buffer
-rb = ReplayBuffer(200_000)
+rb = ReplayBuffer(10_000, discrete_actions=True)
 
 # initialise optimiser
-optimizer = nnx.Optimizer(q_net, optax.rprop(0.003))
+optimizer = nnx.Optimizer(q_net, optax.adam(0.003))
 
 # Train
 q, _, _ = train_ddqn(
@@ -36,7 +36,7 @@ q, _, _ = train_ddqn(
     rb,
     optimizer,
     seed=seed,
-    total_timesteps=200_000,
+    total_timesteps=100_000,
 )
 env.close()
 
