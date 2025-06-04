@@ -19,10 +19,8 @@ def test_sac():
         env,
         sac_state.policy,
         sac_state.policy_optimizer,
-        sac_state.q1,
-        sac_state.q1_optimizer,
-        sac_state.q2,
-        sac_state.q2_optimizer,
+        sac_state.q,
+        sac_state.q_optimizer,
         total_timesteps=10,
     )
 
