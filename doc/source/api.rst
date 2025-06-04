@@ -17,9 +17,12 @@ Algorithm Interface
 .. autosummary::
    :toctree: _apidoc/
 
-   q_learning.q_learning
+   q_learning.train_q_learning
+   double_q_learning.train_double_q_learning
    dynaq.train_dynaq
    dqn.train_dqn
+   ddqn.train_ddqn
+   nature_dqn.train_nature_dqn
    reinforce.train_reinforce
    actor_critic.train_ac
    ddpg.train_ddpg
@@ -34,6 +37,8 @@ Functional Blox
 
    dqn.critic_loss
    dqn.greedy_policy
+   ddqn.ddqn_loss
+   nature_dqn.critic_loss
    reinforce.discounted_reward_to_go
    reinforce.reinforce_gradient
    reinforce.policy_gradient_pseudo_loss
@@ -48,7 +53,6 @@ Functional Blox
    sac.sac_exploration_loss
    sac.sac_update_actor
    sac.sac_update_critic
-   double_q_learning.double_q_learning
    pets.mpc_action
    pets.ts_inf
    pets.evaluate_plans
