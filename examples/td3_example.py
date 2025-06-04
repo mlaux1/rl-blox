@@ -55,15 +55,13 @@ td3_result = train_td3(
     env,
     td3_state.policy,
     td3_state.policy_optimizer,
-    td3_state.q1,
-    td3_state.q1_optimizer,
-    td3_state.q2,
-    td3_state.q2_optimizer,
+    td3_state.q,
+    td3_state.q_optimizer,
     logger=logger,
     **hparams_algorithm,
 )
 env.close()
-policy, _, _, q1, _, _, q2, _, _ = td3_result
+policy, _, _, q, _, _ = td3_result
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")
@@ -79,14 +77,10 @@ for i in range(10):
         accumulated_reward += reward
         done = termination or truncation
         if verbose >= 2:
-            q1_value = float(
-                q1(jnp.concatenate((obs, action), axis=-1)).squeeze()
+            q_value = float(
+                q(jnp.concatenate((obs, action), axis=-1)).squeeze()
             )
-            q2_value = float(
-                q2(jnp.concatenate((obs, action), axis=-1)).squeeze()
-            )
-            q_value = min(q1_value, q2_value)
-            print(f"{q_value=:.3f} {q1_value=:.3f} {q2_value=:.3f}")
+            print(f"{q_value=:.3f}")
         obs = np.asarray(next_obs)
     returns.append(accumulated_reward)
 env.close()

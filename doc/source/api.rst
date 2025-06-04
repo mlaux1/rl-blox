@@ -17,7 +17,8 @@ Algorithm Interface
 .. autosummary::
    :toctree: _apidoc/
 
-   q_learning.q_learning
+   q_learning.train_q_learning
+   double_q_learning.train_double_q_learning
    dynaq.train_dynaq
    dqn.train_dqn
    reinforce.train_reinforce
@@ -50,8 +51,7 @@ Functional Blox
    sac.sac_exploration_loss
    sac.sac_update_actor
    sac.sac_update_critic
-   sac.sac_q_target
-   double_q_learning.double_q_learning
+   sac.soft_q_target
    pets.mpc_action
    pets.ts_inf
    pets.evaluate_plans
@@ -112,6 +112,7 @@ Data Blox
    function_approximator.policy_head.GaussianTanhPolicy
    function_approximator.policy_head.GaussianPolicy
    function_approximator.policy_head.SoftmaxPolicy
+   double_qnet.ContinuousClippedDoubleQNet
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
 

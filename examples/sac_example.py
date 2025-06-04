@@ -3,7 +3,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from rl_blox.algorithm.sac import create_sac_state, train_sac
-from rl_blox.logging.logger import AIMLogger
+from rl_blox.logging.checkpointer import OrbaxCheckpointer
+from rl_blox.logging.logger import AIMLogger, LoggerList
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -30,28 +31,33 @@ if verbose:
         "This example uses the AIM logger. You will not see any output on "
         "stdout. Run 'aim up' to analyze the progress."
     )
-logger = AIMLogger()
+checkpointer = OrbaxCheckpointer("/tmp/rl-blox/sac_example/", verbose=verbose)
+logger = LoggerList([
+    AIMLogger(),
+    # uncomment to store checkpoints
+    # checkpointer,
+])
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="SAC",
     hparams=hparams_models | hparams_algorithm,
 )
+logger.define_checkpoint_frequency("policy", 1_000)
 
 sac_state = create_sac_state(env, **hparams_models)
 sac_result = train_sac(
     env,
     sac_state.policy,
     sac_state.policy_optimizer,
-    sac_state.q1,
-    sac_state.q1_optimizer,
-    sac_state.q2,
-    sac_state.q2_optimizer,
+    sac_state.q,
+    sac_state.q_optimizer,
     logger=logger,
     **hparams_algorithm,
 )
 env.close()
-policy, _, q1, _, _, q2, _, _, _ = sac_result
-
+policy, _, q, _, _, _ = sac_result
+# uncomment to save final policy
+# checkpointer.save_model("/tmp/rl-blox/sac_example/final_policy", policy)
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")
@@ -66,11 +72,7 @@ while True:
         obs = np.asarray(next_obs)
 
         if verbose >= 2:
-            q1_value = float(
-                q1(jnp.concatenate((obs, action), axis=-1)).squeeze()
+            q_value = float(
+                q(jnp.concatenate((obs, action), axis=-1)).squeeze()
             )
-            q2_value = float(
-                q2(jnp.concatenate((obs, action), axis=-1)).squeeze()
-            )
-            q_value = min(q1_value, q2_value)
-            print(f"{q_value=:.3f} {q1_value=:.3f} {q2_value=:.3f}")
+            print(f"{q_value=:.3f}")
