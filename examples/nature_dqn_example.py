@@ -29,7 +29,7 @@ hparams_algorithm = dict(
 logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name="DQN",
+    algorithm_name="Nature DQN",
     hparams=hparams_model | hparams_algorithm,
 )
 # Initialise the Q-Network
@@ -41,10 +41,12 @@ q_net = MLP(
 )
 
 # Initialise the replay buffer
-rb = ReplayBuffer(hparams_algorithm["buffer_size"])
+rb = ReplayBuffer(hparams_algorithm.pop("buffer_size"), discrete_actions=True)
 
 # initialise optimiser
-optimizer = nnx.Optimizer(q_net, optax.adam(hparams_algorithm["learning_rate"]))
+optimizer = nnx.Optimizer(
+    q_net, optax.adam(hparams_algorithm.pop("learning_rate"))
+)
 
 # Train
 q, _, _ = train_nature_dqn(
