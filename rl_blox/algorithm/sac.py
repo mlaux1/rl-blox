@@ -1,5 +1,6 @@
 from collections import namedtuple
 
+import chex
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -14,8 +15,10 @@ from ..blox.function_approximator.policy_head import (
     GaussianTanhPolicy,
     StochasticPolicyBase,
 )
+from ..blox.losses import mse_continuous_action_value_loss
+from ..blox.replay_buffer import ReplayBuffer
+from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
-from .ddpg import ReplayBuffer, mse_action_value_loss, soft_target_net_update
 
 
 def sac_actor_loss(
@@ -259,8 +262,8 @@ def train_sac(
     batch_size: int = 256,
     learning_starts: float = 5_000,
     entropy_learning_rate: float = 1e-3,
-    policy_frequency: int = 2,
-    target_network_frequency: int = 1,
+    policy_delay: int = 2,
+    target_network_delay: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
     q1_target: nnx.Module | None = None,
@@ -302,44 +305,73 @@ def train_sac(
 
     Parameters
     ----------
-    env
+    env : gymnasium.Env
         Gymnasium environment.
-    policy
+
+    policy : StochasticPolicyBase
         Stochastic policy.
-    q1
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy.
+
+    q1 : nnx.Module
         First soft Q network.
-    q2
+
+    q1_optimizer : nnx.Optimizer
+        Optimizer for first critic.
+
+    q2 : nnx.Module
         Second soft Q network.
+
+    q2_optimizer : nnx.Optimizer
+        Optimizer for second critic.
+
     seed : int
         Seed for random number generation.
-    total_timesteps
+
+    total_timesteps : int
         Total timesteps of the experiments.
-    buffer_size
+
+    buffer_size : int
         The replay memory buffer size.
-    gamma
+
+    gamma  float
         The discount factor gamma.
+
     tau : float, optional (default: 0.005)
         Target smoothing coefficient.
-    batch_size
+
+    batch_size : int
         The batch size of sample from the reply memory.
-    learning_starts
+
+    learning_starts : int
         Timestep to start learning.
-    entropy_learning_rate
+
+    entropy_learning_rate : float
         The learning rate of the Q network optimizer.
-    policy_frequency
-        Frequency of training policy (delayed).
-    target_network_frequency
-        The frequency of updates for the target networks.
-    alpha
+
+    policy_delay : int
+        Delayed policy updates. The policy is updated every ``policy_delay``
+        steps.
+
+    target_network_delay : int
+        The target networks are updated every ``target_network_delay`` steps.
+
+    alpha : float
         Entropy regularization coefficient.
-    autotune
+
+    autotune : bool
         Automatic tuning of the entropy coefficient.
-    q1_target
+
+    q1_target : nnx.Module
         Target network for q1.
-    q2_target
+
+    q2_target : nnx.Module
         Target network for q2.
-    entropy_control
+
+    entropy_control : EntropyControl
         State of entropy tuning.
+
     logger : LoggerBase, optional
         Experiment logger.
 
@@ -363,6 +395,58 @@ def train_sac(
         Optimizer of q2.
     entropy_control
         State of entropy tuning.
+
+    Notes
+    -----
+
+    Parameters
+
+    * :math:`\pi(a|o)` with weights :math:`\theta^{\pi}` - stochastic ``policy``
+    * :math:`Q_1(s, a)` with weights :math:`\theta^{Q_1}` - critic network
+      ``q1``
+    * :math:`Q_1'(s, a)` with weights :math:`\theta^{Q_1'}` - first target
+      network ``q1_target``, initialized as a copy of ``q1``
+    * :math:`Q_2(s, a)` with weights :math:`\theta^{Q_2}` - critic network
+      ``q2``
+    * :math:`Q_2'(s, a)` with weights :math:`\theta^{Q_2'}` - second target
+      network ``q2_target``, initialized as a copy of ``q2``
+
+    Algorithm
+
+    * Initialize replay buffer :math:`R`
+    * Randomly sample ``learning_starts`` actions and record transitions in
+      replay buffer
+    * For each step :math:`t`
+
+      * Sample :math:`a_t \sim \pi(a_t|o_t)`
+      * Take a step in the environment ``env`` and observe result
+      * Store transition :math:`(o_t, a_t, r_t, o_{t+1}, d_{t+1})` in :math:`R`,
+        where :math:`d` indicates if a terminal state was reached
+      * Sample mini-batch of ``batch_size`` transitions from :math:`R` to
+        update the networks
+      * Update critic networks with :func:`sac_update_critic`
+      * If ``t % policy_delay == 0``
+
+        * Update actor ``policy_delay`` times with :func:`sac_update_actor`
+        * Update temperature with :class:`EntropyControl`
+      * If ``t % target_network_delay == 0``
+
+        * Update target networks :math:`Q_1', Q_2'` with
+          :func:`~.blox.target_net.soft_target_net_update`
+
+    Logging
+
+    * ``q1 loss`` - value of the loss function for ``q1``
+    * ``q2 loss`` - value of the loss function for ``q2``
+    * ``policy loss`` - value of the loss function for the actor
+
+    Checkpointing
+
+    * ``q1`` - first critic
+    * ``q2`` - second critic
+    * ``policy`` - target policy
+    * ``q1_target`` - target network for the first critic
+    * ``q2_target`` - target network for the second critic
 
     References
     ----------
@@ -388,6 +472,7 @@ def train_sac(
     assert isinstance(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
+    chex.assert_scalar_in(tau, 0.0, 1.0)
 
     rng = np.random.default_rng(seed)
     key = jax.random.PRNGKey(seed)
@@ -467,9 +552,9 @@ def train_sac(
                 )
                 logger.record_epoch("q2", q2, step=global_step + 1)
 
-            if global_step % policy_frequency == 0:
+            if global_step % policy_delay == 0:
                 # compensate for delay by doing 'policy_frequency' updates
-                for _ in range(policy_frequency):
+                for _ in range(policy_delay):
                     key, action_key = jax.random.split(key, 2)
                     policy_loss_value = sac_update_actor(
                         policy,
@@ -508,7 +593,7 @@ def train_sac(
                                 "alpha", alpha, step=global_step + 1
                             )
 
-            if global_step % target_network_frequency == 0:
+            if global_step % target_network_delay == 0:
                 soft_target_net_update(q1, q1_target, tau)
                 logger.record_epoch(
                     "q1_target", q1_target, step=global_step + 1
@@ -549,10 +634,41 @@ def sac_update_actor(
     q1: nnx.Module,
     q2: nnx.Module,
     action_key: jnp.ndarray,
-    observations: jnp.ndarray,
+    observation: jnp.ndarray,
     alpha: jnp.ndarray,
 ) -> float:
     """SAC update of actor.
+
+    Uses ``policy_optimizer`` to update ``policy`` with the
+    :func:`sac_actor_loss`.
+
+    Parameters
+    ----------
+    policy : StochasticPolicyBase
+        Policy.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy.
+
+    q1 : nnx.Module
+        First soft Q network.
+
+    q2 : nnx.Module
+        Second soft Q network.
+
+    action_key : jnp.ndarray
+        PRNG Key for action sampling.
+
+    observation : jnp.ndarray
+        Observations from mini-batch.
+
+    alpha : jnp.ndarray
+        Entropy coefficient.
+
+    Returns
+    -------
+    loss : float
+        Actor loss.
 
     See also
     --------
@@ -560,7 +676,7 @@ def sac_update_actor(
         The loss function used during the optimization step.
     """
     loss, grads = nnx.value_and_grad(sac_actor_loss, argnums=0)(
-        policy, q1, q2, alpha, action_key, observations
+        policy, q1, q2, alpha, action_key, observation
     )
     policy_optimizer.update(grads)
     return loss
@@ -586,18 +702,11 @@ def sac_update_critic(
 ) -> tuple[float, float]:
     r"""SAC update of critic.
 
-    This function updates both q1 and q2.
-
-    Uses the bootstrap estimate
-
-    .. math::
-
-        r_{t+1} + \gamma
-        \left[\min(Q_1(o_{t+1}, a_{t+1}), Q_2(o_{t+1}, a_{t+1}))
-        - \alpha \log \pi(a_{t+1}|o_{t+1})\right]
-
-    based on the target networks of :math:`Q_1, Q_2` as a target value for the
-    Q network update with a mean squared error loss.
+    Uses ``q1_optimizer`` and ``q2_optimizer`` to update ``q1`` and ``q2``
+    with the :func:`~.blox.losses.mse_continuous_action_value_loss`
+    respectively. The target values :math:`y_i` are generated by
+    :func:`sac_q_target` with the target networks ``q1_target`` and
+    ``q2_target``.
 
     Parameters
     ----------
@@ -656,7 +765,7 @@ def sac_update_critic(
 
     See also
     --------
-    .ddpg.mse_action_value_loss
+    .blox.losses.mse_continuous_action_value_loss
         The mean squared error loss.
 
     sac_q_target
@@ -675,11 +784,11 @@ def sac_update_critic(
     )
 
     q1_loss_value, q1_grads = nnx.value_and_grad(
-        mse_action_value_loss, argnums=3
+        mse_continuous_action_value_loss, argnums=3
     )(observations, actions, q_target_value, q1)
     q1_optimizer.update(q1_grads)
     q2_loss_value, q2_grads = nnx.value_and_grad(
-        mse_action_value_loss, argnums=3
+        mse_continuous_action_value_loss, argnums=3
     )(observations, actions, q_target_value, q2)
     q2_optimizer.update(q2_grads)
 
@@ -699,16 +808,21 @@ def sac_q_target(
 ) -> jnp.ndarray:
     r"""Target value for action-value functions in SAC.
 
-    Uses the bootstrap estimate
+    For a mini-batch, we calculate target values :math:`y_i` for the critic
 
     .. math::
 
-        r_{t+1} + \gamma
-        \left[\min(Q_1(o_{t+1}, a_{t+1}), Q_2(o_{t+1}, a_{t+1}))
-        - \alpha \log \pi(a_{t+1}|o_{t+1})\right]
+        y_i = r_i + (1 - t_i) \gamma
+        \left[\min(Q_1(o_{i+1}, a_{i+1}), Q_2(o_{i+1}, a_{i+1}))
+        - \alpha \log \pi(a_{i+1}|o_{i+1})\right]
 
-    based on the target networks of :math:`Q_1, Q_2` as a target value for the
-    Q network update with a mean squared error loss.
+    where :math:`r_i` (``reward``) is the immediate reward obtained in the
+    transition, :math:`o_{i+1}` (``next_observation``) is the observation
+    after the transition, :math:`a_{i+1} \sim \pi(a_{i+1}|o_{i+1})` is the next
+    action sampled from the ``policy``, :math:`\gamma` (``gamma``) is the
+    discount factor, :math:`\alpha` is the entropy coefficient, and :math:`t_i`
+    (``terminated``) indicates if a terminal state was reached in this
+    transition.
 
     Parameters
     ----------

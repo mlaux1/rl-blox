@@ -1,54 +1,25 @@
 import gymnasium
 import jax
 import jax.numpy as jnp
-import optax
+import numpy as np
 from flax import nnx
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.replay_buffer import ReplayBuffer, Transition
+
 from ..blox.schedules import linear_schedule
+from ..blox.losses import mse_discrete_action_value_loss
+from ..blox.replay_buffer import ReplayBuffer
 from ..logging.logger import LoggerBase
-
-
-@jax.jit
-def _extract(
-    batch: list,
-) -> tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
-    """Extracts the arrays of the given list of transitions.
-
-    Parameters
-    ----------
-    batch : list[Transition]
-        The batch of transitions
-
-    Returns
-    -------
-    observation : ArrayLike
-        All observations of the given batch as a stacked array.
-    reward : ArrayLike
-        All rewards of the given batch as a stacked array.
-    action : ArrayLike
-        All actions of the given batch as a stacked array.
-    terminated : ArrayLike
-        All terminations of the given batch as a stacked array.
-    next_observation : ArrayLike
-        All next_observations of the given batch as a stacked array.
-
-    """
-    observation = jnp.stack([t.observation for t in batch])
-    reward = jnp.stack([t.reward for t in batch])
-    action = jnp.stack([t.action for t in batch])
-    terminated = jnp.stack([t.terminated for t in batch])
-    next_obs = jnp.stack([t.next_observation for t in batch])
-    return observation, reward, action, terminated, next_obs
 
 
 @nnx.jit
 def critic_loss(
     q_net: MLP,
-    batch: list[Transition],
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
     gamma: float = 0.99,
 ) -> float:
     """Calculates the loss of the given Q-net for a given minibatch of
@@ -58,7 +29,7 @@ def critic_loss(
     ----------
     q_net : MLP
         The Q-network to compute the loss for.
-    batch : list[Transition]
+    batch : tuple
         The minibatch of transitions.
     gamma : float, default=0.99
         The discount factor.
@@ -68,28 +39,25 @@ def critic_loss(
     loss : float
         The computed loss for the given minibatch.
     """
-    obs, reward, action, terminated, next_obs = _extract(batch)
+    obs, action, reward, next_obs, terminated = batch
 
-    next_q = q_net(next_obs)
+    next_q = jax.lax.stop_gradient(q_net(next_obs))
     max_next_q = jnp.max(next_q, axis=1)
 
-    target = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
+    q_target_values = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
 
-    pred = q_net(obs)
-    pred = pred[jnp.arange(len(pred)), action]
-
-    loss = optax.squared_error(pred, target).mean()
-
-    return loss
+    return mse_discrete_action_value_loss(obs, action, q_target_values, q_net)
 
 
 @nnx.jit
 def _train_step(
     q_net: MLP,
     optimizer: nnx.Optimizer,
-    batch: ArrayLike,
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
     gamma: float = 0.99,
-) -> None:
+) -> float:
     """Performs a single training step to optimise the Q-network.
 
     Parameters
@@ -98,14 +66,20 @@ def _train_step(
         The MLP to be updated.
     optimizer : nnx.Optimizer
         The optimizer to be used.
-    batch : ArrayLike
+    batch : tuple
         The minibatch of transitions to compute the update from.
     gamma : float, optional
         The discount factor.
+
+    Returns
+    -------
+    loss : float
+        Loss value.
     """
     grad_fn = nnx.value_and_grad(critic_loss)
     loss, grads = grad_fn(q_net, batch, gamma)
     optimizer.update(grads)
+    return loss
 
 
 @nnx.jit
@@ -153,13 +127,13 @@ def train_dqn(
     It uses a neural network to approximate the Q-function and samples
     minibatches from the replay buffer to calculate updates.
 
-    This implementation aims to be as close as possible to the original algorithm
-    described in the paper while remaining not overly engineered towards a
-    specific environment. For example, this implementation uses the same linear
-    schedule to decrease epsilon from 1.0 to 0.1 over the first ten percent of
-    training steps, but does not impose any architecture on the used Q-net or
-    requires a specific preprocessing of observations as is done in the original
-    paper to solve the Atari use case.
+    This implementation aims to be as close as possible to the original
+    algorithm described in the paper while remaining not overly engineered
+    towards a specific environment. For example, this implementation uses the
+    same linear schedule to decrease epsilon from 1.0 to 0.1 over the first ten
+    percent of training steps, but does not impose any architecture on the used
+    Q-net or requires a specific preprocessing of observations as is done in
+    the original paper to solve the Atari use case.
 
     Parameters
     ----------
@@ -179,6 +153,8 @@ def train_dqn(
         The discount factor.
     seed : int
         The random seed, which can be set to reproduce results.
+    logger : LoggerBase
+        Logger for experiment tracking.
 
     Returns
     -------
@@ -199,6 +175,7 @@ def train_dqn(
     ), "DQN only supports discrete action spaces"
 
     key = jax.random.key(seed)
+    rng = np.random.default_rng(seed)
 
     if logger is not None:
         logger.start_new_episode()
@@ -211,10 +188,10 @@ def train_dqn(
     key, subkey = jax.random.split(key)
     epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
 
-    steps_per_episode = 0
-    # for each step:
+    episode = 1
+    accumulated_reward = 0.0
+
     for step in tqdm(range(total_timesteps)):
-        steps_per_episode += 1
 
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
@@ -222,21 +199,34 @@ def train_dqn(
             action = greedy_policy(q_net, obs)
 
         next_obs, reward, terminated, truncated, info = env.step(int(action))
-        replay_buffer.push(obs, action, reward, next_obs, terminated)
+        accumulated_reward += reward
+        replay_buffer.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=terminated,
+        )
 
         # sample minibatch from replay buffer
         if step > batch_size:
-            transition_batch = replay_buffer.sample(batch_size)
-
-            _train_step(q_net, optimizer, transition_batch, gamma)
+            transition_batch = replay_buffer.sample_batch(batch_size, rng)
+            q_loss = _train_step(q_net, optimizer, transition_batch, gamma)
+            if logger is not None:
+                logger.record_stat(
+                    "q loss", q_loss, step=step + 1, episode=episode
+                )
+                logger.record_epoch("q", q_net, step=step + 1, episode=episode)
 
         # housekeeping
         if terminated or truncated:
             if logger is not None:
-                logger.record_stat("return", info["episode"]["r"], step=step)
-                logger.stop_episode(steps_per_episode)
-            steps_per_episode = 0
+                logger.record_stat(
+                    "return", accumulated_reward, step=step + 1, episode=episode
+                )
             obs, _ = env.reset()
+            accumulated_reward = 0.0
+            episode += 1
         else:
             obs = next_obs
 

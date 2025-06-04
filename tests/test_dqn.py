@@ -11,7 +11,7 @@ def test_dqn():
     env = gym.make("CartPole-v1")
     seed = 42
 
-    rb = ReplayBuffer(100)
+    rb = ReplayBuffer(100, discrete_actions=True)
 
     q_net = MLP(
         env.observation_space.shape[0],
