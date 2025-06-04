@@ -8,10 +8,10 @@ from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.losses import mse_discrete_action_value_loss
+from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
 from ..logging.logger import LoggerBase
-from .dqn import greedy_policy
 
 
 @nnx.jit

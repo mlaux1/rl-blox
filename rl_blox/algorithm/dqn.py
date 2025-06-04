@@ -3,14 +3,13 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-from jax.typing import ArrayLike
-from tqdm import tqdm
+from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
-
-from ..blox.schedules import linear_schedule
 from ..blox.losses import mse_discrete_action_value_loss
+from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
+from ..blox.schedules import linear_schedule
 from ..logging.logger import LoggerBase
 
 
@@ -80,33 +79,6 @@ def _train_step(
     loss, grads = grad_fn(q_net, batch, gamma)
     optimizer.update(grads)
     return loss
-
-
-@nnx.jit
-def greedy_policy(
-    q_net: MLP,
-    obs: ArrayLike,
-) -> int:
-    """Greedy policy.
-
-    Selects the greedy action for a given observation based on the given
-    Q-Network by choosing the action that maximises the Q-Value.
-
-    Parameters
-    ----------
-    q_net : MLP
-        The Q-Network to be used for greedy action selection.
-    obs : ArrayLike
-        The observation for which to select an action.
-
-    Returns
-    -------
-    action : int
-        The selected greedy action.
-
-    """
-    q_vals = q_net([obs])
-    return jnp.argmax(q_vals)
 
 
 def train_dqn(
@@ -191,8 +163,7 @@ def train_dqn(
     episode = 1
     accumulated_reward = 0.0
 
-    for step in tqdm(range(total_timesteps)):
-
+    for step in trange(total_timesteps):
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
