@@ -36,7 +36,7 @@ q, _, _ = train_nature_dqn(
     rb,
     optimizer,
     seed=seed,
-    total_timesteps=50_000,
+    total_timesteps=250_000,
 )
 env.close()
 
