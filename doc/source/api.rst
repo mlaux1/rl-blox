@@ -26,6 +26,7 @@ Algorithm Interface
    reinforce.train_reinforce
    actor_critic.train_ac
    ddpg.train_ddpg
+   td3.train_td3
    sac.train_sac
    pets.train_pets
 
@@ -44,11 +45,16 @@ Functional Blox
    reinforce.policy_gradient_pseudo_loss
    reinforce.mse_value_loss
    actor_critic.actor_critic_policy_gradient
+   ddpg.sample_actions
    ddpg.mse_action_value_loss
    ddpg.deterministic_policy_value_loss
-   ddpg.update_target
+   ddpg.soft_target_net_update
    ddpg.ddpg_update_actor
    ddpg.ddpg_update_critic
+   ddpg.q_deterministic_bootstrap_estimate
+   td3.td3_update_critic
+   td3.double_q_deterministic_bootstrap_estimate
+   td3.sample_target_actions
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor

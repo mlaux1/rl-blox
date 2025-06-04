@@ -3,7 +3,7 @@ import jax
 import tqdm
 from jax.typing import ArrayLike
 
-from ..blox.value_policy import get_epsilon_greedy_action, get_greedy_action
+from ..blox.value_policy import epsilon_greedy_policy, greedy_policy
 from ..logging.logger import LoggerBase
 from ..util.error_functions import td_error
 
@@ -67,15 +67,13 @@ def train_q_learning(
         steps_per_episode += 1
         key, subkey1, subkey2 = jax.random.split(key, 3)
 
-        action = get_epsilon_greedy_action(
-            subkey1, q_table, observation, epsilon
-        )
+        action = epsilon_greedy_policy(q_table, observation, epsilon, subkey1)
 
         next_observation, reward, terminated, truncated, info = env.step(
             int(action)
         )
 
-        next_action = get_greedy_action(subkey2, q_table, next_observation)
+        next_action = greedy_policy(q_table, next_observation)
 
         q_table = _update_policy(
             q_table,

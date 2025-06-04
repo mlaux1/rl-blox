@@ -207,11 +207,9 @@ def ddpg_update_critic(
     chex.assert_equal_shape_prefix((observations, terminations), prefix_len=1)
     chex.assert_equal_shape((rewards, terminations))
 
-    next_actions = policy_target(next_observations)
-    q_target_next = q_target(
-        jnp.concatenate((next_observations, next_actions), axis=-1)
-    ).squeeze()
-    q_bootstrap = rewards + (1 - terminations) * gamma * q_target_next
+    q_bootstrap = q_deterministic_bootstrap_estimate(
+        policy_target, rewards, terminations, gamma, q_target, next_observations
+    )
 
     q_loss_value, grads = nnx.value_and_grad(mse_action_value_loss, argnums=3)(
         observations, actions, q_bootstrap, q
@@ -219,6 +217,52 @@ def ddpg_update_critic(
     q_optimizer.update(grads)
 
     return q_loss_value
+
+
+def q_deterministic_bootstrap_estimate(
+    policy: nnx.Module,
+    rewards: jnp.ndarray,
+    terminations: jnp.ndarray,
+    gamma: float,
+    q: nnx.Module,
+    next_observations: jnp.ndarray,
+) -> jnp.ndarray:
+    r"""Bootstrap estimate of action-value function with deterministic policy.
+
+    .. math::
+
+        \mathbb{E}\left[R(o_t)\right]
+        \approx
+        r_{t+1} + \gamma Q(o_{t+1}, \pi(o_{t+1}))
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Deterministic policy for action selection.
+
+    rewards : array
+        Observed reward.
+
+    terminations : array
+        Indicates if a terminal state was reached in this step.
+
+    gamma : float
+        Discount factor.
+
+    q : nnx.Module
+        Action-value function.
+
+    next_observations : array
+        Next observations.
+
+    Returns
+    -------
+    q_bootstrap : array
+        Bootstrap estimate of action-value function.
+    """
+    next_actions = policy(next_observations)
+    obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
+    return rewards + (1 - terminations) * gamma * q(obs_act).squeeze()
 
 
 @nnx.jit
@@ -243,20 +287,34 @@ def ddpg_update_actor(
 
 
 @nnx.jit
-def update_target(net: nnx.Module, target_net: nnx.Module, tau: float) -> None:
-    """Update target network inplace with Polyak averaging.
+def soft_target_net_update(
+    net: nnx.Module, target_net: nnx.Module, tau: float
+) -> None:
+    r"""Inplace soft update for target network with Polyak averaging.
+
+    The soft update for the target network is supposed to be applied with about
+    the same frequency as the update for the live network.
+
+    Update formula:
+
+    .. math::
+
+        \theta' \leftarrow \tau \theta + (1 - \tau) \theta'
+
+    where :math:`\theta` are the weights of the live network and
+    :math:`\theta'` are the weights of the target network.
 
     Parameters
     ----------
     net : nnx.Module
-        Live network.
+        Live network with weights :math:`\theta`.
 
     target_net : nnx.Module
-        Target network.
+        Target network with weights :math:`\theta'`.
 
     tau : float
-        The step_size used to update the Polyak average, i.e., the coefficient
-        with which the live network's parameters will be multiplied.
+        The step size :math:`\tau`, i.e., the coefficient with which the live
+        network's parameters will be multiplied.
     """
     params = nnx.state(net)
     target_params = nnx.state(target_net)
@@ -344,73 +402,107 @@ def train_ddpg(
     gradient_steps: int = 1,
     exploration_noise: float = 0.1,
     learning_starts: int = 25_000,
-    policy_frequency: int = 2,
     policy_target: nnx.Optimizer | None = None,
     q_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer
 ]:
-    """Deep Deterministic Policy Gradients (DDPG).
+    r"""Deep Deterministic Policy Gradients (DDPG).
 
     This is an off-policy actor-critic algorithm with a deterministic policy.
     The critic approximates the action-value function. The actor will maximize
     action values based on the approximation of the action-value function.
 
     DDPG [2]_ extends Deterministic Policy Gradients [1]_ to use neural
-    networks as function approximators with target networks.
+    networks as function approximators with target networks for the policy
+    :math:`\pi` and the action-value function :math:`Q`.
+
+    The deterministic target policy :math:`\mu(o) = a` that maps observations
+    to actions has to be passed as the parameter `policy`. The function
+    :func:`sample_actions` adds Gaussian noise to the target policy to create
+    the behavior policy that is used during training for exploration.
+    :func:`ddpg_update_actor` will update the policy with the
+    `policy_optimizer` to minimize the :func:`deterministic_policy_value_loss`.
+
+    The action-value function has to be passed as the parameter `q`. We use
+    :func:`ddpg_update_critic` to update the action-value function with the
+    `q_optimizer` and an `mse_action_value_loss` between the current
+    prediction of `q` and the target value generated by
+    :func:`q_deterministic_bootstrap_estimate` using the target networks of
+    `policy` and `q`. The target networks will be updated with Polyak
+    averaging in :func:`soft_target_net_update`.
 
     Parameters
     ----------
-    env: Vectorized Gymnasium environments.
-    policy: Deterministic policy network.
-    policy_optimizer: Optimizer for the policy network.
-    q: Q network.
-    q_optimizer: Optimizer for the Q network.
-    seed: Seed for random number generators in Jax and NumPy.
-    total_timesteps: Number of steps to execute in the environment.
-    actor_learning_rate: Learning rate of the actor.
-    q_learning_rate: Learning rate of the critic.
-    buffer_size: Size of the replay buffer.
-    gamma: Discount factor.
-    tau
+    env : gymnasium.Env
+        Gymnasium environment.
+
+    policy : nnx.Module
+        Deterministic policy network.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for the policy network.
+
+    q : nnx.Module
+        Q network.
+
+    q_optimizer : nnx.Optimizer
+        Optimizer for the Q network.
+
+    seed : int
+        Seed for random number generators in Jax and NumPy.
+
+    total_timesteps : int
+        Number of steps to execute in the environment.
+
+    buffer_size : int
+        Size of the replay buffer.
+
+    gamma : float
+        Discount factor.
+
+    tau : float
         Learning rate for polyak averaging of target policy and value function.
-    batch_size
+
+    batch_size : int
         Size of a batch during gradient computation.
-    gradient_steps
+
+    gradient_steps : int
         Number of gradient steps during one training phase.
-    exploration_noise
+
+    exploration_noise : float
         Exploration noise in action space. Will be scaled by half of the range
         of the action space.
-    learning_starts
+
+    learning_starts : int
         Learning starts after this number of random steps was taken in the
         environment.
-    policy_frequency
-        The policy will only be updated after this number of steps. Target
-        policy and value function will be updated with the same frequency. The
-        value function will be updated after every step.
-    policy_target
+
+    policy_target : nnx.Module
         Target policy. Only has to be set if we want to continue training
         from an old state.
-    q_target
+
+    q_target : nnx.Module
         Target network. Only has to be set if we want to continue training
         from an old state.
+
     logger : LoggerBase, optional
         Experiment logger.
 
     Returns
     -------
-    policy
+    policy : nnx.Module
         Final policy.
-    policy_target
+    policy_target : nnx.Module
         Target policy.
-    policy_optimizer
+    policy_optimizer : nnx.Optimizer
         Policy optimizer.
-    q
+    q : nnx.Module
         Final state-action value function.
-    q_target
+    q_target : nnx.Module
         Target network.
-    q_optimizer
+    q_optimizer : nnx.Optimizer
         Optimizer for Q network.
 
     References
@@ -477,23 +569,7 @@ def train_ddpg(
             termination=termination,
         )
 
-        done = termination or truncated
-        if done:
-            if logger is not None:
-                if "episode" in info:
-                    logger.record_stat(
-                        "return", info["episode"]["r"], step=global_step
-                    )
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
-
-            obs, _ = env.reset()
-            steps_per_episode = 0
-            continue
-
-        obs = next_obs
-
-        if global_step > learning_starts:
+        if global_step >= learning_starts:
             for _ in range(gradient_steps):
                 (
                     observations,
@@ -515,29 +591,40 @@ def train_ddpg(
                     rewards,
                     terminations,
                 )
-                if logger is not None:
-                    logger.record_stat("q loss", q_loss_value, step=global_step)
-                    logger.record_epoch("q", q, step=global_step)
+                actor_loss_value = ddpg_update_actor(
+                    policy, policy_optimizer, q, observations
+                )
+                soft_target_net_update(policy, policy_target, tau)
+                soft_target_net_update(q, q_target, tau)
 
-                if global_step % policy_frequency == 0:
-                    actor_loss_value = ddpg_update_actor(
-                        policy, policy_optimizer, q, observations
+                if logger is not None:
+                    logger.record_stat(
+                        "q loss", q_loss_value, step=global_step + 1
+                    )
+                    logger.record_epoch("q", q, step=global_step + 1)
+                    logger.record_stat(
+                        "policy loss", actor_loss_value, step=global_step + 1
+                    )
+                    logger.record_epoch("policy", policy, step=global_step + 1)
+                    logger.record_epoch(
+                        "policy_target", policy_target, step=global_step + 1
+                    )
+                    logger.record_epoch(
+                        "q_target", q_target, step=global_step + 1
                     )
 
-                    update_target(policy, policy_target, tau)
-                    # TODO why is it updated less often than q?
-                    update_target(q, q_target, tau)
+        if termination or truncated:
+            if logger is not None:
+                if "episode" in info:
+                    logger.record_stat(
+                        "return", info["episode"]["r"], step=global_step + 1
+                    )
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
 
-                    if logger is not None:
-                        logger.record_stat(
-                            "policy loss", actor_loss_value, step=global_step
-                        )
-                        logger.record_epoch("policy", policy, step=global_step)
-                        logger.record_epoch(
-                            "policy_target", policy_target, step=global_step
-                        )
-                        logger.record_epoch(
-                            "q_target", q_target, step=global_step
-                        )
+            obs, _ = env.reset()
+            steps_per_episode = 0
+        else:
+            obs = next_obs
 
     return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
