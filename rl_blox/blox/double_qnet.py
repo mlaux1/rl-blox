@@ -2,13 +2,15 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class ContinuousDoubleQNet(nnx.Module):
-    """Double Q network for continuous action spaces.
+class ContinuousClippedDoubleQNet(nnx.Module):
+    """Clipped Double Q network for continuous action spaces.
 
     Thin wrapper around two action-value networks. To avoid overestimation
     bias, we take the minimum of the prediction of the two networks.
-    This is the idea of Double Q-learning [1]_ applied to neural networks
-    in Deep Double Q-learning [2]_.
+    This is called clipped double Q-learning [1]_, which is based on double
+    Q-learning [2]_. Note that clipped double Q-learning is not the same as
+    deep double Q-learning [3]_, which is also based on the idea of double
+    Q-learning.
 
     Parameters
     ----------
@@ -22,11 +24,17 @@ class ContinuousDoubleQNet(nnx.Module):
 
     References
     ----------
-    .. [1] Hasselt, H. (2010). Double Q-learning. In Advances in Neural
+    .. [1] Fujimoto, S., Hoof, H., Meger, D. (2018). Addressing Function
+       Approximation Error in Actor-Critic Methods. Proceedings of the 35th
+       International Conference on Machine Learning, in Proceedings of Machine
+       Learning Research 80:1587-1596 Available from
+       https://proceedings.mlr.press/v80/fujimoto18a.html.
+
+    .. [2] Hasselt, H. (2010). Double Q-learning. In Advances in Neural
        Information Processing Systems 23.
        https://papers.nips.cc/paper_files/paper/2010/hash/091d584fced301b442654dd8c23b3fc9-Abstract.html
 
-    .. [2] Hasselt, H., Guez, A., Silver, D. (2016). Deep reinforcement
+    .. [3] Hasselt, H., Guez, A., Silver, D. (2016). Deep reinforcement
        learning with double Q-Learning. In Proceedings of the Thirtieth AAAI
        Conference on Artificial Intelligence (AAAI'16). AAAI Press, 2094–2100.
        https://arxiv.org/abs/1509.06461

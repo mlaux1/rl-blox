@@ -10,7 +10,7 @@ import optax
 import tqdm
 from flax import nnx
 
-from ..blox.double_qnet import ContinuousDoubleQNet
+from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.losses import mse_continuous_action_value_loss
@@ -22,8 +22,8 @@ from .ddpg import ddpg_update_actor, sample_actions
 
 @nnx.jit
 def td3_update_critic(
-    q: ContinuousDoubleQNet,
-    q_target: ContinuousDoubleQNet,
+    q: ContinuousClippedDoubleQNet,
+    q_target: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
     gamma: float,
     observations: jnp.ndarray,
@@ -43,10 +43,10 @@ def td3_update_critic(
 
     Parameters
     ----------
-    q : ContinuousDoubleQNet
+    q : ContinuousClippedDoubleQNet
         Double Q network.
 
-    q_target : ContinuousDoubleQNet
+    q_target : ContinuousClippedDoubleQNet
         Target network of q.
 
     q_optimizer : nnx.Optimizer
@@ -93,7 +93,7 @@ def td3_update_critic(
         next_actions,
     )
 
-    def sum_of_qnet_losses(q: ContinuousDoubleQNet):
+    def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
         return mse_continuous_action_value_loss(
             observations,
             actions,
@@ -116,7 +116,7 @@ def double_q_deterministic_bootstrap_estimate(
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
     gamma: float,
-    q: ContinuousDoubleQNet,
+    q: ContinuousClippedDoubleQNet,
     next_observation: jnp.ndarray,
     next_action: jnp.ndarray,
 ) -> jnp.ndarray:
@@ -147,7 +147,7 @@ def double_q_deterministic_bootstrap_estimate(
     gamma : float
         Discount factor.
 
-    q : ContinuousDoubleQNet
+    q : ContinuousClippedDoubleQNet
         Action-value function.
 
     next_observation : array
@@ -268,7 +268,7 @@ def create_td3_state(
         q_activation,
         nnx.Rngs(seed + 1),
     )
-    q = ContinuousDoubleQNet(q1, q2)
+    q = ContinuousClippedDoubleQNet(q1, q2)
     q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
 
     return namedtuple(
@@ -286,7 +286,7 @@ def train_td3(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: nnx.Module,
     policy_optimizer: nnx.Optimizer,
-    q: ContinuousDoubleQNet,
+    q: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
@@ -300,14 +300,14 @@ def train_td3(
     noise_clip: float = 0.5,
     learning_starts: int = 25_000,
     policy_target: nnx.Module | None = None,
-    q_target: ContinuousDoubleQNet | None = None,
+    q_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
     nnx.Optimizer,
-    ContinuousDoubleQNet,
-    ContinuousDoubleQNet,
+    ContinuousClippedDoubleQNet,
+    ContinuousClippedDoubleQNet,
     nnx.Optimizer,
 ]:
     r"""Twin Delayed DDPG (TD3).
@@ -315,7 +315,7 @@ def train_td3(
     TD3 [1]_ extends DDPG with three techniques to improve performance:
 
     1. Clipped Double Q-Learning to mitigate overestimation bias of the value
-       (see :class:`~.blox.double_qnet.ContinuousDoubleQNet`)
+       (see :class:`~.blox.double_qnet.ContinuousClippedDoubleQNet`)
     2. Delayed policy updates, controlled by the parameter ``policy_delay``
     3. Target policy smoothing, i.e., sampling from the behavior policy with
        clipped noise (parameter ``noise_clip``) for the critic update.
@@ -331,8 +331,8 @@ def train_td3(
     policy_optimizer : nnx.Optimizer
         Optimizer for the policy network.
 
-    q : ContinuousDoubleQNet
-        Double Q network.
+    q : ContinuousClippedDoubleQNet
+        Clipped double Q network.
 
     q_optimizer: nnx.Optimizer
         Optimizer for q.
@@ -397,10 +397,10 @@ def train_td3(
     policy_optimizer : nnx.Optimizer
         Policy optimizer.
 
-    q : ContinuousDoubleQNet
+    q : ContinuousClippedDoubleQNet
         Final state-action value function.
 
-    q_target : ContinuousDoubleQNet
+    q_target : ContinuousClippedDoubleQNet
         Target network.
 
     q_optimizer : nnx.Optimizer
@@ -417,7 +417,7 @@ def train_td3(
       (``policy_target``), initialized as a copy of ``policy``
     * :math:`Q(o, a)` with weights :math:`\theta^{Q}` - critic network
       ``q``, composed of two q networks :math:`Q_i(o, a)` with index i
-      (see :class:`~.blox.double_qnet.ContinuousDoubleQNet`)
+      (see :class:`~.blox.double_qnet.ContinuousClippedDoubleQNet`)
     * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
       ``q_target``, initialized as a copy of ``q``
 
@@ -451,14 +451,14 @@ def train_td3(
 
     Checkpointing
 
-    * ``q`` - double Q network, critic
+    * ``q`` - clipped double Q network, critic
     * ``policy`` - target policy, actor
     * ``q_target`` - target network for the critic
     * ``policy_target`` - target network for the actor
 
     References
     ----------
-    .. [1] Fujimoto, S., Hoof, H. &amp; Meger, D.. (2018). Addressing Function
+    .. [1] Fujimoto, S., Hoof, H., Meger, D. (2018). Addressing Function
        Approximation Error in Actor-Critic Methods. Proceedings of the 35th
        International Conference on Machine Learning, in Proceedings of Machine
        Learning Research 80:1587-1596 Available from

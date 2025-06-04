@@ -112,7 +112,7 @@ Data Blox
    function_approximator.policy_head.GaussianTanhPolicy
    function_approximator.policy_head.GaussianPolicy
    function_approximator.policy_head.SoftmaxPolicy
-   double_qnet.ContinuousDoubleQNet
+   double_qnet.ContinuousClippedDoubleQNet
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
 

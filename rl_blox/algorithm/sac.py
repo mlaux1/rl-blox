@@ -9,7 +9,7 @@ import optax
 import tqdm
 from flax import nnx
 
-from ..blox.double_qnet import ContinuousDoubleQNet
+from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import (
@@ -24,7 +24,7 @@ from ..logging.logger import LoggerBase
 
 def sac_actor_loss(
     policy: StochasticPolicyBase,
-    q: ContinuousDoubleQNet,
+    q: ContinuousClippedDoubleQNet,
     alpha: float,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
@@ -46,7 +46,7 @@ def sac_actor_loss(
     policy : StochasticPolicyBase
         Policy.
 
-    q : ContinuousDoubleQNet
+    q : ContinuousClippedDoubleQNet
         Action-value function represented by double Q network.
 
     alpha : float
@@ -225,7 +225,7 @@ def create_sac_state(
         q_activation,
         nnx.Rngs(seed + 1),
     )
-    q = ContinuousDoubleQNet(q1, q2)
+    q = ContinuousClippedDoubleQNet(q1, q2)
     q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
 
     return namedtuple(
@@ -243,7 +243,7 @@ def train_sac(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
-    q: ContinuousDoubleQNet,
+    q: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
@@ -257,7 +257,7 @@ def train_sac(
     target_network_delay: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
-    q_target: ContinuousDoubleQNet | None = None,
+    q_target: ContinuousClippedDoubleQNet | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
@@ -288,8 +288,8 @@ def train_sac(
 
     In addition, this implementation allows to automatically tune the
     temperature :math:`\alpha.`, uses a
-    :class:`~.blox.double_qnet.ContinuousDoubleQNet`, and uses target networks
-    [3]_ for both Q networks.
+    :class:`~.blox.double_qnet.ContinuousClippedDoubleQNet`, and uses target
+    networks [3]_ for both Q networks.
 
     Parameters
     ----------
@@ -302,8 +302,8 @@ def train_sac(
     policy_optimizer : nnx.Optimizer
         Optimizer for policy.
 
-    q : ContinuousDoubleQNet
-        Double soft Q network.
+    q : ContinuousClippedDoubleQNet
+        Clipped double soft Q network.
 
     q_optimizer : nnx.Optimizer
         Optimizer for critic.
@@ -345,7 +345,7 @@ def train_sac(
     autotune : bool
         Automatic tuning of the entropy coefficient.
 
-    q_target : ContinuousDoubleQNet
+    q_target : ContinuousClippedDoubleQNet
         Target network for q.
 
     entropy_control : EntropyControl
@@ -361,7 +361,7 @@ def train_sac(
     policy_optimizer
         Policy optimizer.
     q
-        Double soft Q network.
+        Clipped double soft Q network.
     q_target
         Target network of q.
     q_optimizer
@@ -377,7 +377,7 @@ def train_sac(
     * :math:`\pi(a|o)` with weights :math:`\theta^{\pi}` - stochastic ``policy``
     * :math:`Q(o, a)` with weights :math:`\theta^{Q}` - critic network
       ``q``, composed of two q networks :math:`Q_i(o, a)` with index i
-      (see :class:`~.blox.double_qnet.ContinuousDoubleQNet`)
+      (see :class:`~.blox.double_qnet.ContinuousClippedDoubleQNet`)
     * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
       ``q_target``, initialized as a copy of ``q``
 
@@ -573,7 +573,7 @@ def train_sac(
 def sac_update_actor(
     policy: nnx.Module,
     policy_optimizer: nnx.Optimizer,
-    q: ContinuousDoubleQNet,
+    q: ContinuousClippedDoubleQNet,
     action_key: jnp.ndarray,
     observation: jnp.ndarray,
     alpha: jnp.ndarray,
@@ -622,8 +622,8 @@ def sac_update_actor(
 
 @nnx.jit
 def sac_update_critic(
-    q: ContinuousDoubleQNet,
-    q_target: ContinuousDoubleQNet,
+    q: ContinuousClippedDoubleQNet,
+    q_target: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
     policy: StochasticPolicyBase,
     gamma: float,
@@ -644,10 +644,10 @@ def sac_update_critic(
 
     Parameters
     ----------
-    q : ContinuousDoubleQNet
+    q : ContinuousClippedDoubleQNet
         Double soft q network.
 
-    q_target : ContinuousDoubleQNet
+    q_target : ContinuousClippedDoubleQNet
         Target network of q.
 
     q_optimizer : nnx.Optimizer
@@ -704,7 +704,7 @@ def sac_update_critic(
         gamma,
     )
 
-    def sum_of_qnet_losses(q: ContinuousDoubleQNet):
+    def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
         return mse_continuous_action_value_loss(
             observations,
             actions,
@@ -724,7 +724,7 @@ def sac_update_critic(
 
 
 def soft_q_target(
-    q_target: ContinuousDoubleQNet,
+    q_target: ContinuousClippedDoubleQNet,
     policy: StochasticPolicyBase,
     rewards: jnp.ndarray,
     next_observations: jnp.ndarray,
@@ -757,7 +757,7 @@ def soft_q_target(
 
     Parameters
     ----------
-    q_target : ContinuousDoubleQNet
+    q_target : ContinuousClippedDoubleQNet
         Target network of q.
 
     policy : StochasticPolicyBase
