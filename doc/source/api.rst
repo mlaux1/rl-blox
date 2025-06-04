@@ -29,6 +29,7 @@ Algorithm Interface
    td3.train_td3
    sac.train_sac
    pets.train_pets
+   cmaes.train_cmaes
 
 Functional Blox
 ---------------
@@ -54,10 +55,13 @@ Functional Blox
    sac.sac_exploration_loss
    sac.sac_update_actor
    sac.sac_update_critic
+   sac.soft_q_target
    pets.mpc_action
    pets.ts_inf
    pets.evaluate_plans
    pets.update_dynamics_model
+   cmaes.flat_params
+   cmaes.set_params
 
 Data Blox
 ---------
@@ -112,6 +116,7 @@ Data Blox
    function_approximator.policy_head.GaussianTanhPolicy
    function_approximator.policy_head.GaussianPolicy
    function_approximator.policy_head.SoftmaxPolicy
+   double_qnet.ContinuousClippedDoubleQNet
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
 
