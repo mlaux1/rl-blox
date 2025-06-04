@@ -187,6 +187,7 @@ def train_nature_dqn(
             action = greedy_policy(q_net, obs)
 
         next_obs, reward, terminated, truncated, info = env.step(int(action))
+        accumulated_reward += reward
         replay_buffer.add_sample(
             observation=obs,
             action=action,
