@@ -100,11 +100,12 @@ def train_ddqn(
 ) -> tuple[MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
-    Implements the most common version of DQN with experience replay as described
-    in Mnih et al. (2015) [1]_, which is an off-policy value-based RL algorithm.
+    Implements double DQN as originally described by van Hasselt et al. in 2016.
     It uses a neural network to approximate the Q-function and samples
     minibatches from the replay buffer to calculate updates as well as target
-    networks that are copied regularly from the current Q-network.
+    networks that are copied regularly from the current Q-network. The only
+    difference to DQN is the calculation of the Q-network's loss, which uses
+    the target network to evaluate the current greedy policy.
 
     This implementation aims to be as close as possible to the original algorithm
     described in the paper while remaining not overly engineered towards a
@@ -150,9 +151,9 @@ def train_ddqn(
 
     References
     ----------
-    [1] Mnih, V., Kavukcuoglu, K., Silver, D. et al. Human-level control
-    through deep reinforcement learning. Nature 518, 529–533 (2015).
-    https://doi.org/10.1038/nature14236
+    [1] van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement
+    Learning with Double Q-Learning. Proceedings of the AAAI Conference on
+    Artificial Intelligence, 30(1). https://doi.org/10.1609/aaai.v30i1.10295
     """
 
     assert isinstance(
