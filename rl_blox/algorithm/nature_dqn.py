@@ -203,7 +203,7 @@ def train_nature_dqn(
             if logger is not None:
                 logger.record_stat("return", info["episode"]["r"], step=step)
                 logger.stop_episode(steps_per_episode)
-            steps_per_episode = env.reset()
+            steps_per_episode = 0
             obs, _ = env.reset()
         else:
             obs = next_obs
