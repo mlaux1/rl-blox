@@ -5,7 +5,7 @@ import numpy as np
 import optax
 from flax import nnx
 from jax.typing import ArrayLike
-from tqdm import tqdm
+from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.replay_buffer import ReplayBuffer
@@ -190,7 +190,7 @@ def train_ddqn(
     episode = 1
     accumulated_reward = 0.0
 
-    for step in tqdm(range(total_timesteps)):
+    for step in trange(total_timesteps):
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
@@ -209,9 +209,16 @@ def train_ddqn(
         if step > batch_size:
             if step % update_frequency == 0:
                 transition_batch = replay_buffer.sample_batch(batch_size, rng)
-                _train_step(
+                q_loss = _train_step(
                     q_net, q_target_net, optimizer, transition_batch, gamma
                 )
+                if logger is not None:
+                    logger.record_stat(
+                        "q_loss", q_loss, step=step + 1, episode=episode
+                    )
+                    logger.record_epoch(
+                        "q", q_net, step=step + 1, episode=episode
+                    )
 
             if step % target_update_frequency == 0:
                 q_net = q_target_net
