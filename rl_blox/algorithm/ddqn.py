@@ -106,7 +106,7 @@ def train_ddqn(
     q_target_net: MLP | None = None,
     seed: int = 1,
     logger: LoggerBase | None = None,
-) -> tuple[MLP, nnx.Optimizer]:
+) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
     Implements double DQN as originally described by van Hasselt et al. in 2016.
@@ -221,7 +221,6 @@ def train_ddqn(
                     )
 
             if step % target_update_frequency == 0:
-                q_net = q_target_net
                 q_target_net = nnx.clone(q_net)
 
         # housekeeping
@@ -236,4 +235,4 @@ def train_ddqn(
         else:
             obs = next_obs
 
-    return q_net, optimizer, q_target_net
+    return q_net, q_target_net, optimizer

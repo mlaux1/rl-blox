@@ -100,7 +100,7 @@ def train_nature_dqn(
     q_target_net: MLP | None = None,
     seed: int = 1,
     logger: LoggerBase | None = None,
-) -> tuple[MLP, nnx.Optimizer]:
+) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
     Implements the most common version of DQN with experience replay as described
@@ -210,7 +210,6 @@ def train_nature_dqn(
                     )
 
             if step % target_update_frequency == 0:
-                q_net = q_target_net
                 q_target_net = nnx.clone(q_net)
 
         # housekeeping
@@ -223,4 +222,4 @@ def train_nature_dqn(
         else:
             obs = next_obs
 
-    return q_net, optimizer, q_target_net
+    return q_net, q_target_net, optimizer
