@@ -110,8 +110,8 @@ def train_ddqn(
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
-    Implements double DQN as originally described by [1]_.
-    It uses a neural network to approximate the Q-function and samples
+    Implements double DQN as originally described in van Hasselt et al. (2016)
+    [1]_. It uses a neural network to approximate the Q-function and samples
     minibatches from the replay buffer to calculate updates as well as target
     networks that are copied regularly from the current Q-network. The only
     difference to DQN is the calculation of the Q-network's loss, which uses
@@ -162,8 +162,8 @@ def train_ddqn(
     References
     ----------
     .. [1] van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement
-    Learning with Double Q-Learning. Proceedings of the AAAI Conference on
-    Artificial Intelligence, 30(1). https://doi.org/10.1609/aaai.v30i1.10295
+       Learning with Double Q-Learning. Proceedings of the AAAI Conference on
+       Artificial Intelligence, 30(1). https://doi.org/10.1609/aaai.v30i1.10295
     """
 
     assert isinstance(

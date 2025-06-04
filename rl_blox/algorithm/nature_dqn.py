@@ -154,9 +154,9 @@ def train_nature_dqn(
 
     References
     ----------
-    [1] Mnih, V., Kavukcuoglu, K., Silver, D. et al. Human-level control
-    through deep reinforcement learning. Nature 518, 529–533 (2015).
-    https://doi.org/10.1038/nature14236
+    .. [1] Mnih, V., Kavukcuoglu, K., Silver, D. et al. Human-level control
+       through deep reinforcement learning. Nature 518, 529–533 (2015).
+       https://doi.org/10.1038/nature14236
     """
 
     assert isinstance(
