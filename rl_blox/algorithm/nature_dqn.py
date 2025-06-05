@@ -10,12 +10,14 @@ from ..blox.losses import mse_discrete_action_value_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
+from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 
 
 @nnx.jit
 def critic_loss(
     q_net: MLP,
+    q_target: MLP,
     batch: tuple[
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
     ],
@@ -28,7 +30,9 @@ def critic_loss(
     ----------
     q_net : MLP
         The Q-network to compute the loss for.
-    batch : tuple
+    q_target : MLP
+        The target Q-Network.
+    batch : list[Transition]
         The minibatch of transitions.
     gamma : float, default=0.99
         The discount factor.
@@ -40,17 +44,18 @@ def critic_loss(
     """
     obs, action, reward, next_obs, terminated = batch
 
-    next_q = jax.lax.stop_gradient(q_net(next_obs))
+    next_q = jax.lax.stop_gradient(q_target(next_obs))
     max_next_q = jnp.max(next_q, axis=1)
 
-    q_target_values = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
+    target = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
 
-    return mse_discrete_action_value_loss(obs, action, q_target_values, q_net)
+    return mse_discrete_action_value_loss(obs, action, target, q_net)
 
 
 @nnx.jit
 def _train_step(
     q_net: MLP,
+    q_target: MLP,
     optimizer: nnx.Optimizer,
     batch: tuple[
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
@@ -63,6 +68,8 @@ def _train_step(
     ----------
     q_net : MLP
         The MLP to be updated.
+    q_target : MLP
+        The target Q-Network.
     optimizer : nnx.Optimizer
         The optimizer to be used.
     batch : tuple
@@ -73,15 +80,16 @@ def _train_step(
     Returns
     -------
     loss : float
-        Loss value.
+        The loss value.
     """
     grad_fn = nnx.value_and_grad(critic_loss)
-    loss, grads = grad_fn(q_net, batch, gamma)
+    loss, grads = grad_fn(q_net, q_target, batch, gamma)
     optimizer.update(grads)
+
     return loss
 
 
-def train_dqn(
+def train_nature_dqn(
     q_net: MLP,
     env: gymnasium.Env,
     replay_buffer: ReplayBuffer,
@@ -89,23 +97,27 @@ def train_dqn(
     batch_size: int = 64,
     total_timesteps: int = 1e4,
     gamma: float = 0.99,
+    update_frequency: int = 4,
+    target_update_frequency: int = 1000,
+    q_target_net: MLP | None = None,
     seed: int = 1,
     logger: LoggerBase | None = None,
-) -> tuple[MLP, nnx.Optimizer]:
+) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
-    Implements the most basic version of DQN with experience replay as described
-    in Mnih et al. (2013) [1]_, which is an off-policy value-based RL algorithm.
+    Implements the most common version of DQN with experience replay as described
+    in Mnih et al. (2015) [1]_, which is an off-policy value-based RL algorithm.
     It uses a neural network to approximate the Q-function and samples
-    minibatches from the replay buffer to calculate updates.
+    minibatches from the replay buffer to calculate updates as well as target
+    networks that are copied regularly from the current Q-network.
 
-    This implementation aims to be as close as possible to the original
-    algorithm described in the paper while remaining not overly engineered
-    towards a specific environment. For example, this implementation uses the
-    same linear schedule to decrease epsilon from 1.0 to 0.1 over the first ten
-    percent of training steps, but does not impose any architecture on the used
-    Q-net or requires a specific preprocessing of observations as is done in
-    the original paper to solve the Atari use case.
+    This implementation aims to be as close as possible to the original algorithm
+    described in the paper while remaining not overly engineered towards a
+    specific environment. For example, this implementation uses the same linear
+    schedule to decrease epsilon from 1.0 to 0.1 over the first ten percent of
+    training steps, but does not impose any architecture on the used Q-net or
+    requires a specific preprocessing of observations as is done in the original
+    paper to solve the Atari use case.
 
     Parameters
     ----------
@@ -117,16 +129,20 @@ def train_dqn(
         The replay buffer used for storing collected transitions.
     optimizer : nnx.Optimizer
         The optimiser for the Q-Network.
+    update_frequency : int, optional
+        The number of time steps after which the Q-net is updated.
+    target_update_frequency : int, optional
+        The number of time steps after which the target net is updated.
     total_timesteps : int
         The number of environment sets to train for.
-    learning_rate : float
-        The learning rate for updating the weights of the Q-net.
     gamma : float
         The discount factor.
+    q_target_net : MLP, optional
+        The target Q-network. Only needed when continuing prior training.
     seed : int
         The random seed, which can be set to reproduce results.
-    logger : LoggerBase
-        Logger for experiment tracking.
+    logger : LoggerBase, optional
+        Experiment Logger.
 
     Returns
     -------
@@ -134,12 +150,14 @@ def train_dqn(
         The trained Q-network.
     optimizer : nnx.Optimizer
         The Q-net optimiser.
+    q_target_net : MLP
+        The current target Q-network (required for continuing training).
 
     References
     ----------
-    .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I.,
-       Wierstra, D., & Riedmiller, M. (2013). Playing atari with deep
-       reinforcement learning. arXiv preprint arXiv:1312.5602.
+    .. [1] Mnih, V., Kavukcuoglu, K., Silver, D. et al. Human-level control
+       through deep reinforcement learning. Nature 518, 529–533 (2015).
+       https://doi.org/10.1038/nature14236
     """
 
     assert isinstance(
@@ -149,8 +167,9 @@ def train_dqn(
     key = jax.random.key(seed)
     rng = np.random.default_rng(seed)
 
-    if logger is not None:
-        logger.start_new_episode()
+    # intialise the target network
+    if q_target_net is None:
+        q_target_net = nnx.clone(q_net)
 
     # initialise episode
     obs, _ = env.reset(seed=seed)
@@ -179,15 +198,22 @@ def train_dqn(
             termination=terminated,
         )
 
-        # sample minibatch from replay buffer
         if step > batch_size:
-            transition_batch = replay_buffer.sample_batch(batch_size, rng)
-            q_loss = _train_step(q_net, optimizer, transition_batch, gamma)
-            if logger is not None:
-                logger.record_stat(
-                    "q loss", q_loss, step=step + 1, episode=episode
+            if step % update_frequency == 0:
+                transition_batch = replay_buffer.sample_batch(batch_size, rng)
+                q_loss = _train_step(
+                    q_net, q_target_net, optimizer, transition_batch, gamma
                 )
-                logger.record_epoch("q", q_net, step=step + 1, episode=episode)
+                if logger is not None:
+                    logger.record_stat(
+                        "q loss", q_loss, step=step + 1, episode=episode
+                    )
+                    logger.record_epoch(
+                        "q", q_net, step=step + 1, episode=episode
+                    )
+
+            if step % target_update_frequency == 0:
+                hard_target_net_update(q_net, q_target_net)
 
         # housekeeping
         if terminated or truncated:
@@ -201,4 +227,4 @@ def train_dqn(
         else:
             obs = next_obs
 
-    return q_net, optimizer
+    return q_net, q_target_net, optimizer

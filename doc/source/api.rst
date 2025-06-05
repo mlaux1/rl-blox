@@ -21,6 +21,8 @@ Algorithm Interface
    double_q_learning.train_double_q_learning
    dynaq.train_dynaq
    dqn.train_dqn
+   ddqn.train_ddqn
+   nature_dqn.train_nature_dqn
    reinforce.train_reinforce
    actor_critic.train_ac
    ddpg.train_ddpg
@@ -37,6 +39,8 @@ Functional Blox
 
    dqn.critic_loss
    dqn.greedy_policy
+   ddqn.ddqn_loss
+   nature_dqn.critic_loss
    reinforce.discounted_reward_to_go
    reinforce.reinforce_gradient
    actor_critic.actor_critic_policy_gradient
@@ -85,6 +89,7 @@ Functional Blox
    :toctree: _apidoc/
 
    target_net.soft_target_net_update
+   target_net.hard_target_net_update
    cross_entropy_method.cem_sample
    cross_entropy_method.cem_update
    probabilistic_ensemble.gaussian_nll

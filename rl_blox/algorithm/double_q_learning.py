@@ -25,8 +25,8 @@ def train_double_q_learning(
     Q-functions and an off-policy TD-update. To select the next action, the
     sum of the two Q-values needs to be maximised.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     env : gym.Env
         The environment to train on.
     q_table1: ArrayLike
@@ -47,16 +47,16 @@ def train_double_q_learning(
         Experiment logger.
 
 
-    Returns:
-    --------
+    Returns
+    -------
     q_table1 : jax.numpy.ndarray
         The first updated Q-table after training.
     q_table2 : jax.numpy.ndarray
         The second updated Q-table after training.
 
-    Refernces:
+    References
     ----------
-    [1] .. Hado van Hasselt. 2010. Double Q-learning. In Proceedings of the
+    [1] Hado van Hasselt. 2010. Double Q-learning. In Proceedings of the
         24th International Conference on Neural Information Processing Systems
         - Volume 2 (NIPS'10), Vol. 2. Curran Associates Inc., Red Hook, NY, USA,
         2613–2621.
