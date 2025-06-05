@@ -89,6 +89,7 @@ Functional Blox
    :toctree: _apidoc/
 
    target_net.soft_target_net_update
+   target_net.hard_target_net_update
    cross_entropy_method.cem_sample
    cross_entropy_method.cem_update
    probabilistic_ensemble.gaussian_nll

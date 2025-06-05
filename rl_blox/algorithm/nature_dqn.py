@@ -3,7 +3,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-from jax.typing import ArrayLike
 from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
@@ -11,7 +10,7 @@ from ..blox.losses import mse_discrete_action_value_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
-from ..blox.target_net import soft_target_net_update
+from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 
 
@@ -214,7 +213,7 @@ def train_nature_dqn(
                     )
 
             if step % target_update_frequency == 0:
-                soft_target_net_update(q_net, q_target_net, 1.0)
+                hard_target_net_update(q_net, q_target_net)
 
         # housekeeping
         if terminated or truncated:

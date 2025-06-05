@@ -1,8 +1,10 @@
+from functools import partial
+
 import optax
 from flax import nnx
 
 
-@nnx.jit
+@partial(nnx.jit, static_argnames=["tau"])
 def soft_target_net_update(
     net: nnx.Module, target_net: nnx.Module, tau: float
 ) -> None:
@@ -39,3 +41,23 @@ def soft_target_net_update(
     target_params = nnx.state(target_net)
     target_params = optax.incremental_update(params, target_params, tau)
     nnx.update(target_net, target_params)
+
+
+@nnx.jit
+def hard_target_net_update(net: nnx.Module, target_net: nnx.Module) -> None:
+    r"""Inplace (hard) update for target network.
+
+    The update completely replaces the weights of the target network with the
+    weights of the live network. The hard update for the target network is
+    supposed to be applied with a lower frequency than the update for the live
+    network.
+
+    Parameters
+    ----------
+    net : nnx.Module
+        Live network with weights :math:`\theta`.
+
+    target_net : nnx.Module
+        Target network with weights :math:`\theta'`.
+    """
+    nnx.update(target_net, nnx.state(net))
