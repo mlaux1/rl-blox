@@ -221,6 +221,8 @@ def train_nature_dqn(
                     "return", accumulated_reward, step=step + 1, episode=episode
                 )
             obs, _ = env.reset()
+            accumulated_reward = 0.0
+            episode += 1
         else:
             obs = next_obs
 
