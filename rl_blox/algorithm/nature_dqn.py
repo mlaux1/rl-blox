@@ -58,7 +58,9 @@ def _train_step(
     q_net: MLP,
     q_target: MLP,
     optimizer: nnx.Optimizer,
-    batch: ArrayLike,
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
     gamma: float = 0.99,
 ) -> float:
     """Performs a single training step to optimise the Q-network.
@@ -71,7 +73,7 @@ def _train_step(
         The target Q-Network.
     optimizer : nnx.Optimizer
         The optimizer to be used.
-    batch : ArrayLike
+    batch : tuple
         The minibatch of transitions to compute the update from.
     gamma : float, optional
         The discount factor.
