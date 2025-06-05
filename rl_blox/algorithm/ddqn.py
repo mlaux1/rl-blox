@@ -215,7 +215,7 @@ def train_ddqn(
                 )
                 if logger is not None:
                     logger.record_stat(
-                        "q_loss", q_loss, step=step + 1, episode=episode
+                        "q loss", q_loss, step=step + 1, episode=episode
                     )
                     logger.record_epoch(
                         "q", q_net, step=step + 1, episode=episode
