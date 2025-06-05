@@ -112,7 +112,7 @@ def train_dqn(
     q_net : MLP
         The Q-network to be optimised.
     env: gymnasium
-        The envrionment to train the Q-network on.
+        The environment to train the Q-network on.
     replay_buffer : ReplayBuffer
         The replay buffer used for storing collected transitions.
     optimizer : nnx.Optimizer
