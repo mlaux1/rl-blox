@@ -37,7 +37,6 @@ Functional Blox
 .. autosummary::
    :toctree: _apidoc/
 
-   dqn.critic_loss
    dqn.greedy_policy
    ddqn.ddqn_loss
    nature_dqn.critic_loss
@@ -102,6 +101,7 @@ Functional Blox
    losses.mse_value_loss
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
+   losses.dqn_loss
 
 Data Blox
 ---------
