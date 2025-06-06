@@ -13,6 +13,8 @@
   </tr>
 </table>
 
+<img src="doc/source/_static/blox.svg" width="100%"/>
+
 > [!CAUTION]
 > This library is still experimental and under development. Using it will not
 > result in a good user experience. It is not well-documented, it is buggy,
