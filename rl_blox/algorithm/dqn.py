@@ -8,46 +8,11 @@ from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.losses import mse_discrete_action_value_loss
+from ..blox.losses import dqn_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
 from ..logging.logger import LoggerBase
-
-
-@nnx.jit
-def critic_loss(
-    q_net: MLP,
-    batch: tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ],
-    gamma: float = 0.99,
-) -> float:
-    """Calculates the loss of the given Q-net for a given minibatch of
-    transitions.
-
-    Parameters
-    ----------
-    q_net : MLP
-        The Q-network to compute the loss for.
-    batch : tuple
-        The minibatch of transitions.
-    gamma : float, default=0.99
-        The discount factor.
-
-    Returns
-    -------
-    loss : float
-        The computed loss for the given minibatch.
-    """
-    obs, action, reward, next_obs, terminated = batch
-
-    next_q = jax.lax.stop_gradient(q_net(next_obs))
-    max_next_q = jnp.max(next_q, axis=1)
-
-    q_target_values = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
-
-    return mse_discrete_action_value_loss(obs, action, q_target_values, q_net)
 
 
 @nnx.jit
@@ -77,7 +42,7 @@ def _train_step(
     loss : float
         Loss value.
     """
-    grad_fn = nnx.value_and_grad(critic_loss)
+    grad_fn = nnx.value_and_grad(dqn_loss)
     loss, grads = grad_fn(q_net, batch, gamma)
     optimizer.update(grads)
     return loss
@@ -140,8 +105,8 @@ def train_dqn(
     References
     ----------
     .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I.,
-       Wierstra, D., & Riedmiller, M. (2013). Playing atari with deep
-       reinforcement learning. arXiv preprint arXiv:1312.5602.
+       Wierstra, D., Riedmiller, M. (2013). Playing Atari with Deep
+       Reinforcement Learning. https://arxiv.org/abs/1312.5602
     """
 
     assert isinstance(
