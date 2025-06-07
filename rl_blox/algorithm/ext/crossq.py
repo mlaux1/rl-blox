@@ -110,13 +110,10 @@ class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
         action_noise: ActionNoise | None = None,
         replay_buffer_class: type[ReplayBuffer] | None = None,
         replay_buffer_kwargs: dict[str, Any] | None = None,
-        optimize_memory_usage: bool = False,
         policy_kwargs: dict[str, Any] | None = None,
         tensorboard_log: str | None = None,
         verbose: int = 0,
-        device: str = "auto",
         support_multi_env: bool = False,
-        monitor_wrapper: bool = True,
         seed: int | None = None,
         use_sde: bool = False,
         sde_sample_freq: int = -1,
@@ -197,7 +194,7 @@ class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
             self.action_space,
             device="cpu",  # force cpu device to easy torch -> numpy conversion
             n_envs=self.n_envs,
-            optimize_memory_usage=self.optimize_memory_usage,
+            optimize_memory_usage=False,
             **replay_buffer_kwargs,
         )
         # Convert train freq parameter to TrainFreq object
@@ -724,7 +721,6 @@ class SACPolicy(BaseJaxPolicy):
         self,
         observation_space: spaces.Space,
         action_space: spaces.Box,
-        lr_schedule: Schedule,
         activation_fn: type[nn.Module],
         net_arch: list[int] | dict[str, list[int]] | None = None,
         dropout_rate: float = 0.0,
@@ -733,20 +729,13 @@ class SACPolicy(BaseJaxPolicy):
         batch_norm_momentum: float = 0.9,
         batch_norm_mode: str = "bn",
         use_sde: bool = False,
-        # Note: most gSDE parameters are not used
-        # this is to keep API consistent with SB3
-        log_std_init: float = -3,
-        use_expln: bool = False,
-        clip_mean: float = 2.0,
         features_extractor_class=None,
         features_extractor_kwargs: dict[str, Any] | None = None,
-        normalize_images: bool = True,
         optimizer_class: Callable[
             ..., optax.GradientTransformation
         ] = optax.adam,
         optimizer_kwargs: dict[str, Any] | None = None,
         n_critics: int = 2,
-        share_features_extractor: bool = False,
         td3_mode: bool = False,
     ):
         super().__init__(
@@ -1086,7 +1075,6 @@ class SAC(OffPolicyAlgorithmJax):
         policy_kwargs: dict[str, Any] | None = None,
         verbose: int = 0,
         seed: int | None = None,
-        device: str = "auto",
         _init_setup_model: bool = True,
         stats_window_size: int = 100,
         logger: LoggerBase | None = None,
