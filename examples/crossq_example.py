@@ -46,7 +46,8 @@ env = gym.make(env_name, render_mode="human")
 env = gym.wrappers.RecordEpisodeStatistics(env)
 # uncomment to load checkpoint
 # model = load_checkpoint(
-#     env,
+#     env.observation_space,
+#     env.action_space,
 #     policy_path=f"{checkpointer.checkpoint_dir}/policy",
 #     q_path=f"{checkpointer.checkpoint_dir}/q",
 #     algo="crossq",
