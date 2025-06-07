@@ -1082,24 +1082,6 @@ class SAC(OffPolicyAlgorithm):
             np.float32
         )
 
-    def learn(
-        self,
-        total_timesteps: int,
-        callback: MaybeCallback = None,
-        log_interval: int = 4,
-        tb_log_name: str = "SAC",
-        reset_num_timesteps: bool = True,
-        progress_bar: bool = False,
-    ):
-        return super().learn(
-            total_timesteps=total_timesteps,
-            callback=callback,
-            log_interval=log_interval,
-            tb_log_name=tb_log_name,
-            reset_num_timesteps=reset_num_timesteps,
-            progress_bar=progress_bar,
-        )
-
     def train(self, batch_size, gradient_steps):
         # Sample all at once for efficiency (so we can jit the for loop)
         data = self.replay_buffer.sample(
