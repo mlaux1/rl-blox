@@ -972,38 +972,6 @@ class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
         # Note: we do not allow schedule for it
         self.qf_learning_rate = qf_learning_rate
 
-    def _setup_model(self) -> None:
-        if self.replay_buffer_class is None:  # type: ignore[has-type]
-            if isinstance(self.observation_space, spaces.Dict):
-                self.replay_buffer_class = DictReplayBuffer
-            else:
-                self.replay_buffer_class = ReplayBuffer
-
-        self._setup_lr_schedule()
-        # By default qf_learning_rate = pi_learning_rate
-        self.qf_learning_rate = self.qf_learning_rate or self.lr_schedule(1)
-        self.set_random_seed(self.seed)
-        # Make a local copy as we should not pickle
-        # the environment when using HerReplayBuffer
-        replay_buffer_kwargs = deepcopy(self.replay_buffer_kwargs)
-        if issubclass(self.replay_buffer_class, HerReplayBuffer):  # type: ignore[arg-type]
-            assert (
-                self.env is not None
-            ), "You must pass an environment when using `HerReplayBuffer`"
-            replay_buffer_kwargs["env"] = self.env
-
-        self.replay_buffer = self.replay_buffer_class(  # type: ignore[misc]
-            self.buffer_size,
-            self.observation_space,
-            self.action_space,
-            device="cpu",  # force cpu device to easy torch -> numpy conversion
-            n_envs=self.n_envs,
-            optimize_memory_usage=False,
-            **replay_buffer_kwargs,
-        )
-        # Convert train freq parameter to TrainFreq object
-        self._convert_train_freq()
-
 
 class SAC(OffPolicyAlgorithmJax):
     policy_aliases: ClassVar[dict[str, type[SACPolicy]]] = {  # type: ignore[assignment]
@@ -1093,7 +1061,36 @@ class SAC(OffPolicyAlgorithmJax):
             self._setup_model()
 
     def _setup_model(self) -> None:
-        super()._setup_model()
+        if self.replay_buffer_class is None:  # type: ignore[has-type]
+            if isinstance(self.observation_space, spaces.Dict):
+                self.replay_buffer_class = DictReplayBuffer
+            else:
+                self.replay_buffer_class = ReplayBuffer
+
+        self._setup_lr_schedule()
+        # By default qf_learning_rate = pi_learning_rate
+        self.qf_learning_rate = self.qf_learning_rate or self.lr_schedule(1)
+        self.set_random_seed(self.seed)
+        # Make a local copy as we should not pickle
+        # the environment when using HerReplayBuffer
+        replay_buffer_kwargs = deepcopy(self.replay_buffer_kwargs)
+        if issubclass(self.replay_buffer_class, HerReplayBuffer):  # type: ignore[arg-type]
+            assert (
+                self.env is not None
+            ), "You must pass an environment when using `HerReplayBuffer`"
+            replay_buffer_kwargs["env"] = self.env
+
+        self.replay_buffer = self.replay_buffer_class(  # type: ignore[misc]
+            self.buffer_size,
+            self.observation_space,
+            self.action_space,
+            device="cpu",  # force cpu device to easy torch -> numpy conversion
+            n_envs=self.n_envs,
+            optimize_memory_usage=False,
+            **replay_buffer_kwargs,
+        )
+        # Convert train freq parameter to TrainFreq object
+        self._convert_train_freq()
 
         if not hasattr(self, "policy") or self.policy is None:
             # pytype: disable=not-instantiable
