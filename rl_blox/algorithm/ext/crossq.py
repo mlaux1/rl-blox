@@ -936,7 +936,6 @@ class SAC(OffPolicyAlgorithm):
         use_sde: bool = False,
         sde_sample_freq: int = -1,
         use_sde_at_warmup: bool = False,
-        tensorboard_log: str | None = None,
         policy_kwargs: dict[str, Any] | None = None,
         verbose: int = 0,
         seed: int | None = None,
@@ -962,7 +961,6 @@ class SAC(OffPolicyAlgorithm):
             sde_sample_freq=sde_sample_freq,
             use_sde_at_warmup=use_sde_at_warmup,
             policy_kwargs=policy_kwargs,
-            tensorboard_log=tensorboard_log,
             verbose=verbose,
             seed=seed,
             sde_support=True,
@@ -1968,7 +1966,6 @@ def _configure_model(
     observation_space=None,
     action_space=None,
 ):
-    experiment_time = time.time()
     algo = algo.lower()
     tau = tau if not crossq_style else 1.0
     bn_momentum = bn_momentum if bn else 0.0
@@ -1984,21 +1981,11 @@ def _configure_model(
         n_critics = 2
         policy_delay = 20
         utd = 20
-        group = (
-            f"DroQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_"
-            f"utd({utd}/{policy_delay})_Adam({adam_b1})_"
-            f'Q({net_arch["qf"][0]})'
-        )
     elif algo == "redq":
         policy_q_reduce_fn = jax.numpy.mean
         n_critics = 10
         policy_delay = 20
         utd = 20
-        group = (
-            f"REDQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_"
-            f"utd({utd}/{policy_delay})_Adam({adam_b1})_"
-            f'Q({net_arch["qf"][0]})'
-        )
     elif algo == "td3":
         # With the right hyperparameters, this here can run all the above
         # algorithms and ablations.
@@ -2006,22 +1993,12 @@ def _configure_model(
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
-        group = (
-            f"TD3_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_"
-            f"xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_"
-            f'A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
-        )
     elif algo == "sac":
         # With the right hyperparameters, this here can run all the above
         # algorithms and ablations.
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
-        group = (
-            f"SAC_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_"
-            f"xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_"
-            f'A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
-        )
     elif algo == "crossq":
         adam_b1 = 0.5
         policy_delay = 3
@@ -2032,7 +2009,6 @@ def _configure_model(
         bn_momentum = 0.99
         crossq_style = True  # with a joint forward pass
         tau = 1.0  # without target networks
-        group = f"CrossQ_{env}"
     else:
         raise ValueError(f"Algorithm {algo} is not supported.")
 
@@ -2081,9 +2057,6 @@ def _configure_model(
         buffer_size=buffer_size,
         seed=seed,
         stats_window_size=1,  # don't smooth the episode return stats over time
-        tensorboard_log=(
-            f"logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/"
-        ),
         logger=logger,
     )
     return model
