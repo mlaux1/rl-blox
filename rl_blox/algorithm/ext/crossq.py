@@ -1130,7 +1130,6 @@ class SAC(OffPolicyAlgorithmJax):
             self.policy = self.policy_class(  # type: ignore[assignment]
                 self.observation_space,
                 self.action_space,
-                self.lr_schedule,
                 td3_mode=self.td3_mode,
                 **self.policy_kwargs,
             )
