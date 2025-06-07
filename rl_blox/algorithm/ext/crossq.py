@@ -70,11 +70,7 @@ from stable_baselines3.common.preprocessing import (
     is_image_space,
     maybe_transpose,
 )
-from stable_baselines3.common.type_aliases import (
-    GymEnv,
-    MaybeCallback,
-    Schedule,
-)
+from stable_baselines3.common.type_aliases import GymEnv, Schedule
 from stable_baselines3.common.utils import is_vectorized_observation, safe_mean
 
 from rl_blox.logging.logger import LoggerBase
@@ -1063,10 +1059,10 @@ class SAC(OffPolicyAlgorithm):
             else:
                 # This will throw an error if a malformed string (different
                 # from 'auto') is passed
-                assert isinstance(
-                    self.ent_coef_init, float
-                ), (f"Entropy coef must be float when not equal to 'auto', "
-                    f"actual: {self.ent_coef_init}")
+                assert isinstance(self.ent_coef_init, float), (
+                    f"Entropy coef must be float when not equal to 'auto', "
+                    f"actual: {self.ent_coef_init}"
+                )
                 self.ent_coef = ConstantEntropyCoef(self.ent_coef_init)  # type: ignore[assignment]
 
             self.ent_coef_state = TrainState.create(
@@ -1771,7 +1767,7 @@ def train_crossq(
     crossq_style: bool = True,
     gamma: float = 0.99,
     dropout: bool = True,
-    ln: bool = False,
+    layer_norm: bool = False,
     lr: float = 1e-3,
     n_critics: int = 2,
     n_neurons: int = 256,
@@ -1829,7 +1825,7 @@ def train_crossq(
     dropout: bool, optional
         Use dropout.
 
-    ln : bool, optional
+    layer_norm : bool, optional
         Use layer normalization in SAC or TD3.
 
     lr : float, optional
@@ -1889,27 +1885,27 @@ def train_crossq(
     model = _configure_model(
         env,
         algo,
-        adam_b1,
-        adam_b2,
-        bn,
-        bn_momentum,
-        bn_mode,
-        buffer_size,
-        critic_activation,
-        crossq_style,
-        dropout,
-        gamma,
-        ln,
-        lr,
-        n_critics,
-        n_neurons,
         seed,
-        policy_delay,
-        tau,
-        utd,
-        bnstats_live_net,
-        learning_starts,
         logger,
+        adam_b1=adam_b1,
+        adam_b2=adam_b2,
+        bn=bn,
+        bn_momentum=bn_momentum,
+        bn_mode=bn_mode,
+        buffer_size=buffer_size,
+        critic_activation=critic_activation,
+        crossq_style=crossq_style,
+        gamma=gamma,
+        dropout=dropout,
+        layer_norm=layer_norm,
+        lr=lr,
+        n_critics=n_critics,
+        n_neurons=n_neurons,
+        policy_delay=policy_delay,
+        tau=tau,
+        utd=utd,
+        bnstats_live_net=bnstats_live_net,
+        learning_starts=learning_starts,
     )
 
     model.learn(
@@ -1921,78 +1917,90 @@ def train_crossq(
     return model, model.policy.actor_state, model.policy.qf_state
 
 
+default_hparams = dict(
+    adam_b1=0.9,
+    adam_b2=0.999,
+    bn=True,
+    bn_momentum=0.99,
+    bn_mode="brn_actor",
+    buffer_size=1_000_000,
+    critic_activation="relu",
+    crossq_style=True,
+    gamma=0.99,
+    dropout=True,
+    layer_norm=False,
+    lr=1e-3,
+    n_critics=2,
+    n_neurons=256,
+    policy_delay=1,
+    tau=0.005,
+    utd=1,
+    bnstats_live_net=False,
+    learning_starts=5_000,
+    dropout_rate=None,
+    policy_q_reduce_fn=jax.numpy.min,
+    td3_mode=False,
+)
+
+algorithm_hparams = {
+    "droq": dict(
+        dropout=True,
+        dropout_rate=0.01,
+        layer_norm=True,
+        policy_q_reduce_fn=jax.numpy.mean,
+        n_critics=2,
+        policy_delay=20,
+        utd=20,
+    ),
+    "redq": dict(
+        policy_q_reduce_fn=jax.numpy.mean,
+        layer_norm=False,
+        n_critics=10,
+        policy_delay=20,
+        utd=20,
+    ),
+    "td3": dict(td3_mode=True),
+    "sac": dict(),
+    "crossq": dict(
+        adam_b1=0.5,
+        policy_delay=3,
+        n_critics=2,
+        utd=1,  # nice
+        n_neurons=2048,  # wider critics
+        bn=True,  # use batch norm
+        bn_momentum=0.99,
+        crossq_style=True,  # with a joint forward pass
+        tau=1.0,  # without target networks
+    ),
+}
+
+
 def _configure_model(
     env,
     algo,
-    adam_b1,
-    adam_b2,
-    bn,
-    bn_momentum,
-    bn_mode,
-    buffer_size,
-    critic_activation,
-    crossq_style,
-    dropout,
-    gamma,
-    ln,
-    lr,
-    n_critics,
-    n_neurons,
     seed,
-    policy_delay,
-    tau,
-    utd,
-    bnstats_live_net,
-    learning_starts,
     logger,
     observation_space=None,
     action_space=None,
-):
+    **kwargs,
+) -> SAC:
     algo = algo.lower()
-    tau = tau if not crossq_style else 1.0
-    bn_momentum = bn_momentum if bn else 0.0
-    dropout_rate = None
-    layer_norm = False
-    policy_q_reduce_fn = jax.numpy.min
-    net_arch = {"pi": [256, 256], "qf": [n_neurons, n_neurons]}
-    td3_mode = False
-    if algo == "droq":
-        dropout_rate = 0.01
-        layer_norm = True
-        policy_q_reduce_fn = jax.numpy.mean
-        n_critics = 2
-        policy_delay = 20
-        utd = 20
-    elif algo == "redq":
-        policy_q_reduce_fn = jax.numpy.mean
-        n_critics = 10
-        policy_delay = 20
-        utd = 20
-    elif algo == "td3":
-        # With the right hyperparameters, this here can run all the above
-        # algorithms and ablations.
-        td3_mode = True
-        layer_norm = ln
-        if dropout:
-            dropout_rate = 0.01
-    elif algo == "sac":
-        # With the right hyperparameters, this here can run all the above
-        # algorithms and ablations.
-        layer_norm = ln
-        if dropout:
-            dropout_rate = 0.01
-    elif algo == "crossq":
-        adam_b1 = 0.5
-        policy_delay = 3
-        n_critics = 2
-        utd = 1  # nice
-        net_arch["qf"] = [2048, 2048]  # wider critics
-        bn = True  # use batch norm
-        bn_momentum = 0.99
-        crossq_style = True  # with a joint forward pass
-        tau = 1.0  # without target networks
-    else:
+    if algo not in ["droq", "redq", "td3", "sac", "crossq"]:
         raise ValueError(f"Algorithm {algo} is not supported.")
+
+    hparams = deepcopy(default_hparams)
+    hparams.update(kwargs)
+    hparams.update(algorithm_hparams[algo])
+
+    # With the right hyperparameters, td3 and sac can run all the algorithms
+    # and ablations.
+    if algo in ["td3", "sac"] and hparams["dropout"]:
+        hparams["dropout_rate"] = 0.01
+    if hparams["crossq_style"]:
+        hparams["tau"] = 1.0
+    if not hparams["bn"]:
+        hparams["bn_momentum"] = 0.0
+    net_arch = {"pi": [256] * 2, "qf": [hparams["n_neurons"]] * 2}
 
     if env is None:
 
@@ -2012,31 +2020,33 @@ def _configure_model(
         env,
         policy_kwargs=dict(
             {
-                "activation_fn": activation_fn[critic_activation],
-                "layer_norm": layer_norm,
-                "batch_norm": bool(bn),
-                "batch_norm_momentum": float(bn_momentum),
-                "batch_norm_mode": bn_mode,
-                "dropout_rate": dropout_rate,
-                "n_critics": n_critics,
+                "activation_fn": activation_fn[hparams["critic_activation"]],
+                "layer_norm": hparams["layer_norm"],
+                "batch_norm": hparams["bn"],
+                "batch_norm_momentum": hparams["bn_momentum"],
+                "batch_norm_mode": hparams["bn_mode"],
+                "dropout_rate": hparams["dropout_rate"],
+                "n_critics": hparams["n_critics"],
                 "net_arch": net_arch,
                 "optimizer_class": optax.adam,
-                "optimizer_kwargs": dict({"b1": adam_b1, "b2": adam_b2}),
+                "optimizer_kwargs": dict(
+                    {"b1": hparams["adam_b1"], "b2": hparams["adam_b2"]}
+                ),
             }
         ),
-        gradient_steps=utd,
-        policy_delay=policy_delay,
-        crossq_style=bool(crossq_style),
-        td3_mode=td3_mode,
-        use_bnstats_from_live_net=bool(bnstats_live_net),
-        policy_q_reduce_fn=policy_q_reduce_fn,
-        learning_starts=learning_starts,
-        learning_rate=lr,
-        qf_learning_rate=lr,
-        tau=tau,
-        gamma=gamma,
+        gradient_steps=hparams["utd"],
+        policy_delay=hparams["policy_delay"],
+        crossq_style=hparams["crossq_style"],
+        td3_mode=hparams["td3_mode"],
+        use_bnstats_from_live_net=hparams["bnstats_live_net"],
+        policy_q_reduce_fn=hparams["policy_q_reduce_fn"],
+        learning_starts=hparams["learning_starts"],
+        learning_rate=hparams["lr"],
+        qf_learning_rate=hparams["lr"],
+        tau=hparams["tau"],
+        gamma=hparams["gamma"],
         verbose=0,
-        buffer_size=buffer_size,
+        buffer_size=hparams["buffer_size"],
         seed=seed,
         stats_window_size=1,  # don't smooth the episode return stats over time
         logger=logger,
@@ -2061,7 +2071,7 @@ def load_checkpoint(
     crossq_style: bool = True,
     gamma: float = 0.99,
     dropout: bool = True,
-    ln: bool = False,
+    layer_norm: bool = False,
     lr: float = 1e-3,
     n_critics: int = 2,
     n_neurons: int = 256,
@@ -2071,34 +2081,34 @@ def load_checkpoint(
     bnstats_live_net: bool = False,
     learning_starts: int = 5_000,
     logger: LoggerBase | None = None,
-):
+) -> SAC:
     """Takes the same parameters as train_crossq."""
     model = _configure_model(
         None,
         algo,
-        adam_b1,
-        adam_b2,
-        bn,
-        bn_momentum,
-        bn_mode,
-        buffer_size,
-        critic_activation,
-        crossq_style,
-        dropout,
-        gamma,
-        ln,
-        lr,
-        n_critics,
-        n_neurons,
         seed,
-        policy_delay,
-        tau,
-        utd,
-        bnstats_live_net,
-        learning_starts,
         logger,
         observation_space=observation_space,
         action_space=action_space,
+        adam_b1=adam_b1,
+        adam_b2=adam_b2,
+        bn=bn,
+        bn_momentum=bn_momentum,
+        bn_mode=bn_mode,
+        buffer_size=buffer_size,
+        critic_activation=critic_activation,
+        crossq_style=crossq_style,
+        dropout=dropout,
+        gamma=gamma,
+        layer_norm=layer_norm,
+        lr=lr,
+        n_critics=n_critics,
+        n_neurons=n_neurons,
+        policy_delay=policy_delay,
+        tau=tau,
+        utd=utd,
+        bnstats_live_net=bnstats_live_net,
+        learning_starts=learning_starts,
     )
     checkpointer = ocp.StandardCheckpointer()
     if policy_path is not None:
