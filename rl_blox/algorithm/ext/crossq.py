@@ -147,10 +147,12 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):  # type: ignore[
 
 
 class BatchRenorm(Module):
-    """BatchRenorm Module, implemented based on the Batch Renormalization paper (https://arxiv.org/abs/1702.03275).
-    and adapted from Flax's BatchNorm implementation:
-    https://github.com/google/flax/blob/ce8a3c74d8d1f4a7d8f14b9fb84b2cc76d7f8dbf/flax/linen/normalization.py#L228
+    """BatchRenorm Module.
 
+    Implemented based on the Batch Renormalization paper
+    (https://arxiv.org/abs/1702.03275) and adapted from Flax's BatchNorm
+    implementation:
+    https://github.com/google/flax/blob/ce8a3c74d8d1f4a7d8f14b9fb84b2cc76d7f8dbf/flax/linen/normalization.py#L228
 
     Attributes:
       use_running_average: if True, the statistics stored in batch_stats will be
@@ -160,11 +162,12 @@ class BatchRenorm(Module):
         statistics.
       epsilon: a small float added to variance to avoid dividing by zero.
       dtype: the dtype of the result (default: infer from input and params).
-      param_dtype: the dtype passed to parameter initializers (default: float32).
+      param_dtype: the dtype passed to parameter initializers
+        (default: float32).
       use_bias:  if True, bias (beta) is added.
-      use_scale: if True, multiply by scale (gamma). When the next layer is linear
-        (also e.g. nn.relu), this can be disabled since the scaling will be done
-        by the next layer.
+      use_scale: if True, multiply by scale (gamma). When the next layer is
+        linear (also e.g. nn.relu), this can be disabled since the scaling will
+        be done by the next layer.
       bias_init: initializer for bias, by default, zero.
       scale_init: initializer for scale, by default, one.
       axis_name: the axis name used to combine batch statistics from multiple
@@ -197,8 +200,8 @@ class BatchRenorm(Module):
         """
         Args:
           x: the input to be normalized.
-          use_running_average: if true, the statistics stored in batch_stats will be
-            used instead of computing the batch statistics on the input.
+          use_running_average: if true, the statistics stored in batch_stats
+          will be used instead of computing the batch statistics on the input.
 
         Returns:
           Normalized inputs (the same shape as inputs).
@@ -263,7 +266,8 @@ class BatchRenorm(Module):
             custom_mean = mean
             custom_var = var
             if not self.is_initializing():
-                # The code below is implemented following the Batch Renormalization paper
+                # The code below is implemented following the Batch
+                # Renormalization paper
                 r = 1
                 d = 0
                 std = jnp.sqrt(var + self.epsilon)
@@ -275,7 +279,8 @@ class BatchRenorm(Module):
                 tmp_var = var / (r**2)
                 tmp_mean = mean - d * jnp.sqrt(custom_var) / r
 
-                # Warm up batch renorm for 100_000 steps to build up proper running statistics
+                # Warm up batch renorm for 100_000 steps to build up proper
+                # running statistics
                 warmed_up = jnp.greater_equal(steps.value, 100_000).astype(
                     jnp.float32
                 )
@@ -338,8 +343,8 @@ class Critic(nn.Module):
                 use_running_average=not train, momentum=self.batch_norm_momentum
             )(x)
         else:
-            # Hack to make flax return state_updates. Is only necessary such that the downstream
-            # functions have the same function signature.
+            # Hack to make flax return state_updates. Is only necessary such
+            # that the downstream functions have the same function signature.
             x_dummy = BN(use_running_average=not train)(x)
 
         for n_units in self.net_arch:
@@ -429,8 +434,8 @@ class Actor(nn.Module):
                 use_running_average=not train, momentum=self.batch_norm_momentum
             )(x)
         else:
-            # Hack to make flax return state_updates. Is only necessary such that the downstream
-            # functions have the same function signature.
+            # Hack to make flax return state_updates. Is only necessary such
+            # that the downstream functions have the same function signature.
             x_dummy = BN(use_running_average=not train)(x)
 
         for n_units in self.net_arch:
@@ -642,9 +647,7 @@ class SACPolicy(BasePolicy):
         self, observation: np.ndarray, deterministic: bool = False
     ) -> np.ndarray:
         if deterministic:
-            return SACPolicy.select_action(
-                self.actor_state, observation, True
-            )
+            return SACPolicy.select_action(self.actor_state, observation, True)
         # Trick to use gSDE: repeat sampled noise by using the same noise key
         if not self.use_sde:
             self.reset_noise()
@@ -742,8 +745,9 @@ class SACPolicy(BasePolicy):
                 # Rescale to proper domain when using squashing
                 actions = self.unscale_action(actions)
             else:
-                # Actions could be on arbitrary scale, so clip the actions to avoid
-                # out of bound error (e.g. if sampling from a Gaussian distribution)
+                # Actions could be on arbitrary scale, so clip the actions to
+                # avoid out of bound error (e.g. if sampling from a Gaussian
+                # distribution)
                 actions = np.clip(
                     actions, self.action_space.low, self.action_space.high
                 )
@@ -776,17 +780,6 @@ class SACPolicy(BasePolicy):
                 ],
                 axis=1,
             )
-            # need to copy the dict as the dict in VecFrameStack will become a torch tensor
-            # observation = copy.deepcopy(observation)
-            # for key, obs in observation.items():
-            #     obs_space = self.observation_space.spaces[key]
-            #     if is_image_space(obs_space):
-            #         obs_ = maybe_transpose(obs, obs_space)
-            #     else:
-            #         obs_ = np.array(obs)
-            #     vectorized_env = vectorized_env or is_vectorized_observation(obs_, obs_space)
-            #     # Add batch dimension if needed
-            #     observation[key] = obs_.reshape((-1, *self.observation_space[key].shape))
 
         elif is_image_space(self.observation_space):
             # Handle the different cases for images
@@ -802,7 +795,9 @@ class SACPolicy(BasePolicy):
                 observation, self.observation_space
             )
             # Add batch dimension if needed
-            observation = observation.reshape((-1, *self.observation_space.shape))  # type: ignore[misc]
+            observation = observation.reshape(
+                (-1, *self.observation_space.shape)
+            )  # type: ignore[misc]
 
         assert isinstance(observation, np.ndarray)
         return observation, vectorized_env
@@ -897,7 +892,8 @@ class ConstantEntropyCoef(nn.Module):
 
     @nn.compact
     def __call__(self) -> float:
-        # Hack to not optimize the entropy coefficient while not having to use if/else for the jit
+        # Hack to not optimize the entropy coefficient while not having to use
+        # if/else for the jit
         self.param(
             "dummy_param", init_fn=lambda key: jnp.full((), self.ent_coef_init)
         )
@@ -1062,14 +1058,17 @@ class SAC(OffPolicyAlgorithm):
                         ent_coef_init > 0.0
                     ), "The initial value of ent_coef must be greater than 0"
 
-                # Note: we optimize the log of the entropy coeff which is slightly different from the paper
-                # as discussed in https://github.com/rail-berkeley/softlearning/issues/37
+                # Note: we optimize the log of the entropy coeff which is
+                # slightly different from the paper as discussed in
+                # https://github.com/rail-berkeley/softlearning/issues/37
                 self.ent_coef = EntropyCoef(ent_coef_init)
             else:
-                # This will throw an error if a malformed string (different from 'auto') is passed
+                # This will throw an error if a malformed string (different
+                # from 'auto') is passed
                 assert isinstance(
                     self.ent_coef_init, float
-                ), f"Entropy coef must be float when not equal to 'auto', actual: {self.ent_coef_init}"
+                ), (f"Entropy coef must be float when not equal to 'auto', "
+                    f"actual: {self.ent_coef_init}")
                 self.ent_coef = ConstantEntropyCoef(self.ent_coef_init)  # type: ignore[assignment]
 
             self.ent_coef_state = TrainState.create(
@@ -1264,9 +1263,9 @@ class SAC(OffPolicyAlgorithm):
 
             else:
                 # ----- CrossQ's One Weird Trick™ -----
-                # concatenate current and next observations to double the batch size
-                # new shape of input is (n_critics, 2*batch_size, obs_dim + act_dim)
-                # apply critic to this bigger batch
+                # concatenate current and next observations to double the batch
+                # size new shape of input is (n_critics, 2*batch_size, obs_dim
+                # + act_dim) apply critic to this bigger batch
                 catted_q_values, state_updates = qf_state.apply_fn(
                     {"params": params, "batch_stats": batch_stats},
                     jnp.concatenate([observations, next_observations], axis=0),
@@ -1985,13 +1984,21 @@ def _configure_model(
         n_critics = 2
         policy_delay = 20
         utd = 20
-        group = f'DroQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
+        group = (
+            f"DroQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_"
+            f"utd({utd}/{policy_delay})_Adam({adam_b1})_"
+            f'Q({net_arch["qf"][0]})'
+        )
     elif algo == "redq":
         policy_q_reduce_fn = jax.numpy.mean
         n_critics = 10
         policy_delay = 20
         utd = 20
-        group = f'REDQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_utd({utd}/{policy_delay})_Adam({adam_b1})_Q({net_arch["qf"][0]})'
+        group = (
+            f"REDQ_{env}_bn({bn})_ln{(ln)}_xqstyle({crossq_style}/{tau})_"
+            f"utd({utd}/{policy_delay})_Adam({adam_b1})_"
+            f'Q({net_arch["qf"][0]})'
+        )
     elif algo == "td3":
         # With the right hyperparameters, this here can run all the above
         # algorithms and ablations.
@@ -1999,14 +2006,22 @@ def _configure_model(
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
-        group = f'TD3_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
+        group = (
+            f"TD3_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_"
+            f"xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_"
+            f'A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
+        )
     elif algo == "sac":
         # With the right hyperparameters, this here can run all the above
         # algorithms and ablations.
         layer_norm = ln
         if dropout:
             dropout_rate = 0.01
-        group = f'SAC_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
+        group = (
+            f"SAC_{env}_bn({bn}/{bn_momentum}/{bn_mode})_ln{(ln)}_"
+            f"xq({crossq_style}/{tau})_utd({utd}/{policy_delay})_"
+            f'A{adam_b1}_Q({net_arch["qf"][0]})_l{lr}'
+        )
     elif algo == "crossq":
         adam_b1 = 0.5
         policy_delay = 3
@@ -2022,10 +2037,12 @@ def _configure_model(
         raise ValueError(f"Algorithm {algo} is not supported.")
 
     if env is None:
+
         class DummyEnv(gym.Env):
             def __init__(self):
                 self.observation_space = observation_space
                 self.action_space = action_space
+
         env = DummyEnv()
 
     if isinstance(env.observation_space, gym.spaces.Dict):
@@ -2064,7 +2081,9 @@ def _configure_model(
         buffer_size=buffer_size,
         seed=seed,
         stats_window_size=1,  # don't smooth the episode return stats over time
-        tensorboard_log=f"logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/",
+        tensorboard_log=(
+            f"logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/"
+        ),
         logger=logger,
     )
     return model
