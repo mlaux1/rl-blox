@@ -826,11 +826,6 @@ class SACPolicy(BaseJaxPolicy):
 ################################################################################
 
 
-def is_slurm_job():
-    """Checks whether the script is run within slurm"""
-    return bool(len({k: v for k, v in os.environ.items() if "SLURM" in k}))
-
-
 class ReLU(nn.Module):
     def __call__(self, x):
         return nn.relu(x)
