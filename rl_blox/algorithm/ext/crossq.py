@@ -2061,55 +2061,13 @@ def load_checkpoint(
     q_path: str | None = None,
     algo: str = "crossq",
     seed: int = 1,
-    adam_b1: float = 0.9,
-    adam_b2: float = 0.999,
-    bn: bool = True,
-    bn_momentum: float = 0.99,
-    bn_mode: str = "brn_actor",
-    buffer_size: int = 1_000_000,
-    critic_activation: str = "relu",
-    crossq_style: bool = True,
-    gamma: float = 0.99,
-    dropout: bool = True,
-    layer_norm: bool = False,
-    lr: float = 1e-3,
-    n_critics: int = 2,
-    n_neurons: int = 256,
-    policy_delay: int = 1,
-    tau: float = 0.005,
-    utd: int = 1,
-    bnstats_live_net: bool = False,
-    learning_starts: int = 5_000,
-    logger: LoggerBase | None = None,
+    **kwargs,
 ) -> SAC:
     """Takes the same parameters as train_crossq."""
-    model = _configure_model(
-        None,
-        algo,
-        seed,
-        logger,
-        observation_space=observation_space,
-        action_space=action_space,
-        adam_b1=adam_b1,
-        adam_b2=adam_b2,
-        bn=bn,
-        bn_momentum=bn_momentum,
-        bn_mode=bn_mode,
-        buffer_size=buffer_size,
-        critic_activation=critic_activation,
-        crossq_style=crossq_style,
-        dropout=dropout,
-        gamma=gamma,
-        layer_norm=layer_norm,
-        lr=lr,
-        n_critics=n_critics,
-        n_neurons=n_neurons,
-        policy_delay=policy_delay,
-        tau=tau,
-        utd=utd,
-        bnstats_live_net=bnstats_live_net,
-        learning_starts=learning_starts,
-    )
+    kwargs["observation_space"] = observation_space
+    kwargs["action_space"] = action_space
+    model = _configure_model(None, algo, seed, **kwargs)
+
     checkpointer = ocp.StandardCheckpointer()
     if policy_path is not None:
         policy_train_state = checkpointer.restore(
