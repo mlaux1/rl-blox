@@ -912,68 +912,7 @@ class ConstantEntropyCoef(nn.Module):
         return self.ent_coef_init
 
 
-class OffPolicyAlgorithmJax(OffPolicyAlgorithm):
-    def __init__(
-        self,
-        policy: type[BasePolicy],
-        env: GymEnv | str,
-        learning_rate: float | Schedule,
-        qf_learning_rate: float | None = None,
-        buffer_size: int = 1_000_000,  # 1e6
-        learning_starts: int = 100,
-        batch_size: int = 256,
-        tau: float = 0.005,
-        gamma: float = 0.99,
-        train_freq: int | tuple[int, str] = (1, "step"),
-        gradient_steps: int = 1,
-        action_noise: ActionNoise | None = None,
-        replay_buffer_class: type[ReplayBuffer] | None = None,
-        replay_buffer_kwargs: dict[str, Any] | None = None,
-        policy_kwargs: dict[str, Any] | None = None,
-        tensorboard_log: str | None = None,
-        verbose: int = 0,
-        support_multi_env: bool = False,
-        seed: int | None = None,
-        use_sde: bool = False,
-        sde_sample_freq: int = -1,
-        use_sde_at_warmup: bool = False,
-        sde_support: bool = True,
-        supported_action_spaces: tuple[type[spaces.Space], ...] | None = None,
-        stats_window_size: int = 100,
-    ):
-        super().__init__(
-            policy=policy,
-            env=env,
-            learning_rate=learning_rate,
-            buffer_size=buffer_size,
-            learning_starts=learning_starts,
-            batch_size=batch_size,
-            tau=tau,
-            gamma=gamma,
-            train_freq=train_freq,
-            gradient_steps=gradient_steps,
-            replay_buffer_class=replay_buffer_class,
-            replay_buffer_kwargs=replay_buffer_kwargs,
-            action_noise=action_noise,
-            use_sde=use_sde,
-            sde_sample_freq=sde_sample_freq,
-            use_sde_at_warmup=use_sde_at_warmup,
-            policy_kwargs=policy_kwargs,
-            tensorboard_log=tensorboard_log,
-            verbose=verbose,
-            seed=seed,
-            sde_support=sde_support,
-            supported_action_spaces=supported_action_spaces,
-            support_multi_env=support_multi_env,
-            stats_window_size=stats_window_size,
-        )
-        # Will be updated later
-        self.key = jax.random.PRNGKey(0)
-        # Note: we do not allow schedule for it
-        self.qf_learning_rate = qf_learning_rate
-
-
-class SAC(OffPolicyAlgorithmJax):
+class SAC(OffPolicyAlgorithm):
     policy_aliases: ClassVar[dict[str, type[SACPolicy]]] = {  # type: ignore[assignment]
         "MlpPolicy": SACPolicy,
         # Minimal dict support using flatten()
@@ -1021,7 +960,6 @@ class SAC(OffPolicyAlgorithmJax):
             policy=policy,
             env=env,
             learning_rate=learning_rate,
-            qf_learning_rate=qf_learning_rate,
             buffer_size=buffer_size,
             learning_starts=learning_starts,
             batch_size=batch_size,
@@ -1029,9 +967,9 @@ class SAC(OffPolicyAlgorithmJax):
             gamma=gamma,
             train_freq=train_freq,
             gradient_steps=gradient_steps,
-            action_noise=action_noise,
             replay_buffer_class=replay_buffer_class,
             replay_buffer_kwargs=replay_buffer_kwargs,
+            action_noise=action_noise,
             use_sde=use_sde,
             sde_sample_freq=sde_sample_freq,
             use_sde_at_warmup=use_sde_at_warmup,
@@ -1039,10 +977,15 @@ class SAC(OffPolicyAlgorithmJax):
             tensorboard_log=tensorboard_log,
             verbose=verbose,
             seed=seed,
+            sde_support=True,
             supported_action_spaces=(spaces.Box,),
             support_multi_env=True,
             stats_window_size=stats_window_size,
         )
+        # Will be updated later
+        self.key = jax.random.PRNGKey(0)
+        # Note: we do not allow schedule for it
+        self.qf_learning_rate = qf_learning_rate
 
         self.policy_delay = policy_delay
         self.ent_coef_init = ent_coef
