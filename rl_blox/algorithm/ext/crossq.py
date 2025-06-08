@@ -725,8 +725,6 @@ class SACPolicy(BasePolicy):
         episode_start: np.ndarray | None = None,
         deterministic: bool = False,
     ) -> tuple[np.ndarray, tuple[np.ndarray, ...] | None]:
-        # self.set_training_mode(False)
-
         observation, vectorized_env = self.prepare_obs(observation)
 
         actions = self._predict(observation, deterministic=deterministic)
@@ -799,8 +797,6 @@ class SACPolicy(BasePolicy):
         return observation, vectorized_env
 
     def set_training_mode(self, mode: bool) -> None:
-        # self.actor.set_training_mode(mode)
-        # self.critic.set_training_mode(mode)
         self.training = mode
 
 
