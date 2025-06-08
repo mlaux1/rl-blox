@@ -544,20 +544,20 @@ def train_ddpg(
                 soft_target_net_update(q, q_target, tau)
 
                 if logger is not None:
-                    logger.record_stat(
-                        "q loss", q_loss_value, step=global_step + 1
-                    )
-                    logger.record_epoch("q", q, step=global_step + 1)
-                    logger.record_stat(
-                        "policy loss", actor_loss_value, step=global_step + 1
-                    )
-                    logger.record_epoch("policy", policy, step=global_step + 1)
-                    logger.record_epoch(
-                        "policy_target", policy_target, step=global_step + 1
-                    )
-                    logger.record_epoch(
-                        "q_target", q_target, step=global_step + 1
-                    )
+                    stats = {
+                        "q loss": q_loss_value,
+                        "policy loss": actor_loss_value,
+                    }
+                    for k, v in stats.items():
+                        logger.record_stat(k, v, step=global_step + 1)
+                    updated_modules = {
+                        "q": q,
+                        "q_target": q_target,
+                        "policy": policy,
+                        "policy_target": policy_target,
+                    }
+                    for k, v in updated_modules:
+                        logger.record_epoch(k, v, step=global_step + 1)
 
         if termination or truncated:
             if logger is not None:

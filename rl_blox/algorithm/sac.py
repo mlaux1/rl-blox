@@ -500,9 +500,8 @@ def train_sac(
                 action_key,
                 entropy_control.alpha_,
             )
-            if logger is not None:
-                logger.record_stat("q loss", q_loss_value, step=global_step + 1)
-                logger.record_epoch("q", q, step=global_step + 1)
+            stats = {"q loss": q_loss_value}
+            updated_modules = {"q": q}
 
             if global_step % policy_delay == 0:
                 # compensate for delay by doing 'policy_frequency' updates
@@ -516,37 +515,28 @@ def train_sac(
                         observations,
                         entropy_control.alpha_,
                     )
+                    stats["policy loss"] = policy_loss_value
+                    updated_modules["policy"] = policy
+
                     key, action_key = jax.random.split(key, 2)
                     exploration_loss_value = entropy_control.update(
                         policy, observations, key
                     )
-                    if logger is not None:
-                        logger.record_stat(
-                            "policy loss",
-                            policy_loss_value,
-                            step=global_step + 1,
+                    if autotune:
+                        stats["alpha"] = float(
+                            jnp.array(entropy_control.alpha_).squeeze()
                         )
-                        logger.record_epoch(
-                            "policy", policy, step=global_step + 1
-                        )
-                        logger.record_stat(
-                            "alpha",
-                            float(jnp.array(entropy_control.alpha_).squeeze()),
-                            step=global_step + 1,
-                        )
-                        if autotune:
-                            logger.record_stat(
-                                "alpha loss",
-                                exploration_loss_value,
-                                step=global_step + 1,
-                            )
-                            logger.record_epoch(
-                                "alpha", alpha, step=global_step + 1
-                            )
+                        stats["alpha loss"] = exploration_loss_value
 
             if global_step % target_network_delay == 0:
                 soft_target_net_update(q, q_target, tau)
-                logger.record_epoch("q_target", q_target, step=global_step + 1)
+                updated_modules["q_target"] = q_target
+
+            if logger is not None:
+                for k, v in stats.items():
+                    logger.record_stat(k, v, step=global_step + 1)
+                for k, v in updated_modules:
+                    logger.record_epoch(k, v, step=global_step + 1)
 
         if termination or truncation:
             if logger is not None:
