@@ -975,6 +975,7 @@ class SAC(OffPolicyAlgorithm):
         self.td3_mode = td3_mode
         self.use_bnstats_from_live_net = use_bnstats_from_live_net
         self.policy_q_reduce_fn = policy_q_reduce_fn
+        self._custom_logger = True
         self.rlb_logger = logger
 
         if td3_mode:
@@ -1146,11 +1147,12 @@ class SAC(OffPolicyAlgorithm):
                     step=self.num_timesteps,
                 )
 
-        self.logger.record(
-            "train/n_updates", self._n_updates, exclude="tensorboard"
-        )
-        for k, v in log_metrics.items():
-            self.logger.record(f"train/{k}", v.item())
+            self.rlb_logger.record_stat(
+                "n_updates",
+                self._n_updates,
+                episode=self._episode_num,
+                step=self.num_timesteps,
+            )
 
     @staticmethod
     @partial(
