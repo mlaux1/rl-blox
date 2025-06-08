@@ -143,7 +143,7 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):  # type: ignore[
 
 
 class BatchRenorm(Module):
-    """BatchRenorm Module.
+    """Batch renormalization.
 
     Implemented based on the Batch Renormalization paper
     (https://arxiv.org/abs/1702.03275) and adapted from Flax's BatchNorm
@@ -611,9 +611,7 @@ class SACPolicy(BasePolicy):
         return key
 
     def reset_noise(self, batch_size: int = 1) -> None:
-        """
-        Sample new weights for the exploration matrix, when using gSDE.
-        """
+        """Sample new weights for the exploration matrix, when using gSDE."""
         self.key, self.noise_key = jax.random.split(self.key, 2)
 
     def forward(
@@ -1486,9 +1484,7 @@ class SAC(OffPolicyAlgorithm):
         )
 
     def dump_logs(self) -> None:
-        """
-        Write log data.
-        """
+        """Write log data."""
         if self.rlb_logger is None:
             return
 
