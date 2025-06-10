@@ -535,15 +535,15 @@ def train_sac(
             if logger is not None:
                 for k, v in stats.items():
                     logger.record_stat(k, v, step=global_step + 1)
-                for k, v in updated_modules:
+                for k, v in updated_modules.items():
                     logger.record_epoch(k, v, step=global_step + 1)
 
         if termination or truncation:
             if logger is not None:
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
                 if "episode" in info:
                     logger.record_stat("return", info["episode"]["r"])
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
             obs, _ = env.reset()
             steps_per_episode = 0
         else:

@@ -556,7 +556,7 @@ def train_ddpg(
                         "policy": policy,
                         "policy_target": policy_target,
                     }
-                    for k, v in updated_modules:
+                    for k, v in updated_modules.items():
                         logger.record_epoch(k, v, step=global_step + 1)
 
         if termination or truncated:

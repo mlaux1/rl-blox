@@ -558,32 +558,30 @@ def train_td3(
                     rewards,
                     terminations,
                 )
-
-                if logger is not None:
-                    logger.record_stat(
-                        "q loss", q_loss_value, step=global_step + 1
-                    )
-                    logger.record_epoch("q", q, step=global_step + 1)
+                stats = {"q loss": q_loss_value}
+                updated_modules = {"q": q}
 
                 if global_step % policy_delay == 0:
-                    actor_loss_value = ddpg_update_actor(
+                    policy_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q, observations
                     )
                     soft_target_net_update(policy, policy_target, tau)
                     soft_target_net_update(q, q_target, tau)
-                    if logger is not None:
-                        logger.record_stat(
-                            "policy loss",
-                            actor_loss_value,
-                            step=global_step + 1,
-                        )
-                    logger.record_epoch("policy", policy, step=global_step + 1)
-                    logger.record_epoch(
-                        "policy_target", policy_target, step=global_step + 1
+
+                    stats["policy loss"] = policy_loss_value
+                    updated_modules.update(
+                        {
+                            "policy": policy,
+                            "policy_target": policy_target,
+                            "q_target": q_target,
+                        }
                     )
-                    logger.record_epoch(
-                        "q_target", q_target, step=global_step + 1
-                    )
+
+                if logger is not None:
+                    for k, v in stats.items():
+                        logger.record_stat(k, v, step=global_step + 1)
+                    for k, v in updated_modules.items():
+                        logger.record_epoch(k, v, step=global_step + 1)
 
         if termination or truncated:
             if logger is not None:
