@@ -12,6 +12,7 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.losses import (
     deterministic_policy_gradient_loss,
     mse_continuous_action_value_loss,
@@ -109,7 +110,7 @@ def state_action_embedding_loss(
     """
     zsa, _ = embedding(observation, action)
     zsp = jax.lax.stop_gradient(embedding.state_embedding(next_observation))
-    return optax.squared_error(predictions=zsa, targets=zsp)
+    return optax.squared_error(predictions=zsa, targets=zsp).mean()
 
 
 def sample_actions(
@@ -171,49 +172,50 @@ def td7_update_embedding(
 @nnx.jit
 def td7_update_critic(
     embedding: SALE,
-    critic1: nnx.Module,
-    critic1_target: nnx.Module,
-    critic1_optimizer: nnx.Optimizer,
-    critic2: nnx.Module,
-    critic2_target: nnx.Module,
-    critic2_optimizer: nnx.Optimizer,
+    critic: nnx.Module,
+    critic_target: nnx.Module,
+    critic_optimizer: nnx.Optimizer,
     gamma: float,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
     next_observations: jnp.ndarray,
     next_actions: jnp.ndarray,
-    rewards: jnp.ndarray,
-    terminations: jnp.ndarray,
+    reward: jnp.ndarray,
+    terminated: jnp.ndarray,
 ) -> tuple[float, float]:
     """TODO"""
     zsa, zs = embedding(observations, actions)
     next_zsa, next_zs = embedding(next_observations, next_actions)
 
-    q1_target = partial(critic1_target, zsa=next_zsa, zs=next_zs)
-    q2_target = partial(critic2_target, zsa=next_zsa, zs=next_zs)
     q_bootstrap = double_q_deterministic_bootstrap_estimate(
-        rewards,
-        terminations,
+        reward,
+        terminated,
         gamma,
-        q1_target,
-        q2_target,
+        critic_target,
         next_observations,
         next_actions,
+        additional_args=dict(zsa=next_zsa, zs=next_zs),
     )
 
-    q1 = partial(critic1, zsa=zsa, zs=zs)
-    q1_loss_value, grads = nnx.value_and_grad(
-        mse_continuous_action_value_loss, argnums=3
-    )(observations, actions, q_bootstrap, q1)
-    critic1_optimizer.update(grads)
+    def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
+        return mse_continuous_action_value_loss(
+            observations,
+            actions,
+            q_bootstrap,
+            q.q1,
+            additional_args=dict(zsa=zsa, zs=zs),
+        ) + mse_continuous_action_value_loss(
+            observations,
+            actions,
+            q_bootstrap,
+            q.q2,
+            additional_args=dict(zsa=zsa, zs=zs),
+        )
 
-    q2 = partial(critic2, zsa=zsa, zs=zs)
-    q2_loss_value, grads = nnx.value_and_grad(
-        mse_continuous_action_value_loss, argnums=3
-    )(observations, actions, q_bootstrap, q2)
-    critic2_optimizer.update(grads)
+    q_loss_value, grads = nnx.value_and_grad(sum_of_qnet_losses)(critic)
+    critic_optimizer.update(grads)
 
-    return q1_loss_value, q2_loss_value
+    return q_loss_value
 
 
 def create_td7_state(
@@ -290,7 +292,6 @@ def create_td7_state(
         n_linear_encoding_nodes,
         rngs,
     )
-    critic1_optimizer = nnx.Optimizer(critic1, optax.adam(learning_rate=q_learning_rate))
     q2 = MLP(
         n_q_inputs,
         1,
@@ -305,7 +306,8 @@ def create_td7_state(
         n_linear_encoding_nodes,
         rngs,
     )
-    critic2_optimizer = nnx.Optimizer(critic2, optax.adam(learning_rate=q_learning_rate))
+    critic = ContinuousClippedDoubleQNet(critic1, critic2)
+    critic_optimizer = nnx.Optimizer(critic, optax.adam(learning_rate=q_learning_rate))
 
     return namedtuple(
         "TD7State",
@@ -314,24 +316,20 @@ def create_td7_state(
             "embedding_optimizer",
             "actor",
             "actor_optimizer",
-            "critic1",
-            "critic1_optimizer",
-            "critic2",
-            "critic2_optimizer",
+            "critic",
+            "critic_optimizer",
         ],
-    )(embedding, embedding_optimizer, actor, actor_optimizer, critic1, critic1_optimizer, critic2, critic2_optimizer)
+    )(embedding, embedding_optimizer, actor, actor_optimizer, critic, critic_optimizer)
 
 
 def train_td7(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    embedding: nnx.Module,
+    embedding: SALE,
     embedding_optimizer: nnx.Optimizer,
     actor: nnx.Module,
     actor_optimizer: nnx.Optimizer,
-    critic1: nnx.Module,
-    critic1_optimizer: nnx.Optimizer,
-    critic2: nnx.Module,
-    critic2_optimizer: nnx.Optimizer,
+    critic: nnx.Module,
+    critic_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
@@ -344,8 +342,7 @@ def train_td7(
     noise_clip: float = 0.5,
     learning_starts: int = 25_000,
     actor_target: nnx.Module | None = None,
-    critic1_target: nnx.Module | None = None,
-    critic2_target: nnx.Optimizer | None = None,
+    critic_target: nnx.Module | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
@@ -438,10 +435,8 @@ def train_td7(
 
     if actor_target is None:
         actor_target = nnx.clone(actor)
-    if critic1_target is None:
-        critic1_target = nnx.clone(critic1)
-    if critic2_target is None:
-        critic2_target = nnx.clone(critic2)
+    if critic_target is None:
+        critic_target = nnx.clone(critic)
 
     for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
@@ -478,14 +473,11 @@ def train_td7(
                 next_actions = _sample_target_actions(
                     embedding, actor_target, next_observations, sampling_key
                 )
-                q1_loss_value, q2_loss_value = td7_update_critic(
+                q_loss_value = td7_update_critic(
                     embedding,
-                    critic1,
-                    critic1_target,
-                    critic1_optimizer,
-                    critic2,
-                    critic2_target,
-                    critic2_optimizer,
+                    critic,
+                    critic_target,
+                    critic_optimizer,
                     gamma,
                     observations,
                     actions,
@@ -497,13 +489,9 @@ def train_td7(
 
                 if logger is not None:
                     logger.record_stat(
-                        "q1 loss", q1_loss_value, step=global_step + 1
+                        "q loss", q_loss_value, step=global_step + 1
                     )
-                    logger.record_epoch("q1", critic1, step=global_step + 1)
-                    logger.record_stat(
-                        "q2 loss", q2_loss_value, step=global_step + 1
-                    )
-                    logger.record_epoch("q2", critic2, step=global_step + 1)
+                    logger.record_epoch("q", critic, step=global_step + 1)
 
                 """ TODO activate and port
                 if global_step % policy_delay == 0:
@@ -526,8 +514,7 @@ def train_td7(
                     logger.record_epoch("embedding", actor, step=global_step + 1)
 
                 soft_target_net_update(actor, actor_target, tau)
-                soft_target_net_update(critic1, critic1_target, tau)
-                soft_target_net_update(critic2, critic2_target, tau)
+                soft_target_net_update(critic, critic_target, tau)
 
                 if logger is not None:
                     logger.record_epoch("policy", actor, step=global_step + 1)
@@ -535,10 +522,7 @@ def train_td7(
                         "policy_target", actor_target, step=global_step + 1
                     )
                     logger.record_epoch(
-                        "q1_target", critic1_target, step=global_step + 1
-                    )
-                    logger.record_epoch(
-                        "q2_target", critic2_target, step=global_step + 1
+                        "q_target", critic_target, step=global_step + 1
                     )
 
         if termination or truncated:

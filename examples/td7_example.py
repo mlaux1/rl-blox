@@ -37,8 +37,9 @@ if verbose:
         "stdout. Run 'aim up' to analyze the progress."
     )
 logger = LoggerList(
-    [#AIMLogger(),
-     StandardLogger(verbose=2)]
+    [AIMLogger(),
+     #StandardLogger(verbose=2)
+     ]
 )
 logger.define_experiment(
     env_name=env_name,
@@ -54,10 +55,8 @@ td3_result = train_td7(
     embedding_optimizer=td7_state.embedding_optimizer,
     actor=td7_state.actor,
     actor_optimizer=td7_state.actor_optimizer,
-    critic1=td7_state.critic1,
-    critic1_optimizer=td7_state.critic1_optimizer,
-    critic2=td7_state.critic2,
-    critic2_optimizer=td7_state.critic2_optimizer,
+    critic=td7_state.critic,
+    critic_optimizer=td7_state.critic_optimizer,
     logger=logger,
     **hparams_algorithm,
 )
