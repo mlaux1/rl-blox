@@ -353,9 +353,6 @@ def train_td7(
     nnx.Module,
     nnx.Module,
     nnx.Optimizer,
-    nnx.Module,
-    nnx.Module,
-    nnx.Optimizer,
 ]:
     r"""TD7.
 
@@ -545,10 +542,7 @@ def train_td7(
         actor,
         actor_target,
         actor_optimizer,
-        critic1,
-        critic1_target,
-        critic1_optimizer,
-        critic2,
-        critic2_target,
-        critic2_optimizer,
+        critic,
+        critic_target,
+        critic_optimizer,
     )
