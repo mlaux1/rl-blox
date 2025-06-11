@@ -13,10 +13,7 @@ from flax import nnx
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
-from ..blox.losses import (
-    deterministic_policy_gradient_loss,
-    mse_continuous_action_value_loss,
-)
+from ..blox.losses import mse_continuous_action_value_loss
 from .td3 import double_q_deterministic_bootstrap_estimate
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
@@ -172,8 +169,8 @@ def td7_update_embedding(
 @nnx.jit
 def td7_update_critic(
     embedding: SALE,
-    critic: nnx.Module,
-    critic_target: nnx.Module,
+    critic: ContinuousClippedDoubleQNet,
+    critic_target: ContinuousClippedDoubleQNet,
     critic_optimizer: nnx.Optimizer,
     gamma: float,
     observations: jnp.ndarray,
@@ -216,6 +213,37 @@ def td7_update_critic(
     critic_optimizer.update(grads)
 
     return q_loss_value
+
+
+def deterministic_policy_gradient_loss(
+    embedding: SALE,
+    critic: ContinuousClippedDoubleQNet,
+    observation: jnp.ndarray,
+    actor: ActorSALE,
+) -> jnp.ndarray:
+    r"""TODO"""
+    zs = embedding.state_embedding(observation)
+    action = actor(observation, zs)
+    zsa = embedding.state_action_embedding(jnp.concatenate((zs, action), axis=-1))
+    obs_act = jnp.concatenate((observation, actor(observation, zs)), axis=-1)
+    # - to perform gradient ascent with a minimizer
+    return -critic(obs_act, zs=zs, zsa=zsa).mean()
+
+
+@nnx.jit
+def td7_update_actor(
+    embedding: SALE,
+    actor: ActorSALE,
+    actor_optimizer: nnx.Optimizer,
+    critic: ContinuousClippedDoubleQNet,
+    observation: jnp.ndarray,
+) -> float:
+    """TODO"""
+    actor_loss_value, grads = nnx.value_and_grad(
+        deterministic_policy_gradient_loss, argnums=3
+    )(embedding, critic, observation, actor)
+    actor_optimizer.update(grads)
+    return actor_loss_value
 
 
 def create_td7_state(
@@ -273,7 +301,7 @@ def create_td7_state(
         rngs,
     )
     actor_optimizer = nnx.Optimizer(
-        policy, optax.adam(learning_rate=policy_learning_rate)
+        actor, optax.adam(learning_rate=policy_learning_rate)
     )
 
     n_linear_encoding_nodes = q_hidden_nodes[0]
@@ -326,9 +354,9 @@ def train_td7(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     embedding: SALE,
     embedding_optimizer: nnx.Optimizer,
-    actor: nnx.Module,
+    actor: ActorSALE,
     actor_optimizer: nnx.Optimizer,
-    critic: nnx.Module,
+    critic: ContinuousClippedDoubleQNet,
     critic_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
@@ -341,8 +369,8 @@ def train_td7(
     exploration_noise: float = 0.2,
     noise_clip: float = 0.5,
     learning_starts: int = 25_000,
-    actor_target: nnx.Module | None = None,
-    critic_target: nnx.Module | None = None,
+    actor_target: ActorSALE | None = None,
+    critic_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
@@ -490,10 +518,9 @@ def train_td7(
                     )
                     logger.record_epoch("q", critic, step=global_step + 1)
 
-                """ TODO activate and port
                 if global_step % policy_delay == 0:
-                    actor_loss_value = ddpg_update_actor(
-                        policy, policy_optimizer, q1, observations
+                    actor_loss_value = td7_update_actor(
+                        embedding, actor, actor_optimizer, critic, observations
                     )
                     if logger is not None:
                         logger.record_stat(
@@ -501,7 +528,6 @@ def train_td7(
                             actor_loss_value,
                             step=global_step + 1,
                         )
-                """
 
                 embedding_loss_value = td7_update_embedding(embedding, embedding_optimizer, observations, actions, next_observations)
                 if logger is not None:
