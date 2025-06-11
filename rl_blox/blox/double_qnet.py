@@ -47,5 +47,5 @@ class ContinuousClippedDoubleQNet(nnx.Module):
         self.q1 = q1
         self.q2 = q2
 
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return jnp.minimum(self.q1(x), self.q2(x))
+    def __call__(self, *args, **kwargs) -> jnp.ndarray:
+        return jnp.minimum(self.q1(*args, **kwargs), self.q2(*args, **kwargs))

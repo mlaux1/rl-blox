@@ -11,6 +11,7 @@ def mse_continuous_action_value_loss(
     action: jnp.ndarray,
     q_target_values: jnp.ndarray,
     q: nnx.Module,
+    additional_args: dict[str, jnp.ndarray],
 ) -> jnp.ndarray:
     r"""Mean squared error loss for continuous action-value function.
 
@@ -39,6 +40,8 @@ def mse_continuous_action_value_loss(
         Q network that maps a pair of observation and action to the action
         value. These networks are used for continuous action spaces.
 
+    additional_args : TODO
+
     Returns
     -------
     loss : array, shape ()
@@ -47,7 +50,7 @@ def mse_continuous_action_value_loss(
     chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
     chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
 
-    q_predicted = q(jnp.concatenate((observation, action), axis=-1)).squeeze()
+    q_predicted = q(jnp.concatenate((observation, action), axis=-1), **additional_args).squeeze()
     chex.assert_equal_shape((q_predicted, q_target_values))
 
     return optax.squared_error(
