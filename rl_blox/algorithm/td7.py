@@ -13,7 +13,7 @@ from flax import nnx
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
-from ..blox.losses import mse_continuous_action_value_loss
+from ..blox.losses import huber_continuous_action_value_loss
 from .td3 import double_q_deterministic_bootstrap_estimate
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
@@ -195,13 +195,13 @@ def td7_update_critic(
     )
 
     def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
-        return mse_continuous_action_value_loss(
+        return huber_continuous_action_value_loss(
             observations,
             actions,
             q_bootstrap,
             q.q1,
             additional_args=dict(zsa=zsa, zs=zs),
-        ) + mse_continuous_action_value_loss(
+        ) + huber_continuous_action_value_loss(
             observations,
             actions,
             q_bootstrap,
