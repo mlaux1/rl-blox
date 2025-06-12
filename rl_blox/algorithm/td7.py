@@ -1,5 +1,6 @@
 from collections import namedtuple
 from functools import partial
+from collections import OrderedDict
 
 import chex
 import gymnasium as gym
@@ -9,15 +10,128 @@ import numpy as np
 import optax
 import tqdm
 from flax import nnx
+import numpy as np
+from numpy import typing as npt
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.losses import huber_continuous_action_value_loss
 from .td3 import double_q_deterministic_bootstrap_estimate
-from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
+
+
+class LAP:
+    """Replay buffer for loss-adjusted prioritized experience replay (LAP).
+
+    For each quantity, we store all samples in NumPy array that will be
+    preallocated once the size of the quantities is know, that is, when the
+    first transition sample is added. This makes sampling faster than when
+    we use a deque.
+
+    Parameters
+    ----------
+    buffer_size : int
+        Maximum size of the buffer.
+
+    keys : list[str], optional
+        Names of the quantities that should be stored in the replay buffer.
+        Defaults to ['observation', 'action', 'reward', 'next_observation',
+        'termination']. These names have to be used as key word arguments when
+        adding a sample. When sampling a batch, the arrays will be returned in
+        this order.
+
+    dtypes : list[dtype], optional
+        dtype used for each buffer. Defaults to float for everything except
+        'termination'.
+
+    discrete_actions : bool, optional
+        Changes the default dtype for actions to int.
+
+    References
+    ----------
+    .. [1] Fujimoto, S., Meger, D., Precup, D. (2020). An Equivalence between
+       Loss Functions and Non-Uniform Sampling in Experience Replay. In
+       Advances in Neural Information Processing Systems 33.
+       https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
+    """
+    buffer: OrderedDict[str, npt.NDArray[float]]
+    buffer_size: int
+    current_len: int
+    insert_idx: int
+
+    def __init__(
+        self,
+        buffer_size: int,
+        keys: list[str] | None = None,
+        dtypes: list[npt.DTypeLike] | None = None,
+        discrete_actions: bool = False,
+    ):
+        if keys is None:
+            keys = [
+                "observation",
+                "action",
+                "reward",
+                "next_observation",
+                "termination",
+            ]
+        if dtypes is None:
+            dtypes = [
+                float,
+                int if discrete_actions else float,
+                float,
+                float,
+                int,
+            ]
+        self.buffer = OrderedDict()
+        for k, t in zip(keys, dtypes, strict=True):
+            self.buffer[k] = np.empty(0, dtype=t)
+        self.buffer_size = buffer_size
+        self.current_len = 0
+        self.insert_idx = 0
+
+    def add_sample(self, **sample):
+        """Add transition sample to the replay buffer.
+
+        Note that the individual arguments have to be passed as keyword
+        arguments with keys matching the ones passed to the constructor or
+        the default keys respectively.
+        """
+        if self.current_len == 0:
+            for k, v in sample.items():
+                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
+                self.buffer[k] = np.empty(
+                    (self.buffer_size,) + np.asarray(v).shape,
+                    dtype=self.buffer[k].dtype,
+                )
+        for k, v in sample.items():
+            self.buffer[k][self.insert_idx] = v
+        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+        self.current_len = min(self.current_len + 1, self.buffer_size)
+
+    def sample_batch(
+        self, batch_size: int, rng: np.random.Generator
+    ) -> list[jnp.ndarray]:
+        """Sample a batch of transitions.
+
+        Note that the individual quantities will be returned in the same order
+        as the keys were given to the constructor or the default order
+        respectively.
+        """
+        raise NotImplementedError("https://github.com/sfujim/TD7/blob/main/buffer.py")
+        indices = rng.integers(0, self.current_len, batch_size)
+        return [jnp.asarray(self.buffer[k][indices]) for k in self.buffer]
+
+    def update_priority(self, priority):
+        raise NotImplementedError("https://github.com/sfujim/TD7/blob/main/buffer.py")
+
+    def reset_max_priority(self):
+        raise NotImplementedError("https://github.com/sfujim/TD7/blob/main/buffer.py")
+
+    def __len__(self):
+        """Return current number of stored transitions in the replay buffer."""
+        return self.current_len
 
 
 def avg_l1_norm(x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
@@ -430,7 +544,7 @@ def train_td7(
     chex.assert_scalar_in(tau, 0.0, 1.0)
 
     env.observation_space.dtype = np.float32
-    rb = ReplayBuffer(buffer_size)
+    replay_buffer = LAP(buffer_size)
 
     action_scale = 0.5 * (env.action_space.high - env.action_space.low)
     _sample_actions = nnx.jit(
@@ -475,7 +589,7 @@ def train_td7(
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
 
-        rb.add_sample(
+        replay_buffer.add_sample(
             observation=obs,
             action=action,
             reward=reward,
@@ -491,7 +605,7 @@ def train_td7(
                     rewards,
                     next_observations,
                     terminations,
-                ) = rb.sample_batch(batch_size, rng)
+                ) = replay_buffer.sample_batch(batch_size, rng)
 
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
