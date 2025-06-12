@@ -30,6 +30,11 @@ def test_pickle_replay_buffer():
             pickle.dump(rb, f)
         with open(filename, "rb") as f:
             rb_loaded = pickle.load(f)
+
+        assert rb.buffer_size == rb_loaded.buffer_size
+        assert len(rb) == len(rb_loaded)
+        assert rb.insert_idx == rb_loaded.insert_idx
+
         o1, a1, r1, no1, t1 = rb.sample_batch(2, np.random.default_rng(0))
         o2, a2, r2, no2, t2 = rb_loaded.sample_batch(2, np.random.default_rng(0))
         assert_array_almost_equal(o1, o2)
