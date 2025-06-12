@@ -165,7 +165,7 @@ def ddpg_update_actor(
     q: nnx.Module,
     observation: jnp.ndarray,
 ) -> float:
-    """DDPG actor update.
+    r"""DDPG actor update.
 
     Uses ``policy_optimizer`` to update ``policy`` with the
     :func:`~.blox.losses.deterministic_policy_gradient_loss`.
@@ -319,11 +319,18 @@ def train_ddpg(
     gradient_steps: int = 1,
     exploration_noise: float = 0.1,
     learning_starts: int = 25_000,
+    replay_buffer: ReplayBuffer | None = None,
     policy_target: nnx.Optimizer | None = None,
     q_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
-    nnx.Module, nnx.Module, nnx.Optimizer, nnx.Module, nnx.Module, nnx.Optimizer
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
+    ReplayBuffer,
 ]:
     r"""Deep Deterministic Policy Gradients (DDPG).
 
@@ -377,6 +384,9 @@ def train_ddpg(
         Learning starts after this number of random steps was taken in the
         environment.
 
+    replay_buffer : ReplayBuffer
+        Replay buffer.
+
     policy_target : nnx.Module
         Target policy. Only has to be set if we want to continue training
         from an old state.
@@ -402,6 +412,8 @@ def train_ddpg(
         Target network.
     q_optimizer : nnx.Optimizer
         Optimizer for Q network.
+    replay_buffer : ReplayBuffer
+        Replay buffer.
 
     Notes
     -----
@@ -419,12 +431,12 @@ def train_ddpg(
     * :math:`Q(s, a)` with weights :math:`\theta^Q` - critic network ``q``
     * :math:`Q'(s, a)` with weights :math:`\theta^{Q'}` - Q target network
       ``q_target``, initialized as a copy of ``q``
+    * :math:`R` - ``replay_buffer``
 
     Algorithm
 
-    * Initialize replay buffer :math:`R`
     * Randomly sample ``learning_starts`` actions and record transitions in
-      replay buffer
+      :math:`R`
     * For each step
 
       * Sample action with behavior policy in :func:`sample_actions`
@@ -472,7 +484,8 @@ def train_ddpg(
     chex.assert_scalar_in(tau, 0.0, 1.0)
 
     env.observation_space.dtype = np.float32
-    rb = ReplayBuffer(buffer_size)
+    if replay_buffer is None:
+        replay_buffer = ReplayBuffer(buffer_size)
 
     action_scale = 0.5 * (env.action_space.high - env.action_space.low)
     _sample_actions = nnx.jit(
@@ -507,7 +520,7 @@ def train_ddpg(
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
 
-        rb.add_sample(
+        replay_buffer.add_sample(
             observation=obs,
             action=action,
             reward=reward,
@@ -523,7 +536,7 @@ def train_ddpg(
                     rewards,
                     next_observations,
                     terminations,
-                ) = rb.sample_batch(batch_size, rng)
+                ) = replay_buffer.sample_batch(batch_size, rng)
 
                 q_loss_value = ddpg_update_critic(
                     policy_target,
@@ -573,4 +586,12 @@ def train_ddpg(
         else:
             obs = next_obs
 
-    return policy, policy_target, policy_optimizer, q, q_target, q_optimizer
+    return (
+        policy,
+        policy_target,
+        policy_optimizer,
+        q,
+        q_target,
+        q_optimizer,
+        replay_buffer,
+    )

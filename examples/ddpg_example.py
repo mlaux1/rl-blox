@@ -41,7 +41,7 @@ logger.define_experiment(
 
 ddpg_state = create_ddpg_state(env, **hparams_models)
 
-policy, policy_target, policy_optimizer, q, q_target, q_optimizer = train_ddpg(
+policy, _, _, q, _, _, _ = train_ddpg(
     env,
     ddpg_state.policy,
     ddpg_state.policy_optimizer,
