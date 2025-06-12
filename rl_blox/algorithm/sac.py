@@ -257,6 +257,7 @@ def train_sac(
     target_network_delay: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
+    replay_buffer: ReplayBuffer | None = None,
     q_target: ContinuousClippedDoubleQNet | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
@@ -267,6 +268,7 @@ def train_sac(
     nnx.Module,
     nnx.Optimizer,
     EntropyControl,
+    ReplayBuffer,
 ]:
     r"""Soft actor-critic (SAC).
 
@@ -345,6 +347,9 @@ def train_sac(
     autotune : bool
         Automatic tuning of the entropy coefficient.
 
+    replay_buffer : ReplayBuffer
+        Replay buffer.
+
     q_target : ContinuousClippedDoubleQNet
         Target network for q.
 
@@ -368,6 +373,8 @@ def train_sac(
         Optimizer of q.
     entropy_control
         State of entropy tuning.
+    replay_buffer : ReplayBuffer
+        Replay buffer.
 
     Notes
     -----
@@ -380,12 +387,12 @@ def train_sac(
       (see :class:`~.blox.double_qnet.ContinuousClippedDoubleQNet`)
     * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
       ``q_target``, initialized as a copy of ``q``
+    * :math:`R` - ``replay_buffer``
 
     Algorithm
 
-    * Initialize replay buffer :math:`R`
     * Randomly sample ``learning_starts`` actions and record transitions in
-      replay buffer
+      :math:`R`
     * For each step :math:`t`
 
       * Sample :math:`a_t \sim \pi(a_t|o_t)`
@@ -453,7 +460,8 @@ def train_sac(
         return policy.sample(obs, action_key)
 
     env.observation_space.dtype = np.float32
-    rb = ReplayBuffer(buffer_size)
+    if replay_buffer is None:
+        replay_buffer = ReplayBuffer(buffer_size)
 
     if logger is not None:
         logger.start_new_episode()
@@ -472,7 +480,7 @@ def train_sac(
         next_obs, reward, termination, truncation, info = env.step(action)
         steps_per_episode += 1
 
-        rb.add_sample(
+        replay_buffer.add_sample(
             observation=obs,
             action=action,
             reward=reward,
@@ -482,7 +490,7 @@ def train_sac(
 
         if global_step >= learning_starts:
             observations, actions, rewards, next_observations, terminations = (
-                rb.sample_batch(batch_size, rng)
+                replay_buffer.sample_batch(batch_size, rng)
             )
 
             key, action_key = jax.random.split(key, 2)
@@ -556,6 +564,7 @@ def train_sac(
         q_target,
         q_optimizer,
         entropy_control,
+        replay_buffer,
     )
 
 

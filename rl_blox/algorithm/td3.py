@@ -411,6 +411,9 @@ def train_td3(
     q_optimizer : nnx.Optimizer
         Optimizer for Q network.
 
+    replay_buffer : ReplayBuffer
+        Replay buffer.
+
     Notes
     -----
 
