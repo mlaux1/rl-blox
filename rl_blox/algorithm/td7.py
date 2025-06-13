@@ -779,6 +779,8 @@ def train_td7(
                             "q_target", critic_target, step=global_step + 1
                         )
 
+                    replay_buffer.reset_max_priority()
+
         if termination or truncated:
             if logger is not None:
                 if "episode" in info:
