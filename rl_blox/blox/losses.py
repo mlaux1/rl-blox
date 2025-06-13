@@ -1,4 +1,5 @@
 import chex
+import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
@@ -244,3 +245,65 @@ def deterministic_policy_gradient_loss(
     obs_act = jnp.concatenate((observation, policy(observation)), axis=-1)
     # - to perform gradient ascent with a minimizer
     return -q(obs_act).mean()
+
+
+def dqn_loss(
+    q: nnx.Module,
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
+    gamma: float = 0.99,
+) -> float:
+    r"""Deep Q-network (DQN) loss.
+
+    This loss requires a continuous state space and a discrete action space.
+
+    For a mini-batch, we calculate target values of :math:`Q`
+
+    .. math::
+
+        y_i = r_i + (1 - t_i) \gamma \max_{a'} Q(o_{i+1}, a'),
+
+    where :math:`r_i` is the immediate reward obtained in the transition,
+    :math:`t_i` indicates if a terminal state was reached in this transition,
+    :math:`\gamma` (``gamma``) is the discount factor, and :math:`o_{i+1}` is
+    the observation after the transition.
+
+    Based on these target values, the DQN loss is defined as
+
+    .. math::
+
+        \mathcal{L}(Q) = \frac{1}{N} \sum_{i=1}^{N} (y_i - Q(o_i, a_i))^2.
+
+    Parameters
+    ----------
+    q : nnx.Module
+        Deep Q-network :math:`Q(o, a)`. For a given observation, the neural
+        network predicts the value of each action from the discrete action
+        space.
+    batch : tuple
+        Mini-batch of transitions. Contains in this order: observations
+        :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
+        observations :math:`o_{i+1}`, termination flags :math:`t_i`.
+    gamma : float, default=0.99
+        Discount factor :math:`\gamma`.
+
+    Returns
+    -------
+    loss : float
+        The computed loss for the given mini-batch.
+
+    References
+    ----------
+    .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I.,
+       Wierstra, D., Riedmiller, M. (2013). Playing Atari with Deep
+       Reinforcement Learning. https://arxiv.org/abs/1312.5602
+    """
+    obs, action, reward, next_obs, terminated = batch
+
+    next_q = jax.lax.stop_gradient(q(next_obs))
+    max_next_q = jnp.max(next_q, axis=1)
+
+    q_target_values = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
+
+    return mse_discrete_action_value_loss(obs, action, q_target_values, q)
