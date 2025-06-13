@@ -1,6 +1,5 @@
-from collections import namedtuple
+from collections import OrderedDict, namedtuple
 from functools import partial
-from collections import OrderedDict
 
 import chex
 import gymnasium as gym
@@ -10,16 +9,14 @@ import numpy as np
 import optax
 import tqdm
 from flax import nnx
-import numpy as np
 from numpy import typing as npt
 
+from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.double_qnet import ContinuousClippedDoubleQNet
-from ..blox.losses import huber_continuous_action_value_loss
-from .td3 import double_q_deterministic_bootstrap_estimate
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
+from .td3 import double_q_deterministic_bootstrap_estimate
 
 
 class LAP:
@@ -97,6 +94,7 @@ class LAP:
        Experience Replay. In International Conference on Learning
        Representations. https://arxiv.org/abs/1511.05952
     """
+
     buffer: OrderedDict[str, npt.NDArray[float]]
     buffer_size: int
     current_len: int
@@ -167,16 +165,24 @@ class LAP:
         as the keys were given to the constructor or the default order
         respectively.
         """
-        indices = np.arange(self.current_len, dtype=int)
-        self.sampled_indices = rng.choice(indices, size=batch_size, replace=False, p=self.priority / self.max_priority)
-        return [jnp.asarray(self.buffer[k][self.sampled_indices]) for k in self.buffer]
+        self.sampled_indices = rng.choice(
+            np.arange(self.current_len, dtype=int),
+            size=batch_size,
+            replace=False,
+            p=self.priority[: self.current_len]
+            / sum(self.priority[: self.current_len]),
+        )
+        return [
+            jnp.asarray(self.buffer[k][self.sampled_indices])
+            for k in self.buffer
+        ]
 
     def update_priority(self, priority):
         self.priority[self.sampled_indices] = priority
         self.max_priority = max(max(priority), self.max_priority)
 
     def reset_max_priority(self):
-        self.max_priority = max(self.priority[:self.current_len])
+        self.max_priority = max(self.priority[: self.current_len])
 
     def __len__(self):
         """Return current number of stored transitions in the replay buffer."""
@@ -200,7 +206,9 @@ class SALE(nnx.Module):
     state_embedding: nnx.Module
     state_action_embedding: nnx.Module
 
-    def __init__(self, state_embedding: nnx.Module, state_action_embedding: nnx.Module):
+    def __init__(
+        self, state_embedding: nnx.Module, state_action_embedding: nnx.Module
+    ):
         self.state_embedding = state_embedding
         self.state_action_embedding = state_action_embedding
 
@@ -213,34 +221,57 @@ class SALE(nnx.Module):
 
 class ActorSALE(nnx.Module):
     """TODO"""
+
     policy_net: nnx.Module
     l0: nnx.Linear
 
-    def __init__(self, policy_net: nnx.Module, n_state_features: int, hidden_nodes: int, rngs: nnx.Rngs):
+    def __init__(
+        self,
+        policy_net: nnx.Module,
+        n_state_features: int,
+        hidden_nodes: int,
+        rngs: nnx.Rngs,
+    ):
         self.policy_net = policy_net
         self.l0 = nnx.Linear(n_state_features, hidden_nodes, rngs=rngs)
 
     def __call__(self, state: jnp.ndarray, zs: jnp.ndarray) -> jnp.ndarray:
         """pi(state, zs)."""
         h = avg_l1_norm(self.l0(state))
-        he = jnp.concatenate((h, zs), axis=-1)  # hidden_nodes + n_embedding_dimensions
+        he = jnp.concatenate(
+            (h, zs), axis=-1
+        )  # hidden_nodes + n_embedding_dimensions
         return self.policy_net(he)
 
 
 class CriticSALE(nnx.Module):
     """TODO"""
+
     q_net: nnx.Module
     q0: nnx.Linear
 
-    def __init__(self, q_net: nnx.Module, n_state_features: int, n_action_features: int, hidden_nodes: int, rngs: nnx.Rngs):
+    def __init__(
+        self,
+        q_net: nnx.Module,
+        n_state_features: int,
+        n_action_features: int,
+        hidden_nodes: int,
+        rngs: nnx.Rngs,
+    ):
         self.q_net = q_net
-        self.q0 = nnx.Linear(n_state_features + n_action_features, hidden_nodes, rngs=rngs)
+        self.q0 = nnx.Linear(
+            n_state_features + n_action_features, hidden_nodes, rngs=rngs
+        )
 
-    def __call__(self, sa: jnp.ndarray, zsa: jnp.ndarray, zs: jnp.ndarray) -> jnp.ndarray:
+    def __call__(
+        self, sa: jnp.ndarray, zsa: jnp.ndarray, zs: jnp.ndarray
+    ) -> jnp.ndarray:
         """Q(s, a, zsa, zs)."""
         h = avg_l1_norm(self.q0(sa))
         embeddings = jnp.concatenate((zsa, zs), axis=-1)
-        he = jnp.concatenate((h, embeddings), axis=-1)  # hidden_nodes + 2 * n_embedding_dimensions
+        he = jnp.concatenate(
+            (h, embeddings), axis=-1
+        )  # hidden_nodes + 2 * n_embedding_dimensions
         return self.q_net(he)
 
 
@@ -336,46 +367,57 @@ def td7_update_critic(
     critic_target: ContinuousClippedDoubleQNet,
     critic_optimizer: nnx.Optimizer,
     gamma: float,
-    observations: jnp.ndarray,
-    actions: jnp.ndarray,
-    next_observations: jnp.ndarray,
-    next_actions: jnp.ndarray,
+    observation: jnp.ndarray,
+    action: jnp.ndarray,
+    next_observation: jnp.ndarray,
+    next_action: jnp.ndarray,
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
-) -> tuple[float, float]:
-    """TODO"""
-    zsa, zs = embedding(observations, actions)
-    next_zsa, next_zs = embedding(next_observations, next_actions)
+    min_priority: int = 1,
+) -> tuple[float, jnp.ndarray]:
+    """TODO
+
+    TODO
+
+    References
+    ----------
+    .. [1] Fujimoto, S., Meger, D., Precup, D. (2020). An Equivalence between
+       Loss Functions and Non-Uniform Sampling in Experience Replay. In
+       Advances in Neural Information Processing Systems 33.
+       https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
+    """
+    zsa, zs = embedding(observation, action)
+    next_zsa, next_zs = embedding(next_observation, next_action)
 
     q_bootstrap = double_q_deterministic_bootstrap_estimate(
         reward,
         terminated,
         gamma,
         critic_target,
-        next_observations,
-        next_actions,
+        next_observation,
+        next_action,
         additional_args=dict(zsa=next_zsa, zs=next_zs),
     )
 
     def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
-        return huber_continuous_action_value_loss(
-            observations,
-            actions,
-            q_bootstrap,
-            q.q1,
-            additional_args=dict(zsa=zsa, zs=zs),
-        ) + huber_continuous_action_value_loss(
-            observations,
-            actions,
-            q_bootstrap,
-            q.q2,
-            additional_args=dict(zsa=zsa, zs=zs),
+        q1_pred = q.q1(jnp.concatenate((observation, action), axis=-1), zsa=zsa, zs=zs).squeeze()
+        q2_pred = q.q2(jnp.concatenate((observation, action), axis=-1), zsa=zsa, zs=zs).squeeze()
+        abs_max_td_error = jnp.maximum(
+            jnp.abs(q1_pred - q_bootstrap),  # TODO we compute these differences twice...
+            jnp.abs(q2_pred - q_bootstrap),
         )
+        return optax.huber_loss(
+            predictions=q1_pred, targets=q_bootstrap, delta=min_priority
+        ).mean() + optax.huber_loss(
+            predictions=q2_pred, targets=q_bootstrap, delta=min_priority
+        ).mean(), abs_max_td_error
 
-    q_loss_value, grads = nnx.value_and_grad(sum_of_qnet_losses)(critic)
+    (q_loss_value, abs_max_td_error), grads = nnx.value_and_grad(
+        sum_of_qnet_losses, has_aux=True
+    )(critic)
     critic_optimizer.update(grads)
 
-    return q_loss_value
+    return q_loss_value, abs_max_td_error
 
 
 def deterministic_policy_gradient_loss(
@@ -387,7 +429,9 @@ def deterministic_policy_gradient_loss(
     r"""TODO"""
     zs = embedding.state_embedding(observation)
     action = actor(observation, zs)
-    zsa = embedding.state_action_embedding(jnp.concatenate((zs, action), axis=-1))
+    zsa = embedding.state_action_embedding(
+        jnp.concatenate((zs, action), axis=-1)
+    )
     obs_act = jnp.concatenate((observation, actor(observation, zs)), axis=-1)
     # - to perform gradient ascent with a minimizer
     return -critic(obs_act, zs=zs, zsa=zsa).mean()
@@ -411,7 +455,7 @@ def td7_update_actor(
 
 def create_td7_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    n_embedding_dimensions = 256,
+    n_embedding_dimensions=256,
     state_embedding_hidden_nodes: list[int] | tuple[int] = (256,),
     state_action_embedding_hidden_nodes: list[int] | tuple[int] = (256,),
     embedding_activation: str = "elu",
@@ -458,7 +502,7 @@ def create_td7_state(
     )
     policy = DeterministicTanhPolicy(policy_net, env.action_space)
     actor = ActorSALE(
-        policy_net,
+        policy,
         env.observation_space.shape[0],
         n_linear_encoding_nodes,
         rngs,
@@ -498,7 +542,9 @@ def create_td7_state(
         rngs,
     )
     critic = ContinuousClippedDoubleQNet(critic1, critic2)
-    critic_optimizer = nnx.Optimizer(critic, optax.adam(learning_rate=q_learning_rate))
+    critic_optimizer = nnx.Optimizer(
+        critic, optax.adam(learning_rate=q_learning_rate)
+    )
 
     return namedtuple(
         "TD7State",
@@ -510,7 +556,14 @@ def create_td7_state(
             "critic",
             "critic_optimizer",
         ],
-    )(embedding, embedding_optimizer, actor, actor_optimizer, critic, critic_optimizer)
+    )(
+        embedding,
+        embedding_optimizer,
+        actor,
+        actor_optimizer,
+        critic,
+        critic_optimizer,
+    )
 
 
 def train_td7(
@@ -661,7 +714,7 @@ def train_td7(
                 next_actions = _sample_target_actions(
                     embedding, actor_target, next_observations, sampling_key
                 )
-                q_loss_value = td7_update_critic(
+                q_loss_value, abs_td_error = td7_update_critic(
                     embedding,
                     critic,
                     critic_target,
@@ -674,6 +727,7 @@ def train_td7(
                     rewards,
                     terminations,
                 )
+                replay_buffer.update_priority(abs_td_error)
 
                 if logger is not None:
                     logger.record_stat(
@@ -692,12 +746,22 @@ def train_td7(
                             step=global_step + 1,
                         )
 
-                embedding_loss_value = td7_update_embedding(embedding, embedding_optimizer, observations, actions, next_observations)
+                embedding_loss_value = td7_update_embedding(
+                    embedding,
+                    embedding_optimizer,
+                    observations,
+                    actions,
+                    next_observations,
+                )
                 if logger is not None:
                     logger.record_stat(
-                        "embedding loss", embedding_loss_value, step=global_step + 1
+                        "embedding loss",
+                        embedding_loss_value,
+                        step=global_step + 1,
                     )
-                    logger.record_epoch("embedding", actor, step=global_step + 1)
+                    logger.record_epoch(
+                        "embedding", actor, step=global_step + 1
+                    )
 
                 soft_target_net_update(actor, actor_target, tau)
                 soft_target_net_update(critic, critic_target, tau)

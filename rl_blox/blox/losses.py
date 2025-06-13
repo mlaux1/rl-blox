@@ -40,8 +40,6 @@ def mse_continuous_action_value_loss(
         Q network that maps a pair of observation and action to the action
         value. These networks are used for continuous action spaces.
 
-    additional_args : TODO
-
     Returns
     -------
     loss : array, shape ()
@@ -50,41 +48,11 @@ def mse_continuous_action_value_loss(
     chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
     chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
 
-    q_predicted = q(jnp.concatenate((observation, action), axis=-1), **additional_args).squeeze()
+    q_predicted = q(jnp.concatenate((observation, action), axis=-1)).squeeze()
     chex.assert_equal_shape((q_predicted, q_target_values))
 
     return optax.squared_error(
         predictions=q_predicted, targets=q_target_values
-    ).mean()
-
-
-def huber_continuous_action_value_loss(
-    observation: jnp.ndarray,
-    action: jnp.ndarray,
-    q_target_values: jnp.ndarray,
-    q: nnx.Module,
-    min_priority: int = 1,
-    additional_args: dict[str, jnp.ndarray] | None = None,
-) -> jnp.ndarray:
-    """Huber loss for continuous action-value function.
-
-    TODO
-
-    References
-    ----------
-    .. [1] Fujimoto, S., Meger, D., Precup, D. (2020). An Equivalence between
-       Loss Functions and Non-Uniform Sampling in Experience Replay. In
-       Advances in Neural Information Processing Systems 33.
-       https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
-    """
-    chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
-    chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
-
-    q_predicted = q(jnp.concatenate((observation, action), axis=-1), **additional_args).squeeze()
-    chex.assert_equal_shape((q_predicted, q_target_values))
-
-    return optax.huber_loss(
-        predictions=q_predicted, targets=q_target_values, delta=min_priority
     ).mean()
 
 
