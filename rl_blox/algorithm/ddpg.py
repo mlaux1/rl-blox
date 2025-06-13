@@ -586,7 +586,18 @@ def train_ddpg(
         else:
             obs = next_obs
 
-    return (
+    return namedtuple(
+        "DDPGResult",
+        [
+            "policy",
+            "policy_target",
+            "policy_optimizer",
+            "q",
+            "q_target",
+            "q_optimizer",
+            "replay_buffer",
+        ]
+    )(
         policy,
         policy_target,
         policy_optimizer,
