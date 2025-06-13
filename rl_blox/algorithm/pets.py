@@ -12,6 +12,7 @@ import optax
 from flax import nnx, struct
 from jax import numpy as jnp
 from jax.typing import ArrayLike
+import tqdm
 
 from ..blox.cross_entropy_method import cem_sample, cem_update
 from ..blox.probabilistic_ensemble import (
@@ -611,7 +612,7 @@ def train_pets(
         logger.start_new_episode()
     steps_per_episode = 0
 
-    for t in range(total_timesteps):
+    for t in tqdm.trange(total_timesteps):
         if (
             t >= learning_starts
             and (t - learning_starts) % n_steps_per_iteration == 0
