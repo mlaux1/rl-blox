@@ -362,7 +362,8 @@ def td7_update_embedding(
 
 @partial(nnx.jit, static_argnames=["gamma", "min_priority"])
 def td7_update_critic(
-    embedding: SALE,
+    fixed_embedding: SALE,
+    fixed_embedding_target: SALE,
     critic: ContinuousClippedDoubleQNet,
     critic_target: ContinuousClippedDoubleQNet,
     critic_optimizer: nnx.Optimizer,
@@ -386,8 +387,8 @@ def td7_update_critic(
        Advances in Neural Information Processing Systems 33.
        https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
     """
-    zsa, zs = embedding(observation, action)
-    next_zsa, next_zs = embedding(next_observation, next_action)
+    zsa, zs = fixed_embedding(observation, action)
+    next_zsa, next_zs = fixed_embedding_target(next_observation, next_action)
 
     q_bootstrap = double_q_deterministic_bootstrap_estimate(
         reward,
@@ -680,13 +681,19 @@ def train_td7(
     if critic_target is None:
         critic_target = nnx.clone(critic)
 
+    fixed_embedding = nnx.clone(embedding)
+    fixed_embedding_target = nnx.clone(embedding)
+    # TODO use these:
+    #actor_checkpoint = nnx.clone(actor)
+    #embedding_checkpoint = nnx.clone(embedding)
+
     for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(
-                _sample_actions(embedding, actor, jnp.asarray(obs), action_key)
+            action = np.asarray(  # TODO sometimes the checkpoint encoder is used
+                _sample_actions(fixed_embedding, actor, jnp.asarray(obs), action_key)
             )
 
         next_obs, reward, termination, truncated, info = env.step(action)
@@ -710,13 +717,31 @@ def train_td7(
                     terminations,
                 ) = replay_buffer.sample_batch(batch_size, rng)
 
+                embedding_loss_value = td7_update_embedding(
+                    embedding,
+                    embedding_optimizer,
+                    observations,
+                    actions,
+                    next_observations,
+                )
+                if logger is not None:
+                    logger.record_stat(
+                        "embedding loss",
+                        embedding_loss_value,
+                        step=global_step + 1,
+                    )
+                    logger.record_epoch(
+                        "embedding", actor, step=global_step + 1
+                    )
+
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
                 next_actions = _sample_target_actions(
-                    embedding, actor_target, next_observations, sampling_key
+                    fixed_embedding_target, actor_target, next_observations, sampling_key
                 )
                 q_loss_value, abs_td_error = td7_update_critic(
-                    embedding,
+                    fixed_embedding,
+                    fixed_embedding_target,
                     critic,
                     critic_target,
                     critic_optimizer,
@@ -740,7 +765,7 @@ def train_td7(
 
                 if global_step % policy_delay == 0:
                     actor_loss_value = td7_update_actor(
-                        embedding, actor, actor_optimizer, critic, observations
+                        fixed_embedding, actor, actor_optimizer, critic, observations
                     )
                     if logger is not None:
                         logger.record_stat(
@@ -750,26 +775,11 @@ def train_td7(
                         )
                         logger.record_epoch("policy", actor, step=global_step + 1)
 
-                embedding_loss_value = td7_update_embedding(
-                    embedding,
-                    embedding_optimizer,
-                    observations,
-                    actions,
-                    next_observations,
-                )
-                if logger is not None:
-                    logger.record_stat(
-                        "embedding loss",
-                        embedding_loss_value,
-                        step=global_step + 1,
-                    )
-                    logger.record_epoch(
-                        "embedding", actor, step=global_step + 1
-                    )
-
                 if global_step % target_delay == 0:
                     hard_target_net_update(actor, actor_target)
                     hard_target_net_update(critic, critic_target)
+                    hard_target_net_update(fixed_embedding_target, fixed_embedding)
+                    hard_target_net_update(fixed_embedding, embedding)
 
                     if logger is not None:
                         logger.record_epoch(
