@@ -11,7 +11,6 @@ def mse_continuous_action_value_loss(
     action: jnp.ndarray,
     q_target_values: jnp.ndarray,
     q: nnx.Module,
-    additional_args: dict[str, jnp.ndarray] | None = None,
 ) -> jnp.ndarray:
     r"""Mean squared error loss for continuous action-value function.
 
