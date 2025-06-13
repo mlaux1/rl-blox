@@ -14,7 +14,7 @@ from numpy import typing as npt
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.target_net import soft_target_net_update
+from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .td3 import double_q_deterministic_bootstrap_estimate
 
@@ -578,12 +578,14 @@ def train_td7(
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
-    tau: float = 0.005,
+    target_delay: int = 250,
     policy_delay: int = 2,
     batch_size: int = 256,
     gradient_steps: int = 1,
     exploration_noise: float = 0.2,
     noise_clip: float = 0.5,
+    lap_alpha: float = 0.4,
+    lap_min_priority: float = 1.0,
     learning_starts: int = 25_000,
     actor_target: ActorSALE | None = None,
     critic_target: ContinuousClippedDoubleQNet | None = None,
@@ -643,7 +645,6 @@ def train_td7(
     assert isinstance(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
-    chex.assert_scalar_in(tau, 0.0, 1.0)
 
     env.observation_space.dtype = np.float32
     replay_buffer = LAP(buffer_size)
@@ -727,7 +728,8 @@ def train_td7(
                     rewards,
                     terminations,
                 )
-                replay_buffer.update_priority(abs_td_error)
+                priority = jnp.maximum(abs_td_error, lap_min_priority) ** lap_alpha
+                replay_buffer.update_priority(priority)
 
                 if logger is not None:
                     logger.record_stat(
@@ -745,6 +747,7 @@ def train_td7(
                             actor_loss_value,
                             step=global_step + 1,
                         )
+                        logger.record_epoch("policy", actor, step=global_step + 1)
 
                 embedding_loss_value = td7_update_embedding(
                     embedding,
@@ -763,17 +766,17 @@ def train_td7(
                         "embedding", actor, step=global_step + 1
                     )
 
-                soft_target_net_update(actor, actor_target, tau)
-                soft_target_net_update(critic, critic_target, tau)
+                if global_step % target_delay == 0:
+                    hard_target_net_update(actor, actor_target)
+                    hard_target_net_update(critic, critic_target)
 
-                if logger is not None:
-                    logger.record_epoch("policy", actor, step=global_step + 1)
-                    logger.record_epoch(
-                        "policy_target", actor_target, step=global_step + 1
-                    )
-                    logger.record_epoch(
-                        "q_target", critic_target, step=global_step + 1
-                    )
+                    if logger is not None:
+                        logger.record_epoch(
+                            "policy_target", actor_target, step=global_step + 1
+                        )
+                        logger.record_epoch(
+                            "q_target", critic_target, step=global_step + 1
+                        )
 
         if termination or truncated:
             if logger is not None:
