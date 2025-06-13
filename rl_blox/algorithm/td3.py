@@ -615,4 +615,5 @@ def train_td3(
         q,
         q_target,
         q_optimizer,
+        replay_buffer,
     )
