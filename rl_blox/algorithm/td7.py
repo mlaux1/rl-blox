@@ -167,8 +167,8 @@ class LAP:
         as the keys were given to the constructor or the default order
         respectively.
         """
-        raise NotImplementedError("https://github.com/sfujim/TD7/blob/main/buffer.py")
-        self.sampled_indices = rng.integers(0, self.current_len, batch_size)
+        indices = np.arange(self.current_len, dtype=int)
+        self.sampled_indices = rng.choice(indices, size=batch_size, replace=False, p=self.priority / self.max_priority)
         return [jnp.asarray(self.buffer[k][self.sampled_indices]) for k in self.buffer]
 
     def update_priority(self, priority):
