@@ -360,7 +360,7 @@ def td7_update_embedding(
     return embedding_loss_value
 
 
-@nnx.jit
+@partial(nnx.jit, static_argnames=["gamma", "min_priority"])
 def td7_update_critic(
     embedding: SALE,
     critic: ContinuousClippedDoubleQNet,
@@ -373,7 +373,7 @@ def td7_update_critic(
     next_action: jnp.ndarray,
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
-    min_priority: int = 1,
+    min_priority: float,
 ) -> tuple[float, jnp.ndarray]:
     """TODO
 
@@ -727,6 +727,7 @@ def train_td7(
                     next_actions,
                     rewards,
                     terminations,
+                    lap_min_priority,
                 )
                 priority = jnp.maximum(abs_td_error, lap_min_priority) ** lap_alpha
                 replay_buffer.update_priority(priority)
