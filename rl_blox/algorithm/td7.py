@@ -23,12 +23,49 @@ from ..logging.logger import LoggerBase
 
 
 class LAP:
-    """Replay buffer for loss-adjusted prioritized experience replay (LAP).
+    r"""Replay buffer for loss-adjusted prioritized experience replay (LAP).
 
     For each quantity, we store all samples in NumPy array that will be
     preallocated once the size of the quantities is know, that is, when the
     first transition sample is added. This makes sampling faster than when
     we use a deque.
+
+    Loss-adjusted prioritized experience replay (LAP) [1]_ is based on
+    prioritized experience replay (PER) [2]_. PER is a sampling scheme for
+    replay buffers, in which transitions are sampled in proportion to their
+    temporal-difference (TD) error. The intuitive argument behind PER is that
+    training on the highest error samples will result in the largest
+    performance gain.
+
+    PER changes the traditional uniformly sampled replay buffers. The
+    probability of sampling a transition i is proportional to the absolute TD
+    error :math:`|\delta_i|`, set to the power of a hyper-parameter
+    :math:`\alpha` to smooth out extremes:
+
+    .. math::
+
+        p(i)
+        =
+        \frac{|\delta_i|^{\alpha} + \epsilon}
+        {\sum_j |\delta_j|^{\alpha} + \epsilon},
+
+    where a small constant :math:`\epsilon` is added to ensure each transition
+    is sampled with non-zero probability. This is necessary as often the
+    current TD error is approximated by the TD error when i was last sampled.
+
+    LAP changes this to
+
+    .. math::
+
+        p(i)
+        =
+        \frac{\max(|\delta_i|^{\alpha}, 1)}
+        {\sum_j \max(|\delta_j|^{\alpha}, 1)},
+
+    which leads to uniform sampling of transitions with a TD error smaller than
+    1 to avoid the bias introduced from using MSE and prioritization. A LAP
+    replay buffer is supposed to be paired with a Huber loss with a threshold
+    of 1 to switch between MSE and L1 loss.
 
     Parameters
     ----------
@@ -55,11 +92,18 @@ class LAP:
        Loss Functions and Non-Uniform Sampling in Experience Replay. In
        Advances in Neural Information Processing Systems 33.
        https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
+
+    .. [2] Schaul, T., Quan, J., Antonoglou, I., Silver, D. (2016). Prioritized
+       Experience Replay. In International Conference on Learning
+       Representations. https://arxiv.org/abs/1511.05952
     """
     buffer: OrderedDict[str, npt.NDArray[float]]
     buffer_size: int
     current_len: int
     insert_idx: int
+    max_priority: float
+    priority: npt.NDArray[float]
+    sampled_indices: npt.NDArray[int]
 
     def __init__(
         self,
@@ -90,6 +134,9 @@ class LAP:
         self.buffer_size = buffer_size
         self.current_len = 0
         self.insert_idx = 0
+        self.max_priority = 1.0
+        self.priority = np.empty(self.buffer_size)
+        self.sampled_indices = np.empty(0, dtype=int)
 
     def add_sample(self, **sample):
         """Add transition sample to the replay buffer.
@@ -107,6 +154,7 @@ class LAP:
                 )
         for k, v in sample.items():
             self.buffer[k][self.insert_idx] = v
+        self.priority[self.insert_idx] = self.max_priority
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
         self.current_len = min(self.current_len + 1, self.buffer_size)
 
@@ -120,14 +168,15 @@ class LAP:
         respectively.
         """
         raise NotImplementedError("https://github.com/sfujim/TD7/blob/main/buffer.py")
-        indices = rng.integers(0, self.current_len, batch_size)
-        return [jnp.asarray(self.buffer[k][indices]) for k in self.buffer]
+        self.sampled_indices = rng.integers(0, self.current_len, batch_size)
+        return [jnp.asarray(self.buffer[k][self.sampled_indices]) for k in self.buffer]
 
     def update_priority(self, priority):
-        raise NotImplementedError("https://github.com/sfujim/TD7/blob/main/buffer.py")
+        self.priority[self.sampled_indices] = priority
+        self.max_priority = max(max(priority), self.max_priority)
 
     def reset_max_priority(self):
-        raise NotImplementedError("https://github.com/sfujim/TD7/blob/main/buffer.py")
+        self.max_priority = max(self.priority[:self.current_len])
 
     def __len__(self):
         """Return current number of stored transitions in the replay buffer."""
