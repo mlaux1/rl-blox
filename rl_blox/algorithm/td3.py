@@ -299,6 +299,7 @@ def train_td3(
     exploration_noise: float = 0.2,
     noise_clip: float = 0.5,
     learning_starts: int = 25_000,
+    replay_buffer: ReplayBuffer | None = None,
     policy_target: nnx.Module | None = None,
     q_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
@@ -309,6 +310,7 @@ def train_td3(
     ContinuousClippedDoubleQNet,
     ContinuousClippedDoubleQNet,
     nnx.Optimizer,
+    ReplayBuffer,
 ]:
     r"""Twin Delayed DDPG (TD3).
 
@@ -375,6 +377,9 @@ def train_td3(
         Learning starts after this number of random steps was taken in the
         environment.
 
+    replay_buffer : ReplayBuffer
+        Replay buffer.
+
     policy_target : nnx.Module, optional
         Target policy. Only has to be set if we want to continue training
         from an old state.
@@ -406,6 +411,9 @@ def train_td3(
     q_optimizer : nnx.Optimizer
         Optimizer for Q network.
 
+    replay_buffer : ReplayBuffer
+        Replay buffer.
+
     Notes
     -----
 
@@ -420,12 +428,12 @@ def train_td3(
       (see :class:`~.blox.double_qnet.ContinuousClippedDoubleQNet`)
     * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
       ``q_target``, initialized as a copy of ``q``
+    * :math:`R` - ``replay_buffer``
 
     Algorithm
 
-    * Initialize replay buffer :math:`R`
     * Randomly sample ``learning_starts`` actions and record transitions in
-      replay buffer
+      :math:`R`
     * For each step :math:`t`
 
       * Sample action with behavior policy in :func:`.ddpg.sample_actions`
@@ -478,7 +486,8 @@ def train_td3(
     chex.assert_scalar_in(tau, 0.0, 1.0)
 
     env.observation_space.dtype = np.float32
-    rb = ReplayBuffer(buffer_size)
+    if replay_buffer is None:
+        replay_buffer = ReplayBuffer(buffer_size)
 
     action_scale = 0.5 * (env.action_space.high - env.action_space.low)
     _sample_actions = nnx.jit(
@@ -523,7 +532,7 @@ def train_td3(
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
 
-        rb.add_sample(
+        replay_buffer.add_sample(
             observation=obs,
             action=action,
             reward=reward,
@@ -539,7 +548,7 @@ def train_td3(
                     rewards,
                     next_observations,
                     terminations,
-                ) = rb.sample_batch(batch_size, rng)
+                ) = replay_buffer.sample_batch(batch_size, rng)
 
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
@@ -558,32 +567,30 @@ def train_td3(
                     rewards,
                     terminations,
                 )
-
-                if logger is not None:
-                    logger.record_stat(
-                        "q loss", q_loss_value, step=global_step + 1
-                    )
-                    logger.record_epoch("q", q, step=global_step + 1)
+                stats = {"q loss": q_loss_value}
+                updated_modules = {"q": q}
 
                 if global_step % policy_delay == 0:
-                    actor_loss_value = ddpg_update_actor(
+                    policy_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q, observations
                     )
                     soft_target_net_update(policy, policy_target, tau)
                     soft_target_net_update(q, q_target, tau)
-                    if logger is not None:
-                        logger.record_stat(
-                            "policy loss",
-                            actor_loss_value,
-                            step=global_step + 1,
-                        )
-                    logger.record_epoch("policy", policy, step=global_step + 1)
-                    logger.record_epoch(
-                        "policy_target", policy_target, step=global_step + 1
+
+                    stats["policy loss"] = policy_loss_value
+                    updated_modules.update(
+                        {
+                            "policy": policy,
+                            "policy_target": policy_target,
+                            "q_target": q_target,
+                        }
                     )
-                    logger.record_epoch(
-                        "q_target", q_target, step=global_step + 1
-                    )
+
+                if logger is not None:
+                    for k, v in stats.items():
+                        logger.record_stat(k, v, step=global_step + 1)
+                    for k, v in updated_modules.items():
+                        logger.record_epoch(k, v, step=global_step + 1)
 
         if termination or truncated:
             if logger is not None:
@@ -608,4 +615,5 @@ def train_td3(
         q,
         q_target,
         q_optimizer,
+        replay_buffer,
     )

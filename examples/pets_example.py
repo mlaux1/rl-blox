@@ -27,7 +27,7 @@ logger = AIMLogger()
 logger.define_experiment(env_name, "PE-TS", hparams=hparams)
 
 dynamics_model = create_pets_state(env, seed=seed)
-mpc_config, mpc_state, optimizer_fn = train_pets(
+mpc_config, mpc_state, optimizer_fn, _ = train_pets(
     env,
     pendulum_reward,
     dynamics_model,

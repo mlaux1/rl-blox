@@ -20,46 +20,8 @@ from ..blox.probabilistic_ensemble import (
     GaussianMLPEnsemble,
     train_ensemble,
 )
+from ..blox.replay_buffer import ReplayBuffer
 from ..logging.logger import LoggerBase
-
-
-class ReplayBuffer:
-    buffer: deque[tuple[ArrayLike, ArrayLike, float, ArrayLike, bool]]
-
-    def __init__(self, n_samples):
-        self.buffer = deque(maxlen=n_samples)
-
-    def add_sample(self, observation, action, reward, next_observation, done):
-        self.buffer.append(
-            (
-                observation,
-                action,
-                reward,
-                next_observation,
-                done,
-            )
-        )
-
-    def sample_batch(
-        self, batch_size: int, rng: np.random.Generator
-    ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        indices = rng.integers(0, len(self.buffer), batch_size)
-        observations = jnp.vstack([self.buffer[i][0] for i in indices])
-        actions = jnp.stack([self.buffer[i][1] for i in indices])
-        rewards = jnp.hstack([self.buffer[i][2] for i in indices])
-        next_observations = jnp.vstack([self.buffer[i][3] for i in indices])
-        dones = jnp.hstack([self.buffer[i][4] for i in indices])
-        return observations, actions, rewards, next_observations, dones
-
-    def mean_reward(self, n_steps):
-        if n_steps > len(self.buffer):
-            return jnp.inf
-        return jnp.mean(
-            jnp.hstack([self.buffer[i][2] for i in np.arange(-n_steps, 0)])
-        )
-
-    def __len__(self):
-        return len(self.buffer)
 
 
 @struct.dataclass
@@ -418,6 +380,7 @@ def train_pets(
     learning_starts_gradient_steps: int = 100,
     n_steps_per_iteration: int = 100,
     gradient_steps: int = 10,
+    replay_buffer: ReplayBuffer | None = None,
     logger: LoggerBase | None = None,
 ) -> tuple[
     PETSMPCConfig,
@@ -426,6 +389,7 @@ def train_pets(
         [GaussianMLPEnsemble, jnp.ndarray, jnp.ndarray, jnp.ndarray],
         jnp.ndarray,
     ],
+    ReplayBuffer,
 ]:
     r"""Probabilistic Ensemble - Trajectory Sampling (PE-TS).
 
@@ -480,13 +444,21 @@ def train_pets(
         Should correspond to the expected number of steps in one episode.
     gradient_steps, optional
         Number of gradient steps during one training phase.
+    replay_buffer : ReplayBuffer
+        Replay buffer.
     logger : logger.LoggerBase, optional
         Experiment logger.
 
     Returns
     -------
-    mpc
-        Model-predictive control based on dynamics model.
+    mpc_config : PETSMPCConfig
+        MPC config.
+    mpc_state : PETSMPCState
+        MPC state.
+    optimizer_fn : callable
+        PETS action optimizer.
+    replay_buffer : ReplayBuffer
+        Replay buffer.
 
     Notes
     -----
@@ -503,7 +475,8 @@ def train_pets(
       * :math:`N` - number of samples for CEM (`n_samples`)
       * :math:`P` - number of particles for trajectory sampling
         (`n_particles`)
-    * Initialize dataset :math:`\mathcal{D}` with a random controller.
+    * Initialize dataset :math:`\mathcal{D}` (``replay_buffer``) with a random
+      controller.
     * for trial :math:`k=1` to K do
 
       * Train dynamics model :math:`f` given :math:`\mathcal{D}` (see
@@ -556,7 +529,8 @@ def train_pets(
     ), "only continuous action space is supported"
     action_space: gym.spaces.Box = env.action_space
 
-    rb = ReplayBuffer(buffer_size)
+    if replay_buffer is None:
+        replay_buffer = ReplayBuffer(buffer_size)
 
     # Initialize model-predictive control: configuration, state, and optimizer
     sample_fn, update_fn = _init_mpc_optimizer_cem(
@@ -617,7 +591,9 @@ def train_pets(
             t >= learning_starts
             and (t - learning_starts) % n_steps_per_iteration == 0
         ):
-            D_obs, D_acts, _, D_next_obs, _ = rb.sample_batch(len(rb), rng)
+            D_obs, D_acts, _, D_next_obs, _ = replay_buffer.sample_batch(
+                len(replay_buffer), rng
+            )
             key, train_key = jax.random.split(key)
             dynamics_model_loss = update_dynamics_model(
                 dynamics_model, D_obs, D_acts, D_next_obs, train_key, n_epochs
@@ -639,7 +615,13 @@ def train_pets(
         next_obs, reward, termination, truncation, info = env.step(action)
         steps_per_episode += 1
 
-        rb.add_sample(obs, action, reward, next_obs, termination)
+        replay_buffer.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=termination,
+        )
 
         if termination or truncation:
             if logger is not None:
@@ -654,7 +636,7 @@ def train_pets(
 
         obs = next_obs
 
-    return mpc_config, mpc_state, mpc_optimize_fn
+    return mpc_config, mpc_state, mpc_optimize_fn, replay_buffer
 
 
 def _init_mpc_optimizer_cem(

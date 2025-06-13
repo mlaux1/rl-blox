@@ -55,7 +55,7 @@ sac_result = train_sac(
     **hparams_algorithm,
 )
 env.close()
-policy, _, q, _, _, _ = sac_result
+policy, _, q, _, _, _, _ = sac_result
 # uncomment to save final policy
 # checkpointer.save_model("/tmp/rl-blox/sac_example/final_policy", policy)
 
