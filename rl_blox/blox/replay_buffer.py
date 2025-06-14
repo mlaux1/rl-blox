@@ -97,6 +97,20 @@ class ReplayBuffer:
         Note that the individual quantities will be returned in the same order
         as the keys were given to the constructor or the default order
         respectively.
+
+        Parameters
+        ----------
+        batch_size : int
+            Size of the sampled batch.
+
+        rng : np.random.Generator
+            Random number generator.
+
+        Returns
+        -------
+        batch : Batch
+            Named tuple with order defined by keys. Content is also accessible
+            via names, e.g., ``batch.observation``.
         """
         indices = rng.integers(0, self.current_len, batch_size)
         return self.Batch(**{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer})
