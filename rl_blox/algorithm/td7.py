@@ -1,7 +1,7 @@
+import dataclasses
 from collections import OrderedDict, namedtuple
 from functools import partial
 
-import chex
 import gymnasium as gym
 import jax.numpy as jnp
 import jax.random
@@ -16,7 +16,6 @@ from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
-from .td3 import double_q_deterministic_bootstrap_estimate
 
 
 class LAP:
@@ -275,6 +274,14 @@ class CriticSALE(nnx.Module):
         return self.q_net(he)
 
 
+@dataclasses.dataclass
+class ValueClippingState:
+    min_value: float
+    max_value: float
+    min_target_value: float
+    max_target_value: float
+
+
 def state_action_embedding_loss(
     embedding: SALE,
     observation,
@@ -360,7 +367,15 @@ def td7_update_embedding(
     return embedding_loss_value
 
 
-@partial(nnx.jit, static_argnames=["gamma", "min_priority"])
+@partial(
+    nnx.jit,
+    static_argnames=[
+        "gamma",
+        "min_priority",
+        "min_target_value",
+        "max_target_value",
+    ],
+)
 def td7_update_critic(
     fixed_embedding: SALE,
     fixed_embedding_target: SALE,
@@ -375,7 +390,9 @@ def td7_update_critic(
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
     min_priority: float,
-) -> tuple[float, jnp.ndarray]:
+    min_target_value: float,
+    max_target_value: float,
+) -> tuple[float, jnp.ndarray, jnp.ndarray]:
     """TODO
 
     TODO
@@ -390,35 +407,43 @@ def td7_update_critic(
     zsa, zs = fixed_embedding(observation, action)
     next_zsa, next_zs = fixed_embedding_target(next_observation, next_action)
 
-    q_bootstrap = double_q_deterministic_bootstrap_estimate(
-        reward,
-        terminated,
-        gamma,
-        critic_target,
-        next_observation,
-        next_action,
-        additional_args=dict(zsa=next_zsa, zs=next_zs),
+    next_obs_act = jnp.concatenate((next_observation, next_action), axis=-1)
+    q_next_target = jnp.clip(
+        critic_target(next_obs_act, zsa=next_zsa, zs=next_zs).squeeze(),
+        min_target_value,
+        max_target_value,
     )
+    q_target = reward + (1 - terminated) * gamma * q_next_target
 
     def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
-        q1_pred = q.q1(jnp.concatenate((observation, action), axis=-1), zsa=zsa, zs=zs).squeeze()
-        q2_pred = q.q2(jnp.concatenate((observation, action), axis=-1), zsa=zsa, zs=zs).squeeze()
+        q1_pred = q.q1(
+            jnp.concatenate((observation, action), axis=-1), zsa=zsa, zs=zs
+        ).squeeze()
+        q2_pred = q.q2(
+            jnp.concatenate((observation, action), axis=-1), zsa=zsa, zs=zs
+        ).squeeze()
         abs_max_td_error = jnp.maximum(
-            jnp.abs(q1_pred - q_bootstrap),  # TODO we compute these differences twice...
-            jnp.abs(q2_pred - q_bootstrap),
+            jnp.abs(
+                q1_pred - q_target
+            ),  # TODO we compute these differences twice...
+            jnp.abs(q2_pred - q_target),
         )
-        return optax.huber_loss(
-            predictions=q1_pred, targets=q_bootstrap, delta=min_priority
-        ).mean() + optax.huber_loss(
-            predictions=q2_pred, targets=q_bootstrap, delta=min_priority
-        ).mean(), abs_max_td_error
+        return (
+            optax.huber_loss(
+                predictions=q1_pred, targets=q_target, delta=min_priority
+            ).mean()
+            + optax.huber_loss(
+                predictions=q2_pred, targets=q_target, delta=min_priority
+            ).mean(),
+            abs_max_td_error,
+        )
 
     (q_loss_value, abs_max_td_error), grads = nnx.value_and_grad(
         sum_of_qnet_losses, has_aux=True
     )(critic)
     critic_optimizer.update(grads)
 
-    return q_loss_value, abs_max_td_error
+    return q_loss_value, abs_max_td_error, q_target
 
 
 def deterministic_policy_gradient_loss(
@@ -688,16 +713,24 @@ def train_td7(
     fixed_embedding = nnx.clone(embedding)
     fixed_embedding_target = nnx.clone(embedding)
     # TODO use these:
-    #actor_checkpoint = nnx.clone(actor)
-    #embedding_checkpoint = nnx.clone(embedding)
+    # actor_checkpoint = nnx.clone(actor)
+    # embedding_checkpoint = nnx.clone(embedding)
+
+    value_clipping_state = ValueClippingState(
+        min_value=1e8, max_value=-1e8, min_target_value=0, max_target_value=0
+    )
 
     for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(  # TODO sometimes the checkpoint encoder is used
-                _sample_actions(fixed_embedding, actor, jnp.asarray(obs), action_key)
+            action = (
+                np.asarray(  # TODO sometimes the checkpoint encoder is used
+                    _sample_actions(
+                        fixed_embedding, actor, jnp.asarray(obs), action_key
+                    )
+                )
             )
 
         next_obs, reward, termination, truncated, info = env.step(action)
@@ -741,9 +774,12 @@ def train_td7(
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
                 next_actions = _sample_target_actions(
-                    fixed_embedding_target, actor_target, next_observations, sampling_key
+                    fixed_embedding_target,
+                    actor_target,
+                    next_observations,
+                    sampling_key,
                 )
-                q_loss_value, abs_td_error = td7_update_critic(
+                q_loss_value, abs_td_error, q_target = td7_update_critic(
                     fixed_embedding,
                     fixed_embedding_target,
                     critic,
@@ -757,8 +793,18 @@ def train_td7(
                     rewards,
                     terminations,
                     lap_min_priority,
+                    value_clipping_state.min_target_value,
+                    value_clipping_state.max_target_value,
                 )
-                priority = jnp.maximum(abs_td_error, lap_min_priority) ** lap_alpha
+                value_clipping_state.min_value = min(
+                    value_clipping_state.min_value, float(q_target.min())
+                )
+                value_clipping_state.max_value = max(
+                    value_clipping_state.max_value, float(q_target.max())
+                )
+                priority = (
+                    jnp.maximum(abs_td_error, lap_min_priority) ** lap_alpha
+                )
                 replay_buffer.update_priority(priority)
 
                 if logger is not None:
@@ -769,7 +815,11 @@ def train_td7(
 
                 if global_step % policy_delay == 0:
                     actor_loss_value = td7_update_actor(
-                        fixed_embedding, actor, actor_optimizer, critic, observations
+                        fixed_embedding,
+                        actor,
+                        actor_optimizer,
+                        critic,
+                        observations,
                     )
                     if logger is not None:
                         logger.record_stat(
@@ -777,13 +827,25 @@ def train_td7(
                             actor_loss_value,
                             step=global_step + 1,
                         )
-                        logger.record_epoch("policy", actor, step=global_step + 1)
+                        logger.record_epoch(
+                            "policy", actor, step=global_step + 1
+                        )
 
                 if global_step % target_delay == 0:
                     hard_target_net_update(actor, actor_target)
                     hard_target_net_update(critic, critic_target)
-                    hard_target_net_update(fixed_embedding_target, fixed_embedding)
+                    hard_target_net_update(
+                        fixed_embedding_target, fixed_embedding
+                    )
                     hard_target_net_update(fixed_embedding, embedding)
+
+                    replay_buffer.reset_max_priority()
+                    value_clipping_state.min_target_value = (
+                        value_clipping_state.min_value
+                    )
+                    value_clipping_state.max_target_value = (
+                        value_clipping_state.max_value
+                    )
 
                     if logger is not None:
                         logger.record_epoch(
@@ -792,8 +854,26 @@ def train_td7(
                         logger.record_epoch(
                             "q_target", critic_target, step=global_step + 1
                         )
-
-                    replay_buffer.reset_max_priority()
+                        logger.record_stat(
+                            "min_value",
+                            value_clipping_state.min_value,
+                            step=global_step + 1,
+                        )
+                        logger.record_stat(
+                            "max_value",
+                            value_clipping_state.max_value,
+                            step=global_step + 1,
+                        )
+                        logger.record_stat(
+                            "min_target_value",
+                            value_clipping_state.min_target_value,
+                            step=global_step + 1,
+                        )
+                        logger.record_stat(
+                            "max_target_value",
+                            value_clipping_state.max_target_value,
+                            step=global_step + 1,
+                        )
 
         if termination or truncated:
             if logger is not None:

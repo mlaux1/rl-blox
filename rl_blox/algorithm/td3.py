@@ -119,7 +119,6 @@ def double_q_deterministic_bootstrap_estimate(
     q: ContinuousClippedDoubleQNet,
     next_observation: jnp.ndarray,
     next_action: jnp.ndarray,
-    additional_args: dict[str, jnp.ndarray],
 ) -> jnp.ndarray:
     r"""Bootstrap estimate of action-value function with deterministic policy.
 
@@ -157,15 +156,13 @@ def double_q_deterministic_bootstrap_estimate(
     next_action : array
         Sampled target actions :math:`a_{t+1}`.
 
-    additional_args : TODO
-
     Returns
     -------
     double_q_bootstrap : array
         Double Q bootstrap estimate of action-value function.
     """
     next_obs_act = jnp.concatenate((next_observation, next_action), axis=-1)
-    return reward + (1 - terminated) * gamma * q(next_obs_act, **additional_args).squeeze()
+    return reward + (1 - terminated) * gamma * q(next_obs_act).squeeze()
 
 
 def sample_target_actions(
