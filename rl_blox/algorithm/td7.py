@@ -153,7 +153,7 @@ class LAP(ReplayBuffer):
             size=batch_size,
             replace=True,
             p=self.priority[: self.current_len]
-            / sum(self.priority[: self.current_len]),
+            / np.sum(self.priority[: self.current_len]),
         )
         return self.Batch(
             **{k: jnp.asarray(self.buffer[k][self.sampled_indices])
@@ -162,10 +162,10 @@ class LAP(ReplayBuffer):
 
     def update_priority(self, priority):
         self.priority[self.sampled_indices] = priority
-        self.max_priority = max(max(priority), self.max_priority)
+        self.max_priority = max(np.max(priority), self.max_priority)
 
     def reset_max_priority(self):
-        self.max_priority = max(self.priority[: self.current_len])
+        self.max_priority = np.max(self.priority[: self.current_len])
 
 
 def avg_l1_norm(x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
