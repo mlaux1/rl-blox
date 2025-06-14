@@ -232,6 +232,7 @@ class SALE(nnx.Module):
         return zsa, zs
 
     def state_embedding(self, state: jnp.ndarray) -> jnp.ndarray:
+        r""":math:`z^s = f(s)`."""
         return avg_l1_norm(self._state_embedding(state))
 
 
