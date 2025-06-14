@@ -202,9 +202,19 @@ class SALE(nnx.Module):
     environment, their purpose is solely to improve the input to the value
     function and policy, and not to serve as a world model for planning or
     estimating rollouts.
+
+    Parameters
+    ----------
+    state_embedding : nnx.Module
+        State embedding network without AvgL1Norm. AvgL1Norm will be added in
+        this module. Maps state to unnormalized zs.
+
+    state_action_embedding : nnx.Module
+        State action embedding. Maps state and action to zsa, which is
+        trained to be the same as the normalized zs of the next state.
     """
 
-    state_embedding: nnx.Module
+    _state_embedding: nnx.Module
     state_action_embedding: nnx.Module
 
     def __init__(
@@ -213,11 +223,14 @@ class SALE(nnx.Module):
         self.state_embedding = state_embedding
         self.state_action_embedding = state_action_embedding
 
-    def __call__(self, state, action):
+    def __call__(self, state: jnp.ndarray, action: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         zs = self.state_embedding(state)
         zs_action = jnp.concatenate((zs, action), axis=-1)
         zsa = self.state_action_embedding(zs_action)
         return zsa, zs
+
+    def state_embedding(self, state: jnp.ndarray) -> jnp.ndarray:
+        return avg_l1_norm(self._state_embedding(state))
 
 
 class ActorSALE(nnx.Module):
