@@ -276,10 +276,19 @@ class CriticSALE(nnx.Module):
 
 @dataclasses.dataclass
 class ValueClippingState:
-    min_value: float
-    max_value: float
-    min_target_value: float
-    max_target_value: float
+    min_value: float = 1e8
+    max_value: float = -1e8
+    min_target_value: float = 0.0
+    max_target_value: float = 0.0
+
+
+@dataclasses.dataclass
+class CheckpointState:
+    episodes_since_udpate: int = 0
+    timesteps_since_upate: int = 0
+    max_episodes_before_update: int = 1
+    min_return: float = 1e8
+    best_min_return: float = -1e8
 
 
 def state_action_embedding_loss(
@@ -479,6 +488,51 @@ def td7_update_actor(
     return actor_loss_value
 
 
+def maybe_train_and_checkpoint(
+    checkpoint_state,
+    steps_per_episode,
+    episode_return,
+    epoch,
+    reset_weight,
+    max_episodes_when_checkpointing,
+    steps_before_checkpointing,
+):
+    checkpoint_state.episodes_since_udpate += 1
+    checkpoint_state.timesteps_since_upate += steps_per_episode
+    checkpoint_state.min_return = min(
+        checkpoint_state.min_return, episode_return
+    )
+
+    update_checkpoint = False
+    training_steps = 0
+
+    if checkpoint_state.min_return < checkpoint_state.best_min_return:
+        # End evaluation of current policy early
+        training_steps = checkpoint_state.timesteps_since_upate
+    elif (
+        checkpoint_state.episodes_since_udpate
+        == checkpoint_state.max_episodes_before_update
+    ):
+        # Update checkpoint and train
+        checkpoint_state.best_min_return = checkpoint_state.min_return
+        update_checkpoint = True
+        training_steps = checkpoint_state.timesteps_since_upate
+
+    if training_steps > 0:
+        for i in range(checkpoint_state.timesteps_since_upate):
+            if epoch + i + 1 == steps_before_checkpointing:
+                checkpoint_state.best_min_return *= reset_weight
+                checkpoint_state.max_episodes_before_update = (
+                    max_episodes_when_checkpointing
+                )
+
+        checkpoint_state.episodes_since_udpate = 0
+        checkpoint_state.timesteps_since_upate = 0
+        checkpoint_state.min_return = 1e8
+
+    return update_checkpoint, training_steps
+
+
 def create_td7_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     n_embedding_dimensions=256,
@@ -608,13 +662,13 @@ def train_td7(
     target_delay: int = 250,
     policy_delay: int = 2,
     batch_size: int = 256,
-    gradient_steps: int = 1,
     exploration_noise: float = 0.1,
     target_policy_noise: float = 0.2,
     noise_clip: float = 0.5,
     lap_alpha: float = 0.4,
     lap_min_priority: float = 1.0,
-    max_eps_when_checkpointing: int = 20,
+    use_checkpoints: bool = True,
+    max_episodes_when_checkpointing: int = 20,
     steps_before_checkpointing: int = 750_000,
     reset_weight: float = 0.9,
     actor_target: ActorSALE | None = None,
@@ -700,10 +754,13 @@ def train_td7(
         )
     )
 
+    epoch = 0
+
     if logger is not None:
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
+    accumulated_reward = 0.0
 
     if actor_target is None:
         actor_target = nnx.clone(actor)
@@ -712,13 +769,13 @@ def train_td7(
 
     fixed_embedding = nnx.clone(embedding)
     fixed_embedding_target = nnx.clone(embedding)
-    # TODO use these:
-    # actor_checkpoint = nnx.clone(actor)
-    # embedding_checkpoint = nnx.clone(embedding)
 
-    value_clipping_state = ValueClippingState(
-        min_value=1e8, max_value=-1e8, min_target_value=0, max_target_value=0
-    )
+    if use_checkpoints:
+        actor_checkpoint = nnx.clone(actor)
+        fixed_embedding_checkpoint = nnx.clone(embedding)
+
+    value_clipping_state = ValueClippingState()
+    checkpoint_state = CheckpointState()
 
     for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
@@ -735,6 +792,7 @@ def train_td7(
 
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
+        accumulated_reward += reward
 
         replay_buffer.add_sample(
             observation=obs,
@@ -744,8 +802,35 @@ def train_td7(
             termination=termination,
         )
 
+        if termination or truncated:
+            if logger is not None:
+                logger.record_stat(
+                    "return", accumulated_reward, step=global_step + 1
+                )
+                logger.stop_episode(steps_per_episode)
+
+            if use_checkpoints:
+                update_checkpoint, training_steps = maybe_train_and_checkpoint(
+                    checkpoint_state,
+                    steps_per_episode,
+                    accumulated_reward,
+                    epoch,
+                    reset_weight,
+                    max_episodes_when_checkpointing,
+                    steps_before_checkpointing,
+                )
+                if update_checkpoint:
+                    hard_target_net_update(actor, actor_checkpoint)
+                    hard_target_net_update(
+                        fixed_embedding, fixed_embedding_checkpoint
+                    )
+            else:
+                training_steps = 1
+
         if global_step >= learning_starts:
-            for _ in range(gradient_steps):
+            for _ in range(training_steps):
+                epoch += 1  # TODO if checkpoints are not used
+
                 (
                     observations,
                     actions,
@@ -813,7 +898,7 @@ def train_td7(
                     )
                     logger.record_epoch("q", critic, step=global_step + 1)
 
-                if global_step % policy_delay == 0:
+                if epoch % policy_delay == 0:
                     actor_loss_value = td7_update_actor(
                         fixed_embedding,
                         actor,
@@ -831,13 +916,13 @@ def train_td7(
                             "policy", actor, step=global_step + 1
                         )
 
-                if global_step % target_delay == 0:
+                if epoch % target_delay == 0:
                     hard_target_net_update(actor, actor_target)
                     hard_target_net_update(critic, critic_target)
                     hard_target_net_update(
-                        fixed_embedding_target, fixed_embedding
+                        fixed_embedding, fixed_embedding_target
                     )
-                    hard_target_net_update(fixed_embedding, embedding)
+                    hard_target_net_update(embedding, fixed_embedding)
 
                     replay_buffer.reset_max_priority()
                     value_clipping_state.min_target_value = (
@@ -876,16 +961,14 @@ def train_td7(
                         )
 
         if termination or truncated:
+            obs, _ = env.reset()
+
+            steps_per_episode = 0
+            accumulated_reward = 0.0
+
             if logger is not None:
-                if "episode" in info:
-                    logger.record_stat(
-                        "return", info["episode"]["r"], step=global_step + 1
-                    )
-                logger.stop_episode(steps_per_episode)
                 logger.start_new_episode()
 
-            obs, _ = env.reset()
-            steps_per_episode = 0
         else:
             obs = next_obs
 
