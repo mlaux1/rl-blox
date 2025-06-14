@@ -54,7 +54,6 @@ class ReplayBuffer:
                 "next_observation",
                 "termination",
             ]
-        self.Batch = namedtuple("Batch", keys)
         if dtypes is None:
             dtypes = [
                 float,
@@ -66,6 +65,7 @@ class ReplayBuffer:
         self.buffer = OrderedDict()
         for k, t in zip(keys, dtypes, strict=True):
             self.buffer[k] = np.empty(0, dtype=t)
+        self.Batch = namedtuple("Batch", self.buffer)
         self.buffer_size = buffer_size
         self.current_len = 0
         self.insert_idx = 0
@@ -118,3 +118,12 @@ class ReplayBuffer:
     def __len__(self):
         """Return current number of stored transitions in the replay buffer."""
         return self.current_len
+
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        del d["Batch"]
+        return d
+
+    def __setstate__(self, d):
+        self.__dict__.update(d)
+        self.Batch = namedtuple("Batch", self.buffer)
