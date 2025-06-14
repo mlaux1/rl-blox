@@ -14,11 +14,12 @@ from numpy import typing as npt
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 
 
-class LAP:
+class LAP(ReplayBuffer):
     r"""Replay buffer for loss-adjusted prioritized experience replay (LAP).
 
     For each quantity, we store all samples in NumPy array that will be
@@ -109,30 +110,9 @@ class LAP:
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
     ):
-        if keys is None:
-            keys = [
-                "observation",
-                "action",
-                "reward",
-                "next_observation",
-                "termination",
-            ]
-        if dtypes is None:
-            dtypes = [
-                float,
-                int if discrete_actions else float,
-                float,
-                float,
-                int,
-            ]
-        self.buffer = OrderedDict()
-        for k, t in zip(keys, dtypes, strict=True):
-            self.buffer[k] = np.empty(0, dtype=t)
-        self.buffer_size = buffer_size
-        self.current_len = 0
-        self.insert_idx = 0
+        super().__init__(buffer_size, keys, dtypes, discrete_actions)
         self.max_priority = 1.0
-        self.priority = np.empty(self.buffer_size)
+        self.priority = np.empty(buffer_size, dtype=float)
         self.sampled_indices = np.empty(0, dtype=int)
 
     def add_sample(self, **sample):
@@ -142,18 +122,8 @@ class LAP:
         arguments with keys matching the ones passed to the constructor or
         the default keys respectively.
         """
-        if self.current_len == 0:
-            for k, v in sample.items():
-                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
-                self.buffer[k] = np.empty(
-                    (self.buffer_size,) + np.asarray(v).shape,
-                    dtype=self.buffer[k].dtype,
-                )
-        for k, v in sample.items():
-            self.buffer[k][self.insert_idx] = v
         self.priority[self.insert_idx] = self.max_priority
-        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
-        self.current_len = min(self.current_len + 1, self.buffer_size)
+        super().add_sample(**sample)
 
     def sample_batch(
         self, batch_size: int, rng: np.random.Generator
@@ -163,6 +133,20 @@ class LAP:
         Note that the individual quantities will be returned in the same order
         as the keys were given to the constructor or the default order
         respectively.
+
+        Parameters
+        ----------
+        batch_size : int
+            Size of the sampled batch.
+
+        rng : np.random.Generator
+            Random number generator.
+
+        Returns
+        -------
+        batch : Batch
+            Named tuple with order defined by keys. Content is also accessible
+            via names, e.g., ``batch.observation``.
         """
         self.sampled_indices = rng.choice(
             np.arange(self.current_len, dtype=int),
@@ -171,10 +155,10 @@ class LAP:
             p=self.priority[: self.current_len]
             / sum(self.priority[: self.current_len]),
         )
-        return [
-            jnp.asarray(self.buffer[k][self.sampled_indices])
-            for k in self.buffer
-        ]
+        return self.Batch(
+            **{k: jnp.asarray(self.buffer[k][self.sampled_indices])
+               for k in self.buffer}
+        )
 
     def update_priority(self, priority):
         self.priority[self.sampled_indices] = priority
@@ -182,10 +166,6 @@ class LAP:
 
     def reset_max_priority(self):
         self.max_priority = max(self.priority[: self.current_len])
-
-    def __len__(self):
-        """Return current number of stored transitions in the replay buffer."""
-        return self.current_len
 
 
 def avg_l1_norm(x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
