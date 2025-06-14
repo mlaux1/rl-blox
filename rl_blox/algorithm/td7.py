@@ -22,11 +22,6 @@ from ..logging.logger import LoggerBase
 class LAP(ReplayBuffer):
     r"""Replay buffer for loss-adjusted prioritized experience replay (LAP).
 
-    For each quantity, we store all samples in NumPy array that will be
-    preallocated once the size of the quantities is know, that is, when the
-    first transition sample is added. This makes sampling faster than when
-    we use a deque.
-
     Loss-adjusted prioritized experience replay (LAP) [1]_ is based on
     prioritized experience replay (PER) [2]_. PER is a sampling scheme for
     replay buffers, in which transitions are sampled in proportion to their
