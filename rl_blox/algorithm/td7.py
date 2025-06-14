@@ -802,30 +802,27 @@ def train_td7(
             termination=termination,
         )
 
-        if termination or truncated:
-            if logger is not None:
-                logger.record_stat(
-                    "return", accumulated_reward, step=global_step + 1
-                )
-                logger.stop_episode(steps_per_episode)
+        if use_checkpoints:
+            # only train when not evaluating the checkpoint
+            training_steps = 0
+        else:
+            training_steps = 1
 
-            if use_checkpoints:
-                update_checkpoint, training_steps = maybe_train_and_checkpoint(
-                    checkpoint_state,
-                    steps_per_episode,
-                    accumulated_reward,
-                    epoch,
-                    reset_weight,
-                    max_episodes_when_checkpointing,
-                    steps_before_checkpointing,
+        if (termination or truncated) and use_checkpoints:
+            update_checkpoint, training_steps = maybe_train_and_checkpoint(
+                checkpoint_state,
+                steps_per_episode,
+                accumulated_reward,
+                epoch,
+                reset_weight,
+                max_episodes_when_checkpointing,
+                steps_before_checkpointing,
+            )
+            if update_checkpoint:
+                hard_target_net_update(actor, actor_checkpoint)
+                hard_target_net_update(
+                    fixed_embedding, fixed_embedding_checkpoint
                 )
-                if update_checkpoint:
-                    hard_target_net_update(actor, actor_checkpoint)
-                    hard_target_net_update(
-                        fixed_embedding, fixed_embedding_checkpoint
-                    )
-            else:
-                training_steps = 1
 
         if global_step >= learning_starts:
             for _ in range(training_steps):
@@ -961,21 +958,36 @@ def train_td7(
                         )
 
         if termination or truncated:
+            if logger is not None:
+                logger.record_stat(
+                    "return", accumulated_reward, step=global_step + 1
+                )
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+
             obs, _ = env.reset()
 
             steps_per_episode = 0
             accumulated_reward = 0.0
-
-            if logger is not None:
-                logger.start_new_episode()
-
         else:
             obs = next_obs
 
-    return (
-        embedding,
+    return namedtuple(
+        "TD7Result",
+        [
+            "embedding",
+            "embedding_optimizer",
+            "actor",
+            "actor_target",
+            "actor_optimizer",
+            "critic",
+            "critic_target",
+            "critic_optimizer",
+        ],
+    )(
+        fixed_embedding_checkpoint if use_checkpoints else embedding,
         embedding_optimizer,
-        actor,
+        actor_checkpoint if use_checkpoints else actor,
         actor_target,
         actor_optimizer,
         critic,
