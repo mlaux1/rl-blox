@@ -196,7 +196,7 @@ def avg_l1_norm(x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
 
 
 class SALE(nnx.Module):
-    """SALE: state-action learned embedding.
+    r"""SALE: state-action learned embedding.
 
     Although the embeddings are learned by considering the dynamics of the
     environment, their purpose is solely to improve the input to the value
@@ -206,12 +206,14 @@ class SALE(nnx.Module):
     Parameters
     ----------
     state_embedding : nnx.Module
-        State embedding network without AvgL1Norm. AvgL1Norm will be added in
-        this module. Maps state to unnormalized zs.
+        State embedding network **without** AvgL1Norm. AvgL1Norm will be added
+        in this module to form :math:`z^s = f(s)`. This networks maps state to
+        **unnormalized** zs.
 
     state_action_embedding : nnx.Module
-        State action embedding. Maps state and action to zsa, which is
-        trained to be the same as the normalized zs of the next state.
+        :math:`z^{sa} = g(z^s, a)`. State action embedding. Maps zs and action
+        to zsa, which is trained to be the same as the normalized zs of the
+        next state.
     """
 
     _state_embedding: nnx.Module
