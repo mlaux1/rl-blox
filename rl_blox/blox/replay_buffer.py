@@ -1,5 +1,4 @@
-from collections import namedtuple, OrderedDict
-from typing import Type
+from collections import OrderedDict, namedtuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -33,8 +32,9 @@ class ReplayBuffer:
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
     """
+
     buffer: OrderedDict[str, npt.NDArray[float]]
-    Batch: Type
+    Batch: type
     buffer_size: int
     current_len: int
     insert_idx: int
@@ -113,7 +113,9 @@ class ReplayBuffer:
             via names, e.g., ``batch.observation``.
         """
         indices = rng.integers(0, self.current_len, batch_size)
-        return self.Batch(**{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer})
+        return self.Batch(
+            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+        )
 
     def __len__(self):
         """Return current number of stored transitions in the replay buffer."""
