@@ -24,11 +24,11 @@ hparams_algorithm = dict(
     exploration_noise=0.1,
     target_policy_noise=0.2,
     noise_clip=0.5,
-    gradient_steps=1,
     total_timesteps=1_000_000,
     buffer_size=1_000_000,
     learning_starts=25_000,
     batch_size=256,
+    use_checkpoints=False,
     seed=seed,
 )
 
