@@ -148,16 +148,14 @@ class LAP(ReplayBuffer):
             Named tuple with order defined by keys. Content is also accessible
             via names, e.g., ``batch.observation``.
         """
-        self.sampled_indices = rng.choice(
-            self.current_len,
-            size=batch_size,
-            replace=True,
-            p=self.priority[: self.current_len]
-            / np.sum(self.priority[: self.current_len]),
-        )
+        probabilities = np.cumsum(self.priority[: self.current_len])
+        random_uniforms = rng.uniform(0, 1, size=batch_size) * probabilities[-1]
+        self.sampled_indices = np.searchsorted(probabilities, random_uniforms)
         return self.Batch(
-            **{k: jnp.asarray(self.buffer[k][self.sampled_indices])
-               for k in self.buffer}
+            **{
+                k: jnp.asarray(self.buffer[k][self.sampled_indices])
+                for k in self.buffer
+            }
         )
 
     def update_priority(self, priority):
