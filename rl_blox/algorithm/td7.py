@@ -151,7 +151,7 @@ class LAP(ReplayBuffer):
         self.sampled_indices = rng.choice(
             self.current_len,
             size=batch_size,
-            replace=False,
+            replace=True,
             p=self.priority[: self.current_len]
             / sum(self.priority[: self.current_len]),
         )
