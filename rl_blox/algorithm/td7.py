@@ -225,7 +225,9 @@ class SALE(nnx.Module):
         self.state_embedding = state_embedding
         self.state_action_embedding = state_action_embedding
 
-    def __call__(self, state: jnp.ndarray, action: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(
+        self, state: jnp.ndarray, action: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         zs = self.state_embedding(state)
         zs_action = jnp.concatenate((zs, action), axis=-1)
         zsa = self.state_action_embedding(zs_action)
@@ -435,11 +437,26 @@ def td7_update_critic(
     next_zsa, next_zs = fixed_embedding_target(next_observation, next_action)
 
     next_obs_act = jnp.concatenate((next_observation, next_action), axis=-1)
-    q_next_target = jnp.clip(
-        critic_target(next_obs_act, zsa=next_zsa, zs=next_zs).squeeze(),
-        min_target_value,
-        max_target_value,
-    )
+    q_next_target = critic_target(
+        next_obs_act, zsa=next_zsa, zs=next_zs
+    ).squeeze()
+    # Extrapolation error is the tendency for deep value functions to
+    # extrapolate to unrealistic values on state-action pairs which are rarely
+    # seen in the dataset. Extrapolation error has a significant impact in
+    # offline RL, where the RL agent learns from a given dataset rather than
+    # collecting its own experience, as the lack of feedback on overestimated
+    # values can result in divergence. Surprisingly, we observe a similar
+    # phenomenon in online RL, when increasing the number of dimensions in the
+    # state-action input to the value function. Our hypothesis is that the
+    # state-action embedding zsa expands the action input and makes the value
+    # function more likely to over-extrapolate on unknown actions. Fortunately,
+    # extrapolation error can be comated in a straightforward manner in online
+    # RL, where poor estimates are corrected by feedback from interacting with
+    # the environment. Consequently, we only need to stabilize the value
+    # estimate until the correction occurs. This can be achieved in SALE by
+    # tracking the range of values in the dataset D (estimated over sampled
+    # mini-batches during training), and then bounding the target as follows.
+    q_next_target = jnp.clip(q_next_target, min_target_value, max_target_value)
     q_target = reward + (1 - terminated) * gamma * q_next_target
 
     def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
