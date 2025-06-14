@@ -21,7 +21,8 @@ hparams_models = dict(
 )
 hparams_algorithm = dict(
     policy_delay=2,
-    exploration_noise=0.2,
+    exploration_noise=0.1,
+    target_policy_noise=0.2,
     noise_clip=0.5,
     gradient_steps=1,
     total_timesteps=1_000_000,
