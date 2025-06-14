@@ -149,7 +149,7 @@ class LAP(ReplayBuffer):
             via names, e.g., ``batch.observation``.
         """
         self.sampled_indices = rng.choice(
-            np.arange(self.current_len, dtype=int),
+            self.current_len,
             size=batch_size,
             replace=False,
             p=self.priority[: self.current_len]
