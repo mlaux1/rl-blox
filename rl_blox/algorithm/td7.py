@@ -712,10 +712,8 @@ def train_td7(
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
-    learning_starts: int = 25_000,
     target_delay: int = 250,
     policy_delay: int = 2,
-    batch_size: int = 256,
     exploration_noise: float = 0.1,
     target_policy_noise: float = 0.2,
     noise_clip: float = 0.5,
@@ -725,6 +723,9 @@ def train_td7(
     max_episodes_when_checkpointing: int = 20,
     steps_before_checkpointing: int = 750_000,
     reset_weight: float = 0.9,
+    batch_size: int = 256,
+    learning_starts: int = 25_000,
+    replay_buffer: LAP | None = None,
     actor_target: ActorSALE | None = None,
     critic_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
@@ -737,6 +738,7 @@ def train_td7(
     nnx.Module,
     nnx.Module,
     nnx.Optimizer,
+    LAP,
 ]:
     r"""TD7.
 
@@ -751,6 +753,101 @@ def train_td7(
 
     The offline version of TD7 uses an additional behavior cloning loss. This
     is the reason why the algorithm is called TD7: TD3 + 4 additions.
+
+    Parameters
+    ----------
+    env : gymnasium.Env
+        Gymnasium environment.
+
+    embedding : SALE
+        SALE embedding network.
+
+    embedding_optimizer : nnx.Optimizer
+        Optimizer for embedding.
+
+    actor : nnx.Module
+        Maps state and zs to action.
+
+    actor_optimizer : nnx.Optimizer
+        Optimizer for actor.
+
+    critic : ContinuousClippedDoubleQNet
+        Maps state, action, and zsa to value.
+
+    critic_optimizer: nnx.Optimizer
+        Optimizer for critic.
+
+    seed : int, optional
+        Seed for random number generators in Jax and NumPy.
+
+    total_timesteps : int, optional
+        Number of steps to execute in the environment.
+
+    buffer_size : int, optional
+        Size of the replay buffer.
+
+    gamma : float, optional
+        Discount factor.
+
+    target_delay : int, optional
+        Delayed target net updates. The target nets are updated every
+        ``target_delay`` steps.
+
+    policy_delay : int, optional
+        Delayed policy updates. The policy is updated every ``policy_delay``
+        steps.
+
+    exploration_noise : float, optional
+        Exploration noise in action space. Will be scaled by half of the range
+        of the action space.
+
+    target_policy_noise : float, optional
+        Exploration noise in action space for target policy smoothing.
+
+    noise_clip : float, optional
+        Maximum absolute value of the exploration noise for sampling target
+        actions for the critic update. Will be scaled by half of the range
+        of the action space.
+
+    lap_alpha : float, optional
+        Constant for probability smoothing in LAP.
+
+    lap_min_priority : float, optional
+        Minimum priority in LAP.
+
+    use_checkpoints : bool, optional
+        Checkpoint policy networks and delay training steps for policy
+        assessment.
+
+    max_episodes_when_checkpointing : int
+        Maximum number of assessment episodes.
+
+    steps_before_checkpointing : int, optional
+        Maximum number of timesteps before checkpointing.
+
+    reset_weight : float, optional
+        Criteria reset weight.
+
+    batch_size : int, optional
+        Size of a batch during gradient computation.
+
+    learning_starts : int, optional
+        Learning starts after this number of random steps was taken in the
+        environment.
+
+    replay_buffer : LAP
+        Replay buffer.
+
+    actor_target : nnx.Module, optional
+        Target actor. Only has to be set if we want to continue training
+        from an old state.
+
+    critic_target : ContinuousDoubleQNet, optional
+        Target network. Only has to be set if we want to continue training
+        from an old state.
+
+    logger : LoggerBase, optional
+        Experiment logger.
 
     Notes
     -----
@@ -803,7 +900,8 @@ def train_td7(
     ), "only continuous action space is supported"
 
     env.observation_space.dtype = np.float32
-    replay_buffer = LAP(buffer_size)
+    if replay_buffer is None:
+        replay_buffer = LAP(buffer_size)
 
     action_scale = 0.5 * (env.action_space.high - env.action_space.low)
     _sample_actions = nnx.jit(
@@ -1055,6 +1153,7 @@ def train_td7(
             "critic",
             "critic_target",
             "critic_optimizer",
+            "replay_buffer",
         ],
     )(
         fixed_embedding_checkpoint if use_checkpoints else embedding,
@@ -1065,4 +1164,5 @@ def train_td7(
         critic,
         critic_target,
         critic_optimizer,
+        replay_buffer,
     )
