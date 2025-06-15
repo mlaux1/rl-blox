@@ -595,10 +595,10 @@ def create_td7_state(
     embedding_activation: str = "elu",
     embedding_learning_rate: float = 1e-3,
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
-    policy_activation: str = "elu",
+    policy_activation: str = "relu",
     policy_learning_rate: float = 1e-3,
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
-    q_activation: str = "relu",
+    q_activation: str = "elu",
     q_learning_rate: float = 1e-3,
     seed: int = 0,
 ) -> namedtuple:
