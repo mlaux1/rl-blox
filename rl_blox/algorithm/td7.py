@@ -849,6 +849,36 @@ def train_td7(
     logger : LoggerBase, optional
         Experiment logger.
 
+    Returns
+    -------
+    embedding : SALE
+        State-action learned embedding or, if checkpointing is activated, last
+        checkpoint.
+
+    embedding_optimizer : nnx.Optimizer
+        Optimizer for embedding.
+
+    actor : nnx.Module
+        Final actor or, if checkpointing is activated, last checkpoint.
+
+    actor_target : nnx.Module
+        Target actor.
+
+    policy_optimizer : nnx.Optimizer
+        Actor optimizer.
+
+    critic : ContinuousClippedDoubleQNet
+        Final critic.
+
+    critic_target : ContinuousClippedDoubleQNet
+        Target network.
+
+    critic_optimizer : nnx.Optimizer
+        Optimizer for critic.
+
+    replay_buffer : LAP
+        Replay buffer.
+
     Notes
     -----
 
