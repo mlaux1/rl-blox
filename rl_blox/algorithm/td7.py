@@ -914,6 +914,16 @@ def train_td7(
     Loss-adjusted prioritized experience replay uses a prioritized replay buffer
     paired with the Huber loss for the value function.
 
+    Implementation details:
+
+    * ELU activation function is recommended for the critic.
+    * The target networks are updated periodically with a hard update. This
+      change in comparison to TD3 is necessary because of the fixed encoders.
+    * To stabilize the value estimate we track the range of values in the
+      dataset and then bound the target values. This is necessary because
+      expanding the inputs to the value network with the embedding leads to
+      extrapolation error.
+
     References
     ----------
     .. [1] Fujimoto, S., Chang, W.D., Smith, E., Gu, S., Precup, D., Meger, D.
