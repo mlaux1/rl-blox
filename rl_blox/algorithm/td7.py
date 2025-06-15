@@ -728,7 +728,7 @@ def train_td7(
       environment in latent space
     * checkpoints: similar to representation learning, early stopping and
       checkpoints are used to enhance the performance of a model
-    * prioritized experience replay
+    * loss-adjusted prioritized experience replay
 
     The offline version of TD7 uses an additional behavior cloning loss. This
     is the reason why the algorithm is called TD7: TD3 + 4 additions.
@@ -748,6 +748,20 @@ def train_td7(
     The embeddings are split into state and state-action components so that the
     encoders can be trained with a dynamics prediction loss that solely relies
     on the next state :math:`s'`, independent of the next action or current
+    policy.
+
+    A checkpoint is a snapshot of the parameters of a model, captured at a
+    specific time during training. In RL, using the checkpoint of a policy that
+    obtained a high reward during training, instead of the current policy,
+    improves the stability of the performance at test time. For off-policy RL
+    algorithms, the standard training paradigm is to train after each time step.
+    However, this means that the policy changes throughout each episode, making
+    it hard to evaluate the performance. Similar to many on-policy algorithms,
+    TD7 keeps the policy fixed for several assessment episodes and then batches
+    the training that would have occurred. In a similar manner to evolutionary
+    approaches, we can use these assessment episodes to judge if the current
+    policy outperforms the previous best policy and checkpoint accordingly.
+    At evaluation time, the checkpoint policy is used, rather than the current
     policy.
 
     References
