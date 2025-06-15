@@ -593,13 +593,13 @@ def create_td7_state(
     state_embedding_hidden_nodes: list[int] | tuple[int] = (256,),
     state_action_embedding_hidden_nodes: list[int] | tuple[int] = (256,),
     embedding_activation: str = "elu",
-    embedding_learning_rate: float = 1e-3,
+    embedding_learning_rate: float = 3e-4,
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
     policy_activation: str = "relu",
-    policy_learning_rate: float = 1e-3,
+    policy_learning_rate: float = 3e-4,
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
     q_activation: str = "elu",
-    q_learning_rate: float = 1e-3,
+    q_learning_rate: float = 3e-4,
     seed: int = 0,
 ) -> namedtuple:
     """Create components for TD3 algorithm with default configuration."""
