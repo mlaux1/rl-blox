@@ -1135,6 +1135,10 @@ def train_td7(
                         logger.record_stat(k, v, step=log_step)
                     for k, v in epochs.items():
                         logger.record_epoch(k, v, step=log_step)
+            if logger is not None and training_steps > 0:
+                logger.record_stat(
+                    "training steps", training_steps, step=global_step + 1
+                )
 
         if termination or truncated:
             if logger is not None:
