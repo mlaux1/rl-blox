@@ -762,7 +762,11 @@ def train_td7(
     approaches, we can use these assessment episodes to judge if the current
     policy outperforms the previous best policy and checkpoint accordingly.
     At evaluation time, the checkpoint policy is used, rather than the current
-    policy.
+    policy. To preserve learning speed and sample efficiency, we use the minimum
+    performance to assess a policy, which penalizes unstable policies.
+
+    Loss-adjusted prioritized experience replay uses a prioritized replay buffer
+    paired with the Huber loss for the value function.
 
     References
     ----------
