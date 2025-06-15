@@ -1127,6 +1127,7 @@ def train_td7(
                         epochs["fixed_embedding_target"] = (
                             fixed_embedding_target
                         )
+                        # TODO target and current value will always be the same if logged like this...
                         metrics.update(value_clipping_state.__dict__)
 
                 if logger is not None:
