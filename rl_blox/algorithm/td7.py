@@ -313,10 +313,10 @@ class CheckpointState:
 
 def state_action_embedding_loss(
     embedding: SALE,
-    observation,
-    action,
-    next_observation,
-):
+    observation: jnp.ndarray,
+    action: jnp.ndarray,
+    next_observation: jnp.ndarray,
+) -> float:
     r"""Loss of state-action embedding.
 
     The encoders are jointly trained using the mean squared error (MSE) between
@@ -334,6 +334,25 @@ def state_action_embedding_loss(
     environment. However, they may not encompass all relevant information
     needed by the value function and policy, such as features related to the
     reward, current policy, or task horizon.
+
+    Parameters
+    ----------
+    embedding : SALE
+        State-action learned embedding.
+
+    observation : array, shape (batch_size,) + observation_space.shape
+        Observations.
+
+    action : array, shape (batch_size,) + action.shape
+        Action.
+
+    next_observation : array, shape (batch_size,) + observation_space.shape
+        Next observations.
+
+    Returns
+    -------
+    loss : float
+        Loss value.
     """
     zsa, _ = embedding(observation, action)
     zsp = jax.lax.stop_gradient(embedding.state_embedding(next_observation))
