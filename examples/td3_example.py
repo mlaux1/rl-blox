@@ -14,9 +14,9 @@ env = gym.wrappers.RecordEpisodeStatistics(env)
 
 hparams_models = dict(
     policy_hidden_nodes=[256, 256],
-    policy_learning_rate=1e-3,
+    policy_learning_rate=3e-4,
     q_hidden_nodes=[256, 256],
-    q_learning_rate=1e-3,
+    q_learning_rate=3e-4,
     seed=seed,
 )
 hparams_algorithm = dict(
