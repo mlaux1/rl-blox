@@ -263,10 +263,10 @@ def create_ddpg_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
     policy_activation: str = "relu",
-    policy_learning_rate: float = 3e-4,
+    policy_learning_rate: float = 1e-3,
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
     q_activation: str = "relu",
-    q_learning_rate: float = 3e-4,
+    q_learning_rate: float = 1e-3,
     seed: int = 0,
 ) -> namedtuple:
     """Create components for DDPG algorithm with default configuration."""
