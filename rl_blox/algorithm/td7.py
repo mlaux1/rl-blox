@@ -121,7 +121,33 @@ class ActorSALE(nnx.Module):
 
 
 class CriticSALE(nnx.Module):
-    """TODO"""
+    r"""Action-value function Q with SALE.
+
+    The critic maps a concatenated state-action vector through a linear layer
+    and applies AvgL1Norm, it concatenates the result with the embedded vectors
+    zs and zsa of the state-action pair, and then maps it through the q_net
+    to the expected value of the state-action pair.
+
+    This module implements the function :math:`Q(s, a, z^{sa}_t z^s_t)`.
+
+    Parameters
+    ----------
+    q_net : nnx.Module
+        Action-value function.
+
+    n_state_features : int
+        Number of state components.
+
+    n_action_features : int
+        Number of action components.
+
+    hidden_nodes : int
+        Number of nodes in the first layer that encodes state and action and
+        applies :func:`avg_l1_norm`.
+
+    rngs : nnx.Rngs
+        Random number generator.
+    """
 
     q_net: nnx.Module
     q0: nnx.Linear
@@ -448,9 +474,11 @@ def create_td7_state(
     state_action_embedding_hidden_nodes: list[int] | tuple[int] = (256,),
     embedding_activation: str = "elu",
     embedding_learning_rate: float = 3e-4,
+    policy_sa_encoding_nodes: int = 256,
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
     policy_activation: str = "relu",
     policy_learning_rate: float = 3e-4,
+    q_sa_encoding_nodes: int = 256,
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
     q_activation: str = "elu",
     q_learning_rate: float = 3e-4,
@@ -480,9 +508,8 @@ def create_td7_state(
         embedding, optax.adam(learning_rate=embedding_learning_rate)
     )
 
-    n_linear_encoding_nodes = policy_hidden_nodes[0]
     policy_net = MLP(
-        n_linear_encoding_nodes + n_embedding_dimensions,
+        policy_sa_encoding_nodes + n_embedding_dimensions,
         env.action_space.shape[0],
         policy_hidden_nodes,
         policy_activation,
@@ -492,15 +519,14 @@ def create_td7_state(
     actor = ActorSALE(
         policy,
         env.observation_space.shape[0],
-        n_linear_encoding_nodes,
+        policy_sa_encoding_nodes,
         rngs,
     )
     actor_optimizer = nnx.Optimizer(
         actor, optax.adam(learning_rate=policy_learning_rate)
     )
 
-    n_linear_encoding_nodes = q_hidden_nodes[0]
-    n_q_inputs = n_linear_encoding_nodes + 2 * n_embedding_dimensions
+    n_q_inputs = q_sa_encoding_nodes + 2 * n_embedding_dimensions
     q1 = MLP(
         n_q_inputs,
         1,
@@ -512,7 +538,7 @@ def create_td7_state(
         q1,
         env.observation_space.shape[0],
         env.action_space.shape[0],
-        n_linear_encoding_nodes,
+        q_sa_encoding_nodes,
         rngs,
     )
     q2 = MLP(
@@ -526,7 +552,7 @@ def create_td7_state(
         q2,
         env.observation_space.shape[0],
         env.action_space.shape[0],
-        n_linear_encoding_nodes,
+        q_sa_encoding_nodes,
         rngs,
     )
     critic = ContinuousClippedDoubleQNet(critic1, critic2)
