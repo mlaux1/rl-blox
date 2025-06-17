@@ -290,7 +290,47 @@ def sample_target_actions(
     obs: jnp.ndarray,
     key: jnp.ndarray,
 ) -> jnp.ndarray:
-    """TODO"""
+    r"""Sample target actions with truncated Gaussian noise.
+
+    This function extends :func:`.td3.sample_target_actions` to support
+    :class:`SALE`.
+
+    Parameters
+    ----------
+    action_low : array, shape (n_action_dims,)
+        Lower bound on actions.
+
+    action_high : array, shape (n_action_dims,)
+        Upper bound on actions.
+
+    action_scale : array, shape (n_action_dims,)
+        Scale of action dimensions.
+
+    exploration_noise : float
+        Scaling factor for exploration noise.
+
+    noise_clip : float, optional
+        Maximum absolute value of the exploration noise for sampling target
+        actions for the critic update. Will be scaled by half of the range
+        of the action space.
+
+    embedding : SALE
+        Encoder. Only state embedding is required.
+
+    actor : ActorSALE
+        Policy with SALE.
+
+    obs : array, shape (n_observations_dims,)
+        Observation.
+
+    key : array
+        Key for PRNG.
+
+    Returns
+    -------
+    action : array, shape (n_action_dims,)
+        Exploration action.
+    """
     action = actor(obs, embedding.state_embedding(obs))
     eps = (
         exploration_noise * action_scale * jax.random.normal(key, action.shape)
