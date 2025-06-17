@@ -20,7 +20,7 @@ def train_double_q_learning(
     total_timesteps: int = 10_000,
     seed: int = 1,
     logger: LoggerBase | None = None,
-) -> ArrayLike:
+) -> tuple[ArrayLike, ArrayLike]:
     r"""Double Q-Learning.
 
     This function implements the double Q-Learning. It uses two tabular
