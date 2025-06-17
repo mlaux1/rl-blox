@@ -96,7 +96,29 @@ class SALE(nnx.Module):
 
 
 class ActorSALE(nnx.Module):
-    """TODO"""
+    """Deterministic policy with SALE.
+
+    The actor maps a state vector through a linear leayer and applied AvgL1Norm,
+    it concatenates the result with the embedded vector zs, and then maps it
+    through a deterministic policy net to the action.
+
+    This module implements the function :math:`\pi(s, z^s_t)`.
+
+    Parameters
+    ----------
+    policy_net : nnx.Module
+        Deterministic policy network.
+
+    n_state_features : int
+        Number of state components.
+
+    hidden_nodes : int
+        Number of nodes in the first layer that encodes state and applies
+        :func:`avg_l1_norm`.
+
+    rngs : nnx.Rngs
+        Random number generator.
+    """
 
     policy_net: nnx.Module
     l0: nnx.Linear
@@ -114,9 +136,7 @@ class ActorSALE(nnx.Module):
     def __call__(self, state: jnp.ndarray, zs: jnp.ndarray) -> jnp.ndarray:
         """pi(state, zs)."""
         h = avg_l1_norm(self.l0(state))
-        he = jnp.concatenate(
-            (h, zs), axis=-1
-        )  # hidden_nodes + n_embedding_dimensions
+        he = jnp.concatenate((h, zs), axis=-1)
         return self.policy_net(he)
 
 
@@ -171,9 +191,7 @@ class CriticSALE(nnx.Module):
         """Q(s, a, zsa, zs)."""
         h = avg_l1_norm(self.q0(sa))
         embeddings = jnp.concatenate((zsa, zs), axis=-1)
-        he = jnp.concatenate(
-            (h, embeddings), axis=-1
-        )  # hidden_nodes + 2 * n_embedding_dimensions
+        he = jnp.concatenate((h, embeddings), axis=-1)
         return self.q_net(he)
 
 
