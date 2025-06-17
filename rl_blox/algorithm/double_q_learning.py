@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import gymnasium
 import jax
 import tqdm
@@ -35,6 +37,8 @@ def train_double_q_learning(
     q_table2: ArrayLike
         The second Q-table of shape (num_states, num_actions), containing
         current Q-values.
+    learning_rate : float
+        Learning rate alpha for update of Q table.
     epsilon : float
         The tradeoff for random exploration
     gamma : float
@@ -113,7 +117,9 @@ def train_double_q_learning(
         else:
             observation = next_observation
 
-    return q_table1, q_table2
+    return namedtuple("DoubleQLearningResult", ["q_table1", "q_table2"])(
+        q_table1, q_table2
+    )
 
 
 @jax.jit
