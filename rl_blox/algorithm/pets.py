@@ -1,6 +1,6 @@
 import dataclasses
 import warnings
-from collections import deque
+from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
 
@@ -9,10 +9,10 @@ import gymnasium as gym
 import jax
 import numpy as np
 import optax
+import tqdm
 from flax import nnx, struct
 from jax import numpy as jnp
 from jax.typing import ArrayLike
-import tqdm
 
 from ..blox.cross_entropy_method import cem_sample, cem_update
 from ..blox.probabilistic_ensemble import (
@@ -636,7 +636,10 @@ def train_pets(
 
         obs = next_obs
 
-    return mpc_config, mpc_state, mpc_optimize_fn, replay_buffer
+    return namedtuple(
+        "PETSResult",
+        ["mpc_config", "mpc_state", "mpc_optimize_fn", "replay_buffer"],
+    )(mpc_config, mpc_state, mpc_optimize_fn, replay_buffer)
 
 
 def _init_mpc_optimizer_cem(

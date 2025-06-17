@@ -1,3 +1,4 @@
+from collections import namedtuple
 from functools import partial
 
 import gymnasium as gym
@@ -84,7 +85,7 @@ def train_ac(
     steps_per_update: int = 1_000,
     train_after_episode: bool = False,
     logger: LoggerBase | None = None,
-):
+) -> tuple[StochasticPolicyBase, nnx.Optimizer, nnx.Module, nnx.Optimizer]:
     """Train with actor-critic.
 
     Parameters
@@ -133,6 +134,20 @@ def train_ac(
 
     logger : logger.LoggerBase, optional
         Experiment logger.
+
+    Returns
+    -------
+    policy : StochasticPolicyBase
+        Final policy.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy network.
+
+    value_function : nnx.Module
+        Value function.
+
+    value_function_optimizer : nnx.Optimizer
+        Optimizer for value function.
     """
     key = jax.random.key(seed)
     progress = tqdm.tqdm(total=total_timesteps)
@@ -186,6 +201,16 @@ def train_ac(
             )
             logger.record_epoch("value_function", value_function)
     progress.close()
+
+    return namedtuple(
+        "ActorCriticResult",
+        [
+            "policy",
+            "policy_optimizer",
+            "value_function",
+            "value_function_optimizer",
+        ],
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
 @partial(nnx.jit, static_argnames=["policy_gradient_steps", "gamma"])

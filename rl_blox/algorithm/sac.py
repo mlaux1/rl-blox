@@ -557,7 +557,18 @@ def train_sac(
         else:
             obs = next_obs
 
-    return (
+    return namedtuple(
+        "SACResult",
+        [
+            "policy",
+            "policy_optimizer",
+            "q",
+            "q_target",
+            "q_optimizer",
+            "entropy_control",
+            "replay_buffer",
+        ],
+    )(
         policy,
         policy_optimizer,
         q,

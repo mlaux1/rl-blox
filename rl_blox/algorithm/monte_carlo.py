@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -131,4 +133,4 @@ def update(
         0, ep_len, _update_body, (q_table, n_visits, 0.0)
     )
 
-    return q_table, n_visits
+    return namedtuple("MCResult", ["q_table", "n_visits"])(q_table, n_visits)

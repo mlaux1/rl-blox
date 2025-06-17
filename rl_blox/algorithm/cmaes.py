@@ -3,6 +3,7 @@
 import dataclasses
 import math
 import warnings
+from collections import namedtuple
 
 import gymnasium
 import jax
@@ -712,4 +713,6 @@ def train_cmaes(
 
     set_params(policy, state.mean)
     best_fitness = -state.best_fitness
-    return policy, best_fitness, stopped
+    return namedtuple("CMAESResult", ["policy", "best_fitness", "stopped"])(
+        policy, best_fitness, stopped
+    )
