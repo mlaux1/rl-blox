@@ -54,6 +54,7 @@ pip install -e .
 
 To be able to run the provided examples use `pip install -e '.[examples]'`.
 To install development dependencies, please use `pip install -e '.[dev]'`.
+To enable logging with [aim](https://github.com/aimhubio/aim), please use `pip install -e .['logging']`
 You can install all optional dependencies using `pip install -e '.[all]'`.
 
 ## Getting Started
