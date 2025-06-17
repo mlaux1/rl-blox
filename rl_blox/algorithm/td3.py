@@ -608,7 +608,18 @@ def train_td3(
         else:
             obs = next_obs
 
-    return (
+    return namedtuple(
+        "TD3Result",
+        [
+            "policy",
+            "policy_target",
+            "policy_optimizer",
+            "q",
+            "q_target",
+            "q_optimizer",
+            "replay_buffer",
+        ],
+    )(
         policy,
         policy_target,
         policy_optimizer,
