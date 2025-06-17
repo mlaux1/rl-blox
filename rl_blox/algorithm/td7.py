@@ -382,7 +382,30 @@ def td7_update_embedding(
     actions: jnp.ndarray,
     next_observations: jnp.ndarray,
 ) -> float:
-    """TODO"""
+    """Update SALE.
+
+    Parameters
+    ----------
+    embedding : SALE
+        State-action learned embedding.
+
+    embedding_optimizer : nnx.Optimizer
+        Optimizer for embedding.
+
+    observations : array
+        Batch of observations.
+
+    actions : array
+        Batch of actions.
+
+    next_observations : array
+        Batch of next observations.
+
+    Returns
+    -------
+    embedding_loss_value : float
+        Loss value.
+    """
     embedding_loss_value, grads = nnx.value_and_grad(
         state_action_embedding_loss, argnums=0
     )(embedding, observations, actions, next_observations)
