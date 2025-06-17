@@ -270,7 +270,41 @@ def sample_actions(
     obs: jnp.ndarray,
     key: jnp.ndarray,
 ) -> jnp.ndarray:
-    """TODO"""
+    r"""Sample actions with deterministic policy and Gaussian action noise.
+
+    This function extends :func:`.ddpg.sample_actions` to support :class:`SALE`.
+
+    Parameters
+    ----------
+    action_low : array, shape (n_action_dims,)
+        Lower bound on actions.
+
+    action_high : array, shape (n_action_dims,)
+        Upper bound on actions.
+
+    action_scale : array, shape (n_action_dims,)
+        Scale of action dimensions.
+
+    exploration_noise : float
+        Scaling factor for exploration noise.
+
+    embedding : SALE
+        Encoder. Only state embedding is required.
+
+    actor : ActorSALE
+        Policy with SALE.
+
+    obs : array, shape (n_observations_dims,)
+        Observation.
+
+    key : array
+        Key for PRNG.
+
+    Returns
+    -------
+    action : array, shape (n_action_dims,)
+        Exploration action.
+    """
     action = actor(obs, embedding.state_embedding(obs))
     eps = (
         exploration_noise * action_scale * jax.random.normal(key, action.shape)
