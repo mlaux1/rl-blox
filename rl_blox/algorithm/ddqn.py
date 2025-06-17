@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import gymnasium
 import jax
 import jax.numpy as jnp
@@ -237,4 +239,6 @@ def train_ddqn(
         else:
             obs = next_obs
 
-    return q_net, q_target_net, optimizer
+    return namedtuple("DDQNResult", ["q_net", "q_target_net", "optimizer"])(
+        q_net, q_target_net, optimizer
+    )
