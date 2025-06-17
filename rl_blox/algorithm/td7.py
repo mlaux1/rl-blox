@@ -336,12 +336,9 @@ def td7_update_critic(
     q_target = reward + (1 - terminated) * gamma * q_next_target
 
     def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
-        q1_pred = q.q1(
-            jnp.concatenate((observation, action), axis=-1), zsa=zsa, zs=zs
-        ).squeeze()
-        q2_pred = q.q2(
-            jnp.concatenate((observation, action), axis=-1), zsa=zsa, zs=zs
-        ).squeeze()
+        obs_act = jnp.concatenate((observation, action), axis=-1)
+        q1_pred = q.q1(obs_act, zsa=zsa, zs=zs).squeeze()
+        q2_pred = q.q2(obs_act, zsa=zsa, zs=zs).squeeze()
         abs_max_td_error = jnp.maximum(
             jnp.abs(
                 q1_pred - q_target
@@ -358,12 +355,12 @@ def td7_update_critic(
             abs_max_td_error,
         )
 
-    (q_loss_value, abs_max_td_error), grads = nnx.value_and_grad(
+    (q_loss_value, max_abs_td_error), grads = nnx.value_and_grad(
         sum_of_qnet_losses, has_aux=True
     )(critic)
     critic_optimizer.update(grads)
 
-    return q_loss_value, abs_max_td_error, q_target
+    return q_loss_value, max_abs_td_error, q_target
 
 
 def deterministic_policy_gradient_loss(
@@ -921,7 +918,7 @@ def train_td7(
                     next_observations,
                     sampling_key,
                 )
-                q_loss_value, abs_td_error, q_target = td7_update_critic(
+                q_loss_value, max_abs_td_error, q_target = td7_update_critic(
                     fixed_embedding,
                     fixed_embedding_target,
                     critic,
@@ -945,7 +942,7 @@ def train_td7(
                     value_clipping_state.max_value, float(q_target.max())
                 )
                 priority = (
-                    jnp.maximum(abs_td_error, lap_min_priority) ** lap_alpha
+                    jnp.maximum(max_abs_td_error, lap_min_priority) ** lap_alpha
                 )
                 replay_buffer.update_priority(priority)
 
