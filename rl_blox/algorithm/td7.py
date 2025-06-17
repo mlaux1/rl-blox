@@ -49,7 +49,7 @@ def avg_l1_norm(x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
     avg_l1_norm_x : float
         AvgL1Norm(x).
     """
-    return x / jnp.maximum(np.mean(jnp.abs(x), axis=-1), eps)
+    return x / jnp.maximum(jnp.mean(jnp.abs(x), axis=-1), eps)
 
 
 class SALE(nnx.Module):
