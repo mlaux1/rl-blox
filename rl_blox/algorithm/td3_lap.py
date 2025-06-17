@@ -116,12 +116,12 @@ def td3_lap_update_critic(
             max_abs_td_error,
         )
 
-    (q_loss_value, abs_max_td_error), grads = nnx.value_and_grad(
+    (q_loss_value, max_abs_td_error), grads = nnx.value_and_grad(
         sum_of_qnet_losses, has_aux=True
     )(q)
     q_optimizer.update(grads)
 
-    return q_loss_value, abs_max_td_error
+    return q_loss_value, max_abs_td_error
 
 
 def train_td3_lap(
@@ -365,7 +365,7 @@ def train_td3_lap(
                 next_actions = _sample_target_actions(
                     policy_target, next_observations, sampling_key
                 )
-                q_loss_value, abs_td_error = td3_lap_update_critic(
+                q_loss_value, max_abs_td_error = td3_lap_update_critic(
                     q,
                     q_target,
                     q_optimizer,
@@ -379,7 +379,7 @@ def train_td3_lap(
                     lap_min_priority,
                 )
                 priority = (
-                    jnp.maximum(abs_td_error, lap_min_priority) ** lap_alpha
+                    jnp.maximum(max_abs_td_error, lap_min_priority) ** lap_alpha
                 )
                 replay_buffer.update_priority(priority)
 

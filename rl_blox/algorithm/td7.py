@@ -339,7 +339,7 @@ def td7_update_critic(
         obs_act = jnp.concatenate((observation, action), axis=-1)
         q1_pred = q.q1(obs_act, zsa=zsa, zs=zs).squeeze()
         q2_pred = q.q2(obs_act, zsa=zsa, zs=zs).squeeze()
-        abs_max_td_error = jnp.maximum(
+        max_abs_td_error = jnp.maximum(
             jnp.abs(
                 q1_pred - q_target
             ),  # TODO we compute these differences twice...
@@ -352,7 +352,7 @@ def td7_update_critic(
             + optax.huber_loss(
                 predictions=q2_pred, targets=q_target, delta=min_priority
             ).mean(),
-            abs_max_td_error,
+            max_abs_td_error,
         )
 
     (q_loss_value, max_abs_td_error), grads = nnx.value_and_grad(
