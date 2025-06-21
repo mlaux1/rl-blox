@@ -988,7 +988,7 @@ def train_td7(
         else:
             key, action_key = jax.random.split(key, 2)
             action = (
-                np.asarray(  # TODO sometimes the checkpoint encoder is used
+                np.asarray(
                     _sample_actions(
                         fixed_embedding, actor, jnp.asarray(obs), action_key
                     )
