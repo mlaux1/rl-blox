@@ -12,7 +12,9 @@ def avg_l1_norm(x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
 
     .. math::
 
-        AvgL1Norm(x) := \frac{x}{\max(\frac{1}{N} \sum_i |x_i|, \epsilon)},
+        \text{AvgL1Norm}(x)
+        :=
+        \frac{x}{\max(\frac{1}{N} \sum_i |x_i|, \epsilon)},
 
     with a small constant :math:`\epsilon`.
 
