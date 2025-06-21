@@ -81,7 +81,7 @@ class ActorSALE(nnx.Module):
 
     hidden_nodes : int
         Number of nodes in the first layer that encodes state and applies
-        :func:`avg_l1_norm`.
+        :func:`~.blox.function_approximator.norm.avg_l1_norm`.
 
     rngs : nnx.Rngs
         Random number generator.
@@ -130,7 +130,7 @@ class CriticSALE(nnx.Module):
 
     hidden_nodes : int
         Number of nodes in the first layer that encodes state and action and
-        applies :func:`avg_l1_norm`.
+        applies :func:`~.blox.function_approximator.norm.avg_l1_norm`.
 
     rngs : nnx.Rngs
         Random number generator.
