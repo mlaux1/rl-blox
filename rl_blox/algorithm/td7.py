@@ -587,7 +587,31 @@ def deterministic_policy_gradient_loss(
     observation: jnp.ndarray,
     actor: ActorSALE,
 ) -> jnp.ndarray:
-    r"""TODO"""
+    r"""Deterministic policy gradient loss.
+
+    In comparison to :func:`.ddpg.deterministic_policy_gradient_loss`, this
+    function also takes a SALE encoder, and it computes the mean of the two
+    critics.
+
+    Parameters
+    ----------
+    embedding : SALE
+        Encoder.
+
+    critic : ContinuousClippedDoubleQNet
+        Critic network.
+
+    observation : array
+        Batch of observations.
+
+    actor : ActorSALE
+        Actor that should be updated.
+
+    Returns
+    -------
+    actor_loss : float
+        Actor loss.
+    """
     zs = embedding.state_embedding(observation)
     action = actor(observation, zs)
     zsa = embedding.state_action_embedding(
