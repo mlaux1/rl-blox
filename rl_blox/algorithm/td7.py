@@ -1028,7 +1028,12 @@ def train_td7(
                 hard_target_net_update(
                     fixed_embedding, fixed_embedding_checkpoint
                 )
-                # TODO log checkpoint
+                epochs = {
+                    "actor_checkpoint": actor_checkpoint,
+                    "fixed_embedding_checkpoint": fixed_embedding_checkpoint,
+                }
+                for k, v in epochs.items():
+                    logger.record_epoch(k, v, step=global_step + 1)
 
         if global_step >= learning_starts:
             for delayed_train_step_idx in range(1, training_steps + 1):
