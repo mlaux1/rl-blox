@@ -436,12 +436,90 @@ def td7_update_critic(
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
     min_priority: float,
-    min_target_value: float,
-    max_target_value: float,
+    q_min: float,
+    q_max: float,
 ) -> tuple[float, jnp.ndarray, jnp.ndarray]:
-    """TD7 critic update.
+    r"""TD7 critic update.
 
-    Uses ``critic_optimizer`` to update ``critic``.
+    Uses ``critic_optimizer`` to update ``critic``. The target values
+    :math:`y_i` are generated with
+
+    .. math::
+
+        y_i = r_i + (1 - t_i)
+        \gamma
+        \texttt{clip}(
+        \min(
+        Q_1(o_{i+1}, a_{i+1}, z^{sa_{i+1}}_{t-1}, z^{a_{i+1}}_{t-1}),
+        Q_2(o_{i+1}, a_{i+1}, z^{sa_{i+1}}_{t-1}, z^{a_{i+1}}_{t-1})
+        ),
+        Q_{\min}, Q_{\max}),
+
+    based on target network ``critic_target`` and next actions obtained with
+    target policy smoothing. The values of the next state are clipped to the
+    range defined by ``q_min`` and ``q_max``.
+
+    For each Q network of the critic, we compute the Huber loss [1]_ between
+    :math:`y_i` and :math:`Q(s, a, z^{sa}_t, z^s_t)`.
+
+    Parameters
+    ----------
+    fixed_embedding : SALE
+        Encoder with index t.
+
+    fixed_embedding_target : SALE
+        Encoder with index t-1.
+
+    critic : CriticSALE
+        Live critic.
+
+    critic_target : CriticSALE
+        Target critic.
+
+    critic_optimizer : nnx.Optimizer
+        Optimizer for critic.
+
+    gamma : float
+        Discount factor.
+
+    observation : array
+        Observations :math:`o_t`.
+
+    action : array
+        Actions :math:`a_t`.
+
+    next_observation : array
+        Next observations :math:`o_{t+1}`.
+
+    next_action : array
+        Sampled target actions :math:`a_{t+1}` obtained with target policy
+        smoothing.
+
+    reward : array
+        Rewards :math:`r_{t+1}`.
+
+    terminated : array
+        Indicates if a terminal state was reached in this step.
+
+    min_priority : float
+        Value is used as delta for the Huber loss.
+
+    q_min : float
+        Minimum value.
+
+    q_max : float
+        Maximum value.
+
+    Returns
+    -------
+    q_loss_value : float
+        Loss value.
+
+    max_abs_td_error : array
+        Maximum of the absolute TD errors of the two Q networks.
+
+    q_target : array
+        Target values :math:`y_i` for the critic.
 
     References
     ----------
@@ -473,7 +551,7 @@ def td7_update_critic(
     # estimate until the correction occurs. This can be achieved in SALE by
     # tracking the range of values in the dataset D (estimated over sampled
     # mini-batches during training), and then bounding the target as follows.
-    q_next_target = jnp.clip(q_next_target, min_target_value, max_target_value)
+    q_next_target = jnp.clip(q_next_target, q_min, q_max)
     q_target = reward + (1 - terminated) * gamma * q_next_target
 
     def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
@@ -481,9 +559,8 @@ def td7_update_critic(
         q1_pred = q.q1(obs_act, zsa=zsa, zs=zs).squeeze()
         q2_pred = q.q2(obs_act, zsa=zsa, zs=zs).squeeze()
         max_abs_td_error = jnp.maximum(
-            jnp.abs(
-                q1_pred - q_target
-            ),  # TODO we compute these differences twice...
+            # TODO we compute these differences twice...
+            jnp.abs(q1_pred - q_target),
             jnp.abs(q2_pred - q_target),
         )
         return (
