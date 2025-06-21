@@ -665,6 +665,39 @@ def maybe_train_and_checkpoint(
     max_episodes_when_checkpointing: int,
     steps_before_checkpointing: int,
 ) -> tuple[bool, int]:
+    """Keep track of policy evaluation and determine checkpointing and training.
+
+    Parameters
+    ----------
+    checkpoint_state : CheckpointState
+        State of checkpoint monitoring.
+
+    steps_per_episode : int
+        Steps taken in the last episode.
+
+    episode_return : float
+        Return of the last episode.
+
+    epoch : int
+        Training epoch counter.
+
+    reset_weight : float
+        Criteria reset weight.
+
+    max_episodes_when_checkpointing : int
+        Maximum number of assessment episodes.
+
+    steps_before_checkpointing : int
+        Maximum number of timesteps before checkpointing.
+
+    Returns
+    -------
+    update_checkpoint : False
+        Checkpoint should be updated now
+
+    training_steps : int
+        Number of training steps that should be taken now.
+    """
     checkpoint_state.episodes_since_udpate += 1
     checkpoint_state.timesteps_since_upate += steps_per_episode
     checkpoint_state.min_return = min(
@@ -933,7 +966,7 @@ def train_td7(
         Checkpoint policy networks and delay training steps for policy
         assessment.
 
-    max_episodes_when_checkpointing : int
+    max_episodes_when_checkpointing : int, optional
         Maximum number of assessment episodes.
 
     steps_before_checkpointing : int, optional
