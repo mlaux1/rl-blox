@@ -630,7 +630,25 @@ def td7_update_actor(
     critic: ContinuousClippedDoubleQNet,
     observation: jnp.ndarray,
 ) -> float:
-    """TODO"""
+    """Update actor.
+
+    Parameters
+    ----------
+    embedding : SALE
+        Encoder.
+
+    actor : ActorSALE
+        Actor that should be updated.
+
+    actor_optimizer : nnx.Optimizer
+        Optimizer for actor.
+
+    critic : ContinuousClippedDoubleQNet
+        Critic network.
+
+    observation : array
+        Batch of observations.
+    """
     actor_loss_value, grads = nnx.value_and_grad(
         deterministic_policy_gradient_loss, argnums=3
     )(embedding, critic, observation, actor)
