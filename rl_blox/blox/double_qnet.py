@@ -49,3 +49,7 @@ class ContinuousClippedDoubleQNet(nnx.Module):
 
     def __call__(self, *args, **kwargs) -> jnp.ndarray:
         return jnp.minimum(self.q1(*args, **kwargs), self.q2(*args, **kwargs))
+
+    def mean(self, *args, **kwargs) -> jnp.ndarray:
+        """Predict mean of both Q networks."""
+        return 0.5 * (self.q1(*args, **kwargs) + self.q2(*args, **kwargs))

@@ -439,9 +439,9 @@ def td7_update_critic(
     min_target_value: float,
     max_target_value: float,
 ) -> tuple[float, jnp.ndarray, jnp.ndarray]:
-    """TODO
+    """TD7 critic update.
 
-    TODO
+    Uses ``critic_optimizer`` to update ``critic``.
 
     References
     ----------
@@ -518,7 +518,7 @@ def deterministic_policy_gradient_loss(
     )
     obs_act = jnp.concatenate((observation, actor(observation, zs)), axis=-1)
     # - to perform gradient ascent with a minimizer
-    return -critic(obs_act, zs=zs, zsa=zsa).mean()
+    return -critic.mean(obs_act, zs=zs, zsa=zsa).mean()
 
 
 @nnx.jit
