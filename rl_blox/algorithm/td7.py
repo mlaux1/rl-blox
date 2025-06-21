@@ -657,14 +657,14 @@ def td7_update_actor(
 
 
 def maybe_train_and_checkpoint(
-    checkpoint_state,
-    steps_per_episode,
-    episode_return,
-    epoch,
-    reset_weight,
-    max_episodes_when_checkpointing,
-    steps_before_checkpointing,
-):
+    checkpoint_state: CheckpointState,
+    steps_per_episode: int,
+    episode_return: float,
+    epoch: int,
+    reset_weight: float,
+    max_episodes_when_checkpointing: int,
+    steps_before_checkpointing: int,
+) -> tuple[bool, int]:
     checkpoint_state.episodes_since_udpate += 1
     checkpoint_state.timesteps_since_upate += steps_per_episode
     checkpoint_state.min_return = min(
