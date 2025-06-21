@@ -1028,6 +1028,7 @@ def train_td7(
                 hard_target_net_update(
                     fixed_embedding, fixed_embedding_checkpoint
                 )
+                # TODO log checkpoint
 
         if global_step >= learning_starts:
             for delayed_train_step_idx in range(1, training_steps + 1):
