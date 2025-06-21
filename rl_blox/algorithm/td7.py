@@ -385,8 +385,8 @@ def td7_update_embedding(
     static_argnames=[
         "gamma",
         "min_priority",
-        "min_target_value",
-        "max_target_value",
+        "q_min",
+        "q_max",
     ],
 )
 def td7_update_critic(
