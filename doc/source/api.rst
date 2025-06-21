@@ -27,6 +27,7 @@ Algorithm Interface
    actor_critic.train_ac
    ddpg.train_ddpg
    td3.train_td3
+   td7.train_td7
    sac.train_sac
    pets.train_pets
    cmaes.train_cmaes
@@ -73,6 +74,9 @@ Data Blox
    sac.EntropyControl
    pets.PETSMPCConfig
    pets.PETSMPCState
+   td7.SALE
+   td7.ActorSALE
+   td7.CriticSALE
 
 
 :mod:`rl_blox.blox`
@@ -102,6 +106,7 @@ Functional Blox
    losses.mse_value_loss
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
+   function_approximator.norm.avg_l1_norm
 
 Data Blox
 ---------
