@@ -1071,6 +1071,29 @@ def train_td7(
       expanding the inputs to the value network with the embedding leads to
       extrapolation error.
 
+    Logging
+
+    * ``embedding loss`` - value of the loss function for ``embedding``
+    * ``q loss`` - value of the loss function for ``q``
+    * ``policy loss`` - value of the loss function for the actor
+    * ``training steps`` - number of training steps in one batch update
+    * ``min_value`` - minimum value of Q observed so far
+    * ``min_target_value`` - less frequently updated target value
+    * ``max_value`` - maximum value of Q observed so far
+    * ``max_target_value`` - less frequently updated target value
+
+    Checkpointing
+
+    * ``actor_checkpoint`` - checkpoint of actor
+    * ``fixed_embedding_checkpoint`` - checkpoint of corresponding embedding
+    * ``embedding`` - SALE encoder
+    * ``fixed_embedding`` - SALE encoder used with actor
+    * ``q`` - clipped double Q network, critic
+    * ``policy`` - target policy, actor
+    * ``q_target`` - target network for the critic
+    * ``policy_target`` - target network for the actor
+    * ``fixed_embedding_target`` - target network for SALE encoder
+
     References
     ----------
     .. [1] Fujimoto, S., Chang, W.D., Smith, E., Gu, S., Precup, D., Meger, D.
@@ -1285,7 +1308,7 @@ def train_td7(
                     metrics["embedding loss"] = embedding_loss_value
                     metrics["q loss"] = q_loss_value
                     metrics.update(value_clipping_state.__dict__)
-                    epochs["embedding"] = actor
+                    epochs["embedding"] = embedding
                     epochs["q"] = critic
 
                     log_step = (
