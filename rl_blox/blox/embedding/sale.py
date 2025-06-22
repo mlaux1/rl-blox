@@ -169,9 +169,9 @@ def state_action_embedding_loss(
 
     The encoders are jointly trained using the mean squared error (MSE) between
     the state-action embedding :math:`z^{sa}` and the embedding of the next
-    state :math:`z^{s'}:
+    state :math:`z^{s'}`:
 
-    .. math:
+    .. math::
 
         \mathcal{L} = \frac{1}{N} \sum_i \left(
         z^{s_i,a_i} - \texttt{sg}(z^{s_i'}) \right)^2,
