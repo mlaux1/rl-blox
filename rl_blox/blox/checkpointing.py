@@ -4,6 +4,7 @@ import dataclasses
 @dataclasses.dataclass
 class CheckpointState:
     """State of checkpoint monitoring."""
+
     episodes_since_udpate: int = 0
     """Number of assessment episodes since last actor update."""
     timesteps_since_upate: int = 0
@@ -144,7 +145,11 @@ def maybe_train_and_checkpoint(
 
     if training_steps > 0:
         # Switch to full checkpointing.
-        if epoch < steps_before_checkpointing <= epoch + checkpoint_state.timesteps_since_upate:
+        if (
+            epoch
+            < steps_before_checkpointing
+            <= epoch + checkpoint_state.timesteps_since_upate
+        ):
             checkpoint_state.best_min_return *= reset_weight
             checkpoint_state.max_episodes_before_update = (
                 max_episodes_when_checkpointing
