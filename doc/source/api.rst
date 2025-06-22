@@ -74,9 +74,6 @@ Data Blox
    sac.EntropyControl
    pets.PETSMPCConfig
    pets.PETSMPCState
-   td7.SALE
-   td7.ActorSALE
-   td7.CriticSALE
 
 
 :mod:`rl_blox.blox`
@@ -114,7 +111,11 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   embedding.sale.SALE
+   embedding.sale.ActorSALE
+   embedding.sale.CriticSALE
    replay_buffer.ReplayBuffer
+   replay_buffer.LAP
    function_approximator.mlp.MLP
    function_approximator.gaussian_mlp.GaussianMLP
    function_approximator.policy_head.DeterministicTanhPolicy
