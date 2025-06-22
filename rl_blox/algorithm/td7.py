@@ -518,7 +518,11 @@ def train_td7(
         Number of training epochs before checkpointing.
 
     reset_weight : float, optional
-        Reset weight for best minimum return when checkpointing starts.
+        Reset weight for best minimum return when checkpointing starts. When
+        the performance varies a lot with the initial state, it might make
+        sense to set the weight to a lower value in the range (0, 1].
+        If the maximum return is always negative, it makes sense to set it to
+        a value > 1.
 
     batch_size : int, optional
         Size of a batch during gradient computation.
