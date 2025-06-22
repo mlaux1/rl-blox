@@ -52,6 +52,9 @@ Functional Blox
    td3.td3_update_critic
    td3.double_q_deterministic_bootstrap_estimate
    td3.sample_target_actions
+   td7.td7_update_actor
+   td7.deterministic_policy_gradient_loss_sale
+   td7.td7_update_critic
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor

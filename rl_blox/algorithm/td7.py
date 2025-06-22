@@ -212,9 +212,9 @@ def deterministic_policy_gradient_loss_sale(
 ) -> jnp.ndarray:
     r"""Deterministic policy gradient loss.
 
-    In comparison to :func:`.ddpg.deterministic_policy_gradient_loss`, this
-    function also takes a SALE encoder, and it computes the mean of the two
-    critics.
+    In comparison to :func:`~.blox.losses.deterministic_policy_gradient_loss`,
+    this function also takes a SALE encoder, and it computes the mean of the
+    two critics.
 
     Parameters
     ----------
