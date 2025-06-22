@@ -48,10 +48,14 @@ def maybe_train_and_checkpoint(
         Configuration: criteria reset weight.
 
     max_episodes_when_checkpointing : int
-        Configuration: maximum number of assessment episodes.
+        Configuration: maximum number of assessment episodes. In the beginning,
+        this value is not used, but an initial value of 1 is used in
+        ``checkpoint_state``. After ``steps_before_checkpointing``, the number
+        of assessment episodes will be set to this value.
 
     steps_before_checkpointing : int
-        Configuration: maximum number of timesteps before checkpointing.
+        Configuration: number of timesteps before checkpointing with
+        ``max_episodes_when_checkpointing`` episodes starts.
 
     Returns
     -------

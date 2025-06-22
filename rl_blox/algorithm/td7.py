@@ -512,10 +512,10 @@ def train_td7(
         assessment.
 
     max_episodes_when_checkpointing : int, optional
-        Maximum number of assessment episodes.
+        Maximum number of assessment episodes when checkpointing.
 
     steps_before_checkpointing : int, optional
-        Maximum number of timesteps before checkpointing.
+        Number of timesteps before checkpointing.
 
     reset_weight : float, optional
         Criteria reset weight.
