@@ -147,8 +147,8 @@ def maybe_train_and_checkpoint(
         # Switch to full checkpointing.
         if (
             epoch
-            <= steps_before_checkpointing
-            < epoch + checkpoint_state.timesteps_since_upate
+            < steps_before_checkpointing
+            <= epoch + checkpoint_state.timesteps_since_upate
         ):
             checkpoint_state.best_min_return *= reset_weight
             checkpoint_state.max_episodes_before_update = (

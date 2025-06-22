@@ -765,8 +765,10 @@ def train_td7(
                     "actor_checkpoint": actor_checkpoint,
                     "fixed_embedding_checkpoint": fixed_embedding_checkpoint,
                 }
-                for k, v in epochs.items():
-                    logger.record_epoch(k, v, step=global_step + 1)
+                if logger is not None:
+                    for k, v in epochs.items():
+                        logger.record_epoch(k, v, step=global_step + 1)
+            if logger is not None:
                 for k, v in checkpoint_state.__dict__.items():
                     logger.record_stat(k, v, step=global_step + 1)
 
