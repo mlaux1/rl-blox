@@ -413,7 +413,7 @@ def train_td7(
     lap_min_priority: float = 1.0,
     use_checkpoints: bool = True,
     max_episodes_when_checkpointing: int = 20,
-    steps_before_checkpointing: int = 5_000,
+    steps_before_checkpointing: int = 750_000,
     reset_weight: float = 0.9,
     batch_size: int = 256,
     learning_starts: int = 25_000,
@@ -515,10 +515,10 @@ def train_td7(
         Maximum number of assessment episodes when checkpointing.
 
     steps_before_checkpointing : int, optional
-        Number of timesteps before checkpointing.
+        Number of training epochs before checkpointing.
 
     reset_weight : float, optional
-        Criteria reset weight.
+        Reset weight for best minimum return when checkpointing starts.
 
     batch_size : int, optional
         Size of a batch during gradient computation.

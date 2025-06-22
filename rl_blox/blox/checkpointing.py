@@ -13,7 +13,7 @@ class CheckpointState:
     min_return: float = 1e8
     """Minimum return observed for current actor."""
     best_min_return: float = -1e8
-    """Highest minimum return observed for any previous actor."""
+    """Best minimum return observed for any previous actor."""
 
 
 def maybe_train_and_checkpoint(
@@ -58,7 +58,7 @@ def maybe_train_and_checkpoint(
         of assessment episodes will be set to this value.
 
     steps_before_checkpointing : int
-        Configuration: number of timesteps before checkpointing with
+        Configuration: number of training epochs before checkpointing with
         ``max_episodes_when_checkpointing`` episodes starts.
 
     Returns
@@ -143,14 +143,14 @@ def maybe_train_and_checkpoint(
         training_steps = checkpoint_state.timesteps_since_upate
 
     if training_steps > 0:
-        # Update checkpoint monitoring state.
-        for i in range(checkpoint_state.timesteps_since_upate):
-            if epoch + i + 1 == steps_before_checkpointing:
-                checkpoint_state.best_min_return *= reset_weight
-                checkpoint_state.max_episodes_before_update = (
-                    max_episodes_when_checkpointing
-                )
+        # Switch to full checkpointing.
+        if epoch < steps_before_checkpointing <= epoch + checkpoint_state.timesteps_since_upate:
+            checkpoint_state.best_min_return *= reset_weight
+            checkpoint_state.max_episodes_before_update = (
+                max_episodes_when_checkpointing
+            )
 
+        # Reset checkpoint monitoring.
         checkpoint_state.episodes_since_udpate = 0
         checkpoint_state.timesteps_since_upate = 0
         checkpoint_state.min_return = 1e8
