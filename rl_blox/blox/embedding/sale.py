@@ -207,6 +207,19 @@ def state_action_embedding_loss(
     return optax.squared_error(predictions=zsa, targets=zsp).mean()
 
 
+class DeterministicSALEPolicy(nnx.Module):
+    """Combines SALE encoder and ActorSALE to form a deterministic policy."""
+
+    def __init__(self, embedding: SALE, actor: ActorSALE):
+        self.embedding = embedding
+        self.actor = actor
+
+    def __call__(self, observation: jnp.ndarray):
+        return self.actor(
+            observation, self.embedding.state_embedding(observation)
+        )
+
+
 @nnx.jit
 def update_sale(
     embedding: SALE,
@@ -297,64 +310,3 @@ def sample_actions_sale(
     )
     exploring_action = action + eps
     return jnp.clip(exploring_action, action_low, action_high)
-
-
-def sample_target_actions_sale(
-    action_low: jnp.ndarray,
-    action_high: jnp.ndarray,
-    action_scale: jnp.ndarray,
-    exploration_noise: float,
-    noise_clip: float,
-    embedding: SALE,
-    actor: ActorSALE,
-    obs: jnp.ndarray,
-    key: jnp.ndarray,
-) -> jnp.ndarray:
-    r"""Sample target actions with truncated Gaussian noise.
-
-    This function extends :func:`.td3.sample_target_actions` to support
-    :class:`SALE`.
-
-    Parameters
-    ----------
-    action_low : array, shape (n_action_dims,)
-        Lower bound on actions.
-
-    action_high : array, shape (n_action_dims,)
-        Upper bound on actions.
-
-    action_scale : array, shape (n_action_dims,)
-        Scale of action dimensions.
-
-    exploration_noise : float
-        Scaling factor for exploration noise.
-
-    noise_clip : float, optional
-        Maximum absolute value of the exploration noise for sampling target
-        actions for the critic update. Will be scaled by half of the range
-        of the action space.
-
-    embedding : SALE
-        Encoder. Only state embedding is required.
-
-    actor : ActorSALE
-        Policy with SALE.
-
-    obs : array, shape (n_observations_dims,)
-        Observation.
-
-    key : array
-        Key for PRNG.
-
-    Returns
-    -------
-    action : array, shape (n_action_dims,)
-        Exploration action.
-    """
-    action = actor(obs, embedding.state_embedding(obs))
-    eps = (
-        exploration_noise * action_scale * jax.random.normal(key, action.shape)
-    )
-    scaled_noise_clip = action_scale * noise_clip
-    clipped_eps = jnp.clip(eps, -scaled_noise_clip, scaled_noise_clip)
-    return jnp.clip(action + clipped_eps, action_low, action_high)

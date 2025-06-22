@@ -16,8 +16,8 @@ from ..blox.embedding.sale import (
     SALE,
     ActorSALE,
     CriticSALE,
+    DeterministicSALEPolicy,
     sample_actions_sale,
-    sample_target_actions_sale,
     update_sale,
 )
 from ..blox.function_approximator.mlp import MLP
@@ -25,6 +25,7 @@ from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.replay_buffer import LAP
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
+from .td3 import sample_target_actions
 
 
 @dataclasses.dataclass
@@ -669,7 +670,7 @@ def train_td7(
     )
     _sample_target_actions = nnx.jit(
         partial(
-            sample_target_actions_sale,
+            sample_target_actions,
             env.action_space.low,
             env.action_space.high,
             action_scale,
@@ -693,6 +694,10 @@ def train_td7(
 
     fixed_embedding = nnx.clone(embedding)
     fixed_embedding_target = nnx.clone(embedding)
+
+    policy_target = DeterministicSALEPolicy(
+        fixed_embedding_target, actor_target
+    )
 
     if use_checkpoints:
         actor_checkpoint = nnx.clone(actor)
@@ -777,10 +782,7 @@ def train_td7(
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
                 next_actions = _sample_target_actions(
-                    fixed_embedding_target,
-                    actor_target,
-                    next_observations,
-                    sampling_key,
+                    policy_target, next_observations, sampling_key
                 )
                 q_loss_value, max_abs_td_error, q_target = td7_update_critic(
                     fixed_embedding,
