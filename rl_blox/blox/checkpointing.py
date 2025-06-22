@@ -45,7 +45,11 @@ def maybe_train_and_checkpoint(
         Training epoch counter.
 
     reset_weight : float
-        Configuration: criteria reset weight.
+        When ``steps_before_checkpointing`` training epochs were reached, the
+        best minimum return found so far will be multiplied by this factor, so
+        that from now on, actors will be evaluated more thoroughly and updated
+        only after ``max_episodes_when_checkpointing`` did not fall below the
+        best minimum return found so far.
 
     max_episodes_when_checkpointing : int
         Configuration: maximum number of assessment episodes. In the beginning,
@@ -75,6 +79,14 @@ def maybe_train_and_checkpoint(
     poorly performing policies do not waste additional assessment episodes and
     training can resume when the performance in any episode falls below the
     checkpoint performance. This idea is first used in TD7 [1]_.
+
+    The method implemented with this function distinguishes two phases of
+    checkpointing. In the beginning, we only use one assessement episode per
+    actor. After ``steps_before_checkpointing`` training epochs of the actor,
+    we will switch to more thorough evaluation with a maximum of
+    ``max_episodes_when_checkpointing`` episodes. Before we do so, we reduce
+    the best minimum fitness of the previous checkpoint by multiplying it with
+    ``reset_weight``, which should be between 0 and 1.
 
     References
     ----------

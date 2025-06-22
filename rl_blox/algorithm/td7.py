@@ -413,7 +413,7 @@ def train_td7(
     lap_min_priority: float = 1.0,
     use_checkpoints: bool = True,
     max_episodes_when_checkpointing: int = 20,
-    steps_before_checkpointing: int = 750_000,
+    steps_before_checkpointing: int = 5_000,
     reset_weight: float = 0.9,
     batch_size: int = 256,
     learning_starts: int = 25_000,
