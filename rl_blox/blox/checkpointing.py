@@ -19,7 +19,10 @@ def maybe_train_and_checkpoint(
     max_episodes_when_checkpointing: int,
     steps_before_checkpointing: int,
 ) -> tuple[bool, int]:
-    """Keep track of policy evaluation and determine checkpointing and training.
+    """Monitor policy evaluation.
+
+    The function will determine if a checkpoint should be saved and for how many
+    epochs we should train.
 
     Parameters
     ----------
@@ -50,7 +53,7 @@ def maybe_train_and_checkpoint(
         Checkpoint should be updated now
 
     training_steps : int
-        Number of training steps that should be taken now.
+        Number of training epochs.
     """
     checkpoint_state.episodes_since_udpate += 1
     checkpoint_state.timesteps_since_upate += steps_per_episode
