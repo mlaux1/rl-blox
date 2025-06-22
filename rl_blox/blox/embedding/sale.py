@@ -205,3 +205,156 @@ def state_action_embedding_loss(
     zsa, _ = embedding(observation, action)
     zsp = jax.lax.stop_gradient(embedding.state_embedding(next_observation))
     return optax.squared_error(predictions=zsa, targets=zsp).mean()
+
+
+@nnx.jit
+def update_sale(
+    embedding: SALE,
+    embedding_optimizer: nnx.Optimizer,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    next_observations: jnp.ndarray,
+) -> float:
+    """Update SALE.
+
+    Parameters
+    ----------
+    embedding : SALE
+        State-action learned embedding.
+
+    embedding_optimizer : nnx.Optimizer
+        Optimizer for embedding.
+
+    observations : array
+        Batch of observations.
+
+    actions : array
+        Batch of actions.
+
+    next_observations : array
+        Batch of next observations.
+
+    Returns
+    -------
+    embedding_loss_value : float
+        Loss value.
+    """
+    embedding_loss_value, grads = nnx.value_and_grad(
+        state_action_embedding_loss, argnums=0
+    )(embedding, observations, actions, next_observations)
+    embedding_optimizer.update(grads)
+    return embedding_loss_value
+
+
+def sample_actions_sale(
+    action_low: jnp.ndarray,
+    action_high: jnp.ndarray,
+    action_scale: jnp.ndarray,
+    exploration_noise: float,
+    embedding: SALE,
+    actor: ActorSALE,
+    obs: jnp.ndarray,
+    key: jnp.ndarray,
+) -> jnp.ndarray:
+    r"""Sample actions with deterministic policy and Gaussian action noise.
+
+    This function extends :func:`.ddpg.sample_actions` to support :class:`SALE`.
+
+    Parameters
+    ----------
+    action_low : array, shape (n_action_dims,)
+        Lower bound on actions.
+
+    action_high : array, shape (n_action_dims,)
+        Upper bound on actions.
+
+    action_scale : array, shape (n_action_dims,)
+        Scale of action dimensions.
+
+    exploration_noise : float
+        Scaling factor for exploration noise.
+
+    embedding : SALE
+        Encoder. Only state embedding is required.
+
+    actor : ActorSALE
+        Policy with SALE.
+
+    obs : array, shape (n_observations_dims,)
+        Observation.
+
+    key : array
+        Key for PRNG.
+
+    Returns
+    -------
+    action : array, shape (n_action_dims,)
+        Exploration action.
+    """
+    action = actor(obs, embedding.state_embedding(obs))
+    eps = (
+        exploration_noise * action_scale * jax.random.normal(key, action.shape)
+    )
+    exploring_action = action + eps
+    return jnp.clip(exploring_action, action_low, action_high)
+
+
+def sample_target_actions_sale(
+    action_low: jnp.ndarray,
+    action_high: jnp.ndarray,
+    action_scale: jnp.ndarray,
+    exploration_noise: float,
+    noise_clip: float,
+    embedding: SALE,
+    actor: ActorSALE,
+    obs: jnp.ndarray,
+    key: jnp.ndarray,
+) -> jnp.ndarray:
+    r"""Sample target actions with truncated Gaussian noise.
+
+    This function extends :func:`.td3.sample_target_actions` to support
+    :class:`SALE`.
+
+    Parameters
+    ----------
+    action_low : array, shape (n_action_dims,)
+        Lower bound on actions.
+
+    action_high : array, shape (n_action_dims,)
+        Upper bound on actions.
+
+    action_scale : array, shape (n_action_dims,)
+        Scale of action dimensions.
+
+    exploration_noise : float
+        Scaling factor for exploration noise.
+
+    noise_clip : float, optional
+        Maximum absolute value of the exploration noise for sampling target
+        actions for the critic update. Will be scaled by half of the range
+        of the action space.
+
+    embedding : SALE
+        Encoder. Only state embedding is required.
+
+    actor : ActorSALE
+        Policy with SALE.
+
+    obs : array, shape (n_observations_dims,)
+        Observation.
+
+    key : array
+        Key for PRNG.
+
+    Returns
+    -------
+    action : array, shape (n_action_dims,)
+        Exploration action.
+    """
+    action = actor(obs, embedding.state_embedding(obs))
+    eps = (
+        exploration_noise * action_scale * jax.random.normal(key, action.shape)
+    )
+    scaled_noise_clip = action_scale * noise_clip
+    clipped_eps = jnp.clip(eps, -scaled_noise_clip, scaled_noise_clip)
+    return jnp.clip(action + clipped_eps, action_low, action_high)

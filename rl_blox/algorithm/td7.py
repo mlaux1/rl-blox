@@ -15,7 +15,9 @@ from ..blox.embedding.sale import (
     SALE,
     ActorSALE,
     CriticSALE,
-    state_action_embedding_loss,
+    sample_actions_sale,
+    sample_target_actions_sale,
+    update_sale,
 )
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
@@ -39,159 +41,6 @@ class CheckpointState:
     max_episodes_before_update: int = 1
     min_return: float = 1e8
     best_min_return: float = -1e8
-
-
-def sample_actions(
-    action_low: jnp.ndarray,
-    action_high: jnp.ndarray,
-    action_scale: jnp.ndarray,
-    exploration_noise: float,
-    embedding: SALE,
-    actor: ActorSALE,
-    obs: jnp.ndarray,
-    key: jnp.ndarray,
-) -> jnp.ndarray:
-    r"""Sample actions with deterministic policy and Gaussian action noise.
-
-    This function extends :func:`.ddpg.sample_actions` to support :class:`SALE`.
-
-    Parameters
-    ----------
-    action_low : array, shape (n_action_dims,)
-        Lower bound on actions.
-
-    action_high : array, shape (n_action_dims,)
-        Upper bound on actions.
-
-    action_scale : array, shape (n_action_dims,)
-        Scale of action dimensions.
-
-    exploration_noise : float
-        Scaling factor for exploration noise.
-
-    embedding : SALE
-        Encoder. Only state embedding is required.
-
-    actor : ActorSALE
-        Policy with SALE.
-
-    obs : array, shape (n_observations_dims,)
-        Observation.
-
-    key : array
-        Key for PRNG.
-
-    Returns
-    -------
-    action : array, shape (n_action_dims,)
-        Exploration action.
-    """
-    action = actor(obs, embedding.state_embedding(obs))
-    eps = (
-        exploration_noise * action_scale * jax.random.normal(key, action.shape)
-    )
-    exploring_action = action + eps
-    return jnp.clip(exploring_action, action_low, action_high)
-
-
-def sample_target_actions(
-    action_low: jnp.ndarray,
-    action_high: jnp.ndarray,
-    action_scale: jnp.ndarray,
-    exploration_noise: float,
-    noise_clip: float,
-    embedding: SALE,
-    actor: ActorSALE,
-    obs: jnp.ndarray,
-    key: jnp.ndarray,
-) -> jnp.ndarray:
-    r"""Sample target actions with truncated Gaussian noise.
-
-    This function extends :func:`.td3.sample_target_actions` to support
-    :class:`SALE`.
-
-    Parameters
-    ----------
-    action_low : array, shape (n_action_dims,)
-        Lower bound on actions.
-
-    action_high : array, shape (n_action_dims,)
-        Upper bound on actions.
-
-    action_scale : array, shape (n_action_dims,)
-        Scale of action dimensions.
-
-    exploration_noise : float
-        Scaling factor for exploration noise.
-
-    noise_clip : float, optional
-        Maximum absolute value of the exploration noise for sampling target
-        actions for the critic update. Will be scaled by half of the range
-        of the action space.
-
-    embedding : SALE
-        Encoder. Only state embedding is required.
-
-    actor : ActorSALE
-        Policy with SALE.
-
-    obs : array, shape (n_observations_dims,)
-        Observation.
-
-    key : array
-        Key for PRNG.
-
-    Returns
-    -------
-    action : array, shape (n_action_dims,)
-        Exploration action.
-    """
-    action = actor(obs, embedding.state_embedding(obs))
-    eps = (
-        exploration_noise * action_scale * jax.random.normal(key, action.shape)
-    )
-    scaled_noise_clip = action_scale * noise_clip
-    clipped_eps = jnp.clip(eps, -scaled_noise_clip, scaled_noise_clip)
-    return jnp.clip(action + clipped_eps, action_low, action_high)
-
-
-@nnx.jit
-def td7_update_embedding(
-    embedding: SALE,
-    embedding_optimizer: nnx.Optimizer,
-    observations: jnp.ndarray,
-    actions: jnp.ndarray,
-    next_observations: jnp.ndarray,
-) -> float:
-    """Update SALE.
-
-    Parameters
-    ----------
-    embedding : SALE
-        State-action learned embedding.
-
-    embedding_optimizer : nnx.Optimizer
-        Optimizer for embedding.
-
-    observations : array
-        Batch of observations.
-
-    actions : array
-        Batch of actions.
-
-    next_observations : array
-        Batch of next observations.
-
-    Returns
-    -------
-    embedding_loss_value : float
-        Loss value.
-    """
-    embedding_loss_value, grads = nnx.value_and_grad(
-        state_action_embedding_loss, argnums=0
-    )(embedding, observations, actions, next_observations)
-    embedding_optimizer.update(grads)
-    return embedding_loss_value
 
 
 @partial(
@@ -362,7 +211,7 @@ def td7_update_critic(
     return q_loss_value, max_abs_td_error, q_target
 
 
-def deterministic_policy_gradient_loss(
+def deterministic_policy_gradient_loss_sale(
     embedding: SALE,
     critic: ContinuousClippedDoubleQNet,
     observation: jnp.ndarray,
@@ -431,7 +280,7 @@ def td7_update_actor(
         Batch of observations.
     """
     actor_loss_value, grads = nnx.value_and_grad(
-        deterministic_policy_gradient_loss, argnums=3
+        deterministic_policy_gradient_loss_sale, argnums=3
     )(embedding, critic, observation, actor)
     actor_optimizer.update(grads)
     return actor_loss_value
@@ -897,7 +746,7 @@ def train_td7(
     action_scale = 0.5 * (env.action_space.high - env.action_space.low)
     _sample_actions = nnx.jit(
         partial(
-            sample_actions,
+            sample_actions_sale,
             env.action_space.low,
             env.action_space.high,
             action_scale,
@@ -906,7 +755,7 @@ def train_td7(
     )
     _sample_target_actions = nnx.jit(
         partial(
-            sample_target_actions,
+            sample_target_actions_sale,
             env.action_space.low,
             env.action_space.high,
             action_scale,
@@ -1003,7 +852,7 @@ def train_td7(
                     terminations,
                 ) = replay_buffer.sample_batch(batch_size, rng)
 
-                embedding_loss_value = td7_update_embedding(
+                embedding_loss_value = update_sale(
                     embedding,
                     embedding_optimizer,
                     observations,
