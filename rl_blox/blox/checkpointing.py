@@ -24,6 +24,14 @@ def maybe_train_and_checkpoint(
     The function will determine if a checkpoint should be saved and for how many
     epochs we should train.
 
+    The ideal performance measure of a policy is the average return in as many
+    episodes as possible. However, it is necessary to reduce the number of
+    evaluation episodes to improve sample efficiency. We use the minimum
+    performance to assess unstable policies with a low number of episodes as
+    poorly performing policies do not waste additional assessment episodes and
+    training can resume when the performance in any episode falls below the
+    checkpoint performance. This idea is first used in TD7 [1]_.
+
     Parameters
     ----------
     checkpoint_state : CheckpointState
@@ -54,6 +62,14 @@ def maybe_train_and_checkpoint(
 
     training_steps : int
         Number of training epochs.
+
+    References
+    ----------
+    .. [1] Fujimoto, S., Chang, W.D., Smith, E., Gu, S., Precup, D., Meger, D.
+       (2023). For SALE: State-Action Representation Learning for Deep
+       Reinforcement Learning. In Advances in Neural Information Processing
+       Systems 36, pp. 61573-61624. Available from
+       https://proceedings.neurips.cc/paper_files/paper/2023/hash/c20ac0df6c213db6d3a930fe9c7296c8-Abstract-Conference.html
     """
     checkpoint_state.episodes_since_udpate += 1
     checkpoint_state.timesteps_since_upate += steps_per_episode
