@@ -206,6 +206,9 @@ def sample_target_actions(
     exploration_noise : float
         Scaling factor for exploration noise.
 
+    noise_clip : float
+        Scaling factor for noise clipping.
+
     policy : DeterministicTanhPolicy
         Deterministic policy.
 
