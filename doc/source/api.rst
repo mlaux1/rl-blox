@@ -89,6 +89,10 @@ Functional Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   embedding.sale.state_action_embedding_loss
+   embedding.sale.update_sale
+   embedding.sale.sample_actions_sale
+   embedding.sale.sample_target_actions_sale
    target_net.soft_target_net_update
    target_net.hard_target_net_update
    cross_entropy_method.cem_sample
