@@ -626,6 +626,14 @@ def train_td7(
     * ``min_target_value`` - less frequently updated target value
     * ``max_value`` - maximum value of Q observed so far
     * ``max_target_value`` - less frequently updated target value
+    * ``episodes_since_udpate`` - number of assessment episodes since last
+       actor update
+    * ``timesteps_since_upate`` - number of environment steps since last actor
+      update
+    * ``max_episodes_before_update`` - maximum number of episodes allowed
+      before next actor update
+    * ``min_return`` - minimum return observed for current actor
+    * ``best_min_return`` - best minimum return observed for any previous actor
 
     Checkpointing
 
@@ -755,6 +763,8 @@ def train_td7(
                 }
                 for k, v in epochs.items():
                     logger.record_epoch(k, v, step=global_step + 1)
+                for k, v in checkpoint_state.__dict__.items():
+                    logger.record_stat(k, v, step=global_step + 1)
 
         if global_step >= learning_starts:
             for delayed_train_step_idx in range(1, training_steps + 1):
