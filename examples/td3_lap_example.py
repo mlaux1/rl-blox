@@ -42,7 +42,7 @@ logger = LoggerList(
 )
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name="TD3",
+    algorithm_name="TD3+LAP",
     hparams=hparams_models | hparams_algorithm,
 )
 n_policy_epochs = (
