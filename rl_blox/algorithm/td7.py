@@ -802,10 +802,9 @@ def train_td7(
                     value_clipping_state.max_target_value,
                 )
                 value_clipping_state.update_range(q_target)
-                priority = lap_priority(
-                    max_abs_td_error, lap_min_priority, lap_alpha
+                replay_buffer.update_priority(
+                    lap_priority(max_abs_td_error, lap_min_priority, lap_alpha)
                 )
-                replay_buffer.update_priority(priority)
 
                 if epoch % policy_delay == 0:
                     actor_loss_value = td7_update_actor(
