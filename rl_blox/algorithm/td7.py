@@ -436,9 +436,9 @@ def train_td7(
 
     TD7 [1]_ is an extension of TD3 with the following tricks:
 
-    * SALE: state-action learned embeddings, a method that learns embeddings
-      jointly over both state and action by modeling the dynamics of the
-      environment in latent space
+    * :class:`~.blox.embedding.sale.SALE`: state-action learned embeddings, a
+      method that learns embeddings jointly over both state and action by
+      modeling the dynamics of the environment in latent space
     * checkpoints: similar to representation learning, early stopping and
       checkpoints are used to enhance the performance of a model
     * loss-adjusted prioritized experience replay
@@ -577,20 +577,6 @@ def train_td7(
 
     Notes
     -----
-
-    The objecctive of SALE is to discover learned embeddings
-    :math:`z^{sa}, z^s` which capture relevant structure in the observation
-    space, as well as the transition dynamics of the environment. SALE defines
-    a pair of encoders :math:`(f, g)`:
-
-    .. math::
-
-        z^s := f(s), \quad z^{sa} := g(z^s, a).
-
-    The embeddings are split into state and state-action components so that the
-    encoders can be trained with a dynamics prediction loss that solely relies
-    on the next state :math:`s'`, independent of the next action or current
-    policy.
 
     A checkpoint is a snapshot of the parameters of a model, captured at a
     specific time during training. In RL, using the checkpoint of a policy that

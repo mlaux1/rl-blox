@@ -9,12 +9,28 @@ from ..function_approximator.norm import avg_l1_norm
 class SALE(nnx.Module):
     r"""SALE: state-action learned embedding.
 
-    Although the embeddings are learned by considering the dynamics of the
-    environment, their purpose is solely to improve the input to the value
-    function and policy, and not to serve as a world model for planning or
-    estimating rollouts.
-
     SALE was introduced with TD7 [1]_.
+
+    The objective of SALE is to learn embeddings :math:`z^{sa}, z^s` that
+    capture relevant structure in the observation space, as well as the
+    transition dynamics of the environment. SALE defines a pair of encoders
+    :math:`(f, g)`:
+
+    .. math::
+
+        z^s := f(s), \quad z^{sa} := g(z^s, a).
+
+    The embeddings are split into state and state-action components so that the
+    encoders can be trained with a dynamics prediction loss
+    (see :func:`state_action_embedding_loss`) that solely relies on the next
+    state :math:`s'`, independent of the next action or current policy.
+
+    .. warning::
+
+        Although the embeddings are learned by considering the dynamics of the
+        environment, their only purpose is to improve the input to the value
+        function :class:`CriticSALE` and policy :class:`ActorSALE`, and not to
+        serve as a world model for predicting state transitions.
 
     Parameters
     ----------
@@ -28,6 +44,15 @@ class SALE(nnx.Module):
         to zsa, which is trained to be the same as the normalized zs of the
         next state.
 
+    See Also
+    --------
+    CriticSALE
+        Action-value function that uses SALE as input.
+    ActorSALE
+        Policy that uses SALE as input.
+    state_action_embedding_loss
+        Loss to train SALE.
+
     References
     ----------
     .. [1] Fujimoto, S., Chang, W.D., Smith, E., Gu, S., Precup, D., Meger, D.
@@ -39,6 +64,7 @@ class SALE(nnx.Module):
 
     _state_embedding: nnx.Module
     state_action_embedding: nnx.Module
+    """:math:`z^{sa} = g(z^s, a)`."""
 
     def __init__(
         self, state_embedding: nnx.Module, state_action_embedding: nnx.Module
