@@ -461,7 +461,7 @@ def train_td7(
     embedding_optimizer : nnx.Optimizer
         Optimizer for embedding.
 
-    actor : nnx.Module
+    actor : ActorSALE
         Maps state and zs to action.
 
     actor_optimizer : nnx.Optimizer
