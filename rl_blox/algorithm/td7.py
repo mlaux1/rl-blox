@@ -10,7 +10,10 @@ import optax
 import tqdm
 from flax import nnx
 
-from ..blox.checkpointing import CheckpointState, assess_performance_and_checkpoint
+from ..blox.checkpointing import (
+    CheckpointState,
+    assess_performance_and_checkpoint,
+)
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.embedding.sale import (
     SALE,
@@ -21,7 +24,7 @@ from ..blox.embedding.sale import (
 )
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.replay_buffer import LAP
+from ..blox.replay_buffer import LAP, lap_priority
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import sample_actions
@@ -728,14 +731,16 @@ def train_td7(
                 training_steps = 1
 
             if (termination or truncated) and use_checkpoints:
-                update_checkpoint, training_steps = assess_performance_and_checkpoint(
-                    checkpoint_state,
-                    steps_per_episode,
-                    accumulated_reward,
-                    epoch,
-                    reset_weight,
-                    max_episodes_when_checkpointing,
-                    steps_before_checkpointing,
+                update_checkpoint, training_steps = (
+                    assess_performance_and_checkpoint(
+                        checkpoint_state,
+                        steps_per_episode,
+                        accumulated_reward,
+                        epoch,
+                        reset_weight,
+                        max_episodes_when_checkpointing,
+                        steps_before_checkpointing,
+                    )
                 )
                 if update_checkpoint:
                     hard_target_net_update(actor, actor_checkpoint)
@@ -797,8 +802,8 @@ def train_td7(
                     value_clipping_state.max_target_value,
                 )
                 value_clipping_state.update_range(q_target)
-                priority = (
-                    jnp.maximum(max_abs_td_error, lap_min_priority) ** lap_alpha
+                priority = lap_priority(
+                    max_abs_td_error, lap_min_priority, lap_alpha
                 )
                 replay_buffer.update_priority(priority)
 

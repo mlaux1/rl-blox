@@ -11,11 +11,14 @@ import tqdm
 from flax import nnx
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
-from ..blox.replay_buffer import LAP
+from ..blox.replay_buffer import LAP, lap_priority
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import ddpg_update_actor, sample_actions
-from .td3 import double_q_deterministic_bootstrap_estimate, sample_target_actions
+from .td3 import (
+    double_q_deterministic_bootstrap_estimate,
+    sample_target_actions,
+)
 
 
 @partial(nnx.jit, static_argnames=["gamma", "min_priority"])
@@ -378,8 +381,8 @@ def train_td3_lap(
                     terminations,
                     lap_min_priority,
                 )
-                priority = (
-                    jnp.maximum(max_abs_td_error, lap_min_priority) ** lap_alpha
+                priority = lap_priority(
+                    max_abs_td_error, lap_min_priority, lap_alpha
                 )
                 replay_buffer.update_priority(priority)
 

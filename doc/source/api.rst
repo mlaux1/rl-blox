@@ -110,6 +110,7 @@ Functional Blox
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
    function_approximator.norm.avg_l1_norm
+   replay_buffer.lap_priority
 
 Data Blox
 ---------

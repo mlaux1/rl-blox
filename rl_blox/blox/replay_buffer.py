@@ -132,9 +132,9 @@ class ReplayBuffer:
 
 
 class LAP(ReplayBuffer):
-    r"""Replay buffer for loss-adjusted prioritized experience replay (LAP).
+    r"""Prioritized replay buffer.
 
-    Loss-adjusted prioritized experience replay (LAP) [1]_ is based on
+    This replay buffer can be used for loss-adjusted PER (LAP) [1]_ and
     prioritized experience replay (PER) [2]_. PER is a sampling scheme for
     replay buffers, in which transitions are sampled in proportion to their
     temporal-difference (TD) error. The intuitive argument behind PER is that
@@ -157,7 +157,7 @@ class LAP(ReplayBuffer):
     is sampled with non-zero probability. This is necessary as often the
     current TD error is approximated by the TD error when i was last sampled.
 
-    LAP changes this to
+    LAP changes this to (:func:`lap_priority`)
 
     .. math::
 
@@ -268,3 +268,54 @@ class LAP(ReplayBuffer):
 
     def reset_max_priority(self):
         self.max_priority = np.max(self.priority[: self.current_len])
+
+
+def lap_priority(
+    abs_td_error: jnp.ndarray, min_priority: float, alpha: float
+) -> jnp.ndarray:
+    r"""Compute sample priority for loss-adjusted PER (LAP).
+
+    Loss-adjusted prioritized experience replay (LAP) [1]_ is based on
+    prioritized experience replay (PER) [2]_. LAP uses the priority
+
+    .. math::
+
+        p(i)
+        =
+        \frac{\max(|\delta_i|^{\alpha}, p_{\min})}
+        {\sum_j \max(|\delta_j|^{\alpha}, p_{\min})},
+
+    which leads to uniform sampling of transitions with a TD error smaller than
+    :math:`p_{\min}` (usually 1) to avoid the bias introduced from using MSE
+    and prioritization. A LAP replay buffer is supposed to be paired with a
+    Huber loss with a threshold of :math:`p_{\min}` to switch between MSE and
+    L1 loss.
+
+    Parameters
+    ----------
+    abs_td_error : array
+        A batch of :math:`|\delta_i|`.
+
+    min_priority : float
+        Minimum priority :math:`p_{\min}`.
+
+    alpha : float
+        Smoothing exponent :math:`\alpha`.
+
+    Returns
+    -------
+    p : array
+        A batch of priorities :math:`p(i)`.
+
+    References
+    ----------
+    .. [1] Fujimoto, S., Meger, D., Precup, D. (2020). An Equivalence between
+       Loss Functions and Non-Uniform Sampling in Experience Replay. In
+       Advances in Neural Information Processing Systems 33.
+       https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
+
+    .. [2] Schaul, T., Quan, J., Antonoglou, I., Silver, D. (2016). Prioritized
+       Experience Replay. In International Conference on Learning
+       Representations. https://arxiv.org/abs/1511.05952
+    """
+    return jnp.maximum(abs_td_error, min_priority) ** alpha
