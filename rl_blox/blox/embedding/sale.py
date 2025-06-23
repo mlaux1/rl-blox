@@ -60,7 +60,7 @@ class SALE(nnx.Module):
 
 
 class ActorSALE(nnx.Module):
-    """Deterministic policy with SALE.
+    r"""Deterministic policy with SALE.
 
     The actor maps a state vector through a linear leayer and applied AvgL1Norm,
     it concatenates the result with the embedded vector zs, and then maps it
