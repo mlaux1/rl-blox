@@ -1,5 +1,6 @@
 from collections import OrderedDict, namedtuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from numpy import typing as npt
@@ -270,6 +271,7 @@ class LAP(ReplayBuffer):
         self.max_priority = np.max(self.priority[: self.current_len])
 
 
+@jax.jit
 def lap_priority(
     abs_td_error: jnp.ndarray, min_priority: float, alpha: float
 ) -> jnp.ndarray:
