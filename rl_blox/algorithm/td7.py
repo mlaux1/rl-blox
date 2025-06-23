@@ -740,39 +740,39 @@ def train_td7(
             termination=termination,
         )
 
-        if use_checkpoints:
-            # only train when not evaluating the checkpoint
-            training_steps = 0
-        else:
-            training_steps = 1
-
-        if (termination or truncated) and use_checkpoints:
-            update_checkpoint, training_steps = maybe_train_and_checkpoint(
-                checkpoint_state,
-                steps_per_episode,
-                accumulated_reward,
-                epoch,
-                reset_weight,
-                max_episodes_when_checkpointing,
-                steps_before_checkpointing,
-            )
-            if update_checkpoint:
-                hard_target_net_update(actor, actor_checkpoint)
-                hard_target_net_update(
-                    fixed_embedding, fixed_embedding_checkpoint
-                )
-                epochs = {
-                    "actor_checkpoint": actor_checkpoint,
-                    "fixed_embedding_checkpoint": fixed_embedding_checkpoint,
-                }
-                if logger is not None:
-                    for k, v in epochs.items():
-                        logger.record_epoch(k, v, step=global_step + 1)
-            if logger is not None:
-                for k, v in checkpoint_state.__dict__.items():
-                    logger.record_stat(k, v, step=global_step + 1)
-
         if global_step >= learning_starts:
+            if use_checkpoints:
+                # only train when not evaluating the checkpoint
+                training_steps = 0
+            else:
+                training_steps = 1
+
+            if (termination or truncated) and use_checkpoints:
+                update_checkpoint, training_steps = maybe_train_and_checkpoint(
+                    checkpoint_state,
+                    steps_per_episode,
+                    accumulated_reward,
+                    epoch,
+                    reset_weight,
+                    max_episodes_when_checkpointing,
+                    steps_before_checkpointing,
+                )
+                if update_checkpoint:
+                    hard_target_net_update(actor, actor_checkpoint)
+                    hard_target_net_update(
+                        fixed_embedding, fixed_embedding_checkpoint
+                    )
+                    epochs = {
+                        "actor_checkpoint": actor_checkpoint,
+                        "fixed_embedding_checkpoint": fixed_embedding_checkpoint,
+                    }
+                    if logger is not None:
+                        for k, v in epochs.items():
+                            logger.record_epoch(k, v, step=global_step + 1)
+                if logger is not None:
+                    for k, v in checkpoint_state.__dict__.items():
+                        logger.record_stat(k, v, step=global_step + 1)
+
             for delayed_train_step_idx in range(1, training_steps + 1):
                 metrics = {}
                 epochs = {}

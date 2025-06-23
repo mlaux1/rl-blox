@@ -188,6 +188,8 @@ class OrbaxCheckpointer(LoggerBase):
             if (
                 self.last_step[key] % self.checkpoint_frequencies[key]
                 > step % self.checkpoint_frequencies[key]
+            ) or (
+                (step - self.last_step[key]) >= self.checkpoint_frequencies[key]
             ):
                 self._save_checkpoint(key, value, step)
 
@@ -197,7 +199,7 @@ class OrbaxCheckpointer(LoggerBase):
         checkpoint_path = os.path.join(
             f"{self.checkpoint_dir}",
             f"{self.env_name}_{self.algorithm_name}_{self.start_time}_"
-            f"{key}_step_{step}_epoch_{self.epoch[key]}/",
+            f"{key}_step_{step:09d}_epoch_{self.epoch[key]}/",
         )
 
         self.save_model(checkpoint_path, value)
