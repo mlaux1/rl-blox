@@ -27,8 +27,8 @@ from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.replay_buffer import LAP, lap_priority
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
-from .ddpg import sample_actions
-from .td3 import sample_target_actions
+from .ddpg import make_sample_actions
+from .td3 import make_sample_target_actions
 
 
 @dataclasses.dataclass
@@ -653,25 +653,9 @@ def train_td7(
     if replay_buffer is None:
         replay_buffer = LAP(buffer_size)
 
-    action_scale = 0.5 * (env.action_space.high - env.action_space.low)
-    _sample_actions = nnx.jit(
-        partial(
-            sample_actions,
-            env.action_space.low,
-            env.action_space.high,
-            action_scale,
-            exploration_noise,
-        )
-    )
-    _sample_target_actions = nnx.jit(
-        partial(
-            sample_target_actions,
-            env.action_space.low,
-            env.action_space.high,
-            action_scale,
-            target_policy_noise,
-            noise_clip,
-        )
+    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
+    _sample_target_actions = make_sample_target_actions(
+        env.action_space, target_policy_noise, noise_clip
     )
 
     epoch = 0

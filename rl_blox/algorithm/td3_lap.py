@@ -14,10 +14,10 @@ from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.replay_buffer import LAP, lap_priority
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
-from .ddpg import ddpg_update_actor, sample_actions
+from .ddpg import ddpg_update_actor, make_sample_actions
 from .td3 import (
     double_q_deterministic_bootstrap_estimate,
-    sample_target_actions,
+    make_sample_target_actions,
 )
 
 
@@ -302,25 +302,9 @@ def train_td3_lap(
     if replay_buffer is None:
         replay_buffer = LAP(buffer_size)
 
-    action_scale = 0.5 * (env.action_space.high - env.action_space.low)
-    _sample_actions = nnx.jit(
-        partial(
-            sample_actions,
-            env.action_space.low,
-            env.action_space.high,
-            action_scale,
-            exploration_noise,
-        )
-    )
-    _sample_target_actions = nnx.jit(
-        partial(
-            sample_target_actions,
-            env.action_space.low,
-            env.action_space.high,
-            action_scale,
-            target_policy_noise,
-            noise_clip,
-        )
+    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
+    _sample_target_actions = make_sample_target_actions(
+        env.action_space, target_policy_noise, noise_clip
     )
 
     if logger is not None:

@@ -1,4 +1,5 @@
 from collections import namedtuple
+from collections.abc import Callable
 from functools import partial
 
 import chex
@@ -259,6 +260,22 @@ def sample_actions(
     return jnp.clip(exploring_action, action_low, action_high)
 
 
+def make_sample_actions(
+    action_space: gym.spaces.Box,
+    exploration_noise: float,
+) -> Callable[[nnx.Module, jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+    action_scale = 0.5 * (action_space.high - action_space.low)
+    return nnx.jit(
+        partial(
+            sample_actions,
+            action_space.low,
+            action_space.high,
+            action_scale,
+            exploration_noise,
+        )
+    )
+
+
 def create_ddpg_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
@@ -487,16 +504,7 @@ def train_ddpg(
     if replay_buffer is None:
         replay_buffer = ReplayBuffer(buffer_size)
 
-    action_scale = 0.5 * (env.action_space.high - env.action_space.low)
-    _sample_actions = nnx.jit(
-        partial(
-            sample_actions,
-            env.action_space.low,
-            env.action_space.high,
-            action_scale,
-            exploration_noise,
-        )
-    )
+    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
 
     if logger is not None:
         logger.start_new_episode()
@@ -596,7 +604,7 @@ def train_ddpg(
             "q_target",
             "q_optimizer",
             "replay_buffer",
-        ]
+        ],
     )(
         policy,
         policy_target,

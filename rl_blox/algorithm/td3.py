@@ -1,4 +1,5 @@
 from collections import namedtuple
+from collections.abc import Callable
 from functools import partial
 
 import chex
@@ -17,7 +18,7 @@ from ..blox.losses import mse_continuous_action_value_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
-from .ddpg import ddpg_update_actor, sample_actions
+from .ddpg import ddpg_update_actor, make_sample_actions
 
 
 @nnx.jit
@@ -230,6 +231,24 @@ def sample_target_actions(
     scaled_noise_clip = action_scale * noise_clip
     clipped_eps = jnp.clip(eps, -scaled_noise_clip, scaled_noise_clip)
     return jnp.clip(action + clipped_eps, action_low, action_high)
+
+
+def make_sample_target_actions(
+    action_space: gym.spaces.Box,
+    exploration_noise: float,
+    noise_clip: float,
+) -> Callable[[nnx.Module, jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+    action_scale = 0.5 * (action_space.high - action_space.low)
+    return nnx.jit(
+        partial(
+            sample_target_actions,
+            action_space.low,
+            action_space.high,
+            action_scale,
+            exploration_noise,
+            noise_clip,
+        )
+    )
 
 
 def create_td3_state(
@@ -492,25 +511,9 @@ def train_td3(
     if replay_buffer is None:
         replay_buffer = ReplayBuffer(buffer_size)
 
-    action_scale = 0.5 * (env.action_space.high - env.action_space.low)
-    _sample_actions = nnx.jit(
-        partial(
-            sample_actions,
-            env.action_space.low,
-            env.action_space.high,
-            action_scale,
-            exploration_noise,
-        )
-    )
-    _sample_target_actions = nnx.jit(
-        partial(
-            sample_target_actions,
-            env.action_space.low,
-            env.action_space.high,
-            action_scale,
-            exploration_noise,
-            noise_clip,
-        )
+    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
+    _sample_target_actions = make_sample_target_actions(
+        env.action_space, exploration_noise, noise_clip
     )
 
     if logger is not None:
