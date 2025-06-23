@@ -35,6 +35,14 @@ class ValueClippingState:
     min_target_value: float = 0.0
     max_target_value: float = 0.0
 
+    def update_range(self, q_target: jnp.ndarray):
+        self.min_value = min(self.min_value, float(q_target.min()))
+        self.max_value = max(self.max_value, float(q_target.max()))
+
+    def update_target_range(self):
+        self.min_target_value = self.min_value
+        self.max_target_value = self.max_value
+
 
 @partial(
     nnx.jit,
@@ -788,12 +796,7 @@ def train_td7(
                     value_clipping_state.min_target_value,
                     value_clipping_state.max_target_value,
                 )
-                value_clipping_state.min_value = min(
-                    value_clipping_state.min_value, float(q_target.min())
-                )
-                value_clipping_state.max_value = max(
-                    value_clipping_state.max_value, float(q_target.max())
-                )
+                value_clipping_state.update_range(q_target)
                 priority = (
                     jnp.maximum(max_abs_td_error, lap_min_priority) ** lap_alpha
                 )
@@ -820,12 +823,7 @@ def train_td7(
                     hard_target_net_update(embedding, fixed_embedding)
 
                     replay_buffer.reset_max_priority()
-                    value_clipping_state.min_target_value = (
-                        value_clipping_state.min_value
-                    )
-                    value_clipping_state.max_target_value = (
-                        value_clipping_state.max_value
-                    )
+                    value_clipping_state.update_target_range()
 
                     if logger is not None:
                         epochs["policy_target"] = actor_target
