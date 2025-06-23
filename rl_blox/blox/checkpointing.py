@@ -17,7 +17,7 @@ class CheckpointState:
     """Best minimum return observed for any previous actor."""
 
 
-def maybe_train_and_checkpoint(
+def assess_performance_and_checkpoint(
     checkpoint_state: CheckpointState,
     steps_per_episode: int,
     episode_return: float,
@@ -65,13 +65,26 @@ def maybe_train_and_checkpoint(
     Returns
     -------
     update_checkpoint : False
-        Checkpoint should be updated now
+        Checkpoint should be updated now.
 
     training_steps : int
         Number of training epochs.
 
     Notes
     -----
+
+    A checkpoint is a snapshot of the parameters of a model, captured at a
+    specific time during training. Using the checkpoint of a policy that
+    obtained a high return during training improves the stability of test time
+    performance. The standard learning paradigm for off-policy RL algorithms is
+    to train after each time step, which means that the policy changes
+    throughout each episode, making it hard to evaluate the performance.
+    Similar to many on-policy algorithms, TD7 [1]_ keeps the policy fixed for
+    several assessment episodes and then batches the training that would have
+    occurred. We use these assessment episodes to judge if the current policy
+    outperforms the previous best policy in a similar manner to evolutionary
+    approaches and save a checkpoint. The checkpoint policy is used at
+    evaluation time.
 
     The ideal performance measure of a policy is the average return in as many
     episodes as possible. However, it is necessary to reduce the number of

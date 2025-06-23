@@ -10,7 +10,7 @@ import optax
 import tqdm
 from flax import nnx
 
-from ..blox.checkpointing import CheckpointState, maybe_train_and_checkpoint
+from ..blox.checkpointing import CheckpointState, assess_performance_and_checkpoint
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.embedding.sale import (
     SALE,
@@ -434,14 +434,18 @@ def train_td7(
 ]:
     r"""TD7.
 
-    TD7 [1]_ is an extension of TD3 with the following tricks:
+    TD7 [1]_ is an extension of TD3 (see :func:`~.td3.train_td3`) with the
+    following tricks:
 
     * :class:`~.blox.embedding.sale.SALE`: state-action learned embeddings, a
       method that learns embeddings jointly over both state and action by
       modeling the dynamics of the environment in latent space
     * checkpoints: similar to representation learning, early stopping and
-      checkpoints are used to enhance the performance of a model
-    * loss-adjusted prioritized experience replay
+      checkpoints are used to enhance test time performance (see
+      :func:`~.blox.checkpointing.assess_performance_and_checkpoint`)
+    * :class:`~.blox.replay_buffer.LAP`: loss-adjusted prioritized experience
+      replay uses prioritized replay buffer paired with the Huber loss for the
+      value function
 
     The offline version of TD7 uses an additional behavior cloning loss. This
     is the reason why the algorithm is called TD7: TD3 + 4 additions.
@@ -578,31 +582,13 @@ def train_td7(
     Notes
     -----
 
-    A checkpoint is a snapshot of the parameters of a model, captured at a
-    specific time during training. In RL, using the checkpoint of a policy that
-    obtained a high reward during training, instead of the current policy,
-    improves the stability of the performance at test time. For off-policy RL
-    algorithms, the standard training paradigm is to train after each time step.
-    However, this means that the policy changes throughout each episode, making
-    it hard to evaluate the performance. Similar to many on-policy algorithms,
-    TD7 keeps the policy fixed for several assessment episodes and then batches
-    the training that would have occurred. In a similar manner to evolutionary
-    approaches, we can use these assessment episodes to judge if the current
-    policy outperforms the previous best policy and checkpoint accordingly.
-    At evaluation time, the checkpoint policy is used, rather than the current
-    policy. To preserve learning speed and sample efficiency, we use the minimum
-    performance to assess a policy, which penalizes unstable policies.
-
-    Loss-adjusted prioritized experience replay uses a prioritized replay buffer
-    paired with the Huber loss for the value function.
-
     Implementation details:
 
     * ELU activation function is recommended for the critic.
     * The target networks are updated periodically with a hard update. This
       change in comparison to TD3 is necessary because of the fixed encoders.
     * To stabilize the value estimate we track the range of values in the
-      dataset and then bound the target values. This is necessary because
+      dataset and then clip the target values. This is necessary because
       expanding the inputs to the value network with the embedding leads to
       extrapolation error.
 
@@ -617,7 +603,7 @@ def train_td7(
     * ``max_value`` - maximum value of Q observed so far
     * ``max_target_value`` - less frequently updated target value
     * ``episodes_since_udpate`` - number of assessment episodes since last
-       actor update
+      actor update
     * ``timesteps_since_upate`` - number of environment steps since last actor
       update
     * ``max_episodes_before_update`` - maximum number of episodes allowed
@@ -734,7 +720,7 @@ def train_td7(
                 training_steps = 1
 
             if (termination or truncated) and use_checkpoints:
-                update_checkpoint, training_steps = maybe_train_and_checkpoint(
+                update_checkpoint, training_steps = assess_performance_and_checkpoint(
                     checkpoint_state,
                     steps_per_episode,
                     accumulated_reward,
