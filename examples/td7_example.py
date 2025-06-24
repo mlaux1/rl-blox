@@ -69,11 +69,11 @@ while True:
     obs, _ = env.reset()
     while not done:
         obs = jnp.asarray(obs)
-        zs = result.embedding.state_embedding(obs)
+        zs = result.fixed_embedding.state_embedding(obs)
         action = result.actor(obs, zs=zs)
         next_obs, reward, termination, truncation, infos = env.step(np.asarray(action))
         done = termination or truncation
-        zsa = result.embedding.state_action_embedding(jnp.concatenate((zs, action), axis=-1))
+        zsa = result.fixed_embedding.state_action_embedding(jnp.concatenate((zs, action), axis=-1))
         q_value = result.critic(jnp.concatenate((obs, action)), zs=zs, zsa=zsa)
         if verbose:
             print(f"{q_value=}")

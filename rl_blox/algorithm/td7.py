@@ -434,6 +434,8 @@ def train_td7(
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
+    nnx.Module,
+    nnx.Module,
     nnx.Optimizer,
     nnx.Module,
     nnx.Module,
@@ -563,8 +565,14 @@ def train_td7(
     Returns
     -------
     embedding : SALE
-        State-action learned embedding or, if checkpointing is activated, last
-        checkpoint.
+        State-action learned embedding.
+
+    fixed_embedding : SALE
+        Fixed state-action learned embedding or, if checkpointing is activated,
+        last checkpoint.
+
+    fixed_embedding_target : SALE
+        Target network for fixed embedding.
 
     embedding_optimizer : nnx.Optimizer
         Optimizer for embedding.
@@ -862,6 +870,8 @@ def train_td7(
         "TD7Result",
         [
             "embedding",
+            "fixed_embedding",
+            "fixed_embedding_target",
             "embedding_optimizer",
             "actor",
             "actor_target",
@@ -872,7 +882,9 @@ def train_td7(
             "replay_buffer",
         ],
     )(
-        fixed_embedding_checkpoint if use_checkpoints else embedding,
+        embedding,
+        fixed_embedding_checkpoint if use_checkpoints else fixed_embedding,
+        fixed_embedding_target,
         embedding_optimizer,
         actor_checkpoint if use_checkpoints else actor,
         actor_target,
