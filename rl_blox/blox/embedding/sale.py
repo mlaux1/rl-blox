@@ -130,6 +130,19 @@ class ActorSALE(nnx.Module):
         return self.policy_net(he)
 
 
+class DeterministicSALEPolicy(nnx.Module):
+    """Combines SALE encoder and ActorSALE to form a deterministic policy."""
+
+    def __init__(self, embedding: SALE, actor: ActorSALE):
+        self.embedding = embedding
+        self.actor = actor
+
+    def __call__(self, observation: jnp.ndarray):
+        return self.actor(
+            observation, self.embedding.state_embedding(observation)
+        )
+
+
 class CriticSALE(nnx.Module):
     r"""Action-value function Q with SALE.
 
@@ -231,19 +244,6 @@ def state_action_embedding_loss(
     zsa, _ = embedding(observation, action)
     zsp = jax.lax.stop_gradient(embedding.state_embedding(next_observation))
     return optax.squared_error(predictions=zsa, targets=zsp).mean()
-
-
-class DeterministicSALEPolicy(nnx.Module):
-    """Combines SALE encoder and ActorSALE to form a deterministic policy."""
-
-    def __init__(self, embedding: SALE, actor: ActorSALE):
-        self.embedding = embedding
-        self.actor = actor
-
-    def __call__(self, observation: jnp.ndarray):
-        return self.actor(
-            observation, self.embedding.state_embedding(observation)
-        )
 
 
 @nnx.jit
