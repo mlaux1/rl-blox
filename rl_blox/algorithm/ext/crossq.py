@@ -1768,6 +1768,7 @@ def train_crossq(
     policy_delay: int = 1,
     tau: float = 0.005,
     utd: int = 1,
+    td3_mode: bool = False,
     total_timesteps: int = 5_000_000,
     bnstats_live_net: bool = False,
     learning_starts: int = 5_000,
@@ -1845,6 +1846,9 @@ def train_crossq(
         Update-to-data ration: how many gradient steps to we take per
         environment step?
 
+    td3_mode : bool, optional
+        TD3-style deterministic policy with constant Gaussian exploration noise.
+
     total_timesteps : int, optional
         Total steps in the environment.
 
@@ -1900,6 +1904,7 @@ def train_crossq(
         utd=utd,
         bnstats_live_net=bnstats_live_net,
         learning_starts=learning_starts,
+        td3_mode=td3_mode,
     )
 
     model.learn(
