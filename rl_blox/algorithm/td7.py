@@ -690,6 +690,9 @@ def train_td7(
     if use_checkpoints:
         actor_checkpoint = nnx.clone(actor)
         fixed_embedding_checkpoint = nnx.clone(embedding)
+        checkpoint = DeterministicSALEPolicy(
+            fixed_embedding_checkpoint, actor_checkpoint
+        )
 
     value_clipping_state = ValueClippingState()
     checkpoint_state = CheckpointState()
@@ -735,13 +738,13 @@ def train_td7(
                     )
                 )
                 if update_checkpoint:
-                    hard_target_net_update(actor, actor_checkpoint)
+                    hard_target_net_update(policy.actor, checkpoint.actor)
                     hard_target_net_update(
-                        fixed_embedding, fixed_embedding_checkpoint
+                        policy.embedding, checkpoint.embedding
                     )
                     epochs = {
-                        "actor_checkpoint": actor_checkpoint,
-                        "fixed_embedding_checkpoint": fixed_embedding_checkpoint,
+                        "actor_checkpoint": checkpoint.actor,
+                        "fixed_embedding_checkpoint": checkpoint.embedding,
                     }
                     if logger is not None:
                         for k, v in epochs.items():
@@ -777,8 +780,8 @@ def train_td7(
                     policy_target, next_observations, sampling_key
                 )
                 q_loss_value, max_abs_td_error, q_target = td7_update_critic(
-                    fixed_embedding,
-                    fixed_embedding_target,
+                    policy.embedding,
+                    policy_target.embedding,
                     critic,
                     critic_target,
                     critic_optimizer,
@@ -800,33 +803,33 @@ def train_td7(
 
                 if epoch % policy_delay == 0:
                     actor_loss_value = td7_update_actor(
-                        fixed_embedding,
-                        actor,
+                        policy.embedding,
+                        policy.actor,
                         actor_optimizer,
                         critic,
                         observations,
                     )
                     if logger is not None:
                         metrics["policy loss"] = actor_loss_value
-                        epochs["policy"] = actor
+                        epochs["policy"] = policy.actor
 
                 if epoch % target_delay == 0:
-                    hard_target_net_update(actor, actor_target)
+                    hard_target_net_update(policy.actor, policy_target.actor)
                     hard_target_net_update(critic, critic_target)
                     hard_target_net_update(
-                        fixed_embedding, fixed_embedding_target
+                        policy.embedding, policy_target.embedding
                     )
-                    hard_target_net_update(embedding, fixed_embedding)
+                    hard_target_net_update(embedding, policy.embedding)
 
                     replay_buffer.reset_max_priority()
                     value_clipping_state.update_target_range()
 
                     if logger is not None:
-                        epochs["policy_target"] = actor_target
+                        epochs["policy_target"] = policy_target.actor
                         epochs["q_target"] = critic_target
-                        epochs["fixed_embedding"] = fixed_embedding
+                        epochs["fixed_embedding"] = policy.embedding
                         epochs["fixed_embedding_target"] = (
-                            fixed_embedding_target
+                            policy_target.embedding
                         )
 
                 if logger is not None:
@@ -883,11 +886,11 @@ def train_td7(
         ],
     )(
         embedding,
-        fixed_embedding_checkpoint if use_checkpoints else fixed_embedding,
-        fixed_embedding_target,
+        checkpoint.embedding if use_checkpoints else policy.embedding,
+        policy_target.embedding,
         embedding_optimizer,
-        actor_checkpoint if use_checkpoints else actor,
-        actor_target,
+        checkpoint.actor if use_checkpoints else policy.actor,
+        policy_target.actor,
         actor_optimizer,
         critic,
         critic_target,
