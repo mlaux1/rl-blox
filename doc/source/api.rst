@@ -27,6 +27,7 @@ Algorithm Interface
    actor_critic.train_ac
    ddpg.train_ddpg
    td3.train_td3
+   td7.train_td7
    sac.train_sac
    pets.train_pets
    cmaes.train_cmaes
@@ -51,6 +52,9 @@ Functional Blox
    td3.td3_update_critic
    td3.double_q_deterministic_bootstrap_estimate
    td3.sample_target_actions
+   td7.td7_update_actor
+   td7.deterministic_policy_gradient_loss_sale
+   td7.td7_update_critic
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
@@ -88,6 +92,9 @@ Functional Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   embedding.sale.state_action_embedding_loss
+   embedding.sale.update_sale
+   checkpointing.assess_performance_and_checkpoint
    target_net.soft_target_net_update
    target_net.hard_target_net_update
    cross_entropy_method.cem_sample
@@ -102,6 +109,8 @@ Functional Blox
    losses.mse_value_loss
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
+   function_approximator.norm.avg_l1_norm
+   replay_buffer.lap_priority
 
 Data Blox
 ---------
@@ -109,7 +118,13 @@ Data Blox
 .. autosummary::
    :toctree: _apidoc/
 
+   embedding.sale.SALE
+   embedding.sale.ActorSALE
+   embedding.sale.CriticSALE
+   embedding.sale.DeterministicSALEPolicy
+   checkpointing.CheckpointState
    replay_buffer.ReplayBuffer
+   replay_buffer.LAP
    function_approximator.mlp.MLP
    function_approximator.gaussian_mlp.GaussianMLP
    function_approximator.policy_head.DeterministicTanhPolicy
