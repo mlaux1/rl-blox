@@ -753,102 +753,31 @@ def train_td7(
                     for k, v in checkpoint_state.__dict__.items():
                         logger.record_stat(k, v, step=global_step + 1)
 
-            for delayed_train_step_idx in range(1, training_steps + 1):
-                metrics = {}
-                epochs = {}
-                epoch += 1
-
-                (
-                    observations,
-                    actions,
-                    rewards,
-                    next_observations,
-                    terminations,
-                ) = replay_buffer.sample_batch(batch_size, rng)
-
-                embedding_loss_value = update_sale(
-                    embedding,
-                    embedding_optimizer,
-                    observations,
-                    actions,
-                    next_observations,
-                )
-
-                # policy smoothing: sample next actions from target policy
-                key, sampling_key = jax.random.split(key, 2)
-                next_actions = _sample_target_actions(
-                    policy_target, next_observations, sampling_key
-                )
-                q_loss_value, max_abs_td_error, q_target = td7_update_critic(
-                    policy.embedding,
-                    policy_target.embedding,
-                    critic,
-                    critic_target,
-                    critic_optimizer,
-                    gamma,
-                    observations,
-                    actions,
-                    next_observations,
-                    next_actions,
-                    rewards,
-                    terminations,
-                    lap_min_priority,
-                    value_clipping_state.min_target_value,
-                    value_clipping_state.max_target_value,
-                )
-                value_clipping_state.update_range(q_target)
-                replay_buffer.update_priority(
-                    lap_priority(max_abs_td_error, lap_min_priority, lap_alpha)
-                )
-
-                if epoch % policy_delay == 0:
-                    actor_loss_value = td7_update_actor(
-                        policy.embedding,
-                        policy.actor,
-                        actor_optimizer,
-                        critic,
-                        observations,
-                    )
-                    if logger is not None:
-                        metrics["policy loss"] = actor_loss_value
-                        epochs["policy"] = policy.actor
-
-                if epoch % target_delay == 0:
-                    hard_target_net_update(policy.actor, policy_target.actor)
-                    hard_target_net_update(critic, critic_target)
-                    hard_target_net_update(
-                        policy.embedding, policy_target.embedding
-                    )
-                    hard_target_net_update(embedding, policy.embedding)
-
-                    replay_buffer.reset_max_priority()
-                    value_clipping_state.update_target_range()
-
-                    if logger is not None:
-                        epochs["policy_target"] = policy_target.actor
-                        epochs["q_target"] = critic_target
-                        epochs["fixed_embedding"] = policy.embedding
-                        epochs["fixed_embedding_target"] = (
-                            policy_target.embedding
-                        )
-
-                if logger is not None:
-                    metrics["embedding loss"] = embedding_loss_value
-                    metrics["q loss"] = q_loss_value
-                    metrics.update(value_clipping_state.__dict__)
-                    epochs["embedding"] = embedding
-                    epochs["q"] = critic
-
-                    log_step = (
-                        global_step
-                        + 1
-                        - training_steps
-                        + delayed_train_step_idx
-                    )
-                    for k, v in metrics.items():
-                        logger.record_stat(k, v, step=log_step)
-                    for k, v in epochs.items():
-                        logger.record_epoch(k, v, step=log_step)
+            epoch, key = _train_step(
+                _sample_target_actions,
+                embedding,
+                embedding_optimizer,
+                critic,
+                critic_target,
+                critic_optimizer,
+                policy,
+                policy_target,
+                actor_optimizer,
+                value_clipping_state,
+                replay_buffer,
+                global_step,
+                epoch,
+                key,
+                rng,
+                training_steps,
+                gamma,
+                batch_size,
+                policy_delay,
+                target_delay,
+                lap_alpha,
+                lap_min_priority,
+                logger,
+            )
             if logger is not None and training_steps > 0:
                 logger.record_stat(
                     "training steps", training_steps, step=global_step + 1
@@ -897,3 +826,118 @@ def train_td7(
         critic_optimizer,
         replay_buffer,
     )
+
+
+def _train_step(
+    _sample_target_actions,
+    embedding,
+    embedding_optimizer,
+    critic,
+    critic_target,
+    critic_optimizer,
+    policy,
+    policy_target,
+    actor_optimizer,
+    value_clipping_state,
+    replay_buffer,
+    global_step,
+    epoch,
+    key,
+    rng,
+    training_steps,
+    gamma,
+    batch_size,
+    policy_delay,
+    target_delay,
+    lap_alpha,
+    lap_min_priority,
+    logger,
+):
+    for delayed_train_step_idx in range(1, training_steps + 1):
+        metrics = {}
+        epochs = {}
+        epoch += 1
+
+        (
+            observations,
+            actions,
+            rewards,
+            next_observations,
+            terminations,
+        ) = replay_buffer.sample_batch(batch_size, rng)
+
+        embedding_loss_value = update_sale(
+            embedding,
+            embedding_optimizer,
+            observations,
+            actions,
+            next_observations,
+        )
+
+        # policy smoothing: sample next actions from target policy
+        key, sampling_key = jax.random.split(key, 2)
+        next_actions = _sample_target_actions(
+            policy_target, next_observations, sampling_key
+        )
+        q_loss_value, max_abs_td_error, q_target = td7_update_critic(
+            policy.embedding,
+            policy_target.embedding,
+            critic,
+            critic_target,
+            critic_optimizer,
+            gamma,
+            observations,
+            actions,
+            next_observations,
+            next_actions,
+            rewards,
+            terminations,
+            lap_min_priority,
+            value_clipping_state.min_target_value,
+            value_clipping_state.max_target_value,
+        )
+        value_clipping_state.update_range(q_target)
+        replay_buffer.update_priority(
+            lap_priority(max_abs_td_error, lap_min_priority, lap_alpha)
+        )
+
+        if epoch % policy_delay == 0:
+            actor_loss_value = td7_update_actor(
+                policy.embedding,
+                policy.actor,
+                actor_optimizer,
+                critic,
+                observations,
+            )
+            if logger is not None:
+                metrics["policy loss"] = actor_loss_value
+                epochs["policy"] = policy.actor
+
+        if epoch % target_delay == 0:
+            hard_target_net_update(policy.actor, policy_target.actor)
+            hard_target_net_update(critic, critic_target)
+            hard_target_net_update(policy.embedding, policy_target.embedding)
+            hard_target_net_update(embedding, policy.embedding)
+
+            replay_buffer.reset_max_priority()
+            value_clipping_state.update_target_range()
+
+            if logger is not None:
+                epochs["policy_target"] = policy_target.actor
+                epochs["q_target"] = critic_target
+                epochs["fixed_embedding"] = policy.embedding
+                epochs["fixed_embedding_target"] = policy_target.embedding
+
+        if logger is not None:
+            metrics["embedding loss"] = embedding_loss_value
+            metrics["q loss"] = q_loss_value
+            metrics.update(value_clipping_state.__dict__)
+            epochs["embedding"] = embedding
+            epochs["q"] = critic
+
+            log_step = global_step + 1 - training_steps + delayed_train_step_idx
+            for k, v in metrics.items():
+                logger.record_stat(k, v, step=log_step)
+            for k, v in epochs.items():
+                logger.record_epoch(k, v, step=log_step)
+    return epoch, key
