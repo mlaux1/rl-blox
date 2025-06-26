@@ -783,7 +783,12 @@ def train_td7(
                     lap_min_priority,
                 )
                 if logger is not None:
-                    log_step = global_step + 1 - training_steps + delayed_train_step_idx
+                    log_step = (
+                        global_step
+                        + 1
+                        - training_steps
+                        + delayed_train_step_idx
+                    )
                     for k, v in metrics.items():
                         logger.record_stat(k, v, step=log_step)
                     for k, v in epochs.items():
