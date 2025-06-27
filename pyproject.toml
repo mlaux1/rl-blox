@@ -28,7 +28,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "gymnasium",
+    "gymnasium>=1.2.0",
     "jax>=0.5",
     "jaxlib",
     "optax",
