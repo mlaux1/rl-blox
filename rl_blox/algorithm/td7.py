@@ -47,6 +47,28 @@ class ValueClippingState:
         self.max_target_value = self.max_value
 
 
+def _sum_of_qnet_losses(
+    observation, action, zsa, zs, q_target, min_priority, q
+):
+    obs_act = jnp.concatenate((observation, action), axis=-1)
+    q1_pred = q.q1(obs_act, zsa=zsa, zs=zs).squeeze()
+    q2_pred = q.q2(obs_act, zsa=zsa, zs=zs).squeeze()
+    max_abs_td_error = jnp.maximum(
+        # TODO we compute these differences twice...
+        jnp.abs(q1_pred - q_target),
+        jnp.abs(q2_pred - q_target),
+    )
+    return (
+        optax.huber_loss(
+            predictions=q1_pred, targets=q_target, delta=min_priority
+        ).mean()
+        + optax.huber_loss(
+            predictions=q2_pred, targets=q_target, delta=min_priority
+        ).mean(),
+        max_abs_td_error,
+    )
+
+
 @partial(
     nnx.jit,
     static_argnames=[
@@ -188,28 +210,9 @@ def td7_update_critic(
     q_next_target = jnp.clip(q_next_target, q_min, q_max)
     q_target = reward + (1 - terminated) * gamma * q_next_target
 
-    def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
-        obs_act = jnp.concatenate((observation, action), axis=-1)
-        q1_pred = q.q1(obs_act, zsa=zsa, zs=zs).squeeze()
-        q2_pred = q.q2(obs_act, zsa=zsa, zs=zs).squeeze()
-        max_abs_td_error = jnp.maximum(
-            # TODO we compute these differences twice...
-            jnp.abs(q1_pred - q_target),
-            jnp.abs(q2_pred - q_target),
-        )
-        return (
-            optax.huber_loss(
-                predictions=q1_pred, targets=q_target, delta=min_priority
-            ).mean()
-            + optax.huber_loss(
-                predictions=q2_pred, targets=q_target, delta=min_priority
-            ).mean(),
-            max_abs_td_error,
-        )
-
     (q_loss_value, max_abs_td_error), grads = nnx.value_and_grad(
-        sum_of_qnet_losses, has_aux=True
-    )(critic)
+        _sum_of_qnet_losses, has_aux=True, argnums=6
+    )(observation, action, zsa, zs, q_target, min_priority, critic)
     critic_optimizer.update(grads)
 
     return q_loss_value, max_abs_td_error, q_target
