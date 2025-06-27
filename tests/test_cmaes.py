@@ -1,4 +1,3 @@
-import gymnasium as gym
 from flax import nnx
 
 from rl_blox.algorithm.cmaes import train_cmaes
@@ -8,12 +7,9 @@ from rl_blox.blox.function_approximator.policy_head import (
 )
 
 
-def test_cmaes():
-    env_name = "Pendulum-v1"
-    env = gym.make(env_name)
+def test_cmaes(pendulum_env):
     seed = 1
-    env = gym.wrappers.RecordEpisodeStatistics(env)
-    env.action_space.seed(seed)
+    pendulum_env.action_space.seed(seed)
     hparams_model = dict(
         hidden_nodes=[64, 64],
         activation="relu",
@@ -26,12 +22,11 @@ def test_cmaes():
         seed=seed,
     )
     policy_net = MLP(
-        env.observation_space.shape[0],
-        env.action_space.shape[0],
+        pendulum_env.observation_space.shape[0],
+        pendulum_env.action_space.shape[0],
         **hparams_model,
         rngs=nnx.Rngs(seed),
     )
-    policy = DeterministicTanhPolicy(policy_net, env.action_space)
+    policy = DeterministicTanhPolicy(policy_net, pendulum_env.action_space)
 
-    policy, _, _ = train_cmaes(env, policy, **hparams_algorithm)
-    env.close()
+    policy, _, _ = train_cmaes(pendulum_env, policy, **hparams_algorithm)

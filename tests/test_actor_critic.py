@@ -1,14 +1,10 @@
-import gymnasium as gym
-
 from rl_blox.algorithm.actor_critic import train_ac
 from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
 
 
-def test_actor_critic():
-    env = gym.make("InvertedPendulum-v5")
-
+def test_actor_critic(inverted_pendulum_env):
     ac_state = create_policy_gradient_continuous_state(
-        env,
+        inverted_pendulum_env,
         policy_shared_head=True,
         policy_hidden_nodes=[32, 32],
         policy_learning_rate=3e-4,
@@ -18,7 +14,7 @@ def test_actor_critic():
     )
 
     train_ac(
-        env,
+        inverted_pendulum_env,
         ac_state.policy,
         ac_state.policy_optimizer,
         ac_state.value_function,
@@ -26,5 +22,3 @@ def test_actor_critic():
         seed=42,
         total_timesteps=10,
     )
-
-    env.close()

@@ -1,4 +1,3 @@
-import gymnasium as gym
 import optax
 from flax import nnx
 
@@ -7,15 +6,14 @@ from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.replay_buffer import ReplayBuffer
 
 
-def test_dqn():
-    env = gym.make("CartPole-v1")
+def test_dqn(cart_pole_env):
     seed = 42
 
     rb = ReplayBuffer(100, discrete_actions=True)
 
     q_net = MLP(
-        env.observation_space.shape[0],
-        int(env.action_space.n),
+        cart_pole_env.observation_space.shape[0],
+        int(cart_pole_env.action_space.n),
         [10],
         "relu",
         nnx.Rngs(seed),
@@ -25,11 +23,9 @@ def test_dqn():
 
     train_dqn(
         q_net,
-        env,
+        cart_pole_env,
         rb,
         optimizer,
         seed=seed,
         total_timesteps=10,
     )
-
-    env.close()

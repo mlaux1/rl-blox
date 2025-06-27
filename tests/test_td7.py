@@ -1,15 +1,11 @@
-import gymnasium as gym
-
 from rl_blox.algorithm.td7 import create_td7_state, train_td7
 
 
-def test_td7():
-    env = gym.make("Pendulum-v1")
-
+def test_td7(pendulum_env):
     seed = 0
-    td7_state = create_td7_state(env, seed=seed)
+    td7_state = create_td7_state(pendulum_env, seed=seed)
     train_td7(
-        env,
+        pendulum_env,
         embedding=td7_state.embedding,
         embedding_optimizer=td7_state.embedding_optimizer,
         actor=td7_state.actor,
@@ -19,4 +15,3 @@ def test_td7():
         total_timesteps=10,
         seed=seed,
     )
-    env.close()
