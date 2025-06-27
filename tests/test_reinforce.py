@@ -1,4 +1,3 @@
-import gymnasium as gym
 import jax
 from flax import nnx
 from numpy.testing import assert_array_equal
@@ -17,10 +16,9 @@ from rl_blox.blox.function_approximator.policy_head import (
 )
 
 
-def test_reinforce():
-    env = gym.make("InvertedPendulum-v5")
+def test_reinforce(inverted_pendulum_env):
     reinforce_state = create_policy_gradient_continuous_state(
-        env,
+        inverted_pendulum_env,
         policy_shared_head=True,
         policy_hidden_nodes=[64, 64],
         policy_learning_rate=3e-4,
@@ -30,7 +28,7 @@ def test_reinforce():
     )
 
     train_reinforce(
-        env,
+        inverted_pendulum_env,
         reinforce_state.policy,
         reinforce_state.policy_optimizer,
         reinforce_state.value_function,
@@ -40,46 +38,46 @@ def test_reinforce():
     )
 
 
-def test_data_collection_discrete():
-    env_name = "CartPole-v1"
-    env = gym.make(env_name)
-    env.reset(seed=42)
-    key = jax.random.key(42)
+def test_data_collection_discrete(cart_pole_env):
+    seed = 42
+    cart_pole_env.reset(seed=seed)
+    key = jax.random.key(seed)
     policy = SoftmaxPolicy(
         MLP(
-            env.observation_space.shape[0],
-            int(env.action_space.n),
+            cart_pole_env.observation_space.shape[0],
+            int(cart_pole_env.action_space.n),
             [32, 32],
             "swish",
-            nnx.Rngs(42),
+            nnx.Rngs(seed),
         )
     )
-    env.close()
     total_steps = 100
-    dataset = sample_trajectories(env, policy, key, None, False, total_steps)
+    dataset = sample_trajectories(
+        cart_pole_env, policy, key, None, False, total_steps
+    )
     assert len(dataset) >= total_steps
     # regression test:
     assert dataset.average_return() == 20.8
 
 
-def test_data_collection_continuous():
-    env_name = "InvertedPendulum-v5"
-    env = gym.make(env_name)
-    env.reset(seed=42)
-    key = jax.random.key(42)
+def test_data_collection_continuous(inverted_pendulum_env):
+    seed = 42
+    inverted_pendulum_env.reset(seed=seed)
+    key = jax.random.key(seed)
     policy = GaussianPolicy(
         GaussianMLP(
             True,
-            env.observation_space.shape[0],
-            env.action_space.shape[0],
+            inverted_pendulum_env.observation_space.shape[0],
+            inverted_pendulum_env.action_space.shape[0],
             [32, 32],
             "swish",
-            nnx.Rngs(42),
+            nnx.Rngs(seed),
         )
     )
-    env.close()
     total_steps = 100
-    dataset = sample_trajectories(env, policy, key, None, False, total_steps)
+    dataset = sample_trajectories(
+        inverted_pendulum_env, policy, key, None, False, total_steps
+    )
     assert len(dataset) >= total_steps
     # regression test:
     assert dataset.average_return() == 5.8
