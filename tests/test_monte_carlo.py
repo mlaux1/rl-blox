@@ -5,4 +5,3 @@ from rl_blox.blox.value_policy import make_q_table
 def test_monte_carlo(tabular_test_env):
     q_table = make_q_table(tabular_test_env)
     _ = train_monte_carlo(tabular_test_env, q_table, total_timesteps=10)
-    tabular_test_env.close()

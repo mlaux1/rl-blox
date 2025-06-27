@@ -13,5 +13,3 @@ def test_double_q_learning(tabular_test_env):
         total_timesteps=10,
         seed=42,
     )
-
-    tabular_test_env.close()

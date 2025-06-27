@@ -11,5 +11,3 @@ def test_sarsa(tabular_test_env):
         total_timesteps=10,
         seed=0,
     )
-
-    tabular_test_env.close()
