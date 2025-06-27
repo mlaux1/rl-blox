@@ -5,7 +5,7 @@ from rl_blox.blox.value_policy import make_q_table
 
 
 def test_q_learning():
-    env = gym.make("CliffWalking-v0")
+    env = gym.make("CliffWalking-v1")
     q_table = make_q_table(env)
 
     train_q_learning(
