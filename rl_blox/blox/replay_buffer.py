@@ -1,4 +1,5 @@
 from collections import OrderedDict, namedtuple
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -271,7 +272,7 @@ class LAP(ReplayBuffer):
         self.max_priority = np.max(self.priority[: self.current_len])
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=["min_priority", "alpha"])
 def lap_priority(
     abs_td_error: jnp.ndarray, min_priority: float, alpha: float
 ) -> jnp.ndarray:

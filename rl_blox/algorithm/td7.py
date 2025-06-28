@@ -47,6 +47,28 @@ class ValueClippingState:
         self.max_target_value = self.max_value
 
 
+def _sum_of_qnet_losses(
+    observation, action, zsa, zs, q_target, min_priority, q
+):
+    obs_act = jnp.concatenate((observation, action), axis=-1)
+    q1_pred = q.q1(obs_act, zsa=zsa, zs=zs).squeeze()
+    q2_pred = q.q2(obs_act, zsa=zsa, zs=zs).squeeze()
+    max_abs_td_error = jnp.maximum(
+        # TODO we compute these differences twice...
+        jnp.abs(q1_pred - q_target),
+        jnp.abs(q2_pred - q_target),
+    )
+    return (
+        optax.huber_loss(
+            predictions=q1_pred, targets=q_target, delta=min_priority
+        ).mean()
+        + optax.huber_loss(
+            predictions=q2_pred, targets=q_target, delta=min_priority
+        ).mean(),
+        max_abs_td_error,
+    )
+
+
 @partial(
     nnx.jit,
     static_argnames=[
@@ -188,28 +210,9 @@ def td7_update_critic(
     q_next_target = jnp.clip(q_next_target, q_min, q_max)
     q_target = reward + (1 - terminated) * gamma * q_next_target
 
-    def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
-        obs_act = jnp.concatenate((observation, action), axis=-1)
-        q1_pred = q.q1(obs_act, zsa=zsa, zs=zs).squeeze()
-        q2_pred = q.q2(obs_act, zsa=zsa, zs=zs).squeeze()
-        max_abs_td_error = jnp.maximum(
-            # TODO we compute these differences twice...
-            jnp.abs(q1_pred - q_target),
-            jnp.abs(q2_pred - q_target),
-        )
-        return (
-            optax.huber_loss(
-                predictions=q1_pred, targets=q_target, delta=min_priority
-            ).mean()
-            + optax.huber_loss(
-                predictions=q2_pred, targets=q_target, delta=min_priority
-            ).mean(),
-            max_abs_td_error,
-        )
-
     (q_loss_value, max_abs_td_error), grads = nnx.value_and_grad(
-        sum_of_qnet_losses, has_aux=True
-    )(critic)
+        _sum_of_qnet_losses, has_aux=True, argnums=6
+    )(observation, action, zsa, zs, q_target, min_priority, critic)
     critic_optimizer.update(grads)
 
     return q_loss_value, max_abs_td_error, q_target
@@ -258,8 +261,7 @@ def deterministic_policy_gradient_loss_sale(
 
 @nnx.jit
 def td7_update_actor(
-    embedding: SALE,
-    actor: ActorSALE,
+    policy: DeterministicSALEPolicy,
     actor_optimizer: nnx.Optimizer,
     critic: ContinuousClippedDoubleQNet,
     observation: jnp.ndarray,
@@ -268,11 +270,8 @@ def td7_update_actor(
 
     Parameters
     ----------
-    embedding : SALE
-        Encoder.
-
-    actor : ActorSALE
-        Actor that should be updated.
+    policy : DeterministicSALEPolicy
+        Combines embedding and actor.
 
     actor_optimizer : nnx.Optimizer
         Optimizer for actor.
@@ -285,7 +284,7 @@ def td7_update_actor(
     """
     actor_loss_value, grads = nnx.value_and_grad(
         deterministic_policy_gradient_loss_sale, argnums=3
-    )(embedding, critic, observation, actor)
+    )(policy.embedding, critic, observation, policy.actor)
     actor_optimizer.update(grads)
     return actor_loss_value
 
@@ -690,6 +689,9 @@ def train_td7(
     if use_checkpoints:
         actor_checkpoint = nnx.clone(actor)
         fixed_embedding_checkpoint = nnx.clone(embedding)
+        checkpoint = DeterministicSALEPolicy(
+            fixed_embedding_checkpoint, actor_checkpoint
+        )
 
     value_clipping_state = ValueClippingState()
     checkpoint_state = CheckpointState()
@@ -716,11 +718,8 @@ def train_td7(
         )
 
         if global_step >= learning_starts:
-            if use_checkpoints:
-                # only train when not evaluating the checkpoint
-                training_steps = 0
-            else:
-                training_steps = 1
+            # only train when not evaluating the checkpoint
+            training_steps = 0 if use_checkpoints else 1
 
             if (termination or truncated) and use_checkpoints:
                 update_checkpoint, training_steps = (
@@ -735,13 +734,10 @@ def train_td7(
                     )
                 )
                 if update_checkpoint:
-                    hard_target_net_update(actor, actor_checkpoint)
-                    hard_target_net_update(
-                        fixed_embedding, fixed_embedding_checkpoint
-                    )
+                    hard_target_net_update(policy, checkpoint)
                     epochs = {
-                        "actor_checkpoint": actor_checkpoint,
-                        "fixed_embedding_checkpoint": fixed_embedding_checkpoint,
+                        "actor_checkpoint": checkpoint.actor,
+                        "fixed_embedding_checkpoint": checkpoint.embedding,
                     }
                     if logger is not None:
                         for k, v in epochs.items():
@@ -750,92 +746,36 @@ def train_td7(
                     for k, v in checkpoint_state.__dict__.items():
                         logger.record_stat(k, v, step=global_step + 1)
 
+            if logger is not None and training_steps > 0:
+                logger.record_stat(
+                    "training steps", training_steps, step=global_step + 1
+                )
             for delayed_train_step_idx in range(1, training_steps + 1):
-                metrics = {}
-                epochs = {}
                 epoch += 1
-
-                (
-                    observations,
-                    actions,
-                    rewards,
-                    next_observations,
-                    terminations,
-                ) = replay_buffer.sample_batch(batch_size, rng)
-
-                embedding_loss_value = update_sale(
+                key, sampling_key = jax.random.split(key, 2)
+                metrics, epochs = _train_step(
+                    _sample_target_actions,
                     embedding,
                     embedding_optimizer,
-                    observations,
-                    actions,
-                    next_observations,
-                )
-
-                # policy smoothing: sample next actions from target policy
-                key, sampling_key = jax.random.split(key, 2)
-                next_actions = _sample_target_actions(
-                    policy_target, next_observations, sampling_key
-                )
-                q_loss_value, max_abs_td_error, q_target = td7_update_critic(
-                    fixed_embedding,
-                    fixed_embedding_target,
                     critic,
                     critic_target,
                     critic_optimizer,
+                    policy,
+                    policy_target,
+                    actor_optimizer,
+                    value_clipping_state,
+                    replay_buffer,
+                    epoch,
+                    sampling_key,
+                    rng,
                     gamma,
-                    observations,
-                    actions,
-                    next_observations,
-                    next_actions,
-                    rewards,
-                    terminations,
+                    batch_size,
+                    policy_delay,
+                    target_delay,
+                    lap_alpha,
                     lap_min_priority,
-                    value_clipping_state.min_target_value,
-                    value_clipping_state.max_target_value,
                 )
-                value_clipping_state.update_range(q_target)
-                replay_buffer.update_priority(
-                    lap_priority(max_abs_td_error, lap_min_priority, lap_alpha)
-                )
-
-                if epoch % policy_delay == 0:
-                    actor_loss_value = td7_update_actor(
-                        fixed_embedding,
-                        actor,
-                        actor_optimizer,
-                        critic,
-                        observations,
-                    )
-                    if logger is not None:
-                        metrics["policy loss"] = actor_loss_value
-                        epochs["policy"] = actor
-
-                if epoch % target_delay == 0:
-                    hard_target_net_update(actor, actor_target)
-                    hard_target_net_update(critic, critic_target)
-                    hard_target_net_update(
-                        fixed_embedding, fixed_embedding_target
-                    )
-                    hard_target_net_update(embedding, fixed_embedding)
-
-                    replay_buffer.reset_max_priority()
-                    value_clipping_state.update_target_range()
-
-                    if logger is not None:
-                        epochs["policy_target"] = actor_target
-                        epochs["q_target"] = critic_target
-                        epochs["fixed_embedding"] = fixed_embedding
-                        epochs["fixed_embedding_target"] = (
-                            fixed_embedding_target
-                        )
-
                 if logger is not None:
-                    metrics["embedding loss"] = embedding_loss_value
-                    metrics["q loss"] = q_loss_value
-                    metrics.update(value_clipping_state.__dict__)
-                    epochs["embedding"] = embedding
-                    epochs["q"] = critic
-
                     log_step = (
                         global_step
                         + 1
@@ -846,10 +786,6 @@ def train_td7(
                         logger.record_stat(k, v, step=log_step)
                     for k, v in epochs.items():
                         logger.record_epoch(k, v, step=log_step)
-            if logger is not None and training_steps > 0:
-                logger.record_stat(
-                    "training steps", training_steps, step=global_step + 1
-                )
 
         if termination or truncated:
             if logger is not None:
@@ -883,14 +819,115 @@ def train_td7(
         ],
     )(
         embedding,
-        fixed_embedding_checkpoint if use_checkpoints else fixed_embedding,
-        fixed_embedding_target,
+        checkpoint.embedding if use_checkpoints else policy.embedding,
+        policy_target.embedding,
         embedding_optimizer,
-        actor_checkpoint if use_checkpoints else actor,
-        actor_target,
+        checkpoint.actor if use_checkpoints else policy.actor,
+        policy_target.actor,
         actor_optimizer,
         critic,
         critic_target,
         critic_optimizer,
         replay_buffer,
     )
+
+
+def _train_step(
+    _sample_target_actions,
+    embedding,
+    embedding_optimizer,
+    critic,
+    critic_target,
+    critic_optimizer,
+    policy,
+    policy_target,
+    actor_optimizer,
+    value_clipping_state,
+    replay_buffer,
+    epoch,
+    sampling_key,
+    rng,
+    gamma,
+    batch_size,
+    policy_delay,
+    target_delay,
+    lap_alpha,
+    lap_min_priority,
+):
+    metrics = {}
+    epochs = {}
+
+    (
+        observations,
+        actions,
+        rewards,
+        next_observations,
+        terminations,
+    ) = replay_buffer.sample_batch(batch_size, rng)
+
+    embedding_loss_value = update_sale(
+        embedding,
+        embedding_optimizer,
+        observations,
+        actions,
+        next_observations,
+    )
+
+    metrics["embedding loss"] = embedding_loss_value
+    epochs["embedding"] = embedding
+
+    # policy smoothing: sample next actions from target policy
+    next_actions = _sample_target_actions(
+        policy_target, next_observations, sampling_key
+    )
+    q_loss_value, max_abs_td_error, q_target = td7_update_critic(
+        policy.embedding,
+        policy_target.embedding,
+        critic,
+        critic_target,
+        critic_optimizer,
+        gamma,
+        observations,
+        actions,
+        next_observations,
+        next_actions,
+        rewards,
+        terminations,
+        lap_min_priority,
+        value_clipping_state.min_target_value,
+        value_clipping_state.max_target_value,
+    )
+
+    metrics["q loss"] = q_loss_value
+    epochs["q"] = critic
+
+    value_clipping_state.update_range(q_target)
+    metrics.update(value_clipping_state.__dict__)
+
+    replay_buffer.update_priority(
+        lap_priority(max_abs_td_error, lap_min_priority, lap_alpha)
+    )
+
+    if epoch % policy_delay == 0:
+        actor_loss_value = td7_update_actor(
+            policy, actor_optimizer, critic, observations
+        )
+
+        metrics["policy loss"] = actor_loss_value
+        epochs["policy"] = policy.actor
+
+    if epoch % target_delay == 0:
+        hard_target_net_update(policy.actor, policy_target.actor)
+        hard_target_net_update(critic, critic_target)
+        hard_target_net_update(policy.embedding, policy_target.embedding)
+        hard_target_net_update(embedding, policy.embedding)
+
+        replay_buffer.reset_max_priority()
+        value_clipping_state.update_target_range()
+
+        epochs["policy_target"] = policy_target.actor
+        epochs["q_target"] = critic_target
+        epochs["fixed_embedding"] = policy.embedding
+        epochs["fixed_embedding_target"] = policy_target.embedding
+
+    return metrics, epochs
