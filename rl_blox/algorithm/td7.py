@@ -718,11 +718,8 @@ def train_td7(
         )
 
         if global_step >= learning_starts:
-            if use_checkpoints:
-                # only train when not evaluating the checkpoint
-                training_steps = 0
-            else:
-                training_steps = 1
+            # only train when not evaluating the checkpoint
+            training_steps = 0 if use_checkpoints else 1
 
             if (termination or truncated) and use_checkpoints:
                 update_checkpoint, training_steps = (
