@@ -261,8 +261,7 @@ def deterministic_policy_gradient_loss_sale(
 
 @nnx.jit
 def td7_update_actor(
-    embedding: SALE,
-    actor: ActorSALE,
+    policy: DeterministicSALEPolicy,
     actor_optimizer: nnx.Optimizer,
     critic: ContinuousClippedDoubleQNet,
     observation: jnp.ndarray,
@@ -271,11 +270,8 @@ def td7_update_actor(
 
     Parameters
     ----------
-    embedding : SALE
-        Encoder.
-
-    actor : ActorSALE
-        Actor that should be updated.
+    policy : DeterministicSALEPolicy
+        Combines embedding and actor.
 
     actor_optimizer : nnx.Optimizer
         Optimizer for actor.
@@ -288,7 +284,7 @@ def td7_update_actor(
     """
     actor_loss_value, grads = nnx.value_and_grad(
         deterministic_policy_gradient_loss_sale, argnums=3
-    )(embedding, critic, observation, actor)
+    )(policy.embedding, critic, observation, policy.actor)
     actor_optimizer.update(grads)
     return actor_loss_value
 
@@ -741,10 +737,7 @@ def train_td7(
                     )
                 )
                 if update_checkpoint:
-                    hard_target_net_update(policy.actor, checkpoint.actor)
-                    hard_target_net_update(
-                        policy.embedding, checkpoint.embedding
-                    )
+                    hard_target_net_update(policy, checkpoint)
                     epochs = {
                         "actor_checkpoint": checkpoint.actor,
                         "fixed_embedding_checkpoint": checkpoint.embedding,
@@ -920,11 +913,7 @@ def _train_step(
 
     if epoch % policy_delay == 0:
         actor_loss_value = td7_update_actor(
-            policy.embedding,
-            policy.actor,
-            actor_optimizer,
-            critic,
-            observations,
+            policy, actor_optimizer, critic, observations
         )
 
         metrics["policy loss"] = actor_loss_value
