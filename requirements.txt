@@ -1,5 +1,5 @@
 numpy
-gymnasium>=1.2.0
+gymnasium>=1.0.0
 jax
 jaxlib
 optax
