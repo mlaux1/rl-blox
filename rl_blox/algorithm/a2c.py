@@ -9,6 +9,9 @@ from ..logging.logger import LoggerBase
 
 def train_a2c(
     envs: VectorEnv,
+    actor: nnx.Module,
+    critic: nnx.Module,
+    t_max: int = 100,
     seed: int = 0,
     policy_gradient_steps: int = 1,
     vf_gradient_steps: int = 1,
@@ -20,8 +23,12 @@ def train_a2c(
 
     Parameters
     ----------
-    env : gym.Env
-        The environment to train in.
+    envs : VectorEnv
+        The environments to train in.
+    actor : nnx.Module
+        The policy network.
+    critic : nnx.Module
+        The value function estimation network.
     """
 
     key = jax.random.key(seed)
@@ -29,21 +36,26 @@ def train_a2c(
 
     # initialise stuff
     obs, _ = envs.reset()
+    terminations = [np.array([False, False])]
+    truncations = [np.array([False, False])]
+    rewards = []
+    actions = []
+    observations = []
 
-    for i in trange(total_timesteps):
+    for i in trange(t_max):
         # for each episode
         # act and collect transitions in each env until termination
-        actions = envs.action_space.sample()
-        observations, rewards, terminations, truncations, infos = envs.step(
-            actions
-        )
+        acts = envs.action_space.sample()
+        obs, rews, terms, truncs, _ = envs.step(acts)
+        observations.append(obs)
+        actions.append(acts)
+        rewards.append(rews)
+        terminations.append(np.logical_or(terms, terminations[-1]))
+        truncations.append(np.logical_and(truncs, truncations[-1]))
 
         # backwards through gathered trajectories
         # compute advantage estimates and accumulate gradients
 
         # perform policy and value function update
 
-    policy = policy
-    value_function = value_function
-
-    return policy, value_function
+    return
