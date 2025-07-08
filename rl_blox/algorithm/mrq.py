@@ -21,6 +21,8 @@ from .td3 import make_sample_target_actions
 
 def train_mrq(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
+    seed: int = 1,
+    total_timesteps: int = 1_000_000,
     logger: LoggerBase | None = None,
 ) -> None:
     r"""Model-based Representation for Q-learning (MR.Q).
@@ -29,6 +31,12 @@ def train_mrq(
     ----------
     env : gymnasium.Env
         Gymnasium environment.
+
+    seed : int, optional
+        Seed for random number generators in Jax and NumPy.
+
+    total_timesteps : int, optional
+        Number of steps to execute in the environment.
 
     logger : LoggerBase, optional
         Experiment logger.
@@ -44,3 +52,9 @@ def train_mrq(
        International Conference on Learning Representations (ICLR).
        https://openreview.net/forum?id=R1hIXdST22
     """
+    rng = np.random.default_rng(seed)
+    key = jax.random.key(seed)
+
+    assert isinstance(
+        env.action_space, gym.spaces.Box
+    ), "only continuous action space is supported"
