@@ -19,6 +19,22 @@ from .ddpg import make_sample_actions
 from .td3 import make_sample_target_actions
 
 
+class EpisodicReplayBuffer:
+    def __init__(self):
+        pass
+
+    def add_sample(self, **sample):
+        raise NotImplementedError()
+
+    def sample_batch(
+        self,
+        horizon: int,
+        include_intermediate: bool,
+        rng: np.random.Generator,
+    ) -> tuple[jnp.ndarray]:
+        raise NotImplementedError()
+
+
 def train_mrq(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     seed: int = 1,
@@ -58,3 +74,5 @@ def train_mrq(
     assert isinstance(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
+
+    replay_buffer = EpisodicReplayBuffer()
