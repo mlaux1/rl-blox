@@ -76,6 +76,13 @@ BLOX
 
 The building blocks of the low-level API are documented in the :ref:`api`.
 
+.. figure:: _static/blox.svg
+   :alt: RL-BLOX
+   :align: center
+   :width: 100%
+
+   Illustrations of blox and how they can be used to assemble RL algorithms.
+
 Dependencies
 ------------
 
