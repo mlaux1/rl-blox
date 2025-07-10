@@ -55,6 +55,8 @@ def train_a2c(
 
         # backwards through gathered trajectories
         # compute advantage estimates and accumulate gradients
+    for i in range(t_max - 1, 0, -1):
+        print(actions[i])
 
         # perform policy and value function update
 
