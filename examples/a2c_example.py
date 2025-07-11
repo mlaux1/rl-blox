@@ -39,14 +39,14 @@ logger.define_experiment(
 )
 logger.define_checkpoint_frequency("value_function", 10)
 
-ac_state = create_policy_gradient_continuous_state(env, **hparams_model)
+a2c_state = create_policy_gradient_continuous_state(env, **hparams_model)
 
 train_a2c(
     env,
-    ac_state.policy,
-    ac_state.policy_optimizer,
-    ac_state.value_function,
-    ac_state.value_function_optimizer,
+    a2c_state.policy,
+    a2c_state.policy_optimizer,
+    a2c_state.value_function,
+    a2c_state.value_function_optimizer,
     **hparams_algorithm,
     logger=logger,
 )
@@ -60,7 +60,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(ac_state.policy(jnp.asarray(obs)))
+        action = np.asarray(a2c_state.policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
