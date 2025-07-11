@@ -5,7 +5,6 @@ from numpy.testing import assert_array_equal
 
 from rl_blox.algorithm.reinforce import (
     create_policy_gradient_continuous_state,
-    discounted_reward_to_go,
     sample_trajectories,
     train_reinforce,
 )
@@ -15,6 +14,7 @@ from rl_blox.blox.function_approximator.policy_head import (
     GaussianPolicy,
     SoftmaxPolicy,
 )
+from rl_blox.blox.replay_buffer import discounted_reward_to_go
 
 
 def test_reinforce():
