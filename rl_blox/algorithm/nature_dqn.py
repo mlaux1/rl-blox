@@ -1,4 +1,5 @@
 from collections import namedtuple
+from functools import partial
 
 import gymnasium
 import jax
@@ -16,7 +17,7 @@ from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 
 
-@nnx.jit
+@partial(nnx.jit, static_argnames=("gamma",))
 def _train_step(
     q_net: MLP,
     q_target: MLP,
@@ -25,7 +26,7 @@ def _train_step(
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
     ],
     gamma: float = 0.99,
-) -> float:
+) -> tuple[float, float]:
     """Performs a single training step to optimise the Q-network.
 
     Parameters
@@ -45,12 +46,14 @@ def _train_step(
     -------
     loss : float
         The loss value.
+
+    q_mean : float
+        The mean Q-value of the current Q-network for the given batch.
     """
     grad_fn = nnx.value_and_grad(nature_dqn_loss, has_aux=True)
     (loss, q_mean), grads = grad_fn(q_net, q_target, batch, gamma)
     optimizer.update(grads)
-
-    return loss
+    return loss, q_mean
 
 
 def train_nature_dqn(
@@ -167,12 +170,15 @@ def train_nature_dqn(
         if step > batch_size:
             if step % update_frequency == 0:
                 transition_batch = replay_buffer.sample_batch(batch_size, rng)
-                q_loss = _train_step(
+                q_loss, q_mean = _train_step(
                     q_net, q_target_net, optimizer, transition_batch, gamma
                 )
                 if logger is not None:
                     logger.record_stat(
                         "q loss", q_loss, step=step + 1, episode=episode
+                    )
+                    logger.record_stat(
+                        "q mean", q_mean, step=step + 1, episode=episode
                     )
                     logger.record_epoch(
                         "q", q_net, step=step + 1, episode=episode
