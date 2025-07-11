@@ -105,9 +105,12 @@ def mse_discrete_action_value_loss(
     ]
     chex.assert_equal_shape((q_predicted, q_target_values))
 
-    return optax.squared_error(
-        predictions=q_predicted, targets=q_target_values
-    ).mean(), q_predicted.mean()
+    return (
+        optax.squared_error(
+            predictions=q_predicted, targets=q_target_values
+        ).mean(),
+        q_predicted.mean(),
+    )
 
 
 def mse_value_loss(

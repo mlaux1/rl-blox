@@ -3,7 +3,6 @@ from functools import partial
 
 import gymnasium
 import jax
-import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 from tqdm.rich import trange
@@ -16,27 +15,17 @@ from ..blox.schedules import linear_schedule
 from ..logging.logger import LoggerBase
 
 
-@partial(nnx.jit, static_argnames=("gamma",))
-def _train_step(
-    q_net: MLP,
-    optimizer: nnx.Optimizer,
-    batch: tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ],
-    gamma: float = 0.99,
-) -> tuple[float, float]:
+def _train_step(loss, optimizer, *args, **kwargs) -> tuple[float, float]:
     """Performs a single training step to optimise the Q-network.
 
     Parameters
     ----------
-    q_net : MLP
-        The MLP to be updated.
     optimizer : nnx.Optimizer
         The optimizer to be used.
-    batch : tuple
-        The minibatch of transitions to compute the update from.
-    gamma : float, optional
-        The discount factor.
+    *args : tuple
+        Arguments to be passed to the loss function.
+    **kwargs : dict
+        Keyword arguments to be passed to the loss function.
 
     Returns
     -------
@@ -46,8 +35,8 @@ def _train_step(
     q_mean : float
         The mean Q-value of the current Q-network for the given batch.
     """
-    grad_fn = nnx.value_and_grad(dqn_loss, has_aux=True)
-    (loss, q_mean), grads = grad_fn(q_net, batch, gamma)
+    grad_fn = nnx.value_and_grad(loss, has_aux=True)
+    (loss, q_mean), grads = grad_fn(*args, **kwargs)
     optimizer.update(grads)
     return loss, q_mean
 
@@ -123,6 +112,9 @@ def train_dqn(
     if logger is not None:
         logger.start_new_episode()
 
+    train_step = partial(_train_step, dqn_loss)
+    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
+
     # initialise episode
     obs, _ = env.reset(seed=seed)
 
@@ -153,8 +145,8 @@ def train_dqn(
         # sample minibatch from replay buffer
         if step > batch_size:
             transition_batch = replay_buffer.sample_batch(batch_size, rng)
-            q_loss, q_mean = _train_step(
-                q_net, optimizer, transition_batch, gamma
+            q_loss, q_mean = train_step(
+                optimizer, q_net, transition_batch, gamma
             )
             if logger is not None:
                 logger.record_stat(
