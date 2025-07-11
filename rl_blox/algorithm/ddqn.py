@@ -4,61 +4,16 @@ import gymnasium
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
+from ..blox.losses import ddqn_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
-
-
-@nnx.jit
-def ddqn_loss(
-    q_net: MLP,
-    q_target: MLP,
-    batch: tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ],
-    gamma: float = 0.99,
-) -> float:
-    """Calculates the loss of the given Q-net for a given minibatch of
-    transitions.
-
-    Parameters
-    ----------
-    q_net : MLP
-        The Q-network to compute the loss for.
-    q_target : MLP
-        The target Q-Network.
-    batch : tuple
-        The minibatch of transitions.
-    gamma : float, default=0.99
-        The discount factor.
-
-    Returns
-    -------
-    loss : float
-        The computed loss for the given minibatch.
-    """
-    obs, action, reward, next_obs, terminated = batch
-
-    next_q = jax.lax.stop_gradient(q_net(next_obs))
-    indices = jnp.argmax(next_q, axis=1).reshape(-1, 1)
-    next_q_t = jax.lax.stop_gradient(q_target(next_obs))
-    next_vals = jnp.take_along_axis(next_q_t, indices, axis=1).squeeze()
-
-    target = jnp.array(reward) + (1 - terminated) * gamma * next_vals
-
-    pred = q_net(obs)
-    pred = pred[jnp.arange(len(pred)), action]
-
-    loss = optax.squared_error(pred, target).mean()
-
-    return loss
 
 
 @nnx.jit
