@@ -38,7 +38,6 @@ Functional Blox
 .. autosummary::
    :toctree: _apidoc/
 
-   dqn.critic_loss
    dqn.greedy_policy
    ddqn.ddqn_loss
    nature_dqn.critic_loss
