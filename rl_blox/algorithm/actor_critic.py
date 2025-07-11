@@ -9,8 +9,9 @@ from flax import nnx
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..blox.losses import stochastic_policy_gradient_pseudo_loss
+from ..blox.sampling import sample_trajectories
 from ..logging.logger import LoggerBase
-from .reinforce import sample_trajectories, train_value_function
+from .reinforce import train_value_function
 
 
 def actor_critic_policy_gradient(
