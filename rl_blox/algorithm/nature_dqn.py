@@ -46,8 +46,8 @@ def _train_step(
     loss : float
         The loss value.
     """
-    grad_fn = nnx.value_and_grad(nature_dqn_loss)
-    loss, grads = grad_fn(q_net, q_target, batch, gamma)
+    grad_fn = nnx.value_and_grad(nature_dqn_loss, has_aux=True)
+    (loss, q_mean), grads = grad_fn(q_net, q_target, batch, gamma)
     optimizer.update(grads)
 
     return loss
@@ -93,6 +93,8 @@ def train_nature_dqn(
         The replay buffer used for storing collected transitions.
     optimizer : nnx.Optimizer
         The optimiser for the Q-Network.
+    batch_size : int, optional
+        Batch size for updates.
     update_frequency : int, optional
         The number of time steps after which the Q-net is updated.
     target_update_frequency : int, optional

@@ -61,7 +61,7 @@ def mse_discrete_action_value_loss(
     action: jnp.ndarray,
     q_target_values: jnp.ndarray,
     q: nnx.Module,
-) -> jnp.ndarray:
+) -> tuple[float, float]:
     r"""Mean squared error loss for discrete action-value function.
 
     For a given action-value function :math:`q(o, a)` and target values
@@ -91,8 +91,11 @@ def mse_discrete_action_value_loss(
 
     Returns
     -------
-    loss : array, shape ()
+    loss : float
         Mean squared error between predicted and actual action values.
+
+    q_mean : float
+        Mean of the predicted action values.
     """
     chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
     chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
@@ -104,7 +107,7 @@ def mse_discrete_action_value_loss(
 
     return optax.squared_error(
         predictions=q_predicted, targets=q_target_values
-    ).mean()
+    ).mean(), q_predicted.mean()
 
 
 def mse_value_loss(
@@ -253,7 +256,7 @@ def dqn_loss(
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
     ],
     gamma: float = 0.99,
-) -> float:
+) -> tuple[float, float]:
     r"""Deep Q-network (DQN) loss.
 
     This loss requires a continuous state space and a discrete action space.
@@ -293,6 +296,9 @@ def dqn_loss(
     loss : float
         The computed loss for the given mini-batch.
 
+    q_mean : float
+        Mean of the predicted action values.
+
     References
     ----------
     .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I.,
@@ -317,7 +323,7 @@ def nature_dqn_loss(
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
     ],
     gamma: float = 0.99,
-) -> float:
+) -> tuple[float, float]:
     r"""Deep Q-network (DQN) loss with target network.
 
     This loss requires a continuous state space and a discrete action space.
@@ -360,6 +366,9 @@ def nature_dqn_loss(
     loss : float
         The computed loss for the given minibatch.
 
+    q_mean : float
+        Mean of the predicted action values.
+
     References
     ----------
     .. [1] Mnih, V., Kavukcuoglu, K., Silver, D. et al. Human-level control
@@ -384,7 +393,7 @@ def ddqn_loss(
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
     ],
     gamma: float = 0.99,
-) -> float:
+) -> tuple[float, float]:
     r"""Deep double Q-network (DDQN) loss.
 
     This loss requires a continuous state space and a discrete action space.
@@ -427,6 +436,9 @@ def ddqn_loss(
     loss : float
         The computed loss for the given minibatch.
 
+    q_mean : float
+        Mean of the predicted action values.
+
     References
     ----------
     .. [1] van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement
@@ -445,4 +457,4 @@ def ddqn_loss(
     pred = q(obs)
     pred = pred[jnp.arange(len(pred)), action]
 
-    return optax.squared_error(pred, target).mean()
+    return optax.squared_error(pred, target).mean(), pred.mean()
