@@ -40,7 +40,6 @@ Functional Blox
 
    dqn.greedy_policy
    ddqn.ddqn_loss
-   nature_dqn.critic_loss
    reinforce.discounted_reward_to_go
    reinforce.reinforce_gradient
    actor_critic.actor_critic_policy_gradient
@@ -109,6 +108,7 @@ Functional Blox
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
    losses.dqn_loss
+   losses.nature_dqn_loss
    function_approximator.norm.avg_l1_norm
    replay_buffer.lap_priority
 
