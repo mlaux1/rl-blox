@@ -45,7 +45,6 @@ Functional Blox
    actor_critic.actor_critic_policy_gradient
    ddpg.sample_actions
    ddpg.ddpg_update_actor
-   ddpg.ddpg_update_critic
    td3.td3_update_critic
    td3.double_q_deterministic_bootstrap_estimate
    td3.sample_target_actions
