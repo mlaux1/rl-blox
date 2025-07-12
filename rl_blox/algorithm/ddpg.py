@@ -20,67 +20,7 @@ from ..blox.losses import (
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
-
-
-@nnx.jit
-def ddpg_update_critic(
-    q_optimizer: nnx.Optimizer,
-    q: nnx.Module,
-    q_target: nnx.Module,
-    policy_target: nnx.Module,
-    batch: tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ],
-    gamma: float,
-) -> tuple[float, float]:
-    r"""DDPG critic update.
-
-    Uses ``q_optimizer`` to update ``q`` with the
-    :func:`~.blox.losses.ddpg_loss`.
-
-    Parameters
-    ----------
-    q_optimizer : nnx.Optimizer
-        Optimizer of q.
-
-    q : nnx.Module
-        Action-value function.
-
-    q_target : nnx.Module
-        Target network of q.
-
-    policy_target : nnx.Module
-        Target network of policy.
-
-    batch : tuple
-        Mini-batch of transitions. Contains in this order: observations
-        :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
-        observations :math:`o_{i+1}`, termination flags :math:`t_i`.
-
-    gamma : float
-        Discount factor of discounted infinite horizon return model.
-
-    Returns
-    -------
-    q_loss_value : float
-        Loss value.
-
-    q_mean : float
-        Mean of the predicted action values.
-
-    See also
-    --------
-    q_deterministic_bootstrap_estimate
-        Generates the target values :math:`y` for the loss.
-
-    .blox.losses.mse_continuous_action_value_loss
-        The mean squared error loss.
-    """
-    (q_loss_value, q_mean), grads = nnx.value_and_grad(
-        ddpg_loss, argnums=0, has_aux=True
-    )(q, q_target, policy_target, batch, gamma)
-    q_optimizer.update(grads)
-    return q_loss_value, q_mean
+from .dqn import train_step_with_loss
 
 
 @nnx.jit
@@ -386,7 +326,7 @@ def train_ddpg(
         where :math:`d` indicates if a terminal state was reached
       * Sample mini-batch of ``batch_size`` transitions from :math:`R` to
         update the networks
-      * Update critic with :func:`ddpg_update_critic`
+      * Update critic with :func:`~.blox.losses.ddpg_loss`
       * Update actor with :func:`ddpg_update_actor`
       * Update target networks :math:`Q', \pi'` with
         :func:`~.blox.target_net.soft_target_net_update`
@@ -430,6 +370,9 @@ def train_ddpg(
 
     _sample_actions = make_sample_actions(env.action_space, exploration_noise)
 
+    train_step = partial(train_step_with_loss, ddpg_loss)
+    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
+
     if logger is not None:
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
@@ -464,7 +407,7 @@ def train_ddpg(
             for _ in range(gradient_steps):
                 batch = replay_buffer.sample_batch(batch_size, rng)
 
-                q_loss_value, q_mean = ddpg_update_critic(
+                q_loss_value, q_mean = train_step(
                     q_optimizer,
                     q,
                     q_target,
