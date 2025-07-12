@@ -14,7 +14,7 @@ from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
-from .dqn import _train_step
+from .dqn import train_step_with_loss
 
 
 def train_ddqn(
@@ -105,7 +105,7 @@ def train_ddqn(
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
 
-    train_step = partial(_train_step, ddqn_loss)
+    train_step = partial(train_step_with_loss, ddqn_loss)
     train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     # initialise episode

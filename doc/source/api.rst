@@ -39,6 +39,7 @@ Functional Blox
    :toctree: _apidoc/
 
    dqn.greedy_policy
+   dqn.train_step_with_loss
    reinforce.discounted_reward_to_go
    reinforce.reinforce_gradient
    actor_critic.actor_critic_policy_gradient

@@ -15,11 +15,17 @@ from ..blox.schedules import linear_schedule
 from ..logging.logger import LoggerBase
 
 
-def _train_step(loss, optimizer, *args, **kwargs) -> tuple[float, float]:
-    """Performs a single training step to optimise the Q-network.
+def train_step_with_loss(
+    loss, optimizer: nnx.Optimizer, *args, **kwargs
+) -> tuple[float, float]:
+    """Performs a single training step to optimize a Q-network.
 
     Parameters
     ----------
+    loss : callable
+        The loss function to be optimized, which should return a tuple of
+        loss value and mean Q values. The first argument of the loss should
+        be the Q-network that will be optimized.
     optimizer : nnx.Optimizer
         The optimizer to be used.
     *args : tuple
@@ -35,7 +41,7 @@ def _train_step(loss, optimizer, *args, **kwargs) -> tuple[float, float]:
     q_mean : float
         The mean Q-value of the current Q-network for the given batch.
     """
-    grad_fn = nnx.value_and_grad(loss, has_aux=True)
+    grad_fn = nnx.value_and_grad(loss, argnums=0, has_aux=True)
     (loss, q_mean), grads = grad_fn(*args, **kwargs)
     optimizer.update(grads)
     return loss, q_mean
@@ -112,7 +118,7 @@ def train_dqn(
     if logger is not None:
         logger.start_new_episode()
 
-    train_step = partial(_train_step, dqn_loss)
+    train_step = partial(train_step_with_loss, dqn_loss)
     train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     # initialise episode
