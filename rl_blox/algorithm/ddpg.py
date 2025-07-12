@@ -334,6 +334,7 @@ def train_ddpg(
     Logging
 
     * ``q loss`` - value of the loss function for the critic
+    * ``q mean`` - mean Q value of batch used to update the critic
     * ``policy loss`` - value of the loss function for the actor
 
     Checkpointing
