@@ -7,149 +7,6 @@ from flax import nnx
 from .function_approximator.policy_head import StochasticPolicyBase
 
 
-def mse_continuous_action_value_loss(
-    observation: jnp.ndarray,
-    action: jnp.ndarray,
-    q_target_values: jnp.ndarray,
-    q: nnx.Module,
-) -> jnp.ndarray:
-    r"""Mean squared error loss for continuous action-value function.
-
-    For a given action-value function :math:`q(o, a)` and target values
-    :math:`y_i`, the loss is defined as
-
-    .. math::
-
-        \mathcal{L}(q)
-        = \frac{1}{N} \sum_{i=1}^{N} (q(o_i, a_i) - y_i)^2.
-
-    :math:`y_i` could be the Monte Carlo return.
-
-    Parameters
-    ----------
-    observation : array, shape (n_samples, n_observation_features)
-        Batch of observations.
-
-    action : array, shape (n_samples, n_action_dims)
-        Batch of selected actions.
-
-    q_target_values : array, shape (n_samples,)
-        Target action values :math:`y_i` that should be approximated.
-
-    q : nnx.Module
-        Q network that maps a pair of observation and action to the action
-        value. These networks are used for continuous action spaces.
-
-    Returns
-    -------
-    loss : array, shape ()
-        Mean squared error between predicted and actual action values.
-    """
-    chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
-    chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
-
-    q_predicted = q(jnp.concatenate((observation, action), axis=-1)).squeeze()
-    chex.assert_equal_shape((q_predicted, q_target_values))
-
-    return optax.squared_error(
-        predictions=q_predicted, targets=q_target_values
-    ).mean()
-
-
-def mse_discrete_action_value_loss(
-    observation: jnp.ndarray,
-    action: jnp.ndarray,
-    q_target_values: jnp.ndarray,
-    q: nnx.Module,
-) -> tuple[float, float]:
-    r"""Mean squared error loss for discrete action-value function.
-
-    For a given action-value function :math:`q(o, a)` and target values
-    :math:`y_i`, the loss is defined as
-
-    .. math::
-
-        \mathcal{L}(q)
-        = \frac{1}{N} \sum_{i=1}^{N} (q(o_i, a_i) - y_i)^2.
-
-    :math:`y_i` could be the Monte Carlo return.
-
-    Parameters
-    ----------
-    observation : array, shape (n_samples, n_observation_features)
-        Batch of observations.
-
-    action : array, shape (n_samples,)
-        Batch of selected actions.
-
-    q_target_values : array, shape (n_samples,)
-        Target action values :math:`y_i` that should be approximated.
-
-    q : nnx.Module
-        Q network that maps observation to the action-values of each action of
-        the discrete action space.
-
-    Returns
-    -------
-    loss : float
-        Mean squared error between predicted and actual action values.
-
-    q_mean : float
-        Mean of the predicted action values.
-    """
-    chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
-    chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
-
-    q_predicted = q(observation)[
-        jnp.arange(len(observation), dtype=int), action.astype(int)
-    ]
-    chex.assert_equal_shape((q_predicted, q_target_values))
-
-    return (
-        optax.squared_error(
-            predictions=q_predicted, targets=q_target_values
-        ).mean(),
-        q_predicted.mean(),
-    )
-
-
-def mse_value_loss(
-    observations: jnp.ndarray,
-    v_target_values: jnp.ndarray,
-    v: nnx.Module,
-) -> jnp.ndarray:
-    r"""Mean squared error as loss for a value function network.
-
-    For a given value function :math:`v(o)` and target values :math:`R(o)`, the
-    loss is defined as
-
-    .. math::
-
-        \mathcal{L}(v) = \frac{1}{2 N} \sum_{i=1}^{N} (v(o_i) - R(o_i))^2.
-
-    :math:`R(o)` could be the Monte Carlo return.
-
-    Parameters
-    ----------
-    observations : array, shape (n_samples, n_observation_features)
-        Observations.
-
-    v_target_values : array, shape (n_samples,)
-        Target values, obtained, e.g., through Monte Carlo sampling.
-
-    v : nnx.Module
-        Value function that maps observations to expected returns.
-
-    Returns
-    -------
-    loss : float
-        Value function loss.
-    """
-    values = v(observations).squeeze()  # squeeze Nx1-D -> N-D
-    chex.assert_equal_shape((values, v_target_values))
-    return optax.l2_loss(predictions=values, targets=v_target_values).mean()
-
-
 def stochastic_policy_gradient_pseudo_loss(
     observation: jnp.ndarray,
     action: jnp.ndarray,
@@ -251,6 +108,225 @@ def deterministic_policy_gradient_loss(
     obs_act = jnp.concatenate((observation, policy(observation)), axis=-1)
     # - to perform gradient ascent with a minimizer
     return -q(obs_act).mean()
+
+
+def mse_value_loss(
+    observations: jnp.ndarray,
+    v_target_values: jnp.ndarray,
+    v: nnx.Module,
+) -> jnp.ndarray:
+    r"""Mean squared error as loss for a value function network.
+
+    For a given value function :math:`v(o)` and target values :math:`R(o)`, the
+    loss is defined as
+
+    .. math::
+
+        \mathcal{L}(v) = \frac{1}{2 N} \sum_{i=1}^{N} (v(o_i) - R(o_i))^2.
+
+    :math:`R(o)` could be the Monte Carlo return.
+
+    Parameters
+    ----------
+    observations : array, shape (n_samples, n_observation_features)
+        Observations.
+
+    v_target_values : array, shape (n_samples,)
+        Target values, obtained, e.g., through Monte Carlo sampling.
+
+    v : nnx.Module
+        Value function that maps observations to expected returns.
+
+    Returns
+    -------
+    loss : float
+        Value function loss.
+    """
+    values = v(observations).squeeze()  # squeeze Nx1-D -> N-D
+    chex.assert_equal_shape((values, v_target_values))
+    return optax.l2_loss(predictions=values, targets=v_target_values).mean()
+
+
+def mse_continuous_action_value_loss(
+    observation: jnp.ndarray,
+    action: jnp.ndarray,
+    q_target_values: jnp.ndarray,
+    q: nnx.Module,
+) -> tuple[float, float]:
+    r"""Mean squared error loss for continuous action-value function.
+
+    For a given action-value function :math:`q(o, a)` and target values
+    :math:`y_i`, the loss is defined as
+
+    .. math::
+
+        \mathcal{L}(q)
+        = \frac{1}{N} \sum_{i=1}^{N} (q(o_i, a_i) - y_i)^2.
+
+    :math:`y_i` could be the Monte Carlo return.
+
+    Parameters
+    ----------
+    observation : array, shape (n_samples, n_observation_features)
+        Batch of observations.
+
+    action : array, shape (n_samples, n_action_dims)
+        Batch of selected actions.
+
+    q_target_values : array, shape (n_samples,)
+        Target action values :math:`y_i` that should be approximated.
+
+    q : nnx.Module
+        Q network that maps a pair of observation and action to the action
+        value. These networks are used for continuous action spaces.
+
+    Returns
+    -------
+    loss : float
+        Mean squared error between predicted and actual action values.
+
+    q_mean : float
+        Mean of the predicted action values.
+    """
+    chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
+    chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
+
+    q_predicted = q(jnp.concatenate((observation, action), axis=-1)).squeeze()
+    chex.assert_equal_shape((q_predicted, q_target_values))
+
+    return optax.squared_error(
+        predictions=q_predicted, targets=q_target_values
+    ).mean(), q_predicted.mean()
+
+
+def ddpg_loss(
+    q: nnx.Module,
+    q_target: nnx.Module,
+    policy_target: nnx.Module,
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
+    gamma: float,
+) -> tuple[float, float]:
+    r"""Critic loss of DDPG.
+
+    This loss requires continuous state and action spaces.
+
+    For a mini-batch, we calculate target values of :math:`Q'`
+
+    .. math::
+
+        y_i = r_i + (1 - t_i) \gamma Q'(o_{i+1}, \pi'(o_{i+1})),
+
+    where :math:`r_i` (``reward``) is the immediate reward obtained in the
+    transition, :math:`o_{i+1}` (``next_observation``) is the observation
+    after the transition, :math:`\pi` is the deterministic policy network,
+    :math:`\gamma` (``gamma``) is the discount factor, and :math:`t_i`
+    (``terminated``) indicates if a terminal state was reached in this
+    transition.
+
+    Based on these target values, the DDPG loss is defined as
+
+    .. math::
+
+        \mathcal{L}(Q) = \frac{1}{N} \sum_{i=1}^{N} (y_i - Q(o_i, a_i))^2.
+
+    Parameters
+    ----------
+    q : nnx.Module
+        Deep Q-network :math:`Q(o, a)`. For a given observation, the neural
+        network predicts the value of each action from the discrete action
+        space.
+    q_target : nnx.Module
+        Target network for ``q``.
+    policy_target : nnx.Module
+        Deterministic target policy :math:`\pi'(o) = a`.
+    batch : tuple
+        Mini-batch of transitions. Contains in this order: observations
+        :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
+        observations :math:`o_{i+1}`, termination flags :math:`t_i`.
+    gamma : float, default=0.99
+        Discount factor :math:`\gamma`.
+
+    Returns
+    -------
+    loss : float
+        The computed loss for the given mini-batch.
+
+    q_mean : float
+        Mean of the predicted action values.
+
+    References
+    ----------
+    .. [1] Lillicrap, T.P., Hunt, J.J., Pritzel, A., Heess, N., Erez, T.,
+       Tassa, Y., Silver, D. & Wierstra, D. (2016). Continuous control with
+       deep reinforcement learning. In 4th International Conference on Learning
+       Representations, {ICLR} 2016, San Juan, Puerto Rico, May 2-4, 2016,
+       Conference Track Proceedings. http://arxiv.org/abs/1509.02971
+    """
+    observation, action, reward, next_observation, terminated = batch
+    next_actions = jax.lax.stop_gradient(policy_target(next_observation))
+    next_obs_act = jnp.concatenate((next_observation, next_actions), axis=-1)
+    q_next = jax.lax.stop_gradient(q_target(next_obs_act).squeeze())
+    q_target = reward + (1 - terminated) * gamma * q_next
+    return mse_continuous_action_value_loss(observation, action, q_target, q)
+
+
+def mse_discrete_action_value_loss(
+    observation: jnp.ndarray,
+    action: jnp.ndarray,
+    q_target_values: jnp.ndarray,
+    q: nnx.Module,
+) -> tuple[float, float]:
+    r"""Mean squared error loss for discrete action-value function.
+
+    For a given action-value function :math:`q(o, a)` and target values
+    :math:`y_i`, the loss is defined as
+
+    .. math::
+
+        \mathcal{L}(q)
+        = \frac{1}{N} \sum_{i=1}^{N} (q(o_i, a_i) - y_i)^2.
+
+    :math:`y_i` could be the Monte Carlo return.
+
+    Parameters
+    ----------
+    observation : array, shape (n_samples, n_observation_features)
+        Batch of observations.
+
+    action : array, shape (n_samples,)
+        Batch of selected actions.
+
+    q_target_values : array, shape (n_samples,)
+        Target action values :math:`y_i` that should be approximated.
+
+    q : nnx.Module
+        Q network that maps observation to the action-values of each action of
+        the discrete action space.
+
+    Returns
+    -------
+    loss : float
+        Mean squared error between predicted and actual action values.
+
+    q_mean : float
+        Mean of the predicted action values.
+    """
+    chex.assert_equal_shape_prefix((observation, action), prefix_len=1)
+    chex.assert_equal_shape_prefix((observation, q_target_values), prefix_len=1)
+
+    q_predicted = q(observation)[
+        jnp.arange(len(observation), dtype=int), action.astype(int)
+    ]
+    chex.assert_equal_shape((q_predicted, q_target_values))
+
+    return (
+        optax.squared_error(
+            predictions=q_predicted, targets=q_target_values
+        ).mean(),
+        q_predicted.mean(),
+    )
 
 
 def dqn_loss(
