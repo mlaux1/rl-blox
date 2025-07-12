@@ -45,8 +45,6 @@ Functional Blox
    actor_critic.actor_critic_policy_gradient
    ddpg.sample_actions
    ddpg.ddpg_update_actor
-   td3.td3_update_critic
-   td3.double_q_deterministic_bootstrap_estimate
    td3.sample_target_actions
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
@@ -105,6 +103,7 @@ Functional Blox
    losses.mse_value_loss
    losses.mse_continuous_action_value_loss
    losses.ddpg_loss
+   losses.td3_loss
    losses.mse_discrete_action_value_loss
    losses.dqn_loss
    losses.nature_dqn_loss
