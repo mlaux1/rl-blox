@@ -38,19 +38,13 @@ Functional Blox
 .. autosummary::
    :toctree: _apidoc/
 
-   dqn.critic_loss
    dqn.greedy_policy
-   ddqn.ddqn_loss
-   nature_dqn.critic_loss
+   dqn.train_step_with_loss
    reinforce.discounted_reward_to_go
    reinforce.reinforce_gradient
    actor_critic.actor_critic_policy_gradient
    ddpg.sample_actions
    ddpg.ddpg_update_actor
-   ddpg.ddpg_update_critic
-   ddpg.q_deterministic_bootstrap_estimate
-   td3.td3_update_critic
-   td3.double_q_deterministic_bootstrap_estimate
    td3.sample_target_actions
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
@@ -104,11 +98,16 @@ Functional Blox
    probabilistic_ensemble.gaussian_ensemble_loss
    probabilistic_ensemble.train_ensemble
    probabilistic_ensemble.restore_checkpoint
-   losses.mse_continuous_action_value_loss
-   losses.mse_discrete_action_value_loss
-   losses.mse_value_loss
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
+   losses.mse_value_loss
+   losses.mse_continuous_action_value_loss
+   losses.ddpg_loss
+   losses.td3_loss
+   losses.mse_discrete_action_value_loss
+   losses.dqn_loss
+   losses.nature_dqn_loss
+   losses.ddqn_loss
    function_approximator.norm.avg_l1_norm
    replay_buffer.lap_priority
 
