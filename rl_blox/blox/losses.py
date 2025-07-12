@@ -275,7 +275,7 @@ def dqn_loss(
     :math:`\gamma` (``gamma``) is the discount factor, and :math:`o_{i+1}` is
     the observation after the transition.
 
-    Based on these target values, the DQN loss is defined as
+    Based on these target values, the loss is defined as
 
     .. math::
 
@@ -343,7 +343,7 @@ def nature_dqn_loss(
     the observation after the transition, and :math:`Q'` is the target network
     (``q_target``).
 
-    Based on these target values, the DQN loss is defined as
+    Based on these target values, the loss is defined as
 
     .. math::
 
@@ -413,7 +413,7 @@ def ddqn_loss(
     the observation after the transition, and :math:`Q'` is the target network
     (``q_target``).
 
-    Based on these target values, the DQN loss is defined as
+    Based on these target values, the loss is defined as
 
     .. math::
 
