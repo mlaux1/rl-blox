@@ -23,9 +23,9 @@ def train_step_with_loss(
     Parameters
     ----------
     loss : callable
-        The loss function to be optimized, which should return a tuple of
-        loss value and mean Q values. The first argument of the loss should
-        be the Q-network that will be optimized.
+        The loss function to be optimized, which should return a tuple with at
+        least the loss value as the first element. The first argument of the
+        loss should be the Q-network that will be optimized.
     optimizer : nnx.Optimizer
         The optimizer to be used.
     *args : tuple
@@ -35,16 +35,14 @@ def train_step_with_loss(
 
     Returns
     -------
-    loss : float
-        Loss value.
-
-    q_mean : float
-        The mean Q-value of the current Q-network for the given batch.
+    value : tuple
+        Values returned by the loss function, typically including the loss
+        value as the first element and possibly as the only element.
     """
     grad_fn = nnx.value_and_grad(loss, argnums=0, has_aux=True)
-    (loss, q_mean), grads = grad_fn(*args, **kwargs)
-    optimizer.update(grads)
-    return loss, q_mean
+    value, grad = grad_fn(*args, **kwargs)
+    optimizer.update(grad)
+    return value
 
 
 def train_dqn(
