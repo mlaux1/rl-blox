@@ -539,10 +539,16 @@ def sac_loss(
     """
     observation, action, reward, next_observation, terminated = batch
 
-    next_actions = policy.sample(next_observation, action_key)
-    next_log_pi = policy.log_probability(next_observation, next_actions)
+    next_actions = jax.lax.stop_gradient(
+        policy.sample(next_observation, action_key)
+    )
+    next_log_pi = jax.lax.stop_gradient(
+        policy.log_probability(next_observation, next_actions)
+    )
     next_obs_act = jnp.concatenate((next_observation, next_actions), axis=-1)
-    q_next_target = q_target(next_obs_act).squeeze() - alpha * next_log_pi
+    q_next_target = jax.lax.stop_gradient(
+        q_target(next_obs_act).squeeze() - alpha * next_log_pi
+    )
     q_target_value = reward + (1 - terminated) * gamma * q_next_target
 
     return _mse_clipped_double_q_loss(q_target_value, q, action, observation)
