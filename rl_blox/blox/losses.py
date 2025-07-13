@@ -364,6 +364,108 @@ def _mse_clipped_double_q_loss(q_target_value, q, action, observation):
     return q1_loss + q2_loss, jnp.minimum(q1_predicted, q2_predicted).mean()
 
 
+def td3_lap_loss(
+    q: ContinuousClippedDoubleQNet,
+    q_target: ContinuousClippedDoubleQNet,
+    next_action: jnp.ndarray,
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
+    gamma: float,
+    min_priority: float,
+) -> tuple[float, float, jnp.ndarray]:
+    r"""Critic loss of TD3 with LAP.
+
+    This loss requires continuous state and action spaces.
+
+    For a mini-batch, we calculate target values of :math:`Q'`
+
+    .. math::
+
+        y_i = r_i + (1 - t_i)
+        \gamma \min(Q_1(o_{i+1}, a_{i+1}), Q_2(o_{i+1}, a_{i+1})),
+
+    where :math:`r_i` (``reward``) is the immediate reward obtained in the
+    transition, :math:`o_{i+1}` (``next_observation``) is the observation
+    after the transition, :math:`a_{i+1}` (``next_action``) is the next action,
+    :math:`\gamma` (``gamma``) is the discount factor, and :math:`t_i`
+    (``terminated``) indicates if a terminal state was reached in this
+    transition.
+
+    Based on these target values, the loss is defined as
+
+    .. math::
+
+        \mathcal{L}(Q) = \frac{1}{N} \sum_{i=1}^{N} Huber(y_i - Q(o_i, a_i)).
+
+    Parameters
+    ----------
+    q : ContinuousClippedDoubleQNet
+        Deep Q-network :math:`Q(o, a)`. For a given observation, the neural
+        network predicts the value of each action from the discrete action
+        space.
+    q_target : ContinuousClippedDoubleQNet
+        Target network for ``q``.
+    next_action : jnp.ndarray
+        Sampled target actions :math:`a_{t+1}`.
+    batch : tuple
+        Mini-batch of transitions. Contains in this order: observations
+        :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
+        observations :math:`o_{i+1}`, termination flags :math:`t_i`.
+    gamma : float, default=0.99
+        Discount factor :math:`\gamma`.
+    min_priority : float, default=0.01
+        Minimum priority, delta for the Huber loss.
+
+    Returns
+    -------
+    loss : float
+        The computed loss for the given mini-batch.
+
+    q_mean : float
+        Mean of the predicted action values.
+
+    References
+    ----------
+    .. [1] Lillicrap, T.P., Hunt, J.J., Pritzel, A., Heess, N., Erez, T.,
+       Tassa, Y., Silver, D. & Wierstra, D. (2016). Continuous control with
+       deep reinforcement learning. In 4th International Conference on Learning
+       Representations, {ICLR} 2016, San Juan, Puerto Rico, May 2-4, 2016,
+       Conference Track Proceedings. http://arxiv.org/abs/1509.02971
+    """
+    observation, action, reward, next_observation, terminated = batch
+    next_obs_act = jnp.concatenate((next_observation, next_action), axis=-1)
+    q_next = jax.lax.stop_gradient(q_target(next_obs_act).squeeze())
+    q_target_value = reward + (1 - terminated) * gamma * q_next
+    return _huber_clipped_double_q_loss(
+        q_target_value, q, action, observation, min_priority
+    )
+
+
+def _huber_clipped_double_q_loss(q_target_value, q, action, observation, delta):
+    obs_act = jnp.concatenate((observation, action), axis=-1)
+    q1_predicted = q.q1(obs_act).squeeze()
+    q2_predicted = q.q2(obs_act).squeeze()
+    td_error1 = jnp.abs(q1_predicted - q_target_value)
+    td_error2 = jnp.abs(q2_predicted - q_target_value)
+    max_abs_td_error = jnp.maximum(td_error1, td_error2)
+    loss = huber_loss(td_error1, delta) + huber_loss(td_error2, delta)
+    return (
+        loss,
+        jnp.minimum(q1_predicted, q2_predicted).mean(),
+        max_abs_td_error,
+    )
+
+
+def huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
+    # 0.5 * err^2                  if |err| <= d
+    # 0.5 * d^2 + d * (|err| - d)  if |err| > d
+    quadratic = jnp.minimum(abs_errors, delta)
+    # Same as max(abs_x - delta, 0) but avoids potentially doubling gradient.
+    linear = abs_errors - quadratic
+    return 0.5 * quadratic**2 + delta * linear
+
+
 def mse_discrete_action_value_loss(
     observation: jnp.ndarray,
     action: jnp.ndarray,
