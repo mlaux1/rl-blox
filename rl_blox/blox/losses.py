@@ -430,11 +430,10 @@ def td3_lap_loss(
 
     References
     ----------
-    .. [1] Lillicrap, T.P., Hunt, J.J., Pritzel, A., Heess, N., Erez, T.,
-       Tassa, Y., Silver, D. & Wierstra, D. (2016). Continuous control with
-       deep reinforcement learning. In 4th International Conference on Learning
-       Representations, {ICLR} 2016, San Juan, Puerto Rico, May 2-4, 2016,
-       Conference Track Proceedings. http://arxiv.org/abs/1509.02971
+    .. [1] Fujimoto, S., Meger, D., Precup, D. (2020). An Equivalence between
+       Loss Functions and Non-Uniform Sampling in Experience Replay. In
+       Advances in Neural Information Processing Systems 33.
+       https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
     """
     observation, action, reward, next_observation, terminated = batch
     next_obs_act = jnp.concatenate((next_observation, next_action), axis=-1)
