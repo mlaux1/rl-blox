@@ -332,7 +332,6 @@ def td3_loss(
     -------
     loss : float
         The computed loss for the given mini-batch.
-
     q_mean : float
         Mean of the predicted action values.
 
@@ -421,7 +420,6 @@ def td3_lap_loss(
     -------
     loss : float
         The computed loss for the given mini-batch.
-
     auxiliary : tuple
         Auxiliary information about the loss.
         (1) q_mean (float): Mean of the predicted action values.
@@ -461,6 +459,93 @@ def _huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
     # Same as max(abs_x - delta, 0) but avoids potentially doubling gradient.
     linear = abs_errors - quadratic
     return 0.5 * quadratic**2 + delta * linear
+
+
+def sac_loss(
+    q: ContinuousClippedDoubleQNet,
+    q_target: ContinuousClippedDoubleQNet,
+    policy: StochasticPolicyBase,
+    action_key: jnp.ndarray,
+    alpha: float,
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
+    gamma: float,
+) -> tuple[float, float]:
+    r"""Soft Actor-Critic (SAC) loss.
+
+    This loss requires continuous state and action spaces.
+
+    The target values will be generated to estimate the soft Q function as
+    described in [1]_ with a target network. In addition, we use a clipped
+    double Q network.
+
+    For a mini-batch, we calculate target values :math:`y_i` for the critic
+
+    .. math::
+
+        y_i = r_i + (1 - t_i) \gamma
+        \left[\min(Q_1(o_{i+1}, a_{i+1}), Q_2(o_{i+1}, a_{i+1}))
+        - \alpha \log \pi(a_{i+1}|o_{i+1})\right]
+
+    where :math:`r_i` (``reward``) is the immediate reward obtained in the
+    transition, :math:`o_{i+1}` (``next_observation``) is the observation
+    after the transition, :math:`a_{i+1} \sim \pi(a_{i+1}|o_{i+1})` is the next
+    action sampled from the ``policy``, :math:`\gamma` (``gamma``) is the
+    discount factor, :math:`\alpha` is the entropy coefficient, and :math:`t_i`
+    (``terminated``) indicates if a terminal state was reached in this
+    transition.
+
+    Based on these target values, the loss is defined as
+
+    .. math::
+
+        \mathcal{L}(Q) = \frac{1}{N} \sum_{i=1}^{N} (y_i - Q(o_i, a_i))^2.
+
+    Parameters
+    ----------
+    q : ContinuousClippedDoubleQNet
+        Deep Q-network :math:`Q(o, a)`. For a given observation, the neural
+        network predicts the value of each action from the discrete action
+        space.
+    q_target : ContinuousClippedDoubleQNet
+        Target network for ``q``.
+    policy : StochasticPolicyBase
+        Policy.
+    action_key : array
+        Random key for action sampling.
+    alpha : float
+        Entropy coefficient.
+    batch : tuple
+        Mini-batch of transitions. Contains in this order: observations
+        :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
+        observations :math:`o_{i+1}`, termination flags :math:`t_i`.
+    gamma : float
+        Discount factor :math:`\gamma`.
+
+    Returns
+    -------
+    loss : float
+        The computed loss for the given mini-batch.
+    q_mean : float
+        Mean of the predicted action values.
+
+    References
+    ----------
+    .. [1] Haarnoja, T., Tang, H., Abbeel, P., Levine, S. (2017). Reinforcement
+       Learning with Deep Energy-Based Policies. In Proceedings of the 34th
+       International Conference on Machine Learning, PMLR 70:1352-1361, 2017.
+       https://proceedings.mlr.press/v70/haarnoja17a.html
+    """
+    observation, action, reward, next_observation, terminated = batch
+
+    next_actions = policy.sample(next_observation, action_key)
+    next_log_pi = policy.log_probability(next_observation, next_actions)
+    next_obs_act = jnp.concatenate((next_observation, next_actions), axis=-1)
+    q_next_target = q_target(next_obs_act).squeeze() - alpha * next_log_pi
+    q_target_value = reward + (1 - terminated) * gamma * q_next_target
+
+    return _mse_clipped_double_q_loss(q_target_value, q, action, observation)
 
 
 def mse_discrete_action_value_loss(

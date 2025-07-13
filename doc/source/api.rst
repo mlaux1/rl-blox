@@ -53,8 +53,6 @@ Functional Blox
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
-   sac.sac_update_critic
-   sac.soft_q_target
    pets.mpc_action
    pets.ts_inf
    pets.evaluate_plans
@@ -106,6 +104,7 @@ Functional Blox
    losses.ddpg_loss
    losses.td3_loss
    losses.td3_lap_loss
+   losses.sac_loss
    losses.mse_discrete_action_value_loss
    losses.dqn_loss
    losses.nature_dqn_loss
