@@ -249,7 +249,7 @@ def ddpg_loss(
         Mini-batch of transitions. Contains in this order: observations
         :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
         observations :math:`o_{i+1}`, termination flags :math:`t_i`.
-    gamma : float, default=0.99
+    gamma : float
         Discount factor :math:`\gamma`.
 
     Returns
@@ -325,7 +325,7 @@ def td3_loss(
         Mini-batch of transitions. Contains in this order: observations
         :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
         observations :math:`o_{i+1}`, termination flags :math:`t_i`.
-    gamma : float, default=0.99
+    gamma : float
         Discount factor :math:`\gamma`.
 
     Returns
@@ -412,9 +412,9 @@ def td3_lap_loss(
         Mini-batch of transitions. Contains in this order: observations
         :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
         observations :math:`o_{i+1}`, termination flags :math:`t_i`.
-    gamma : float, default=0.99
+    gamma : float
         Discount factor :math:`\gamma`.
-    min_priority : float, default=0.01
+    min_priority : float
         Minimum priority, delta for the Huber loss.
 
     Returns
