@@ -416,6 +416,7 @@ def train_sac(
     Logging
 
     * ``q loss`` - value of the loss function for ``q``
+    * ``q mean`` - mean Q value of batch used to update the critic
     * ``policy loss`` - value of the loss function for the actor
 
     Checkpointing
@@ -509,7 +510,7 @@ def train_sac(
                 batch,
                 gamma,
             )
-            stats = {"q loss": q_loss_value}
+            stats = {"q loss": q_loss_value, "q mean": q_mean}
             updated_modules = {"q": q}
 
             if global_step % policy_delay == 0:
