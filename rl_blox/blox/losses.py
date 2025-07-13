@@ -373,7 +373,7 @@ def td3_lap_loss(
     ],
     gamma: float,
     min_priority: float,
-) -> tuple[float, float, jnp.ndarray]:
+) -> tuple[float, tuple[float, jnp.ndarray]]:
     r"""Critic loss of TD3 with LAP.
 
     This loss requires continuous state and action spaces.
@@ -422,8 +422,11 @@ def td3_lap_loss(
     loss : float
         The computed loss for the given mini-batch.
 
-    q_mean : float
-        Mean of the predicted action values.
+    auxiliary : tuple
+        Auxiliary information about the loss.
+        (1) q_mean (float): Mean of the predicted action values.
+        (2) max_abs_td_error (jnp.ndarray): Maximum over two Q networks of
+        absolute temporal difference (TD) error for each sample in the batch.
 
     References
     ----------
@@ -437,27 +440,22 @@ def td3_lap_loss(
     next_obs_act = jnp.concatenate((next_observation, next_action), axis=-1)
     q_next = jax.lax.stop_gradient(q_target(next_obs_act).squeeze())
     q_target_value = reward + (1 - terminated) * gamma * q_next
-    return _huber_clipped_double_q_loss(
-        q_target_value, q, action, observation, min_priority
-    )
-
-
-def _huber_clipped_double_q_loss(q_target_value, q, action, observation, delta):
     obs_act = jnp.concatenate((observation, action), axis=-1)
     q1_predicted = q.q1(obs_act).squeeze()
     q2_predicted = q.q2(obs_act).squeeze()
     td_error1 = jnp.abs(q1_predicted - q_target_value)
     td_error2 = jnp.abs(q2_predicted - q_target_value)
-    max_abs_td_error = jnp.maximum(td_error1, td_error2)
-    loss = huber_loss(td_error1, delta) + huber_loss(td_error2, delta)
     return (
-        loss,
-        jnp.minimum(q1_predicted, q2_predicted).mean(),
-        max_abs_td_error,
+        _huber_loss(td_error1, min_priority).mean()
+        + _huber_loss(td_error2, min_priority).mean(),
+        (
+            jnp.minimum(q1_predicted, q2_predicted).mean(),
+            jnp.maximum(td_error1, td_error2),
+        ),
     )
 
 
-def huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
+def _huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
     # 0.5 * err^2                  if |err| <= d
     # 0.5 * d^2 + d * (|err| - d)  if |err| > d
     quadratic = jnp.minimum(abs_errors, delta)

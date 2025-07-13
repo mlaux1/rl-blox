@@ -27,6 +27,7 @@ Algorithm Interface
    actor_critic.train_ac
    ddpg.train_ddpg
    td3.train_td3
+   td3_lap.train_td3_lap
    td7.train_td7
    sac.train_sac
    pets.train_pets
@@ -104,6 +105,7 @@ Functional Blox
    losses.mse_continuous_action_value_loss
    losses.ddpg_loss
    losses.td3_loss
+   losses.td3_lap_loss
    losses.mse_discrete_action_value_loss
    losses.dqn_loss
    losses.nature_dqn_loss
