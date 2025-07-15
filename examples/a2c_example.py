@@ -6,12 +6,14 @@ from rl_blox.algorithm.a2c import train_a2c
 from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
-# env_name = "Pendulum-v1"
+env_name = "Pendulum-v1"
 # env_name = "HalfCheetah-v4"
-env_name = "InvertedPendulum-v5"
-env = gym.make(env_name)
+# env_name = "InvertedPendulum-v5"
+env1 = gym.make(env_name, g=9.81)
+env2 = gym.make(env_name, g=9.9)
+env_set = [env1, env2]
+
 seed = 42
-env.reset(seed=seed)
 
 hparams_model = dict(
     policy_shared_head=True,
@@ -39,10 +41,10 @@ logger.define_experiment(
 )
 logger.define_checkpoint_frequency("value_function", 10)
 
-a2c_state = create_policy_gradient_continuous_state(env, **hparams_model)
+a2c_state = create_policy_gradient_continuous_state(env1, **hparams_model)
 
 train_a2c(
-    env,
+    env_set,
     a2c_state.policy,
     a2c_state.policy_optimizer,
     a2c_state.value_function,
@@ -50,10 +52,12 @@ train_a2c(
     **hparams_algorithm,
     logger=logger,
 )
-env.close()
+
+env1.close()
+env2.close()
 
 # Evaluation
-env = gym.make(env_name, render_mode="human")
+env = gym.make(env_name, render_mode="human", g=9.81)
 env = gym.wrappers.RecordEpisodeStatistics(env)
 while True:
     done = False

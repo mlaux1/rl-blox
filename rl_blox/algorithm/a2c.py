@@ -72,7 +72,7 @@ def actor_critic_policy_gradient(
 
 
 def train_a2c(
-    env: gym.Env,
+    env_set: list[gym.Env],
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP,
@@ -90,8 +90,8 @@ def train_a2c(
 
     Parameters
     ----------
-    env : gym.Env
-        Environment.
+    env_set : list[gym.Env]
+        Set of environments.
 
     policy : nnx.Module
         Probabilistic policy network. Maps observations to probability
@@ -139,53 +139,59 @@ def train_a2c(
     progress = tqdm.tqdm(total=total_timesteps)
     step = 0
     while step < total_timesteps:
-        key, skey = jax.random.split(key, 2)
-        dataset = sample_trajectories(
-            env, policy, skey, logger, train_after_episode, steps_per_update
-        )
-        step += len(dataset)
-        progress.update(len(dataset))
+        for env in env_set:
+            key, skey = jax.random.split(key, 2)
 
-        observations, actions, next_observations, returns, gamma_discount = (
-            dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
-        )
-        rewards = jnp.hstack(
-            [
-                jnp.hstack([r for _, _, _, r in episode])
-                for episode in dataset.episodes
-            ]
-        )
-
-        p_loss = train_policy_actor_critic(
-            policy,
-            policy_optimizer,
-            policy_gradient_steps,
-            value_function,
-            observations,
-            actions,
-            next_observations,
-            rewards,
-            gamma_discount,
-            gamma,
-        )
-        if logger is not None:
-            logger.record_stat(
-                "policy loss", p_loss, episode=logger.n_episodes - 1
+            dataset = sample_trajectories(
+                env, policy, skey, logger, train_after_episode, steps_per_update
             )
-            logger.record_epoch("policy", policy)
+            step += len(dataset)
+            progress.update(len(dataset))
 
-        v_loss = train_value_function(
-            value_function,
-            value_function_optimizer,
-            value_gradient_steps,
-            observations,
-            returns,
-        )
-        if logger is not None:
-            logger.record_stat(
-                "value function loss", v_loss, episode=logger.n_episodes - 1
+            (
+                observations,
+                actions,
+                next_observations,
+                returns,
+                gamma_discount,
+            ) = dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
+            rewards = jnp.hstack(
+                [
+                    jnp.hstack([r for _, _, _, r in episode])
+                    for episode in dataset.episodes
+                ]
             )
-            logger.record_epoch("value_function", value_function)
+
+            p_loss = train_policy_actor_critic(
+                policy,
+                policy_optimizer,
+                policy_gradient_steps,
+                value_function,
+                observations,
+                actions,
+                next_observations,
+                rewards,
+                gamma_discount,
+                gamma,
+            )
+            if logger is not None:
+                logger.record_stat(
+                    "policy loss", p_loss, episode=logger.n_episodes - 1
+                )
+                logger.record_epoch("policy", policy)
+
+            v_loss = train_value_function(
+                value_function,
+                value_function_optimizer,
+                value_gradient_steps,
+                observations,
+                returns,
+            )
+            if logger is not None:
+                logger.record_stat(
+                    "value function loss", v_loss, episode=logger.n_episodes - 1
+                )
+                logger.record_epoch("value_function", value_function)
     progress.close()
 
 
