@@ -6,11 +6,15 @@ import pprint
 import time
 from typing import Any
 
-import aim
 import numpy as np
 import orbax.checkpoint as ocp
 import tqdm
 from flax import nnx
+
+try:
+    import aim
+except ImportError:
+    aim = None
 
 
 class LoggerBase(abc.ABC):
@@ -742,7 +746,6 @@ class AIMLogger(LoggerBase):
 
     counter_idx: int
     log_system_params: bool
-    run: aim.Run | None
     start_time: float
     hparams: dict | None
     _n_episodes: int
@@ -751,6 +754,10 @@ class AIMLogger(LoggerBase):
     def __init__(
         self, step_counter: str = "step", log_system_params: bool = False
     ):
+        if aim is None:
+            raise ImportError(
+                "Aim is required to use this logger, but is not installed."
+            )
         assert step_counter in ["episode", "step", "time"]
         self.counter_idx = ["episode", "step", "time"].index(step_counter)
         self.log_system_params = log_system_params

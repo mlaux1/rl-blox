@@ -323,7 +323,7 @@ def train_reinforce(
     steps_per_update: int = 1_000,
     train_after_episode: bool = False,
     logger: LoggerBase | None = None,
-):
+) -> tuple[StochasticPolicyBase, nnx.Optimizer, nnx.Module, nnx.Optimizer]:
     """Train with REINFORCE.
 
     Parameters
@@ -369,6 +369,20 @@ def train_reinforce(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    Returns
+    -------
+    policy : StochasticPolicyBase
+        Final policy.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for policy network.
+
+    value_function : nnx.Module
+        Value function.
+
+    value_function_optimizer : nnx.Optimizer
+        Optimizer for value function.
     """
     key = jax.random.key(seed)
     progress = tqdm.tqdm(total=total_timesteps)
@@ -417,13 +431,25 @@ def train_reinforce(
                 logger.record_epoch("value_function", value_function)
     progress.close()
 
+    return namedtuple(
+        "REINFORCEResult",
+        [
+            "policy",
+            "policy_optimizer",
+            "value_function",
+            "value_function_optimizer",
+        ],
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
+
 
 # DEPRECATED: for backward compatibility
 collect_samples = sample_trajectories
 with contextlib.suppress(ImportError):
     from warnings import deprecated
 
-    collect_samples = deprecated(collect_samples)
+    collect_samples = deprecated("collect_samples is deprecated!")(
+        collect_samples
+    )
 
 
 @partial(nnx.jit, static_argnames=["value_gradient_steps"])

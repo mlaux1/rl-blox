@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rl_blox"
 maintainers = [
-    { name="Melvin Laux", email="melvin.laux@uni-bremen.de"},
+
 ]
 authors = [
     { name="Melvin Laux", email="melvin.laux@uni-bremen.de" },
@@ -13,7 +13,7 @@ authors = [
 ]
 description = "Modular RL building blocks in JAX"
 requires-python = ">=3.10"
-license = {text = "BSD-3-Clause"}
+license = "BSD-3-Clause"
 keywords = ["Reinforcement Learning", "RL", "JAX"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -22,13 +22,12 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: The 3-Clause BSD License (BSD-3-Clause)",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "numpy",
-    "gymnasium",
+    "gymnasium>=1.0.0",
     "jax>=0.5",
     "jaxlib",
     "optax",
@@ -38,7 +37,6 @@ dependencies = [
     "flax",
     "orbax-export",
     "orbax",
-    "aim",
 ]
 dynamic = ["version", "readme"]
 
@@ -51,13 +49,14 @@ dev = [
     "isort",
     "pytest-cov",
 ]
+logging = ["aim"]
 examples = ["gymnasium[classic-control,toy-text,mujoco]", "matplotlib"]
-all = ["rl_blox[dev,examples]"]
 doc = [
     "sphinx",
     "pydata-sphinx-theme",
     "numpydoc",
 ]
+all = ["rl_blox[dev,examples,logging,doc]"]
 
 [project.urls]
 Homepage = "https://github.com/mlaux1/rl-blox"

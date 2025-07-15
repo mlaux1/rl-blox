@@ -2,7 +2,8 @@ import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
 
-from rl_blox.algorithm.td3 import create_td3_state, train_td3
+from rl_blox.algorithm.td3 import create_td3_state
+from rl_blox.algorithm.td3_lap import train_td3_lap
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 env_name = "Hopper-v5"
@@ -41,7 +42,7 @@ logger = LoggerList(
 )
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name="TD3",
+    algorithm_name="TD3+LAP",
     hparams=hparams_models | hparams_algorithm,
 )
 n_policy_epochs = (
@@ -51,7 +52,7 @@ logger.define_checkpoint_frequency("policy", n_policy_epochs)
 
 td3_state = create_td3_state(env, **hparams_models)
 
-td3_result = train_td3(
+td3_result = train_td3_lap(
     env,
     td3_state.policy,
     td3_state.policy_optimizer,

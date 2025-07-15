@@ -65,6 +65,10 @@ All optional inputs have clearly defined default values, ideally to have the
 default behavior as close as possible to the original paper, e.g., using Rprop
 as an optimizer in DQN.
 
+The train function of an algorithm will return the internal state of the
+algorithm as a namedtuple. The internal state might, for instance, consist of
+policy, value function, target networks, optimizers, replay buffer.
+
 Note that full experiment evaluation, tracking, and hyperparameter tuning
 is not something that this library is meant to provide and remains separate.
 However, we provide some basic logging and experiment tracking, e.g., with AIM

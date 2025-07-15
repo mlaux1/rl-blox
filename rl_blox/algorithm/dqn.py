@@ -1,84 +1,48 @@
+from collections import namedtuple
+from functools import partial
+
 import gymnasium
 import jax
-import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.losses import mse_discrete_action_value_loss
+from ..blox.losses import dqn_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
 from ..logging.logger import LoggerBase
 
 
-@nnx.jit
-def critic_loss(
-    q_net: MLP,
-    batch: tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ],
-    gamma: float = 0.99,
-) -> float:
-    """Calculates the loss of the given Q-net for a given minibatch of
-    transitions.
+def train_step_with_loss(
+    loss, optimizer: nnx.Optimizer, *args, **kwargs
+) -> tuple[float, float]:
+    """Performs a single training step to optimize a Q-network.
 
     Parameters
     ----------
-    q_net : MLP
-        The Q-network to compute the loss for.
-    batch : tuple
-        The minibatch of transitions.
-    gamma : float, default=0.99
-        The discount factor.
-
-    Returns
-    -------
-    loss : float
-        The computed loss for the given minibatch.
-    """
-    obs, action, reward, next_obs, terminated = batch
-
-    next_q = jax.lax.stop_gradient(q_net(next_obs))
-    max_next_q = jnp.max(next_q, axis=1)
-
-    q_target_values = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
-
-    return mse_discrete_action_value_loss(obs, action, q_target_values, q_net)
-
-
-@nnx.jit
-def _train_step(
-    q_net: MLP,
-    optimizer: nnx.Optimizer,
-    batch: tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ],
-    gamma: float = 0.99,
-) -> float:
-    """Performs a single training step to optimise the Q-network.
-
-    Parameters
-    ----------
-    q_net : MLP
-        The MLP to be updated.
+    loss : callable
+        The loss function to be optimized, which should return a tuple with at
+        least the loss value as the first element. The first argument of the
+        loss should be the Q-network that will be optimized.
     optimizer : nnx.Optimizer
         The optimizer to be used.
-    batch : tuple
-        The minibatch of transitions to compute the update from.
-    gamma : float, optional
-        The discount factor.
+    *args : tuple
+        Arguments to be passed to the loss function.
+    **kwargs : dict
+        Keyword arguments to be passed to the loss function.
 
     Returns
     -------
-    loss : float
-        Loss value.
+    value : tuple
+        Values returned by the loss function, typically including the loss
+        value as the first element and possibly as the only element.
     """
-    grad_fn = nnx.value_and_grad(critic_loss)
-    loss, grads = grad_fn(q_net, batch, gamma)
-    optimizer.update(grads)
-    return loss
+    grad_fn = nnx.value_and_grad(loss, argnums=0, has_aux=True)
+    value, grad = grad_fn(*args, **kwargs)
+    optimizer.update(grad)
+    return value
 
 
 def train_dqn(
@@ -117,10 +81,10 @@ def train_dqn(
         The replay buffer used for storing collected transitions.
     optimizer : nnx.Optimizer
         The optimiser for the Q-Network.
+    batch_size : int, optional
+        Batch size for updates.
     total_timesteps : int
         The number of environment sets to train for.
-    learning_rate : float
-        The learning rate for updating the weights of the Q-net.
     gamma : float
         The discount factor.
     seed : int
@@ -138,8 +102,8 @@ def train_dqn(
     References
     ----------
     .. [1] Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I.,
-       Wierstra, D., & Riedmiller, M. (2013). Playing atari with deep
-       reinforcement learning. arXiv preprint arXiv:1312.5602.
+       Wierstra, D., Riedmiller, M. (2013). Playing Atari with Deep
+       Reinforcement Learning. https://arxiv.org/abs/1312.5602
     """
 
     assert isinstance(
@@ -151,6 +115,9 @@ def train_dqn(
 
     if logger is not None:
         logger.start_new_episode()
+
+    train_step = partial(train_step_with_loss, dqn_loss)
+    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     # initialise episode
     obs, _ = env.reset(seed=seed)
@@ -182,10 +149,15 @@ def train_dqn(
         # sample minibatch from replay buffer
         if step > batch_size:
             transition_batch = replay_buffer.sample_batch(batch_size, rng)
-            q_loss = _train_step(q_net, optimizer, transition_batch, gamma)
+            q_loss, q_mean = train_step(
+                optimizer, q_net, transition_batch, gamma
+            )
             if logger is not None:
                 logger.record_stat(
                     "q loss", q_loss, step=step + 1, episode=episode
+                )
+                logger.record_stat(
+                    "q mean", q_mean, step=step + 1, episode=episode
                 )
                 logger.record_epoch("q", q_net, step=step + 1, episode=episode)
 
@@ -201,4 +173,4 @@ def train_dqn(
         else:
             obs = next_obs
 
-    return q_net, optimizer
+    return namedtuple("DQNResult", ["q_net", "optimizer"])(q_net, optimizer)

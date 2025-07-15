@@ -1,4 +1,5 @@
 from collections import namedtuple
+from functools import partial
 
 import chex
 import gymnasium as gym
@@ -16,10 +17,11 @@ from ..blox.function_approximator.policy_head import (
     GaussianTanhPolicy,
     StochasticPolicyBase,
 )
-from ..blox.losses import mse_continuous_action_value_loss
+from ..blox.losses import sac_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
+from .dqn import train_step_with_loss
 
 
 def sac_actor_loss(
@@ -257,6 +259,7 @@ def train_sac(
     target_network_delay: int = 1,
     alpha: float = 0.2,
     autotune: bool = True,
+    replay_buffer: ReplayBuffer | None = None,
     q_target: ContinuousClippedDoubleQNet | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
@@ -267,6 +270,7 @@ def train_sac(
     nnx.Module,
     nnx.Optimizer,
     EntropyControl,
+    ReplayBuffer,
 ]:
     r"""Soft actor-critic (SAC).
 
@@ -317,8 +321,8 @@ def train_sac(
     buffer_size : int
         The replay memory buffer size.
 
-    gamma  float
-        The discount factor gamma.
+    gamma : float, optional (default: 0.99)
+        Discount factor.
 
     tau : float, optional (default: 0.005)
         Target smoothing coefficient.
@@ -345,6 +349,9 @@ def train_sac(
     autotune : bool
         Automatic tuning of the entropy coefficient.
 
+    replay_buffer : ReplayBuffer
+        Replay buffer.
+
     q_target : ContinuousClippedDoubleQNet
         Target network for q.
 
@@ -368,6 +375,8 @@ def train_sac(
         Optimizer of q.
     entropy_control
         State of entropy tuning.
+    replay_buffer : ReplayBuffer
+        Replay buffer.
 
     Notes
     -----
@@ -380,12 +389,12 @@ def train_sac(
       (see :class:`~.blox.double_qnet.ContinuousClippedDoubleQNet`)
     * :math:`Q'(o, a)` with weights :math:`\theta^{Q'}` - target network
       ``q_target``, initialized as a copy of ``q``
+    * :math:`R` - ``replay_buffer``
 
     Algorithm
 
-    * Initialize replay buffer :math:`R`
     * Randomly sample ``learning_starts`` actions and record transitions in
-      replay buffer
+      :math:`R`
     * For each step :math:`t`
 
       * Sample :math:`a_t \sim \pi(a_t|o_t)`
@@ -394,7 +403,7 @@ def train_sac(
         where :math:`d` indicates if a terminal state was reached
       * Sample mini-batch of ``batch_size`` transitions from :math:`R` to
         update the networks
-      * Update critic networks with :func:`sac_update_critic`
+      * Update critic networks with :func:`~.blox.losses.sac_loss`
       * If ``t % policy_delay == 0``
 
         * Update actor ``policy_delay`` times with :func:`sac_update_actor`
@@ -407,6 +416,7 @@ def train_sac(
     Logging
 
     * ``q loss`` - value of the loss function for ``q``
+    * ``q mean`` - mean Q value of batch used to update the critic
     * ``policy loss`` - value of the loss function for the actor
 
     Checkpointing
@@ -453,7 +463,13 @@ def train_sac(
         return policy.sample(obs, action_key)
 
     env.observation_space.dtype = np.float32
-    rb = ReplayBuffer(buffer_size)
+    if replay_buffer is None:
+        replay_buffer = ReplayBuffer(buffer_size)
+
+    train_step = partial(train_step_with_loss, sac_loss)
+    train_step = partial(nnx.jit, static_argnames=("gamma", "alpha"))(
+        train_step
+    )
 
     if logger is not None:
         logger.start_new_episode()
@@ -472,7 +488,7 @@ def train_sac(
         next_obs, reward, termination, truncation, info = env.step(action)
         steps_per_episode += 1
 
-        rb.add_sample(
+        replay_buffer.add_sample(
             observation=obs,
             action=action,
             reward=reward,
@@ -481,28 +497,21 @@ def train_sac(
         )
 
         if global_step >= learning_starts:
-            observations, actions, rewards, next_observations, terminations = (
-                rb.sample_batch(batch_size, rng)
-            )
+            batch = replay_buffer.sample_batch(batch_size, rng)
 
             key, action_key = jax.random.split(key, 2)
-            q_loss_value = sac_update_critic(
+            q_loss_value, q_mean = train_step(
+                q_optimizer,
                 q,
                 q_target,
-                q_optimizer,
                 policy,
-                gamma,
-                observations,
-                actions,
-                rewards,
-                next_observations,
-                terminations,
                 action_key,
                 entropy_control.alpha_,
+                batch,
+                gamma,
             )
-            if logger is not None:
-                logger.record_stat("q loss", q_loss_value, step=global_step + 1)
-                logger.record_epoch("q", q, step=global_step + 1)
+            stats = {"q loss": q_loss_value, "q mean": q_mean}
+            updated_modules = {"q": q}
 
             if global_step % policy_delay == 0:
                 # compensate for delay by doing 'policy_frequency' updates
@@ -513,59 +522,62 @@ def train_sac(
                         policy_optimizer,
                         q,
                         action_key,
-                        observations,
+                        batch.observation,
                         entropy_control.alpha_,
                     )
+                    stats["policy loss"] = policy_loss_value
+                    updated_modules["policy"] = policy
+
                     key, action_key = jax.random.split(key, 2)
                     exploration_loss_value = entropy_control.update(
-                        policy, observations, key
+                        policy, batch.observation, key
                     )
-                    if logger is not None:
-                        logger.record_stat(
-                            "policy loss",
-                            policy_loss_value,
-                            step=global_step + 1,
+                    if autotune:
+                        stats["alpha"] = float(
+                            jnp.array(entropy_control.alpha_).squeeze()
                         )
-                        logger.record_epoch(
-                            "policy", policy, step=global_step + 1
-                        )
-                        logger.record_stat(
-                            "alpha",
-                            float(jnp.array(entropy_control.alpha_).squeeze()),
-                            step=global_step + 1,
-                        )
-                        if autotune:
-                            logger.record_stat(
-                                "alpha loss",
-                                exploration_loss_value,
-                                step=global_step + 1,
-                            )
-                            logger.record_epoch(
-                                "alpha", alpha, step=global_step + 1
-                            )
+                        stats["alpha loss"] = exploration_loss_value
 
             if global_step % target_network_delay == 0:
                 soft_target_net_update(q, q_target, tau)
-                logger.record_epoch("q_target", q_target, step=global_step + 1)
+                updated_modules["q_target"] = q_target
+
+            if logger is not None:
+                for k, v in stats.items():
+                    logger.record_stat(k, v, step=global_step + 1)
+                for k, v in updated_modules.items():
+                    logger.record_epoch(k, v, step=global_step + 1)
 
         if termination or truncation:
             if logger is not None:
-                logger.stop_episode(steps_per_episode)
-                logger.start_new_episode()
                 if "episode" in info:
                     logger.record_stat("return", info["episode"]["r"])
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
             obs, _ = env.reset()
             steps_per_episode = 0
         else:
             obs = next_obs
 
-    return (
+    return namedtuple(
+        "SACResult",
+        [
+            "policy",
+            "policy_optimizer",
+            "q",
+            "q_target",
+            "q_optimizer",
+            "entropy_control",
+            "replay_buffer",
+        ],
+    )(
         policy,
         policy_optimizer,
         q,
         q_target,
         q_optimizer,
         entropy_control,
+        replay_buffer,
     )
 
 
@@ -618,183 +630,3 @@ def sac_update_actor(
     )
     policy_optimizer.update(grads)
     return loss
-
-
-@nnx.jit
-def sac_update_critic(
-    q: ContinuousClippedDoubleQNet,
-    q_target: ContinuousClippedDoubleQNet,
-    q_optimizer: nnx.Optimizer,
-    policy: StochasticPolicyBase,
-    gamma: float,
-    observations: jnp.ndarray,
-    actions: jnp.ndarray,
-    rewards: jnp.ndarray,
-    next_observations: jnp.ndarray,
-    terminations: jnp.ndarray,
-    action_key: jnp.ndarray,
-    alpha: jnp.ndarray,
-) -> tuple[float, float]:
-    r"""SAC update of critic.
-
-    Uses ``q_optimizer`` to update ``q``
-    with the :func:`~.blox.losses.mse_continuous_action_value_loss`. The target
-    values :math:`y_i` are generated by :func:`soft_q_target` with the target
-    network ``q_target``.
-
-    Parameters
-    ----------
-    q : ContinuousClippedDoubleQNet
-        Double soft q network.
-
-    q_target : ContinuousClippedDoubleQNet
-        Target network of q.
-
-    q_optimizer : nnx.Optimizer
-        Optimizer of q.
-
-    policy : StochasticPolicyBase
-        Policy.
-
-    gamma : float
-        Discount factor of discounted infinite horizon return model.
-
-    observations : array
-        Observations :math:`o_t`.
-
-    actions : array
-        Actions :math:`a_t`.
-
-    rewards : array
-        Rewards :math:`r_{t+1}`.
-
-    next_observations : array
-        Next observations :math:`o_{t+1}`.
-
-    terminations : array
-        Indicates if a terminal state was reached in this step.
-
-    action_key : array
-        Random key for action sampling.
-
-    alpha : float
-        Entropy coefficient.
-
-    Returns
-    -------
-    q_loss_value : float
-        Loss for q.
-
-    See also
-    --------
-    .blox.losses.mse_continuous_action_value_loss
-        The mean squared error loss.
-
-    sac_q_target
-        Generates target values for action-value functions.
-    """
-    q_target_value = soft_q_target(
-        q_target,
-        policy,
-        rewards,
-        next_observations,
-        terminations,
-        action_key,
-        alpha,
-        gamma,
-    )
-
-    def sum_of_qnet_losses(q: ContinuousClippedDoubleQNet):
-        return mse_continuous_action_value_loss(
-            observations,
-            actions,
-            q_target_value,
-            q.q1,
-        ) + mse_continuous_action_value_loss(
-            observations,
-            actions,
-            q_target_value,
-            q.q2,
-        )
-
-    q_loss_value, grads = nnx.value_and_grad(sum_of_qnet_losses)(q)
-    q_optimizer.update(grads)
-
-    return q_loss_value
-
-
-def soft_q_target(
-    q_target: ContinuousClippedDoubleQNet,
-    policy: StochasticPolicyBase,
-    rewards: jnp.ndarray,
-    next_observations: jnp.ndarray,
-    terminations: jnp.ndarray,
-    action_key: jnp.ndarray,
-    alpha: float,
-    gamma: float,
-) -> jnp.ndarray:
-    r"""Target value for action-value functions in SAC.
-
-    The target values will be generated to estimate the soft Q function as
-    described in [1]_ with a target network. In addition, we use a double
-    network.
-
-    For a mini-batch, we calculate target values :math:`y_i` for the critic
-
-    .. math::
-
-        y_i = r_i + (1 - t_i) \gamma
-        \left[\min(Q_1(o_{i+1}, a_{i+1}), Q_2(o_{i+1}, a_{i+1}))
-        - \alpha \log \pi(a_{i+1}|o_{i+1})\right]
-
-    where :math:`r_i` (``reward``) is the immediate reward obtained in the
-    transition, :math:`o_{i+1}` (``next_observation``) is the observation
-    after the transition, :math:`a_{i+1} \sim \pi(a_{i+1}|o_{i+1})` is the next
-    action sampled from the ``policy``, :math:`\gamma` (``gamma``) is the
-    discount factor, :math:`\alpha` is the entropy coefficient, and :math:`t_i`
-    (``terminated``) indicates if a terminal state was reached in this
-    transition.
-
-    Parameters
-    ----------
-    q_target : ContinuousClippedDoubleQNet
-        Target network of q.
-
-    policy : StochasticPolicyBase
-        Policy.
-
-    rewards : array
-        Rewards :math:`r_{t+1}`.
-
-    next_observations : array
-        Next observations :math:`o_{t+1}`.
-
-    terminations : array
-        Indicates if a terminal state was reached in this step.
-
-    action_key : array
-        Random key for action sampling.
-
-    alpha : float
-        Entropy coefficient.
-
-    gamma : float
-        Discount factor of discounted infinite horizon return model.
-
-    Returns
-    -------
-    q_target_value : array
-        Target values for action-value functions.
-
-    References
-    ----------
-    .. [1] Haarnoja, T., Tang, H., Abbeel, P., Levine, S. (2017). Reinforcement
-       Learning with Deep Energy-Based Policies. In Proceedings of the 34th
-       International Conference on Machine Learning, PMLR 70:1352-1361, 2017.
-       https://proceedings.mlr.press/v70/haarnoja17a.html
-    """
-    next_actions = policy.sample(next_observations, action_key)
-    next_log_pi = policy.log_probability(next_observations, next_actions)
-    next_obs_act = jnp.concatenate((next_observations, next_actions), axis=-1)
-    q_next_target = q_target(next_obs_act).squeeze() - alpha * next_log_pi
-    return rewards + (1 - terminations) * gamma * q_next_target

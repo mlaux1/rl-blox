@@ -1,92 +1,20 @@
+from collections import namedtuple
+from functools import partial
+
 import gymnasium
 import jax
-import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.losses import mse_discrete_action_value_loss
+from ..blox.losses import nature_dqn_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.schedules import linear_schedule
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
-
-
-@nnx.jit
-def critic_loss(
-    q_net: MLP,
-    q_target: MLP,
-    batch: tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ],
-    gamma: float = 0.99,
-) -> float:
-    """Calculates the loss of the given Q-net for a given minibatch of
-    transitions.
-
-    Parameters
-    ----------
-    q_net : MLP
-        The Q-network to compute the loss for.
-    q_target : MLP
-        The target Q-Network.
-    batch : list[Transition]
-        The minibatch of transitions.
-    gamma : float, default=0.99
-        The discount factor.
-
-    Returns
-    -------
-    loss : float
-        The computed loss for the given minibatch.
-    """
-    obs, action, reward, next_obs, terminated = batch
-
-    next_q = jax.lax.stop_gradient(q_target(next_obs))
-    max_next_q = jnp.max(next_q, axis=1)
-
-    target = jnp.array(reward) + (1 - terminated) * gamma * max_next_q
-
-    return mse_discrete_action_value_loss(obs, action, target, q_net)
-
-
-@nnx.jit
-def _train_step(
-    q_net: MLP,
-    q_target: MLP,
-    optimizer: nnx.Optimizer,
-    batch: tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ],
-    gamma: float = 0.99,
-) -> float:
-    """Performs a single training step to optimise the Q-network.
-
-    Parameters
-    ----------
-    q_net : MLP
-        The MLP to be updated.
-    q_target : MLP
-        The target Q-Network.
-    optimizer : nnx.Optimizer
-        The optimizer to be used.
-    batch : tuple
-        The minibatch of transitions to compute the update from.
-    gamma : float, optional
-        The discount factor.
-
-    Returns
-    -------
-    loss : float
-        The loss value.
-    """
-    grad_fn = nnx.value_and_grad(critic_loss)
-    loss, grads = grad_fn(q_net, q_target, batch, gamma)
-    optimizer.update(grads)
-
-    return loss
+from .dqn import train_step_with_loss
 
 
 def train_nature_dqn(
@@ -129,6 +57,8 @@ def train_nature_dqn(
         The replay buffer used for storing collected transitions.
     optimizer : nnx.Optimizer
         The optimiser for the Q-Network.
+    batch_size : int, optional
+        Batch size for updates.
     update_frequency : int, optional
         The number of time steps after which the Q-net is updated.
     target_update_frequency : int, optional
@@ -171,6 +101,9 @@ def train_nature_dqn(
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
 
+    train_step = partial(train_step_with_loss, nature_dqn_loss)
+    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
+
     # initialise episode
     obs, _ = env.reset(seed=seed)
 
@@ -201,12 +134,15 @@ def train_nature_dqn(
         if step > batch_size:
             if step % update_frequency == 0:
                 transition_batch = replay_buffer.sample_batch(batch_size, rng)
-                q_loss = _train_step(
-                    q_net, q_target_net, optimizer, transition_batch, gamma
+                q_loss, q_mean = train_step(
+                    optimizer, q_net, q_target_net, transition_batch, gamma
                 )
                 if logger is not None:
                     logger.record_stat(
                         "q loss", q_loss, step=step + 1, episode=episode
+                    )
+                    logger.record_stat(
+                        "q mean", q_mean, step=step + 1, episode=episode
                     )
                     logger.record_epoch(
                         "q", q_net, step=step + 1, episode=episode
@@ -227,4 +163,6 @@ def train_nature_dqn(
         else:
             obs = next_obs
 
-    return q_net, q_target_net, optimizer
+    return namedtuple(
+        "NatureDQNResult", ["q_net", "q_target_net", "optimizer"]
+    )(q_net, q_target_net, optimizer)

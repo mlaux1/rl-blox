@@ -1,13 +1,9 @@
-import gymnasium as gym
-
 from rl_blox.algorithm.sac import create_sac_state, train_sac
 
 
-def test_sac():
-    env = gym.make("Pendulum-v1")
-
+def test_sac(pendulum_env):
     sac_state = create_sac_state(
-        env,
+        pendulum_env,
         policy_hidden_nodes=[32, 32],
         policy_learning_rate=3e-4,
         q_hidden_nodes=[128, 128],
@@ -16,12 +12,10 @@ def test_sac():
     )
 
     train_sac(
-        env,
+        pendulum_env,
         sac_state.policy,
         sac_state.policy_optimizer,
         sac_state.q,
         sac_state.q_optimizer,
         total_timesteps=10,
     )
-
-    env.close()

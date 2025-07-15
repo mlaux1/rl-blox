@@ -1,5 +1,7 @@
+[![Tests](https://github.com/mlaux1/rl-blox/actions/workflows/test.yaml/badge.svg)](https://github.com/mlaux1/rl-blox/actions/workflows/test.yaml)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
+[![DOI](https://zenodo.org/badge/641058888.svg)](https://doi.org/10.5281/zenodo.15746631)
 
 # RL-BLOX
 
@@ -54,6 +56,7 @@ pip install -e .
 
 To be able to run the provided examples use `pip install -e '.[examples]'`.
 To install development dependencies, please use `pip install -e '.[dev]'`.
+To enable logging with [aim](https://github.com/aimhubio/aim), please use `pip install -e '.[logging]'`
 You can install all optional dependencies using `pip install -e '.[all]'`.
 
 ## Getting Started

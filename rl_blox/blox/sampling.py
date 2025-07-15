@@ -5,8 +5,8 @@ import numpy as np
 from flax import nnx
 
 from ..logging.logger import LoggerBase
-from .blox.function_approximator.policy_head import StochasticPolicyBase
-from .blox.replay_buffer import EpisodeBuffer
+from .function_approximator.policy_head import StochasticPolicyBase
+from .replay_buffer import EpisodeBuffer
 
 
 def sample_trajectories(

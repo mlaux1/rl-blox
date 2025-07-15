@@ -14,9 +14,9 @@ env = gym.wrappers.RecordEpisodeStatistics(env)
 
 hparams_models = dict(
     policy_hidden_nodes=[256, 256],
-    policy_learning_rate=3e-4,
+    policy_learning_rate=1e-3,
     q_hidden_nodes=[256, 256],
-    q_learning_rate=3e-4,
+    q_learning_rate=1e-3,
     seed=seed,
 )
 hparams_algorithm = dict(
@@ -41,7 +41,7 @@ logger.define_experiment(
 
 ddpg_state = create_ddpg_state(env, **hparams_models)
 
-policy, policy_target, policy_optimizer, q, q_target, q_optimizer = train_ddpg(
+policy, _, _, q, _, _, _ = train_ddpg(
     env,
     ddpg_state.policy,
     ddpg_state.policy_optimizer,
