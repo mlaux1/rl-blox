@@ -27,6 +27,7 @@ Algorithm Interface
    actor_critic.train_ac
    ddpg.train_ddpg
    td3.train_td3
+   td3_lap.train_td3_lap
    td7.train_td7
    sac.train_sac
    pets.train_pets
@@ -45,10 +46,6 @@ Functional Blox
    actor_critic.actor_critic_policy_gradient
    ddpg.sample_actions
    ddpg.ddpg_update_actor
-   ddpg.ddpg_update_critic
-   ddpg.q_deterministic_bootstrap_estimate
-   td3.td3_update_critic
-   td3.double_q_deterministic_bootstrap_estimate
    td3.sample_target_actions
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
@@ -56,8 +53,6 @@ Functional Blox
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
-   sac.sac_update_critic
-   sac.soft_q_target
    pets.mpc_action
    pets.ts_inf
    pets.evaluate_plans
@@ -102,11 +97,15 @@ Functional Blox
    probabilistic_ensemble.gaussian_ensemble_loss
    probabilistic_ensemble.train_ensemble
    probabilistic_ensemble.restore_checkpoint
-   losses.mse_continuous_action_value_loss
-   losses.mse_discrete_action_value_loss
-   losses.mse_value_loss
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
+   losses.mse_value_loss
+   losses.mse_continuous_action_value_loss
+   losses.ddpg_loss
+   losses.td3_loss
+   losses.td3_lap_loss
+   losses.sac_loss
+   losses.mse_discrete_action_value_loss
    losses.dqn_loss
    losses.nature_dqn_loss
    losses.ddqn_loss
