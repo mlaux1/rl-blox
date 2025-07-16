@@ -1,4 +1,3 @@
-from collections import namedtuple
 from functools import partial
 
 import gymnasium as gym
@@ -72,8 +71,8 @@ def actor_critic_policy_gradient(
     )(observations, actions, weights, policy)
 
 
-def train_ac(
-    env: gym.Env,
+def train_a2c(
+    env_set: list[gym.Env],
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP,
@@ -81,18 +80,19 @@ def train_ac(
     seed: int = 0,
     policy_gradient_steps: int = 1,
     value_gradient_steps: int = 1,
+    entropy_coefficient: float = 0.01,
     total_timesteps: int = 1_000_000,
     gamma: float = 1.0,
     steps_per_update: int = 1_000,
     train_after_episode: bool = False,
     logger: LoggerBase | None = None,
-) -> tuple[StochasticPolicyBase, nnx.Optimizer, nnx.Module, nnx.Optimizer]:
+):
     """Train with actor-critic.
 
     Parameters
     ----------
-    env : gym.Env
-        Environment.
+    env_set : list[gym.Env]
+        Set of environments.
 
     policy : nnx.Module
         Probabilistic policy network. Maps observations to probability
@@ -135,87 +135,68 @@ def train_ac(
 
     logger : logger.LoggerBase, optional
         Experiment logger.
-
-    Returns
-    -------
-    policy : StochasticPolicyBase
-        Final policy.
-
-    policy_optimizer : nnx.Optimizer
-        Optimizer for policy network.
-
-    value_function : nnx.Module
-        Value function.
-
-    value_function_optimizer : nnx.Optimizer
-        Optimizer for value function.
     """
     key = jax.random.key(seed)
     progress = tqdm.tqdm(total=total_timesteps)
     step = 0
     while step < total_timesteps:
-        key, skey = jax.random.split(key, 2)
-        dataset = sample_trajectories(
-            env, policy, skey, logger, train_after_episode, steps_per_update
-        )
-        step += len(dataset)
-        progress.update(len(dataset))
+        for env in env_set:
+            key, skey = jax.random.split(key, 2)
 
-        observations, actions, next_observations, returns, gamma_discount = (
-            dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
-        )
-        rewards = jnp.hstack(
-            [
-                jnp.hstack([r for _, _, _, r in episode])
-                for episode in dataset.episodes
-            ]
-        )
-
-        p_loss = train_policy_actor_critic(
-            policy,
-            policy_optimizer,
-            policy_gradient_steps,
-            value_function,
-            observations,
-            actions,
-            next_observations,
-            rewards,
-            gamma_discount,
-            gamma,
-        )
-        if logger is not None:
-            logger.record_stat(
-                "policy loss", p_loss, episode=logger.n_episodes - 1
+            dataset = sample_trajectories(
+                env, policy, skey, logger, train_after_episode, steps_per_update
             )
-            logger.record_epoch("policy", policy)
+            step += len(dataset)
+            progress.update(len(dataset))
 
-        v_loss = train_value_function(
-            value_function,
-            value_function_optimizer,
-            value_gradient_steps,
-            observations,
-            returns,
-        )
-        if logger is not None:
-            logger.record_stat(
-                "value function loss", v_loss, episode=logger.n_episodes - 1
+            (
+                observations,
+                actions,
+                next_observations,
+                returns,
+                gamma_discount,
+            ) = dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
+            rewards = jnp.hstack(
+                [
+                    jnp.hstack([r for _, _, _, r in episode])
+                    for episode in dataset.episodes
+                ]
             )
-            logger.record_epoch("value_function", value_function)
+
+            policy_loss = train_policy(
+                policy,
+                policy_optimizer,
+                policy_gradient_steps,
+                value_function,
+                observations,
+                actions,
+                next_observations,
+                rewards,
+                gamma_discount,
+                gamma,
+            )
+            value_loss = train_value_function(
+                value_function,
+                value_function_optimizer,
+                value_gradient_steps,
+                observations,
+                returns,
+            )
+
+            if logger is not None:
+                logger.record_stat(
+                    "policy loss", policy_loss, episode=logger.n_episodes - 1
+                )
+                logger.record_epoch("policy", policy)
+                logger.record_stat(
+                    "value loss", value_loss, episode=logger.n_episodes - 1
+                )
+                logger.record_epoch("value_function", value_function)
     progress.close()
-
-    return namedtuple(
-        "ActorCriticResult",
-        [
-            "policy",
-            "policy_optimizer",
-            "value_function",
-            "value_function_optimizer",
-        ],
-    )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
 @partial(nnx.jit, static_argnames=["policy_gradient_steps", "gamma"])
-def train_policy_actor_critic(
+def train_policy(
     policy,
     policy_optimizer,
     policy_gradient_steps,
@@ -227,7 +208,7 @@ def train_policy_actor_critic(
     gamma_discount,
     gamma,
 ):
-    p_loss = 0.0
+    policy_loss = 0.0
     for _ in range(policy_gradient_steps):
         p_loss, p_grad = actor_critic_policy_gradient(
             policy,
@@ -240,4 +221,4 @@ def train_policy_actor_critic(
             gamma,
         )
         policy_optimizer.update(p_grad)
-    return p_loss
+    return policy_loss
