@@ -80,6 +80,7 @@ def train_a2c(
     seed: int = 0,
     policy_gradient_steps: int = 1,
     value_gradient_steps: int = 1,
+    entropy_coefficient: float = 0.01,
     total_timesteps: int = 1_000_000,
     gamma: float = 1.0,
     steps_per_update: int = 1_000,
@@ -162,7 +163,7 @@ def train_a2c(
                 ]
             )
 
-            p_loss = train_policy_actor_critic(
+            policy_loss = train_policy(
                 policy,
                 policy_optimizer,
                 policy_gradient_steps,
@@ -174,29 +175,28 @@ def train_a2c(
                 gamma_discount,
                 gamma,
             )
-            if logger is not None:
-                logger.record_stat(
-                    "policy loss", p_loss, episode=logger.n_episodes - 1
-                )
-                logger.record_epoch("policy", policy)
-
-            v_loss = train_value_function(
+            value_loss = train_value_function(
                 value_function,
                 value_function_optimizer,
                 value_gradient_steps,
                 observations,
                 returns,
             )
+
             if logger is not None:
                 logger.record_stat(
-                    "value function loss", v_loss, episode=logger.n_episodes - 1
+                    "policy loss", policy_loss, episode=logger.n_episodes - 1
+                )
+                logger.record_epoch("policy", policy)
+                logger.record_stat(
+                    "value loss", value_loss, episode=logger.n_episodes - 1
                 )
                 logger.record_epoch("value_function", value_function)
     progress.close()
 
 
 @partial(nnx.jit, static_argnames=["policy_gradient_steps", "gamma"])
-def train_policy_actor_critic(
+def train_policy(
     policy,
     policy_optimizer,
     policy_gradient_steps,
@@ -208,7 +208,7 @@ def train_policy_actor_critic(
     gamma_discount,
     gamma,
 ):
-    p_loss = 0.0
+    policy_loss = 0.0
     for _ in range(policy_gradient_steps):
         p_loss, p_grad = actor_critic_policy_gradient(
             policy,
@@ -221,4 +221,4 @@ def train_policy_actor_critic(
             gamma,
         )
         policy_optimizer.update(p_grad)
-    return p_loss
+    return policy_loss
