@@ -835,7 +835,8 @@ class AIMLogger(LoggerBase):
             Value that should be recorded.
 
         episode : int, optional
-            Episode which we record the statistic.
+            Episode which we record the statistic. Will be mapped to epochs
+            in the AIM run.
 
         step : int, optional
             Step at which we record the statistic.
@@ -858,7 +859,7 @@ class AIMLogger(LoggerBase):
         s = [episode, step, t][self.counter_idx]
         with contextlib.suppress(TypeError):
             value = float(value)
-        self.run.track(value=value, name=key, step=s)
+        self.run.track(value=value, name=key, step=s, epoch=episode)
 
 
 class LoggerList(LoggerBase):
