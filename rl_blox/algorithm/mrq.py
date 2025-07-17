@@ -1,23 +1,14 @@
-import dataclasses
-from collections import Callable, namedtuple
-from functools import partial
+from collections import namedtuple
+from collections.abc import Callable
 
 import chex
 import gymnasium as gym
 import jax.numpy as jnp
 import jax.random
 import numpy as np
-import optax
-import tqdm
 from flax import nnx
 
-from ..blox.double_qnet import ContinuousClippedDoubleQNet
-from ..blox.function_approximator.mlp import MLP
-from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
-from .ddpg import make_sample_actions
-from .td3 import make_sample_target_actions
 
 
 class EpisodicReplayBuffer:
@@ -34,6 +25,11 @@ class EpisodicReplayBuffer:
         rng: np.random.Generator,
     ) -> tuple[jnp.ndarray]:
         raise NotImplementedError()
+
+
+mrq_kernel_init = jax.nn.initializers.variance_scaling(
+    scale=2, mode="fan_avg", distribution="uniform"
+)
 
 
 class LayerNormMLP(nnx.Module):
@@ -88,13 +84,20 @@ class LayerNormMLP(nnx.Module):
         self.layer_norms = []
         n_in = n_features
         for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            self.hidden_layers.append(
+                nnx.Linear(n_in, n_out, rngs=rngs, kernel_init=mrq_kernel_init)
+            )
             self.layer_norms.append(
                 nnx.LayerNorm(num_features=n_out, rngs=rngs)
             )
             n_in = n_out
 
-        self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
+        self.output_layer = nnx.Linear(
+            n_in,
+            n_outputs,
+            rngs=rngs,
+            kernel_init=mrq_kernel_init,
+        )
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         for layer, norm in zip(
