@@ -88,7 +88,7 @@ def two_hot_decoding(
     x : array, shape (n_samples,)
         Original real values recovered from two-hot encoding.
     """
-    return jnp.sum(jax.nn.log_softmax(two_hot_encoded, axis=-1) * bins, axis=-1)
+    return jnp.sum(two_hot_encoded * bins, axis=-1)
 
 
 def two_hot_cross_entropy_loss(
@@ -98,6 +98,9 @@ def two_hot_cross_entropy_loss(
 
     Parameters
     ----------
+    bins : array, shape (n_bin_edges,)
+        Bin edges for two-hot encoding of continuous values.
+
     logits : array, shape (n_samples, n_bins)
         Predicted logits of two-hot encoded representation of real values.
         A softmax function would transform these logits into a two-hot
@@ -112,6 +115,6 @@ def two_hot_cross_entropy_loss(
     ce_loss : array, shape (n_samples,)
         Cross-entropy loss values for each sample.
     """
-    pred = jax.nn.log_softmax(logits, axis=-1)
+    log_pred = jax.nn.log_softmax(logits, axis=-1)
     target = two_hot_encoding(bins, target)
-    return jnp.sum(-(target * pred), axis=-1)
+    return -jnp.sum(target * log_pred, axis=-1)
