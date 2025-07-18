@@ -1,3 +1,4 @@
+import jax.nn
 import jax.numpy as jnp
 from numpy.testing import assert_array_almost_equal
 
@@ -31,9 +32,17 @@ def test_two_hot_encoder():
 
     assert_array_almost_equal(decoded, x, decimal=2)
 
-    # Test cross-entropy loss
-    # TODO not quite sure what the input should be
-    loss = two_hot_cross_entropy_loss(bins, two_hot_encoded, x)
 
-    assert loss.shape == (5,), "Loss shape mismatch"
-    assert loss.mean() == 0.0
+def test_two_hot_cross_entropy_loss():
+    bins = make_two_hot_bins(
+        lower_exponent=-5.0, upper_exponent=5.0, n_bin_edges=5
+    )
+    logits = -1000.0 * jnp.ones((1, 5))
+    logits = logits.at[0, 2].set(10.0)
+    logits = logits.at[0, 3].set(10.0)
+    two_hot_encoded = jax.nn.softmax(logits, axis=-1)
+    target = two_hot_decoding(bins, two_hot_encoded)
+    loss = two_hot_cross_entropy_loss(bins, logits, target)
+
+    assert loss.shape == (1,), "Loss shape mismatch"
+    assert loss.mean() == 0.6931472, "Regression test"
