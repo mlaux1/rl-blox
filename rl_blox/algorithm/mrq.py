@@ -6,8 +6,10 @@ import gymnasium as gym
 import jax.numpy as jnp
 import jax.random
 import numpy as np
+import optax
 from flax import nnx
 
+from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..logging.logger import LoggerBase
 
 
@@ -253,17 +255,23 @@ def create_mrq_state(
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
     policy_activation: str = "relu",
     policy_learning_rate: float = 3e-4,
+    policy_weight_decay: float = 1e-4,
     q_hidden_nodes: list[int] | tuple[int] = (256, 256),
     q_activation: str = "elu",
     q_learning_rate: float = 3e-4,
+    q_weight_decay: float = 1e-4,
     encoder_n_bins: int = 65,
     encoder_zs_dim: int = 512,
     encoder_za_dim: int = 256,
     encoder_zsa_dim: int = 512,
     encoder_hidden_nodes: list[int] | tuple[int] = (512, 512),
     encoder_activation: str = "elu",
+    encoder_learning_rate: float = 1e-4,
+    encoder_weight_decay: float = 1e-4,
     seed: int = 0,
 ):
+    env.action_space.seed(seed)
+
     rngs = nnx.Rngs(seed)
     encoder = Encoder(
         n_state_features=env.observation_space.shape[0],
@@ -276,7 +284,33 @@ def create_mrq_state(
         activation=encoder_activation,
         rngs=rngs,
     )
-    return namedtuple("MRQState", ["encoder"])(encoder)
+    encoder_optimizer = nnx.Optimizer(
+        encoder,
+        optax.adamw(
+            learning_rate=encoder_learning_rate,
+            weight_decay=encoder_weight_decay,
+        ),
+    )
+
+    policy_net = LayerNormMLP(
+        env.observation_space.shape[0],
+        env.action_space.shape[0],
+        policy_hidden_nodes,
+        policy_activation,
+        rngs=rngs,
+    )
+    policy = DeterministicTanhPolicy(policy_net, env.action_space)
+    policy_optimizer = nnx.Optimizer(
+        policy,
+        optax.adamw(
+            learning_rate=policy_learning_rate,
+            weight_decay=policy_weight_decay,
+        ),
+    )
+    return namedtuple(
+        "MRQState",
+        ["encoder", "encoder_optimizer", "policy", "policy_optimizer"],
+    )(encoder, encoder_optimizer, policy, policy_optimizer)
 
 
 def train_mrq(
