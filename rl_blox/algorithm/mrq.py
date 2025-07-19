@@ -11,7 +11,14 @@ from flax import nnx
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.preprocessing import (
+    make_two_hot_bins,
+    two_hot_cross_entropy_loss,
+    two_hot_encoding,
+)
 from ..logging.logger import LoggerBase
+from .ddpg import make_sample_actions
+from .td3 import make_sample_target_actions
 
 
 class EpisodicReplayBuffer:
@@ -332,6 +339,9 @@ def create_mrq_state(
             weight_decay=policy_weight_decay,
         ),
     )
+
+    the_bins = make_two_hot_bins(n_bin_edges=encoder_n_bins)
+
     return namedtuple(
         "MRQState",
         [
@@ -341,8 +351,17 @@ def create_mrq_state(
             "q_optimizer",
             "policy",
             "policy_optimizer",
+            "the_bins",
         ],
-    )(encoder, encoder_optimizer, q, q_optimizer, policy, policy_optimizer)
+    )(
+        encoder,
+        encoder_optimizer,
+        q,
+        q_optimizer,
+        policy,
+        policy_optimizer,
+        the_bins,
+    )
 
 
 def train_mrq(
@@ -353,9 +372,14 @@ def train_mrq(
     policy_optimizer: nnx.Optimizer,
     q: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
+    the_bins: jnp.ndarray,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
+    gamma: float = 0.99,
+    exploration_noise: float = 0.1,
+    target_policy_noise: float = 0.2,
+    noise_clip: float = 0.5,
     learning_starts: int = 10_000,
     logger: LoggerBase | None = None,
 ) -> None:
@@ -387,6 +411,9 @@ def train_mrq(
     q_optimizer : nnx.Optimizer
         Optimizer for the action-value function approximator.
 
+    the_bins : jnp.ndarray
+        Bin edges for the two-hot encoding of the reward predicted by the model.
+
     seed : int, optional
         Seed for random number generators in Jax and NumPy.
 
@@ -395,6 +422,21 @@ def train_mrq(
 
     buffer_size : int, optional
         Size of the replay buffer.
+
+    gamma : float, optional
+        Discount factor.
+
+    exploration_noise : float, optional
+        Exploration noise in action space. Will be scaled by half of the range
+        of the action space.
+
+    target_policy_noise : float, optional
+        Exploration noise in action space for target policy smoothing.
+
+    noise_clip : float, optional
+        Maximum absolute value of the exploration noise for sampling target
+        actions for the critic update. Will be scaled by half of the range
+        of the action space.
 
     learning_starts : int, optional
         Learning starts after this number of random steps was taken in the
@@ -422,3 +464,14 @@ def train_mrq(
     ), "only continuous action space is supported"
 
     replay_buffer = EpisodicReplayBuffer(buffer_size)
+
+    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
+    _sample_target_actions = make_sample_target_actions(
+        env.action_space, target_policy_noise, noise_clip
+    )
+
+    encoder_target = nnx.clone(encoder)
+    policy_target = nnx.clone(policy)
+    q_target = nnx.clone(q)
+
+    # TODO track reward scale and target reward scale
