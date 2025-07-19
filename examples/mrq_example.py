@@ -42,6 +42,7 @@ result = train_mrq(
     state.policy_optimizer,
     state.q,
     state.q_optimizer,
+    state.the_bins,
     logger=logger,
     **hparams_algorithm,
 )
