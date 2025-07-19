@@ -15,7 +15,7 @@ from ..logging.logger import LoggerBase
 
 
 class EpisodicReplayBuffer:
-    def __init__(self):
+    def __init__(self, buffer_size: int):
         pass
 
     def add_sample(self, **sample):
@@ -179,6 +179,7 @@ class Encoder(nnx.Module):
             zsa_dim,
             hidden_nodes,
             activation,
+            rngs=rngs,
         )
         self.model = nnx.Linear(
             zsa_dim, n_bins + zs_dim + 1, rngs=rngs, kernel_init=mrq_kernel_init
@@ -346,8 +347,16 @@ def create_mrq_state(
 
 def train_mrq(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
+    encoder: Encoder,
+    encoder_optimizer: nnx.Optimizer,
+    policy: DeterministicTanhPolicy,
+    policy_optimizer: nnx.Optimizer,
+    q: ContinuousClippedDoubleQNet,
+    q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
+    buffer_size: int = 1_000_000,
+    learning_starts: int = 10_000,
     logger: LoggerBase | None = None,
 ) -> None:
     r"""Model-based Representation for Q-learning (MR.Q).
@@ -357,11 +366,39 @@ def train_mrq(
     env : gymnasium.Env
         Gymnasium environment.
 
+    encoder : Encoder
+        Encoder for the MR.Q algorithm.
+
+    encoder_optimizer : nnx.Optimizer
+        Optimizer for the encoder.
+
+    policy : DeterministicTanhPolicy
+        Policy for the MR.Q algorithm. Maps the latent state representation
+        to actions in the environment.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for the policy.
+
+    q : ContinuousClippedDoubleQNet
+        Action-value function approximator for the MR.Q algorithm. Maps the
+        latent state-action representation to the expected value of the
+        state-action pair.
+
+    q_optimizer : nnx.Optimizer
+        Optimizer for the action-value function approximator.
+
     seed : int, optional
         Seed for random number generators in Jax and NumPy.
 
     total_timesteps : int, optional
         Number of steps to execute in the environment.
+
+    buffer_size : int, optional
+        Size of the replay buffer.
+
+    learning_starts : int, optional
+        Learning starts after this number of random steps was taken in the
+        environment.
 
     logger : LoggerBase, optional
         Experiment logger.
@@ -384,4 +421,4 @@ def train_mrq(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
 
-    replay_buffer = EpisodicReplayBuffer()
+    replay_buffer = EpisodicReplayBuffer(buffer_size)
