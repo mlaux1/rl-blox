@@ -9,6 +9,7 @@ import numpy as np
 import optax
 from flax import nnx
 
+from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..logging.logger import LoggerBase
 
@@ -256,7 +257,7 @@ def create_mrq_state(
     policy_activation: str = "relu",
     policy_learning_rate: float = 3e-4,
     policy_weight_decay: float = 1e-4,
-    q_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    q_hidden_nodes: list[int] | tuple[int] = (512, 512, 512),
     q_activation: str = "elu",
     q_learning_rate: float = 3e-4,
     q_weight_decay: float = 1e-4,
@@ -292,8 +293,31 @@ def create_mrq_state(
         ),
     )
 
+    q1 = LayerNormMLP(
+        encoder_zsa_dim,
+        1,
+        q_hidden_nodes,
+        q_activation,
+        rngs=rngs,
+    )
+    q2 = LayerNormMLP(
+        encoder_zsa_dim,
+        1,
+        q_hidden_nodes,
+        q_activation,
+        rngs=rngs,
+    )
+    q = ContinuousClippedDoubleQNet(q1, q2)
+    q_optimizer = nnx.Optimizer(
+        q,
+        optax.adamw(
+            learning_rate=q_learning_rate,
+            weight_decay=q_weight_decay,
+        ),
+    )
+
     policy_net = LayerNormMLP(
-        env.observation_space.shape[0],
+        encoder_zs_dim,
         env.action_space.shape[0],
         policy_hidden_nodes,
         policy_activation,
@@ -309,8 +333,15 @@ def create_mrq_state(
     )
     return namedtuple(
         "MRQState",
-        ["encoder", "encoder_optimizer", "policy", "policy_optimizer"],
-    )(encoder, encoder_optimizer, policy, policy_optimizer)
+        [
+            "encoder",
+            "encoder_optimizer",
+            "q",
+            "q_optimizer",
+            "policy",
+            "policy_optimizer",
+        ],
+    )(encoder, encoder_optimizer, q, q_optimizer, policy, policy_optimizer)
 
 
 def train_mrq(
