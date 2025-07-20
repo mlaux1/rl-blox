@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import OrderedDict, deque, namedtuple
 from collections.abc import Callable
 
 import chex
@@ -6,6 +6,7 @@ import gymnasium as gym
 import jax.numpy as jnp
 import jax.random
 import numpy as np
+import numpy.typing as npt
 import optax
 import tqdm
 from flax import nnx
@@ -19,18 +20,166 @@ from .td3 import make_sample_target_actions
 
 
 class EpisodicReplayBuffer:
-    def __init__(self, buffer_size: int):
-        pass
+    """Episodic replay buffer for the MR.Q algorithm.
+
+    We include some optimizations in this buffer to storing states multiple
+    times when ``history > 1`` or ``horizon > 1``.
+
+    Parameters
+    ----------
+    buffer_size : int
+        Maximum size of the buffer.
+
+    history : int, optional
+        Length of the history to be stored in the buffer.
+
+    horizon : int, optional
+        Length of the horizon to be stored in the buffer.
+
+    keys : list[str], optional
+        Names of the quantities that should be stored in the replay buffer.
+        Defaults to ['observation', 'action', 'reward', 'next_observation',
+        'termination']. These names have to be used as key word arguments when
+        adding a sample. When sampling a batch, the arrays will be returned in
+        this order.
+
+    dtypes : list[dtype], optional
+        dtype used for each buffer. Defaults to float for everything except
+        'termination'.
+
+    discrete_actions : bool, optional
+        Changes the default dtype for actions to int.
+    """
+
+    def __init__(
+        self,
+        buffer_size: int,
+        history: int = 1,
+        horizon: int = 1,
+        keys: list[str] | None = None,
+        dtypes: list[npt.DTypeLike] | None = None,
+        discrete_actions: bool = False,
+    ):
+        chex.assert_scalar_positive(buffer_size)
+        chex.assert_scalar_positive(history)
+        chex.assert_scalar_positive(horizon)
+
+        if keys is None:
+            keys = [
+                "observation",
+                "action",
+                "reward",
+                "next_observation",
+                "terminated",
+                "truncated",
+            ]
+        if dtypes is None:
+            dtypes = [
+                float,
+                int if discrete_actions else float,
+                float,
+                float,
+                int,
+                int,
+            ]
+        self.buffer = OrderedDict()
+        for k, t in zip(keys, dtypes, strict=True):
+            self.buffer[k] = np.empty(0, dtype=t)
+        self.Batch = namedtuple("Batch", self.buffer)
+        self.buffer_size = buffer_size
+        self.current_len = 0
+        self.insert_idx = 0
+
+        self.episode_timesteps = 0
+        # track if there are any terminal transitions in the buffer
+        self.environment_terminates = True
+        self.history = history
+        self.step_idx = np.zeros((self.buffer_size, self.history), dtype=int)
+        self.next_step_idx = np.zeros(
+            (self.buffer_size, self.history), dtype=int
+        )
+        self.history_queue = deque(maxlen=self.history)
+        for _ in range(self.history):
+            self.history_queue.append(0)
+
+        self.horizon = horizon
+
+        self.mask = np.zeros(self.buffer_size)
 
     def add_sample(self, **sample):
-        raise NotImplementedError()
+        """Add transition sample to the replay buffer.
+
+        Note that the individual arguments have to be passed as keyword
+        arguments with keys matching the ones passed to the constructor or
+        the default keys respectively.
+        """
+        if self.current_len == 0:
+            for k, v in sample.items():
+                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
+                self.buffer[k] = np.empty(
+                    (self.buffer_size,) + np.asarray(v).shape,
+                    dtype=self.buffer[k].dtype,
+                )
+        for k, v in sample.items():
+            self.buffer[k][self.insert_idx] = v
+
+        self.current_len = min(self.current_len + 1, self.buffer_size)
+        self.episode_timesteps += 1  # TODO where is the reset? -> episode_ended
+        if "terminated" in sample and sample["terminated"]:
+            self.environment_terminates = True
+            episode_ended = True
+        elif "truncated" in sample and sample["truncated"]:
+            episode_ended = True
+        else:
+            episode_ended = False
+
+        self.mask[self.insert_idx + self.history - 1] = 0
+        if self.episode_timesteps > self.horizon:
+            self.mask[(self.insert_idx - self.horizon) % self.buffer_size] = 1
+
+        next_idx = (self.insert_idx + 1) % self.buffer_size
+        self.step_idx[self.insert_idx] = np.array(self.history_queue, dtype=int)
+        self.history_queue.append(next_idx)
+        self.next_step_idx[self.insert_idx] = np.array(
+            self.history_queue, dtype=int
+        )
+        self.insert_idx = next_idx
+
+        if episode_ended:
+            raise NotImplementedError()
 
     def sample_batch(
         self,
+        batch_size: int,
         horizon: int,
         include_intermediate: bool,
         rng: np.random.Generator,
     ) -> tuple[jnp.ndarray]:
+        """Sample a batch of transitions from the replay buffer.
+
+        Parameters
+        ----------
+        batch_size : int
+            Number of samples to be returned.
+
+        horizon : int
+            Horizon for the sampled transitions.
+
+        include_intermediate : bool
+            Whether to include intermediate states in the sampled transitions.
+
+        rng : np.random.Generator
+            Random number generator for sampling.
+
+        Returns
+        -------
+        batch : tuple[jnp.ndarray]
+            A tuple containing the sampled observations, actions, rewards,
+            next observations, and terminations.
+        """
+        chex.assert_scalar_positive(batch_size)
+        chex.assert_scalar_positive(horizon)
+
         raise NotImplementedError()
 
 
