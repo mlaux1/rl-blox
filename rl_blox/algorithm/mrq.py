@@ -39,13 +39,14 @@ class EpisodicReplayBuffer:
     keys : list[str], optional
         Names of the quantities that should be stored in the replay buffer.
         Defaults to ['observation', 'action', 'reward', 'next_observation',
-        'termination']. These names have to be used as key word arguments when
-        adding a sample. When sampling a batch, the arrays will be returned in
-        this order.
+        'terminated', 'truncated']. These names have to be used as key word
+        arguments when adding a sample. When sampling a batch, the arrays will
+        be returned in this order. Must contain at least 'observation',
+        'next_observation', 'terminated', and 'truncated'.
 
     dtypes : list[dtype], optional
         dtype used for each buffer. Defaults to float for everything except
-        'termination'.
+        'terminated' and 'truncated'.
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
@@ -82,6 +83,15 @@ class EpisodicReplayBuffer:
                 int,
                 int,
             ]
+        for key in [
+            "observation",
+            "next_observation",
+            "terminated",
+            "truncated",
+        ]:
+            if key not in keys:
+                raise ValueError(f"'{key}' must be in keys")
+
         self.buffer = OrderedDict()
         for k, t in zip(keys, dtypes, strict=True):
             self.buffer[k] = np.empty(0, dtype=t)
@@ -106,6 +116,8 @@ class EpisodicReplayBuffer:
 
         self.mask = np.zeros(self.buffer_size)
 
+        # TODO prioritized experience replay
+
     def add_sample(self, **sample):
         """Add transition sample to the replay buffer.
 
@@ -124,14 +136,9 @@ class EpisodicReplayBuffer:
             self.buffer[k][self.insert_idx] = v
 
         self.current_len = min(self.current_len + 1, self.buffer_size)
-        self.episode_timesteps += 1  # TODO where is the reset? -> episode_ended
-        if "terminated" in sample and sample["terminated"]:
+        self.episode_timesteps += 1
+        if sample["terminated"]:
             self.environment_terminates = True
-            episode_ended = True
-        elif "truncated" in sample and sample["truncated"]:
-            episode_ended = True
-        else:
-            episode_ended = False
 
         self.mask[self.insert_idx + self.history - 1] = 0
         if self.episode_timesteps > self.horizon:
@@ -145,8 +152,31 @@ class EpisodicReplayBuffer:
         )
         self.insert_idx = next_idx
 
-        if episode_ended:
-            raise NotImplementedError()
+        if sample["terminated"] or sample["truncated"]:
+            # TODO what about action, next observation, and reward?
+            self.buffer["observation"][self.insert_idx] = sample[
+                "next_observation"
+            ]
+
+            self.mask[
+                (self.insert_idx + self.history - 1) % self.buffer_size
+            ] = 0
+            past_idx = (
+                self.insert_idx
+                - np.arange(min(self.episode_timesteps, self.horizon))
+                - 1
+            ) % self.buffer_size
+            self.mask[past_idx] = (
+                0 if sample["truncated"] else 1
+            )  # mask out truncated subtrajectories
+
+            self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+            self.current_len = min(self.current_len + 1, self.buffer_size)
+
+            self.episode_timesteps = 0
+
+            for _ in range(self.history):
+                self.history_queue.append(self.insert_idx)
 
     def sample_batch(
         self,
@@ -180,7 +210,33 @@ class EpisodicReplayBuffer:
         chex.assert_scalar_positive(batch_size)
         chex.assert_scalar_positive(horizon)
 
-        raise NotImplementedError()
+        indices = self._sample_idx(batch_size, rng)
+        # TODO % self.current_len or % self.buffer_size? - maybe self.buffer_size is possible because of the mask?
+        indices = (
+            indices[:, np.newaxis] + np.arange(self.horizon)[np.newaxis]
+        ) % self.current_len
+
+        indices = self.step_idx[indices]
+
+        if include_intermediate:
+            # sample subtrajetories (with horizon dimension) for unrolling dynamics
+            pass  # TODO
+        else:
+            # sample at specific horizon (used for multistep rewards)
+            pass  # TODO
+
+        return self.Batch(
+            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+        )
+
+    def _sample_idx(
+        self, batch_size: int, rng: np.random.Generator
+    ) -> npt.NDArray[int]:
+        # TODO prioritized experience replay
+        nz = np.nonzero(self.mask)
+        indices = rng.integers(0, len(nz), size=batch_size)
+        self.sampled_indices[nz[indices]]
+        return self.sampled_indices
 
 
 mrq_kernel_init = jax.nn.initializers.variance_scaling(
@@ -523,6 +579,7 @@ def train_mrq(
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
+    batch_size: int = 256,
     exploration_noise: float = 0.1,
     target_policy_noise: float = 0.2,
     noise_clip: float = 0.5,
@@ -582,6 +639,9 @@ def train_mrq(
 
     gamma : float, optional
         Discount factor.
+
+    batch_size : int, optional
+        Size of a batch during gradient computation.
 
     exploration_noise : float, optional
         Exploration noise in action space. Will be scaled by half of the range
@@ -689,7 +749,10 @@ def train_mrq(
         )
 
         if global_step >= learning_starts:
-            pass  # TODO update encoder, policy, and q networks
+            # TODO update encoder, policy, and q networks
+
+            # TODO configure correctly
+            replay_buffer.sample_batch(batch_size, 1, False, rng)
 
         if termination or truncated:
             if logger is not None:
