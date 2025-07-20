@@ -220,14 +220,30 @@ class EpisodicReplayBuffer:
 
         if include_intermediate:
             # sample subtrajetories (with horizon dimension) for unrolling dynamics
-            pass  # TODO
+            chex.assert_shape(indices, (batch_size, horizon))
+
+            batch = self.Batch(
+                **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+            )
         else:
             # sample at specific horizon (used for multistep rewards)
-            pass  # TODO
+            indices = indices[:, 0]
+            chex.assert_shape(indices, (batch_size,))
 
-        return self.Batch(
-            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
-        )
+            batch = {}
+            for k in self.buffer:
+                if k in ["observation", "action"]:
+                    indices_without_intermediate = indices[:, 0]
+                elif k == "next_observation":
+                    indices_without_intermediate = indices[:, -1]
+                else:
+                    indices_without_intermediate = indices
+                batch[k] = jnp.asarray(
+                    self.buffer[k][indices_without_intermediate]
+                )
+            batch = self.Batch(**batch)
+
+        return batch
 
     def _sample_idx(
         self, batch_size: int, rng: np.random.Generator
