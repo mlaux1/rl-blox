@@ -7,15 +7,12 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import optax
+import tqdm
 from flax import nnx
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.preprocessing import (
-    make_two_hot_bins,
-    two_hot_cross_entropy_loss,
-    two_hot_encoding,
-)
+from ..blox.preprocessing import make_two_hot_bins
 from ..logging.logger import LoggerBase
 from .ddpg import make_sample_actions
 from .td3 import make_sample_target_actions
@@ -382,7 +379,18 @@ def train_mrq(
     noise_clip: float = 0.5,
     learning_starts: int = 10_000,
     logger: LoggerBase | None = None,
-) -> None:
+) -> tuple[
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
+    nnx.Module,
+    nnx.Module,
+    nnx.Optimizer,
+    EpisodicReplayBuffer,
+]:
     r"""Model-based Representation for Q-learning (MR.Q).
 
     Parameters
@@ -475,3 +483,75 @@ def train_mrq(
     q_target = nnx.clone(q)
 
     # TODO track reward scale and target reward scale
+
+    if logger is not None:
+        logger.start_new_episode()
+    obs, _ = env.reset(seed=seed)
+    steps_per_episode = 0
+    accumulated_reward = 0.0
+
+    for global_step in tqdm.trange(total_timesteps):
+        if global_step < learning_starts:
+            action = env.action_space.sample()
+        else:
+            key, action_key = jax.random.split(key, 2)
+            action = np.asarray(
+                _sample_actions(policy, jnp.asarray(obs), action_key)
+            )
+
+        next_obs, reward, termination, truncated, info = env.step(action)
+        steps_per_episode += 1
+        accumulated_reward += reward
+
+        replay_buffer.add_sample(
+            observation=obs,
+            action=action,
+            reward=reward,
+            next_observation=next_obs,
+            termination=termination,
+        )
+
+        if global_step >= learning_starts:
+            pass  # TODO update encoder, policy, and q networks
+
+        if termination or truncated:
+            if logger is not None:
+                logger.record_stat(
+                    "return", accumulated_reward, step=global_step + 1
+                )
+                logger.stop_episode(steps_per_episode)
+                logger.start_new_episode()
+
+            obs, _ = env.reset()
+
+            steps_per_episode = 0
+            accumulated_reward = 0.0
+        else:
+            obs = next_obs
+
+    return namedtuple(
+        "MRQResult",
+        [
+            "encoder",
+            "encoder_target",
+            "encoder_optimizer",
+            "policy",
+            "policy_target",
+            "policy_optimizer",
+            "q",
+            "q_target",
+            "q_optimizer",
+            "replay_buffer",
+        ],
+    )(
+        encoder,
+        encoder_target,
+        encoder_optimizer,
+        policy,
+        policy_target,
+        policy_optimizer,
+        q,
+        q_target,
+        q_optimizer,
+        replay_buffer,
+    )
