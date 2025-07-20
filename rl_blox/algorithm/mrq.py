@@ -455,7 +455,35 @@ def train_mrq(
 
     Returns
     -------
-    TODO
+    encoder : Encoder
+        Encoder for the MR.Q algorithm.
+
+    encoder_target : Encoder
+        Target encoder for the MR.Q algorithm.
+
+    encoder_optimizer : nnx.Optimizer
+        Optimizer for the encoder.
+
+    policy : DeterministicTanhPolicy
+        Policy for the MR.Q algorithm.
+
+    policy_target : DeterministicTanhPolicy
+        Target policy for the MR.Q algorithm.
+
+    policy_optimizer : nnx.Optimizer
+        Optimizer for the policy.
+
+    q : ContinuousClippedDoubleQNet
+        Action-value function approximator for the MR.Q algorithm.
+
+    q_target : ContinuousClippedDoubleQNet
+        Target action-value function approximator for the MR.Q algorithm.
+
+    q_optimizer : nnx.Optimizer
+        Optimizer for the action-value function approximator.
+
+    replay_buffer : EpisodicReplayBuffer
+        Episodic replay buffer for the MR.Q algorithm.
 
     References
     ----------
