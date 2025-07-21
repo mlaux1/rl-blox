@@ -494,6 +494,17 @@ class Encoder(nnx.Module):
         return done, next_zs, reward
 
 
+class DeterministicPolicyWithEncoder(nnx.Module):
+    """Combines encoder and deterministic policy."""
+
+    def __init__(self, encoder: Encoder, policy: DeterministicTanhPolicy):
+        self.encoder = encoder
+        self.policy = policy
+
+    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
+        return self.policy(self.encoder.encode_zs(observation))
+
+
 def masked_mse_loss(
     predictions: jnp.ndarray, targets: jnp.ndarray, mask: jnp.ndarray
 ) -> jnp.ndarray:
@@ -899,6 +910,8 @@ def train_mrq(
     policy_target = nnx.clone(policy)
     q_target = nnx.clone(q)
 
+    policy_with_encoder = DeterministicPolicyWithEncoder(encoder, policy)
+
     # TODO track reward scale and target reward scale
 
     if logger is not None:
@@ -913,10 +926,12 @@ def train_mrq(
         else:
             key, action_key = jax.random.split(key, 2)
             action = np.asarray(
-                _sample_actions(policy, jnp.asarray(obs), action_key)
+                _sample_actions(
+                    policy_with_encoder, jnp.asarray(obs), action_key
+                )
             )
 
-        next_obs, reward, termination, truncated, info = env.step(action)
+        next_obs, reward, terminated, truncated, info = env.step(action)
         steps_per_episode += 1
         accumulated_reward += reward
 
@@ -925,7 +940,8 @@ def train_mrq(
             action=action,
             reward=reward,
             next_observation=next_obs,
-            termination=termination,
+            terminated=terminated,
+            truncated=truncated,
         )
 
         if global_step >= learning_starts:
@@ -972,7 +988,7 @@ def train_mrq(
             # TODO update policy and q networks
             # replay_buffer.sample_batch(batch_size, q_horizon, False, rng)
 
-        if termination or truncated:
+        if terminated or truncated:
             if logger is not None:
                 logger.record_stat(
                     "return", accumulated_reward, step=global_step + 1
