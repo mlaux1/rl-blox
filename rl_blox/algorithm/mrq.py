@@ -10,10 +10,11 @@ import numpy.typing as npt
 import optax
 import tqdm
 from flax import nnx
+from jax import numpy as jnp
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.preprocessing import make_two_hot_bins
+from ..blox.preprocessing import make_two_hot_bins, two_hot_cross_entropy_loss
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import make_sample_actions
@@ -462,7 +463,7 @@ class Encoder(nnx.Module):
         """
         return self.activation(self.zs_layer_norm(self.zs(observation)))
 
-    def model_all(
+    def model_head(
         self, zs: jnp.ndarray, action: jnp.ndarray
     ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """Predicts the full model.
@@ -516,6 +517,64 @@ def masked_mse_loss(
     return jnp.mean(
         optax.squared_error(predictions=predictions, targets=targets) * mask
     )
+
+
+def encoder_loss(
+    encoder: Encoder,
+    encoder_target: Encoder,
+    the_bins: jnp.ndarray,
+    batch: tuple[jnp.ndarray],
+    encoder_horizon: int,
+    dynamics_weight: float,
+    reward_weight: float,
+    done_weight: float,
+) -> tuple[float, tuple[float, float, float]]:
+    flat_next_observation = batch.next_observation.reshape(
+        -1, *batch.next_observation.shape[2:]
+    )
+    flat_next_zs = jax.lax.stop_gradient(
+        encoder_target.zs(flat_next_observation)
+    )
+    next_zs = flat_next_zs.reshape(
+        list(batch.next_observation.shape[:2]) + [-1]
+    )
+    pred_zs_t = encoder.encode_zs(batch.observation[:, 0])
+    not_done = 1 - batch.terminated
+    # in subtrajectories with termination mask, mask out losses
+    # after termination
+    prev_not_done = 1
+
+    total_dynamics_loss = 0.0
+    total_reward_loss = 0.0
+    total_done_loss = 0.0
+
+    for t in range(encoder_horizon):
+        pred_done_t, pred_zs_t, pred_reward_t = encoder.model_head(
+            pred_zs_t, batch.action[:, t]
+        )
+
+        target_zs_t = next_zs[:, t]
+        target_reward_t = batch.reward[:, t]
+        target_done_t = batch.terminated[:, t]
+        total_dynamics_loss += masked_mse_loss(
+            pred_zs_t, target_zs_t, prev_not_done
+        )
+        total_reward_loss += jnp.mean(
+            two_hot_cross_entropy_loss(the_bins, pred_reward_t, target_reward_t)
+        )
+        total_done_loss += masked_mse_loss(
+            pred_done_t, target_done_t, prev_not_done
+        )
+
+        # Update termination mask
+        prev_not_done = not_done[:, t].reshape(-1, 1) * prev_not_done
+
+    loss = (
+        dynamics_weight * total_dynamics_loss
+        + reward_weight * total_reward_loss
+        + done_weight * total_done_loss
+    )
+    return loss, (total_dynamics_loss, total_reward_loss, total_done_loss)
 
 
 def create_mrq_state(
@@ -644,6 +703,9 @@ def train_mrq(
     learning_starts: int = 10_000,
     encoder_horizon: int = 5,
     q_horizon: int = 3,
+    dynamics_weight: float = 1.0,
+    reward_weight: float = 0.1,
+    done_weight: float = 0.1,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
@@ -728,6 +790,15 @@ def train_mrq(
 
     q_horizon : int, optional
         Horizon for Q training.
+
+    dynamics_weight : float, optional
+        Weight for the dynamics loss in the encoder training.
+
+    reward_weight : float, optional
+        Weight for the reward loss in the encoder training.
+
+    done_weight : float, optional
+        Weight for the done loss in the encoder training.
 
     logger : LoggerBase, optional
         Experiment logger.
@@ -832,36 +903,16 @@ def train_mrq(
                         batch_size, encoder_horizon, True, rng
                     )
 
-                    flat_next_observation = batch.next_observation.reshape(
-                        -1, *batch.next_observation.shape[2:]
+                    encoder_loss(
+                        encoder,
+                        encoder_target,
+                        the_bins,
+                        batch,
+                        encoder_horizon,
+                        dynamics_weight,
+                        reward_weight,
+                        done_weight,
                     )
-                    flat_next_zs = jax.lax.stop_gradient(
-                        encoder_target.zs(flat_next_observation)
-                    )
-                    next_zs = flat_next_zs.reshape(
-                        list(batch.next_observation.shape[:2]) + [-1]
-                    )
-
-                    pred_zs_t = encoder.encode_zs(batch.observation[:, 0])
-                    not_done = 1 - batch.terminated
-                    # in subtrajectories with termination mask, mask out losses
-                    # after termination
-                    prev_not_done = 1
-
-                    for t in range(encoder_horizon):
-                        pred_done, pred_next_zs_t, pred_reward = (
-                            encoder.model_all(pred_zs_t, batch.action[:, t])
-                        )
-
-                        # TODO dynamics loss
-                        # TODO reward loss
-                        # TODO done loss
-                        # TODO encoder loss
-
-                        # Adjust termination mask
-                        prev_not_done = (
-                            not_done[:, t].reshape(-1, 1) * prev_not_done
-                        )
 
             # TODO update policy and q networks
 
