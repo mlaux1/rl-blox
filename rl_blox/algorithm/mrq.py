@@ -935,22 +935,39 @@ def train_mrq(
                 hard_target_net_update(q, q_target)
                 hard_target_net_update(encoder, encoder_target)
 
-                for _ in range(target_delay):
+                for delayed_train_step_idx in range(1, target_delay + 1):
                     batch = replay_buffer.sample_batch(
                         batch_size, encoder_horizon, True, rng
                     )
 
-                    update_encoder(
-                        encoder,
-                        encoder_target,
-                        encoder_optimizer,
-                        the_bins,
-                        batch,
-                        encoder_horizon,
-                        dynamics_weight,
-                        reward_weight,
-                        done_weight,
+                    encoder_loss, (dynamics_loss, reward_loss, done_loss) = (
+                        update_encoder(
+                            encoder,
+                            encoder_target,
+                            encoder_optimizer,
+                            the_bins,
+                            batch,
+                            encoder_horizon,
+                            dynamics_weight,
+                            reward_weight,
+                            done_weight,
+                        )
                     )
+                    if logger is not None:
+                        stats = {
+                            "encoder_loss": encoder_loss,
+                            "dynamics_loss": dynamics_loss,
+                            "reward_loss": reward_loss,
+                            "done_loss": done_loss,
+                        }
+                        log_step = (
+                            global_step
+                            + 1
+                            - target_delay
+                            + delayed_train_step_idx
+                        )
+                        for k, v in stats.items():
+                            logger.record_stat(k, v, step=log_step)
 
             # TODO update policy and q networks
             # replay_buffer.sample_batch(batch_size, q_horizon, False, rng)
