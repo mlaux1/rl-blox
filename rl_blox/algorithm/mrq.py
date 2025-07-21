@@ -492,6 +492,32 @@ class Encoder(nnx.Module):
         return done, next_zs, reward
 
 
+def masked_mse_loss(
+    predictions: jnp.ndarray, targets: jnp.ndarray, mask: jnp.ndarray
+) -> jnp.ndarray:
+    """Masked mean squared error loss.
+
+    Parameters
+    ----------
+    predictions : jnp.ndarray
+        Predicted values.
+
+    targets : jnp.ndarray
+        Target values.
+
+    mask : jnp.ndarray
+        Mask indicating which values to include in the loss calculation.
+
+    Returns
+    -------
+    loss : jnp.ndarray
+        Masked mean squared error loss.
+    """
+    return jnp.mean(
+        optax.squared_error(predictions=predictions, targets=targets) * mask
+    )
+
+
 def create_mrq_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
