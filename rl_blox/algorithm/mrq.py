@@ -1,4 +1,4 @@
-from collections import OrderedDict, deque, namedtuple
+from collections import OrderedDict, namedtuple
 from collections.abc import Callable
 from functools import partial
 
@@ -24,16 +24,10 @@ from .td3 import make_sample_target_actions
 class EpisodicReplayBuffer:
     """Episodic replay buffer for the MR.Q algorithm.
 
-    We include some optimizations in this buffer to storing states multiple
-    times when ``history > 1`` or ``horizon > 1``.
-
     Parameters
     ----------
     buffer_size : int
         Maximum size of the buffer.
-
-    history : int, optional
-        Number of stacked observations.
 
     horizon : int, optional
         Maximum length of the horizon.
@@ -57,14 +51,12 @@ class EpisodicReplayBuffer:
     def __init__(
         self,
         buffer_size: int,
-        history: int = 1,
         horizon: int = 1,
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
     ):
         chex.assert_scalar_positive(buffer_size)
-        chex.assert_scalar_positive(history)
         chex.assert_scalar_positive(horizon)
 
         if keys is None:
@@ -105,17 +97,7 @@ class EpisodicReplayBuffer:
         self.episode_timesteps = 0
         # track if there are any terminal transitions in the buffer
         self.environment_terminates = True
-        self.history = history
-        self.state_idx = np.zeros((self.buffer_size, self.history), dtype=int)
-        self.next_state_idx = np.zeros(
-            (self.buffer_size, self.history), dtype=int
-        )
-        self.history_queue = deque(maxlen=self.history)
-        for _ in range(self.history):
-            self.history_queue.append(0)
-
         self.horizon = horizon
-
         self.mask = np.zeros(self.buffer_size, dtype=int)
 
         # TODO prioritized experience replay
@@ -142,19 +124,11 @@ class EpisodicReplayBuffer:
         if sample["terminated"]:
             self.environment_terminates = True
 
-        self.mask[self.insert_idx + self.history - 1] = 0
+        self.mask[self.insert_idx] = 0
         if self.episode_timesteps > self.horizon:
             self.mask[(self.insert_idx - self.horizon) % self.buffer_size] = 1
 
-        next_idx = (self.insert_idx + 1) % self.buffer_size
-        self.state_idx[self.insert_idx] = np.array(
-            self.history_queue, dtype=int
-        )
-        self.history_queue.append(next_idx)
-        self.next_state_idx[self.insert_idx] = np.array(
-            self.history_queue, dtype=int
-        )
-        self.insert_idx = next_idx
+        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
 
         if sample["terminated"] or sample["truncated"]:
             # TODO what about action, next observation, and reward?
@@ -162,9 +136,7 @@ class EpisodicReplayBuffer:
                 "next_observation"
             ]
 
-            self.mask[
-                (self.insert_idx + self.history - 1) % self.buffer_size
-            ] = 0
+            self.mask[self.insert_idx % self.buffer_size] = 0
             past_idx = (
                 self.insert_idx
                 - np.arange(min(self.episode_timesteps, self.horizon))
@@ -178,9 +150,6 @@ class EpisodicReplayBuffer:
             self.current_len = min(self.current_len + 1, self.buffer_size)
 
             self.episode_timesteps = 0
-
-            for _ in range(self.history):
-                self.history_queue.append(self.insert_idx)
 
     def sample_batch(
         self,
@@ -219,9 +188,6 @@ class EpisodicReplayBuffer:
         indices = (
             indices[:, np.newaxis] + np.arange(self.horizon)[np.newaxis]
         ) % self.current_len
-
-        # TODO do we need to store the state indices?
-        # state_indices = self.state_idx[indices]
 
         if include_intermediate:
             # sample subtrajectories (with horizon dimension) for unrolling
@@ -903,7 +869,6 @@ def train_mrq(
 
     replay_buffer = EpisodicReplayBuffer(
         buffer_size,
-        history=1,  # only relevant for buffered images
         horizon=max(encoder_horizon, q_horizon),
     )
 
