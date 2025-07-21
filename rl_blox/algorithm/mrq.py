@@ -220,7 +220,8 @@ class EpisodicReplayBuffer:
         indices = self.step_idx[indices]
 
         if include_intermediate:
-            # sample subtrajetories (with horizon dimension) for unrolling dynamics
+            # sample subtrajectories (with horizon dimension) for unrolling
+            # dynamics
             chex.assert_shape(indices, (batch_size, horizon))
 
             batch = self.Batch(
@@ -371,12 +372,25 @@ class Encoder(nnx.Module):
     """
 
     zs: LayerNormMLP
+    """Maps observations to latent state representations (nonlinear)."""
+
     za: nnx.Linear
+    """Maps actions to latent action representations (linear)."""
+
     zsa: LayerNormMLP
+    """Maps zs and za to latent state-action representations (nonlinear)."""
+
     model: nnx.Linear
+    """Maps zsa to done flag, next latent state (zs), and reward (linear)."""
+
     zs_dim: int
+    """Dimension of the latent state representation."""
+
     activation: Callable[[jnp.ndarray], jnp.ndarray]
+    """Activation function."""
+
     zs_layer_norm: nnx.LayerNorm
+    """Layer normalization for the latent state representation."""
 
     def __init__(
         self,
@@ -804,7 +818,9 @@ def train_mrq(
 
                     pred_zs_t = encoder.encode_zs(batch.observation[:, 0])
                     not_done = 1 - batch.terminated
-                    prev_not_done = 1  # in subtrajectories with termination mask, mask out losses after termination
+                    # in subtrajectories with termination mask, mask out losses
+                    # after termination
+                    prev_not_done = 1
 
                     for t in range(encoder_horizon):
                         pred_done, pred_next_zs_t, pred_reward = (
