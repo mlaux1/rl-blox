@@ -255,3 +255,6 @@ class SoftmaxPolicy(StochasticPolicyBase):
         return distrax.Categorical(logits=self.logits(observation)).log_prob(
             action
         )
+
+    def entropy(self, observation: jnp.ndarray) -> float:
+        return distrax.Categorical(logits=self.logits(observation)).entropy()

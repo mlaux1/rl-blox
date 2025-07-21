@@ -23,6 +23,7 @@ def actor_critic_policy_gradient(
     rewards: jnp.ndarray,
     gamma_discount: jnp.ndarray,
     gamma: float,
+    entropy_coefficient: float = 0.01,
 ) -> jnp.ndarray:
     r"""Actor-critic policy gradient.
 
@@ -45,6 +46,8 @@ def actor_critic_policy_gradient(
         Discounting for individual steps of the episode.
     gamma
         Discount factor.
+    entropy_coefficient
+        The weight for the entropy regularisation term
 
     Returns
     -------
@@ -68,7 +71,7 @@ def actor_critic_policy_gradient(
 
     return nnx.value_and_grad(
         stochastic_policy_gradient_pseudo_loss, argnums=3
-    )(observations, actions, weights, policy)
+    )(observations, actions, weights, policy, entropy_coefficient)
 
 
 def train_a2c(
@@ -174,6 +177,7 @@ def train_a2c(
                 rewards,
                 gamma_discount,
                 gamma,
+                entropy_coefficient,
             )
             value_loss = train_value_function(
                 value_function,
@@ -207,11 +211,11 @@ def train_policy(
     rewards,
     gamma_discount,
     gamma,
+    entropy_coefficient,
 ):
     policy_loss = 0.0
     for _ in range(policy_gradient_steps):
         p_loss, p_grad = actor_critic_policy_gradient(
-            policy,
             value_function,
             observations,
             actions,
@@ -219,6 +223,7 @@ def train_policy(
             rewards,
             gamma_discount,
             gamma,
+            entropy_coefficient,
         )
         policy_optimizer.update(p_grad)
     return policy_loss

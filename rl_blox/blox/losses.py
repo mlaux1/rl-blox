@@ -13,6 +13,7 @@ def stochastic_policy_gradient_pseudo_loss(
     action: jnp.ndarray,
     weight: jnp.ndarray,
     policy: StochasticPolicyBase,
+    entropy_coefficient: float = 0.0,
 ) -> jnp.ndarray:
     r"""Pseudo loss for the stochastic policy gradient.
 
@@ -70,8 +71,15 @@ def stochastic_policy_gradient_pseudo_loss(
     """
     logp = policy.log_probability(observation, action)
     chex.assert_equal_shape((weight, logp))
+
+    entropy = policy.entropy(observation)
+    chex.assert_equal_shape((weight, entropy))
+
     # - to perform gradient ascent with a minimizer
-    return -jnp.mean(weight * logp)
+    policy_loss = -jnp.mean(weight * logp)
+    entropy_bonus = -jnp.mean(entropy)
+
+    return policy_loss + entropy_coefficient * entropy_bonus
 
 
 def deterministic_policy_gradient_loss(
