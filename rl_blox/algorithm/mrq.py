@@ -1,5 +1,6 @@
 from collections import OrderedDict, deque, namedtuple
 from collections.abc import Callable
+from functools import partial
 
 import chex
 import gymnasium as gym
@@ -519,6 +520,42 @@ def masked_mse_loss(
     )
 
 
+@partial(
+    nnx.jit,
+    static_argnames=(
+        "encoder_horizon",
+        "dynamics_weight",
+        "reward_weight",
+        "done_weight",
+    ),
+)
+def update_encoder(
+    encoder: Encoder,
+    encoder_target: Encoder,
+    encoder_optimizer: nnx.Optimizer,
+    the_bins: jnp.ndarray,
+    batch: tuple[jnp.ndarray],
+    encoder_horizon: int,
+    dynamics_weight: float,
+    reward_weight: float,
+    done_weight: float,
+):
+    (loss, losses), grads = nnx.value_and_grad(
+        encoder_loss, argnums=0, has_aux=True
+    )(
+        encoder,
+        encoder_target,
+        the_bins,
+        batch,
+        encoder_horizon,
+        dynamics_weight,
+        reward_weight,
+        done_weight,
+    )
+    encoder_optimizer.update(grads)
+    return loss, losses
+
+
 def encoder_loss(
     encoder: Encoder,
     encoder_target: Encoder,
@@ -903,9 +940,10 @@ def train_mrq(
                         batch_size, encoder_horizon, True, rng
                     )
 
-                    encoder_loss(
+                    update_encoder(
                         encoder,
                         encoder_target,
+                        encoder_optimizer,
                         the_bins,
                         batch,
                         encoder_horizon,
@@ -915,7 +953,6 @@ def train_mrq(
                     )
 
             # TODO update policy and q networks
-
             # replay_buffer.sample_batch(batch_size, q_horizon, False, rng)
 
         if termination or truncated:
