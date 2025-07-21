@@ -463,12 +463,12 @@ class Encoder(nnx.Module):
 
         Returns
         -------
-        zsa : array, shape (n_samples, zsa_dim)
-            Latent state-action representation.
+        done : array, shape (n_samples,)
+            Flag indicating whether the episode is done.
         next_zs : array, shape (n_samples, zs_dim)
             Predicted next state representation.
-        bins : array, shape (n_samples, n_bins + 1)
-            Two-hot encoded bins for the next state.
+        reward : array, shape (n_samples, n_bins)
+            Two-hot encoded reward.
         """
         zsa = self.encode_zsa(zs, action)
         dzr = self.model(zsa)
@@ -792,7 +792,36 @@ def train_mrq(
                         batch_size, encoder_horizon, True, rng
                     )
 
-            # TODO update encoder, policy, and q networks
+                    flat_next_observation = batch.next_observation.reshape(
+                        -1, *batch.next_observation.shape[2:]
+                    )
+                    flat_next_zs = jax.lax.stop_gradient(
+                        encoder_target.zs(flat_next_observation)
+                    )
+                    next_zs = flat_next_zs.reshape(
+                        list(batch.next_observation.shape[:2]) + [-1]
+                    )
+
+                    pred_zs_t = encoder.encode_zs(batch.observation[:, 0])
+                    not_done = 1 - batch.terminated
+                    prev_not_done = 1  # in subtrajectories with termination mask, mask out losses after termination
+
+                    for t in range(encoder_horizon):
+                        pred_done, pred_next_zs_t, pred_reward = (
+                            encoder.model_all(pred_zs_t, batch.action[:, t])
+                        )
+
+                        # TODO dynamics loss
+                        # TODO reward loss
+                        # TODO done loss
+                        # TODO encoder loss
+
+                        # Adjust termination mask
+                        prev_not_done = (
+                            not_done[:, t].reshape(-1, 1) * prev_not_done
+                        )
+
+            # TODO update policy and q networks
 
             # replay_buffer.sample_batch(batch_size, q_horizon, False, rng)
 
