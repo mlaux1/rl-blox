@@ -602,6 +602,8 @@ def train_mrq(
     target_policy_noise: float = 0.2,
     noise_clip: float = 0.5,
     learning_starts: int = 10_000,
+    encoder_horizon: int = 5,
+    q_horizon: int = 3,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
@@ -680,6 +682,12 @@ def train_mrq(
     learning_starts : int, optional
         Learning starts after this number of random steps was taken in the
         environment.
+
+    encoder_horizon : int, optional
+        Horizon for encoder training.
+
+    q_horizon : int, optional
+        Horizon for Q training.
 
     logger : LoggerBase, optional
         Experiment logger.
@@ -779,10 +787,14 @@ def train_mrq(
                 hard_target_net_update(q, q_target)
                 hard_target_net_update(encoder, encoder_target)
 
+                for _ in range(target_delay):
+                    batch = replay_buffer.sample_batch(
+                        batch_size, encoder_horizon, True, rng
+                    )
+
             # TODO update encoder, policy, and q networks
 
-            # TODO configure correctly
-            replay_buffer.sample_batch(batch_size, 1, False, rng)
+            # replay_buffer.sample_batch(batch_size, q_horizon, False, rng)
 
         if termination or truncated:
             if logger is not None:
