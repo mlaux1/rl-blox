@@ -11,7 +11,6 @@ import numpy.typing as npt
 import optax
 import tqdm
 from flax import nnx
-from jax import numpy as jnp
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
@@ -34,10 +33,10 @@ class EpisodicReplayBuffer:
         Maximum size of the buffer.
 
     history : int, optional
-        Length of the history to be stored in the buffer.
+        Number of stacked observations.
 
     horizon : int, optional
-        Length of the horizon to be stored in the buffer.
+        Maximum length of the horizon.
 
     keys : list[str], optional
         Names of the quantities that should be stored in the replay buffer.
@@ -107,8 +106,8 @@ class EpisodicReplayBuffer:
         # track if there are any terminal transitions in the buffer
         self.environment_terminates = True
         self.history = history
-        self.step_idx = np.zeros((self.buffer_size, self.history), dtype=int)
-        self.next_step_idx = np.zeros(
+        self.state_idx = np.zeros((self.buffer_size, self.history), dtype=int)
+        self.next_state_idx = np.zeros(
             (self.buffer_size, self.history), dtype=int
         )
         self.history_queue = deque(maxlen=self.history)
@@ -117,7 +116,7 @@ class EpisodicReplayBuffer:
 
         self.horizon = horizon
 
-        self.mask = np.zeros(self.buffer_size)
+        self.mask = np.zeros(self.buffer_size, dtype=int)
 
         # TODO prioritized experience replay
 
@@ -148,9 +147,11 @@ class EpisodicReplayBuffer:
             self.mask[(self.insert_idx - self.horizon) % self.buffer_size] = 1
 
         next_idx = (self.insert_idx + 1) % self.buffer_size
-        self.step_idx[self.insert_idx] = np.array(self.history_queue, dtype=int)
+        self.state_idx[self.insert_idx] = np.array(
+            self.history_queue, dtype=int
+        )
         self.history_queue.append(next_idx)
-        self.next_step_idx[self.insert_idx] = np.array(
+        self.next_state_idx[self.insert_idx] = np.array(
             self.history_queue, dtype=int
         )
         self.insert_idx = next_idx
@@ -219,7 +220,8 @@ class EpisodicReplayBuffer:
             indices[:, np.newaxis] + np.arange(self.horizon)[np.newaxis]
         ) % self.current_len
 
-        indices = self.step_idx[indices]
+        # TODO do we need to store the state indices?
+        # state_indices = self.state_idx[indices]
 
         if include_intermediate:
             # sample subtrajectories (with horizon dimension) for unrolling
@@ -253,10 +255,12 @@ class EpisodicReplayBuffer:
         self, batch_size: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
         # TODO prioritized experience replay
-        nz = np.nonzero(self.mask)
+        nz = np.nonzero(self.mask)[0]
         indices = rng.integers(0, len(nz), size=batch_size)
-        self.sampled_indices[nz[indices]]
+        self.sampled_indices = nz[indices]
         return self.sampled_indices
+
+    # TODO save and load with pickle
 
 
 mrq_kernel_init = jax.nn.initializers.variance_scaling(
@@ -897,7 +901,11 @@ def train_mrq(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
 
-    replay_buffer = EpisodicReplayBuffer(buffer_size)
+    replay_buffer = EpisodicReplayBuffer(
+        buffer_size,
+        history=1,  # only relevant for buffered images
+        horizon=max(encoder_horizon, q_horizon),
+    )
 
     _sample_actions = make_sample_actions(env.action_space, exploration_noise)
     _sample_target_actions = make_sample_target_actions(
