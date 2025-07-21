@@ -1,7 +1,7 @@
 import gymnasium as gym
 
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
-from rl_blox.logging.logger import AIMLogger
+from rl_blox.logging.logger import AIMLogger, StdoutLogger
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -25,7 +25,7 @@ if verbose:
         "This example uses the AIM logger. You will not see any output on "
         "stdout. Run 'aim up' to analyze the progress."
     )
-logger = AIMLogger()
+logger = StdoutLogger()  # AIMLogger()
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="MR.Q",
