@@ -14,6 +14,7 @@ from flax import nnx
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.preprocessing import make_two_hot_bins
+from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import make_sample_actions
 from .td3 import make_sample_target_actions
@@ -595,6 +596,7 @@ def train_mrq(
     total_timesteps: int = 1_000_000,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
+    target_delay: int = 250,
     batch_size: int = 256,
     exploration_noise: float = 0.1,
     target_policy_noise: float = 0.2,
@@ -655,6 +657,10 @@ def train_mrq(
 
     gamma : float, optional
         Discount factor.
+
+    target_delay : int, optional
+        Delayed target net updates. The target nets are updated every
+        ``target_delay`` steps.
 
     batch_size : int, optional
         Size of a batch during gradient computation.
@@ -731,6 +737,8 @@ def train_mrq(
         env.action_space, target_policy_noise, noise_clip
     )
 
+    epoch = 0
+
     encoder_target = nnx.clone(encoder)
     policy_target = nnx.clone(policy)
     q_target = nnx.clone(q)
@@ -765,6 +773,12 @@ def train_mrq(
         )
 
         if global_step >= learning_starts:
+            epoch += 1
+            if epoch % target_delay == 0:
+                hard_target_net_update(policy, policy_target)
+                hard_target_net_update(q, q_target)
+                hard_target_net_update(encoder, encoder_target)
+
             # TODO update encoder, policy, and q networks
 
             # TODO configure correctly
