@@ -14,6 +14,7 @@ from flax import nnx
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.losses import huber_loss
 from ..blox.preprocessing import make_two_hot_bins, two_hot_cross_entropy_loss
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
@@ -686,18 +687,16 @@ def critic_loss(
     zs = jax.lax.stop_gradient(encoder.encode_zs(observation))
     zsa = jax.lax.stop_gradient(encoder.encode_zsa(zs, action))
 
-    q1_pred = q.q1(zsa).squeeze()
-    q2_pred = q.q2(zsa).squeeze()
+    q1_predicted = q.q1(zsa).squeeze()
+    q2_predicted = q.q2(zsa).squeeze()
 
-    max_abs_td_error = jnp.maximum(
-        # TODO we compute these differences twice...
-        jnp.abs(q1_pred - q_target_value),
-        jnp.abs(q2_pred - q_target_value),
-    )
+    td_error1 = jnp.abs(q1_predicted - q_target_value)
+    td_error2 = jnp.abs(q2_predicted - q_target_value)
+
+    max_abs_td_error = jnp.maximum(td_error1, td_error2)
 
     value_loss = (
-        optax.huber_loss(q1_pred, q_target_value).mean()
-        + optax.huber_loss(q2_pred, q_target_value).mean()
+        huber_loss(td_error1, 1.0).mean() + huber_loss(td_error2, 1.0).mean()
     )
     return value_loss, (zs, max_abs_td_error)
 
