@@ -592,11 +592,20 @@ def encoder_loss(
     return loss, (total_dynamics_loss, total_reward_loss, total_done_loss)
 
 
-@partial(nnx.jit, static_argnames=("reward_scale", "target_reward_scale"))
-def update_critic(
+@partial(
+    nnx.jit,
+    static_argnames=(
+        "reward_scale",
+        "target_reward_scale",
+        "activation_weight",
+    ),
+)
+def update_critic_and_policy(
     q: ContinuousClippedDoubleQNet,
     q_target: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
+    policy: DeterministicTanhPolicy,
+    policy_optimizer: nnx.Optimizer,
     encoder: Encoder,
     encoder_target: Encoder,
     next_action: jnp.ndarray,
@@ -612,9 +621,12 @@ def update_critic(
     term_discount: jnp.ndarray,
     reward_scale: float,
     target_reward_scale: float,
+    activation_weight: float,
 ) -> jnp.ndarray:
     """Update the critic network."""
-    loss, grads = nnx.value_and_grad(critic_loss, argnums=0)(
+    (q_loss, zs), grads = nnx.value_and_grad(
+        critic_loss, argnums=0, has_aux=True
+    )(
         q,
         q_target,
         encoder,
@@ -627,7 +639,19 @@ def update_critic(
         target_reward_scale,
     )
     q_optimizer.update(grads)
-    return loss
+
+    policy_loss, grads = nnx.value_and_grad(
+        deterministic_policy_gradient_loss, argnums=0
+    )(
+        policy,
+        q,
+        encoder,
+        zs,
+        activation_weight,
+    )
+    policy_optimizer.update(grads)
+
+    return q_loss, policy_loss
 
 
 def critic_loss(
@@ -648,7 +672,7 @@ def critic_loss(
     term_discount: jnp.ndarray,
     reward_scale: float,
     target_reward_scale: float,
-) -> jnp.ndarray:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     observation, action, _, next_observation, _, _ = batch
     next_zs = jax.lax.stop_gradient(encoder_target.encode_zs(next_observation))
     next_zsa = jax.lax.stop_gradient(
@@ -668,7 +692,7 @@ def critic_loss(
         optax.huber_loss(q1_pred, q_target_value).mean()
         + optax.huber_loss(q2_pred, q_target_value).mean()
     )
-    return value_loss
+    return value_loss, zs
 
 
 def multistep_reward(
@@ -701,6 +725,20 @@ def multistep_reward(
         ms_reward += scale * reward[:, t]
         scale *= gamma * (1 - terminated[:, t])
     return ms_reward, scale
+
+
+def deterministic_policy_gradient_loss(
+    policy: DeterministicTanhPolicy,
+    q: nnx.Module,
+    encoder: Encoder,
+    zs: jnp.ndarray,
+    activation_weight: float,
+) -> jnp.ndarray:
+    activation = policy.policy_net(zs)
+    action = policy.scale_output(activation)
+    zsa = encoder.encode_zsa(zs, action)
+    # - to perform gradient ascent with a minimizer
+    return -q(zsa).mean() + activation_weight + jnp.square(activation).mean()
 
 
 def create_mrq_state(
@@ -836,6 +874,7 @@ def train_mrq(
     dynamics_weight: float = 1.0,
     reward_weight: float = 0.1,
     done_weight: float = 0.1,
+    activation_weight: float = 1e-5,
     logger: LoggerBase | None = None,
 ) -> tuple[
     nnx.Module,
@@ -929,6 +968,9 @@ def train_mrq(
 
     done_weight : float, optional
         Weight for the done loss in the encoder training.
+
+    activation_weight : float, optional
+        Weight for the activation regularization in the policy training.
 
     logger : LoggerBase, optional
         Experiment logger.
@@ -1072,6 +1114,7 @@ def train_mrq(
                         )
                         for k, v in stats.items():
                             logger.record_stat(k, v, step=log_step)
+                        # TODO log epochs
 
             batch = replay_buffer.sample_batch(
                 batch_size, q_horizon, False, rng
@@ -1085,10 +1128,12 @@ def train_mrq(
                 policy_with_encoder_target, batch.next_observation, sampling_key
             )
 
-            q_loss_value = update_critic(
+            q_loss_value, policy_loss = update_critic_and_policy(
                 q,
                 q_target,
                 q_optimizer,
+                policy,
+                policy_optimizer,
                 encoder,
                 encoder_target,
                 next_actions,
@@ -1097,11 +1142,14 @@ def train_mrq(
                 term_discount,
                 reward_scale=1.0,  # TODO track reward scale
                 target_reward_scale=1.0,  # TODO track target reward scale
+                activation_weight=activation_weight,
             )
             if logger is not None:
                 logger.record_stat("q loss", q_loss_value, step=global_step + 1)
-
-            # TODO update policy and q networks
+                logger.record_stat(
+                    "policy loss", policy_loss, step=global_step + 1
+                )
+                # TODO log epoch
 
         if terminated or truncated:
             if logger is not None:
