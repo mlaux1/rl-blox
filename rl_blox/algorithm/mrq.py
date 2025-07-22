@@ -677,6 +677,7 @@ def create_mrq_state(
     q_activation: str = "elu",
     q_learning_rate: float = 3e-4,
     q_weight_decay: float = 1e-4,
+    q_grad_clipping: float = 20.0,
     encoder_n_bins: int = 65,
     encoder_zs_dim: int = 512,
     encoder_za_dim: int = 256,
@@ -726,9 +727,12 @@ def create_mrq_state(
     q = ContinuousClippedDoubleQNet(q1, q2)
     q_optimizer = nnx.Optimizer(
         q,
-        optax.adamw(
-            learning_rate=q_learning_rate,
-            weight_decay=q_weight_decay,
+        optax.chain(
+            optax.clip_by_global_norm(q_grad_clipping),
+            optax.adamw(
+                learning_rate=q_learning_rate,
+                weight_decay=q_weight_decay,
+            ),
         ),
     )
 
