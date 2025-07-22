@@ -739,8 +739,11 @@ def deterministic_policy_gradient_loss(
     zsa = jax.lax.stop_gradient(encoder.encode_zsa(zs, action))
     # - to perform gradient ascent with a minimizer
     dpg_loss = -q(zsa).mean()
-    policy_regularization = activation_weight * jnp.square(activation).mean()
-    return dpg_loss + policy_regularization, (dpg_loss, policy_regularization)
+    policy_regularization = jnp.square(activation).mean()
+    return dpg_loss + activation_weight * policy_regularization, (
+        dpg_loss,
+        policy_regularization,
+    )
 
 
 def create_mrq_state(
