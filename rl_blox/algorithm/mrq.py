@@ -622,9 +622,9 @@ def update_critic_and_policy(
     reward_scale: float,
     target_reward_scale: float,
     activation_weight: float,
-) -> tuple[float, float, tuple[float, float]]:
+) -> tuple[float, float, tuple[float, float], jnp.ndarray]:
     """Update the critic network."""
-    (q_loss, zs), grads = nnx.value_and_grad(
+    (q_loss, (zs, max_abs_td_error)), grads = nnx.value_and_grad(
         critic_loss, argnums=0, has_aux=True
     )(
         q,
@@ -638,7 +638,6 @@ def update_critic_and_policy(
         reward_scale,
         target_reward_scale,
     )
-    q_optimizer.update(grads)
 
     (policy_loss, policy_loss_components), grads = nnx.value_and_grad(
         deterministic_policy_gradient_loss, argnums=0, has_aux=True
@@ -651,7 +650,7 @@ def update_critic_and_policy(
     )
     policy_optimizer.update(grads)
 
-    return q_loss, policy_loss, policy_loss_components
+    return q_loss, policy_loss, policy_loss_components, max_abs_td_error
 
 
 def critic_loss(
@@ -672,7 +671,7 @@ def critic_loss(
     term_discount: jnp.ndarray,
     reward_scale: float,
     target_reward_scale: float,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, tuple[jnp.ndarray, jnp.ndarray]]:
     observation, action, _, next_observation, _, _ = batch
     next_zs = jax.lax.stop_gradient(encoder_target.encode_zs(next_observation))
     next_zsa = jax.lax.stop_gradient(
@@ -688,11 +687,18 @@ def critic_loss(
 
     q1_pred = q.q1(zsa).squeeze()
     q2_pred = q.q2(zsa).squeeze()
+
+    max_abs_td_error = jnp.maximum(
+        # TODO we compute these differences twice...
+        jnp.abs(q1_pred - q_target_value),
+        jnp.abs(q2_pred - q_target_value),
+    )
+
     value_loss = (
         optax.huber_loss(q1_pred, q_target_value).mean()
         + optax.huber_loss(q2_pred, q_target_value).mean()
     )
-    return value_loss, zs
+    return value_loss, (zs, max_abs_td_error)
 
 
 def multistep_reward(
@@ -1133,23 +1139,26 @@ def train_mrq(
                 policy_with_encoder_target, batch.next_observation, sampling_key
             )
 
-            q_loss_value, policy_loss, (dpg_loss, policy_regularization) = (
-                update_critic_and_policy(
-                    q,
-                    q_target,
-                    q_optimizer,
-                    policy,
-                    policy_optimizer,
-                    encoder,
-                    encoder_target,
-                    next_actions,
-                    batch,
-                    reward,
-                    term_discount,
-                    reward_scale=1.0,  # TODO track reward scale
-                    target_reward_scale=1.0,  # TODO track target reward scale
-                    activation_weight=activation_weight,
-                )
+            (
+                q_loss_value,
+                policy_loss,
+                (dpg_loss, policy_regularization),
+                max_abs_td_error,
+            ) = update_critic_and_policy(
+                q,
+                q_target,
+                q_optimizer,
+                policy,
+                policy_optimizer,
+                encoder,
+                encoder_target,
+                next_actions,
+                batch,
+                reward,
+                term_discount,
+                reward_scale=1.0,  # TODO track reward scale
+                target_reward_scale=1.0,  # TODO track target reward scale
+                activation_weight=activation_weight,
             )
             if logger is not None:
                 logger.record_stat("q loss", q_loss_value, step=global_step + 1)
@@ -1163,6 +1172,8 @@ def train_mrq(
                     step=global_step + 1,
                 )
                 # TODO log epoch
+
+            # TODO define priority with max_abs_td_error
 
         if terminated or truncated:
             if logger is not None:
