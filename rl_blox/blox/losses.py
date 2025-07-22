@@ -443,8 +443,8 @@ def td3_lap_loss(
     td_error1 = jnp.abs(q1_predicted - q_target_value)
     td_error2 = jnp.abs(q2_predicted - q_target_value)
     return (
-        _huber_loss(td_error1, min_priority).mean()
-        + _huber_loss(td_error2, min_priority).mean(),
+        huber_loss(td_error1, min_priority).mean()
+        + huber_loss(td_error2, min_priority).mean(),
         (
             jnp.minimum(q1_predicted, q2_predicted).mean(),
             jnp.maximum(td_error1, td_error2),
@@ -452,7 +452,7 @@ def td3_lap_loss(
     )
 
 
-def _huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
+def huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
     # 0.5 * err^2                  if |err| <= d
     # 0.5 * d^2 + d * (|err| - d)  if |err| > d
     quadratic = jnp.minimum(abs_errors, delta)
