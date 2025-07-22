@@ -622,7 +622,7 @@ def update_critic_and_policy(
     reward_scale: float,
     target_reward_scale: float,
     activation_weight: float,
-) -> jnp.ndarray:
+) -> tuple[float, float, tuple[float, float]]:
     """Update the critic network."""
     (q_loss, zs), grads = nnx.value_and_grad(
         critic_loss, argnums=0, has_aux=True
@@ -640,8 +640,8 @@ def update_critic_and_policy(
     )
     q_optimizer.update(grads)
 
-    policy_loss, grads = nnx.value_and_grad(
-        deterministic_policy_gradient_loss, argnums=0
+    (policy_loss, policy_loss_components), grads = nnx.value_and_grad(
+        deterministic_policy_gradient_loss, argnums=0, has_aux=True
     )(
         policy,
         q,
@@ -651,7 +651,7 @@ def update_critic_and_policy(
     )
     policy_optimizer.update(grads)
 
-    return q_loss, policy_loss
+    return q_loss, policy_loss, policy_loss_components
 
 
 def critic_loss(
@@ -733,12 +733,14 @@ def deterministic_policy_gradient_loss(
     encoder: Encoder,
     zs: jnp.ndarray,
     activation_weight: float,
-) -> jnp.ndarray:
+) -> tuple[float, tuple[float, float]]:
     activation = policy.policy_net(zs)
     action = jax.lax.stop_gradient(policy.scale_output(activation))
     zsa = jax.lax.stop_gradient(encoder.encode_zsa(zs, action))
     # - to perform gradient ascent with a minimizer
-    return -q(zsa).mean() + activation_weight + jnp.square(activation).mean()
+    dpg_loss = -q(zsa).mean()
+    policy_regularization = activation_weight * jnp.square(activation).mean()
+    return dpg_loss + policy_regularization, (dpg_loss, policy_regularization)
 
 
 def create_mrq_state(
@@ -1128,26 +1130,34 @@ def train_mrq(
                 policy_with_encoder_target, batch.next_observation, sampling_key
             )
 
-            q_loss_value, policy_loss = update_critic_and_policy(
-                q,
-                q_target,
-                q_optimizer,
-                policy,
-                policy_optimizer,
-                encoder,
-                encoder_target,
-                next_actions,
-                batch,
-                reward,
-                term_discount,
-                reward_scale=1.0,  # TODO track reward scale
-                target_reward_scale=1.0,  # TODO track target reward scale
-                activation_weight=activation_weight,
+            q_loss_value, policy_loss, (dpg_loss, policy_regularization) = (
+                update_critic_and_policy(
+                    q,
+                    q_target,
+                    q_optimizer,
+                    policy,
+                    policy_optimizer,
+                    encoder,
+                    encoder_target,
+                    next_actions,
+                    batch,
+                    reward,
+                    term_discount,
+                    reward_scale=1.0,  # TODO track reward scale
+                    target_reward_scale=1.0,  # TODO track target reward scale
+                    activation_weight=activation_weight,
+                )
             )
             if logger is not None:
                 logger.record_stat("q loss", q_loss_value, step=global_step + 1)
                 logger.record_stat(
                     "policy loss", policy_loss, step=global_step + 1
+                )
+                logger.record_stat("dpg loss", dpg_loss, step=global_step + 1)
+                logger.record_stat(
+                    "policy regularization",
+                    policy_regularization,
+                    step=global_step + 1,
                 )
                 # TODO log epoch
 
