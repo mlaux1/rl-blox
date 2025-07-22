@@ -595,6 +595,38 @@ def encoder_loss(
     return loss, (total_dynamics_loss, total_reward_loss, total_done_loss)
 
 
+def multistep_reward(
+    reward: jnp.ndarray, terminated: jnp.ndarray, gamma: float
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Compute the multistep reward.
+
+    Parameters
+    ----------
+    reward : jnp.ndarray
+        Reward array of shape (batch_size, horizon).
+
+    terminated : jnp.ndarray
+        Termination flag array of shape (batch_size, horizon).
+
+    gamma : float
+        Discount factor.
+
+    Returns
+    -------
+    ms_reward : jnp.ndarray, shape (batch_size,)
+        Multistep reward per sample.
+
+    scale : jnp.ndarray, shape (batch_size,)
+        Scale factor per sample.
+    """
+    ms_reward = 0
+    scale = 1
+    for t in range(reward.shape[1]):
+        ms_reward += scale * reward[:, t]
+        scale *= gamma * (1 - terminated[:, t])
+    return ms_reward, scale
+
+
 def create_mrq_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
@@ -958,8 +990,14 @@ def train_mrq(
                         for k, v in stats.items():
                             logger.record_stat(k, v, step=log_step)
 
+            batch = replay_buffer.sample_batch(
+                batch_size, q_horizon, False, rng
+            )
+            reward, term_discount = multistep_reward(
+                batch.reward, batch.terminated, gamma
+            )
+
             # TODO update policy and q networks
-            # replay_buffer.sample_batch(batch_size, q_horizon, False, rng)
 
         if terminated or truncated:
             if logger is not None:
