@@ -735,8 +735,8 @@ def deterministic_policy_gradient_loss(
     activation_weight: float,
 ) -> jnp.ndarray:
     activation = policy.policy_net(zs)
-    action = policy.scale_output(activation)
-    zsa = encoder.encode_zsa(zs, action)
+    action = jax.lax.stop_gradient(policy.scale_output(activation))
+    zsa = jax.lax.stop_gradient(encoder.encode_zsa(zs, action))
     # - to perform gradient ascent with a minimizer
     return -q(zsa).mean() + activation_weight + jnp.square(activation).mean()
 
