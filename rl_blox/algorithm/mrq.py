@@ -595,6 +595,46 @@ def encoder_loss(
     return loss, (total_dynamics_loss, total_reward_loss, total_done_loss)
 
 
+def critic_loss(
+    q: ContinuousClippedDoubleQNet,
+    q_target: ContinuousClippedDoubleQNet,
+    encoder: Encoder,
+    encoder_target: Encoder,
+    next_action: jnp.ndarray,
+    batch: tuple[
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+    ],
+    reward: jnp.ndarray,
+    term_discount: jnp.ndarray,
+    reward_scale: float,
+    target_reward_scale: float,
+) -> jnp.ndarray:
+    observation, action, _, next_observation, _, _ = batch
+    next_zs = jax.lax.stop_gradient(encoder_target.encode_zs(next_observation))
+    next_zsa = jax.lax.stop_gradient(
+        encoder_target.encode_zsa(next_zs, next_action)
+    )
+    q_next = q_target(next_zsa)
+    q_target_value = (
+        reward + term_discount * q_next * target_reward_scale
+    ) / reward_scale
+
+    zs = jax.lax.stop_gradient(encoder.encode_zs(observation))
+    zsa = jax.lax.stop_gradient(encoder.encode_zsa(zs, action))
+
+    q1_pred = q.q1(zsa)
+    q2_pred = q.q2(zsa)
+    value_loss = optax.huber_loss(q1_pred, q_target_value) + optax.huber_loss(
+        q2_pred, q_target_value
+    )
+    return value_loss
+
+
 def multistep_reward(
     reward: jnp.ndarray, terminated: jnp.ndarray, gamma: float
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -916,6 +956,9 @@ def train_mrq(
     q_target = nnx.clone(q)
 
     policy_with_encoder = DeterministicPolicyWithEncoder(encoder, policy)
+    policy_with_encoder_target = DeterministicPolicyWithEncoder(
+        encoder_target, policy_target
+    )
 
     # TODO track reward scale and target reward scale
 
@@ -995,6 +1038,11 @@ def train_mrq(
             )
             reward, term_discount = multistep_reward(
                 batch.reward, batch.terminated, gamma
+            )
+            # policy smoothing: sample next actions from target policy
+            key, sampling_key = jax.random.split(key, 2)
+            next_actions = _sample_target_actions(
+                policy_with_encoder_target, batch.next_observation, sampling_key
             )
 
             # TODO update policy and q networks
