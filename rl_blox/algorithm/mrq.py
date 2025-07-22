@@ -623,9 +623,9 @@ def update_critic_and_policy(
     reward_scale: float,
     target_reward_scale: float,
     activation_weight: float,
-) -> tuple[float, float, tuple[float, float], jnp.ndarray]:
+) -> tuple[float, float, tuple[float, float], float, jnp.ndarray]:
     """Update the critic network."""
-    (q_loss, (zs, max_abs_td_error)), grads = nnx.value_and_grad(
+    (q_loss, (zs, q_mean, max_abs_td_error)), grads = nnx.value_and_grad(
         critic_loss, argnums=0, has_aux=True
     )(
         q,
@@ -652,7 +652,7 @@ def update_critic_and_policy(
     )
     policy_optimizer.update(grads)
 
-    return q_loss, policy_loss, policy_loss_components, max_abs_td_error
+    return q_loss, policy_loss, policy_loss_components, q_mean, max_abs_td_error
 
 
 def critic_loss(
@@ -673,7 +673,7 @@ def critic_loss(
     term_discount: jnp.ndarray,
     reward_scale: float,
     target_reward_scale: float,
-) -> tuple[jnp.ndarray, tuple[jnp.ndarray, jnp.ndarray]]:
+) -> tuple[jnp.ndarray, tuple[jnp.ndarray, float, jnp.ndarray]]:
     observation, action, _, next_observation, _, _ = batch
     next_zs = jax.lax.stop_gradient(encoder_target.encode_zs(next_observation))
     next_zsa = jax.lax.stop_gradient(
@@ -698,7 +698,9 @@ def critic_loss(
     value_loss = (
         huber_loss(td_error1, 1.0).mean() + huber_loss(td_error2, 1.0).mean()
     )
-    return value_loss, (zs, max_abs_td_error)
+
+    q_mean = jnp.minimum(q1_predicted, q2_predicted).mean()
+    return value_loss, (zs, q_mean, max_abs_td_error)
 
 
 def multistep_reward(
@@ -1143,6 +1145,7 @@ def train_mrq(
                 q_loss_value,
                 policy_loss,
                 (dpg_loss, policy_regularization),
+                q_mean,
                 max_abs_td_error,
             ) = update_critic_and_policy(
                 q,
@@ -1162,6 +1165,7 @@ def train_mrq(
             )
             if logger is not None:
                 logger.record_stat("q loss", q_loss_value, step=global_step + 1)
+                logger.record_stat("q mean", q_mean, step=global_step + 1)
                 logger.record_stat(
                     "policy loss", policy_loss, step=global_step + 1
                 )
