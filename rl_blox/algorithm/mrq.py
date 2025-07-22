@@ -929,7 +929,7 @@ def train_mrq(
                         batch_size, encoder_horizon, True, rng
                     )
 
-                    encoder_loss, (dynamics_loss, reward_loss, done_loss) = (
+                    enc_loss_value, (dynamics_loss, reward_loss, done_loss) = (
                         update_encoder(
                             encoder,
                             encoder_target,
@@ -944,10 +944,10 @@ def train_mrq(
                     )
                     if logger is not None:
                         stats = {
-                            "encoder_loss": encoder_loss,
-                            "dynamics_loss": dynamics_loss,
-                            "reward_loss": reward_loss,
-                            "done_loss": done_loss,
+                            "encoder loss": enc_loss_value,
+                            "dynamics loss": dynamics_loss,
+                            "reward loss": reward_loss,
+                            "done loss": done_loss,
                         }
                         log_step = (
                             global_step
