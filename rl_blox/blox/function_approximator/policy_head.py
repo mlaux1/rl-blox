@@ -44,6 +44,11 @@ class DeterministicTanhPolicy(nnx.Module):
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
 
+    def scale_output(self, y: jnp.ndarray) -> jnp.ndarray:
+        return nnx.tanh(y) * jnp.broadcast_to(
+            self.action_scale.value, y.shape
+        ) + jnp.broadcast_to(self.action_bias.value, y.shape)
+
 
 class StochasticPolicyBase(nnx.Module):
     """Base class for probabilistic policies.
