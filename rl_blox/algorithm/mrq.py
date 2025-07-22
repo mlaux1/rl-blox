@@ -199,9 +199,6 @@ class EpisodicReplayBuffer:
             )
         else:
             # sample at specific horizon (used for multistep rewards)
-            indices = indices[:, 0]
-            chex.assert_shape(indices, (batch_size,))
-
             batch = {}
             for k in self.buffer:
                 if k in ["observation", "action"]:
@@ -595,6 +592,44 @@ def encoder_loss(
     return loss, (total_dynamics_loss, total_reward_loss, total_done_loss)
 
 
+@partial(nnx.jit, static_argnames=("reward_scale", "target_reward_scale"))
+def update_critic(
+    q: ContinuousClippedDoubleQNet,
+    q_target: ContinuousClippedDoubleQNet,
+    q_optimizer: nnx.Optimizer,
+    encoder: Encoder,
+    encoder_target: Encoder,
+    next_action: jnp.ndarray,
+    batch: tuple[
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+    ],
+    reward: jnp.ndarray,
+    term_discount: jnp.ndarray,
+    reward_scale: float,
+    target_reward_scale: float,
+) -> jnp.ndarray:
+    """Update the critic network."""
+    loss, grads = nnx.value_and_grad(critic_loss, argnums=0)(
+        q,
+        q_target,
+        encoder,
+        encoder_target,
+        next_action,
+        batch,
+        reward,
+        term_discount,
+        reward_scale,
+        target_reward_scale,
+    )
+    q_optimizer.update(grads)
+    return loss
+
+
 def critic_loss(
     q: ContinuousClippedDoubleQNet,
     q_target: ContinuousClippedDoubleQNet,
@@ -619,7 +654,7 @@ def critic_loss(
     next_zsa = jax.lax.stop_gradient(
         encoder_target.encode_zsa(next_zs, next_action)
     )
-    q_next = q_target(next_zsa)
+    q_next = jax.lax.stop_gradient(q_target(next_zsa).squeeze())
     q_target_value = (
         reward + term_discount * q_next * target_reward_scale
     ) / reward_scale
@@ -627,10 +662,11 @@ def critic_loss(
     zs = jax.lax.stop_gradient(encoder.encode_zs(observation))
     zsa = jax.lax.stop_gradient(encoder.encode_zsa(zs, action))
 
-    q1_pred = q.q1(zsa)
-    q2_pred = q.q2(zsa)
-    value_loss = optax.huber_loss(q1_pred, q_target_value) + optax.huber_loss(
-        q2_pred, q_target_value
+    q1_pred = q.q1(zsa).squeeze()
+    q2_pred = q.q2(zsa).squeeze()
+    value_loss = (
+        optax.huber_loss(q1_pred, q_target_value).mean()
+        + optax.huber_loss(q2_pred, q_target_value).mean()
     )
     return value_loss
 
@@ -1048,6 +1084,22 @@ def train_mrq(
             next_actions = _sample_target_actions(
                 policy_with_encoder_target, batch.next_observation, sampling_key
             )
+
+            q_loss_value = update_critic(
+                q,
+                q_target,
+                q_optimizer,
+                encoder,
+                encoder_target,
+                next_actions,
+                batch,
+                reward,
+                term_discount,
+                reward_scale=1.0,  # TODO track reward scale
+                target_reward_scale=1.0,  # TODO track target reward scale
+            )
+            if logger is not None:
+                logger.record_stat("q loss", q_loss_value, step=global_step + 1)
 
             # TODO update policy and q networks
 
