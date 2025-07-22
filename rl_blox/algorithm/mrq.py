@@ -638,6 +638,7 @@ def update_critic_and_policy(
         reward_scale,
         target_reward_scale,
     )
+    q_optimizer.update(grads)
 
     (policy_loss, policy_loss_components), grads = nnx.value_and_grad(
         deterministic_policy_gradient_loss, argnums=0, has_aux=True
