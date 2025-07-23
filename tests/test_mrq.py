@@ -26,7 +26,8 @@ def test_episodic_replay_buffer():
             obs = next_obs
     env.close()
 
-    assert len(buffer) == 2_000
+    # Terminated / truncated states are counted as samples
+    assert len(buffer) == 2_000 + 10
 
     rng = np.random.default_rng(42)
     batch = buffer.sample_batch(32, 5, True, rng)
