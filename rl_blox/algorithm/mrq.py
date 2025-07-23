@@ -1200,6 +1200,14 @@ def train_mrq(
                     policy_regularization,
                     step=global_step + 1,
                 )
+                logger.record_stat(
+                    "reward scale", reward_scale, step=global_step + 1
+                )
+                logger.record_stat(
+                    "target reward scale",
+                    target_reward_scale,
+                    step=global_step + 1,
+                )
                 # TODO log epoch
 
             # TODO define priority with max_abs_td_error
