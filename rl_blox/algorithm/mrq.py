@@ -99,7 +99,7 @@ class EpisodicReplayBuffer:
         # track if there are any terminal transitions in the buffer
         self.environment_terminates = False
         self.horizon = horizon
-        self.mask = np.zeros(self.buffer_size, dtype=int)
+        self.mask_ = np.zeros(self.buffer_size, dtype=int)
 
         # TODO prioritized experience replay
 
@@ -125,9 +125,9 @@ class EpisodicReplayBuffer:
         if sample["terminated"]:
             self.environment_terminates = True
 
-        self.mask[self.insert_idx] = 0
+        self.mask_[self.insert_idx] = 0
         if self.episode_timesteps > self.horizon:
-            self.mask[(self.insert_idx - self.horizon) % self.buffer_size] = 1
+            self.mask_[(self.insert_idx - self.horizon) % self.buffer_size] = 1
 
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
 
@@ -141,13 +141,13 @@ class EpisodicReplayBuffer:
                 "next_observation"
             ]
 
-            self.mask[self.insert_idx % self.buffer_size] = 0
+            self.mask_[self.insert_idx % self.buffer_size] = 0
             past_idx = (
                 self.insert_idx
                 - np.arange(min(self.episode_timesteps, self.horizon))
                 - 1
             ) % self.buffer_size
-            self.mask[past_idx] = (
+            self.mask_[past_idx] = (
                 0 if sample["truncated"] else 1
             )  # mask out truncated subtrajectories
 
@@ -223,7 +223,7 @@ class EpisodicReplayBuffer:
         self, batch_size: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
         # TODO prioritized experience replay
-        nz = np.nonzero(self.mask)[0]
+        nz = np.nonzero(self.mask_)[0]
         indices = rng.integers(0, len(nz), size=batch_size)
         self.sampled_indices = nz[indices]
         return self.sampled_indices
