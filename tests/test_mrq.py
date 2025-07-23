@@ -31,6 +31,6 @@ def test_episodic_replay_buffer():
 
     rng = np.random.default_rng(42)
     batch = buffer.sample_batch(32, 5, True, rng)
-    assert batch.observations.shappe[0] == 32
-    assert batch.observations.shappe[1] == 5
-    assert batch.observations.shappe[2] == 3
+    assert batch.observation.shape[0] == 32
+    assert batch.observation.shape[1] == 5
+    assert batch.observation.shape[2] == 3
