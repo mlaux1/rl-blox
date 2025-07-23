@@ -514,6 +514,7 @@ def masked_mse_loss(
         "dynamics_weight",
         "reward_weight",
         "done_weight",
+        "environment_terminates",
     ),
 )
 def update_encoder(
@@ -526,6 +527,7 @@ def update_encoder(
     dynamics_weight: float,
     reward_weight: float,
     done_weight: float,
+    environment_terminates: bool,
 ):
     (loss, losses), grads = nnx.value_and_grad(
         encoder_loss, argnums=0, has_aux=True
@@ -538,6 +540,7 @@ def update_encoder(
         dynamics_weight,
         reward_weight,
         done_weight,
+        environment_terminates,
     )
     encoder_optimizer.update(grads)
     return loss, losses
@@ -552,6 +555,7 @@ def encoder_loss(
     dynamics_weight: float,
     reward_weight: float,
     done_weight: float,
+    environment_terminates: bool,
 ) -> tuple[float, tuple[float, float, float]]:
     flat_next_observation = batch.next_observation.reshape(
         -1, *batch.next_observation.shape[2:]
@@ -586,9 +590,10 @@ def encoder_loss(
         total_reward_loss += jnp.mean(
             two_hot_cross_entropy_loss(the_bins, pred_reward_t, target_reward_t)
         )
-        total_done_loss += masked_mse_loss(
-            pred_done_t, target_done_t, prev_not_done
-        )
+        if environment_terminates:
+            total_done_loss += masked_mse_loss(
+                pred_done_t, target_done_t, prev_not_done
+            )
 
         # Update termination mask
         prev_not_done = not_done[:, t].reshape(-1, 1) * prev_not_done
@@ -1118,6 +1123,7 @@ def train_mrq(
                             dynamics_weight,
                             reward_weight,
                             done_weight,
+                            replay_buffer.environment_terminates,
                         )
                     )
                     if logger is not None:
