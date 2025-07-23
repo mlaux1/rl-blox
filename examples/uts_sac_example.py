@@ -23,8 +23,9 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    epochs=100,
-    time_steps_per_epoch=500,
+    epochs=10,
+    time_steps_per_epoch=5000,
+    exploring_starts=0,
 )
 
 sac_state = create_sac_state(env1, **hparams_models)
@@ -44,9 +45,13 @@ for env in train_envs:
 policy, _, q, _, _, _, _ = sac_result
 
 # Evaluation
-env = gym.make(env_name, render_mode="human")
-env = gym.wrappers.RecordEpisodeStatistics(env)
+env1 = gym.make(env_name, render_mode="human", g=9.81)
+env2 = gym.make(env_name, render_mode="human", g=9.5)
+env3 = gym.make(env_name, render_mode="human", g=10.0)
+env4 = gym.make(env_name, render_mode="human", g=10.5)
+
 while True:
+    env = env2
     done = False
     obs, _ = env.reset()
     while not done:

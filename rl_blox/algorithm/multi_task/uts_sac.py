@@ -18,6 +18,7 @@ def train_uts_sac(
     time_steps_per_epoch: int,
     epochs: int,
     seed: int = 1,
+    exploring_starts: int = 0,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -52,6 +53,7 @@ def train_uts_sac(
             replay_buffer=replay_buffer,
             q_target=q_target,
             entropy_control=entropy_control,
+            learning_starts=exploring_starts,
         )
         print(f"Epoch {i} complete.")
 
