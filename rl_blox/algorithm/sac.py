@@ -363,7 +363,7 @@ def train_sac(
     logger : LoggerBase, optional
         Experiment logger.
 
-    max_episodes : int
+    max_episodes : int, optional
         Number of maximum training episodes.
 
     Returns
@@ -587,7 +587,7 @@ def train_sac(
                     q_optimizer,
                     entropy_control,
                     replay_buffer,
-                    global_step,
+                    global_step + 1,
                 )
     else:
         obs = next_obs
@@ -612,7 +612,7 @@ def train_sac(
         q_optimizer,
         entropy_control,
         replay_buffer,
-        global_step,
+        global_step + 1,
     )
 
 

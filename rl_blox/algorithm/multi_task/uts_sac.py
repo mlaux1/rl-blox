@@ -59,7 +59,14 @@ def train_uts_sac(
             entropy_control=entropy_control,
             learning_starts=exploring_starts,
         )
-        print(f"Episode {episodes_so_far} completed with {ep_steps}.")
+
+        steps_so_far += ep_steps
+        episodes_so_far += 1
+        print(
+            f"Episode {episodes_so_far} completed after {
+                ep_steps
+            } steps. Total: {steps_so_far}"
+        )
 
     return (
         policy,
