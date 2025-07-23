@@ -12,7 +12,7 @@ from ..sac import EntropyControl, train_sac
 def train_uts_sac(
     envs: list[gym.Env],
     policy: StochasticPolicyBase,
-    policy_optimizer: nnx.Opimizer,
+    policy_optimizer: nnx.Optimizer,
     q_net: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
     time_steps_per_epoch: int,
@@ -53,7 +53,7 @@ def train_uts_sac(
             q_target=q_target,
             entropy_control=entropy_control,
         )
-        print(f"Epoche {i} complete.")
+        print(f"Epoch {i} complete.")
 
     return (
         policy,
