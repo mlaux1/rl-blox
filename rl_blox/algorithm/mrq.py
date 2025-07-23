@@ -228,6 +228,13 @@ class EpisodicReplayBuffer:
         self.sampled_indices = nz[indices]
         return self.sampled_indices
 
+    def reward_scale(self, eps: float = 1e-8):
+        assert "reward" in self.buffer
+        # very hacky way of computing the reward scale...
+        return max(
+            np.abs(self.buffer["reward"][: self.current_len]).mean(), eps
+        )
+
     def __len__(self):
         """Return current number of stored transitions in the replay buffer."""
         return self.current_len
@@ -1068,7 +1075,8 @@ def train_mrq(
         encoder_target, policy_target
     )
 
-    # TODO track reward scale and target reward scale
+    reward_scale = 1.0
+    target_reward_scale = 0.0
 
     if logger is not None:
         logger.start_new_episode()
@@ -1106,6 +1114,9 @@ def train_mrq(
                 hard_target_net_update(policy, policy_target)
                 hard_target_net_update(q, q_target)
                 hard_target_net_update(encoder, encoder_target)
+
+                target_reward_scale = reward_scale
+                reward_scale = replay_buffer.reward_scale()
 
                 for delayed_train_step_idx in range(1, target_delay + 1):
                     batch = replay_buffer.sample_batch(
@@ -1173,9 +1184,9 @@ def train_mrq(
                 batch,
                 reward,
                 term_discount,
-                reward_scale=1.0,  # TODO track reward scale
-                target_reward_scale=1.0,  # TODO track target reward scale
-                activation_weight=activation_weight,
+                reward_scale,
+                target_reward_scale,
+                activation_weight,
             )
             if logger is not None:
                 logger.record_stat("q loss", q_loss_value, step=global_step + 1)
