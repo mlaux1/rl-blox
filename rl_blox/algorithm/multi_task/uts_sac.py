@@ -15,8 +15,8 @@ def train_uts_sac(
     policy_optimizer: nnx.Optimizer,
     q_net: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
-    time_steps_per_epoch: int,
-    epochs: int,
+    total_timesteps: int = 100_000,
+    episodes_per_task: int = 1,
     seed: int = 1,
     exploring_starts: int = 0,
 ) -> tuple[
@@ -31,8 +31,10 @@ def train_uts_sac(
     replay_buffer = None
     q_target = None
     entropy_control = None
+    steps_so_far = 0
+    episodes_so_far = 0
 
-    for i in range(epochs):
+    while steps_so_far < total_timesteps:
         env = random.choice(envs)
         (
             policy,
@@ -42,6 +44,7 @@ def train_uts_sac(
             q_optimizer,
             entropy_control,
             replay_buffer,
+            ep_steps,
         ) = train_sac(
             env,
             policy,
@@ -49,13 +52,14 @@ def train_uts_sac(
             q_net,
             q_optimizer,
             seed=seed,
-            total_timesteps=time_steps_per_epoch,
+            total_timesteps=total_timesteps - steps_so_far,
+            max_episodes=episodes_per_task,
             replay_buffer=replay_buffer,
             q_target=q_target,
             entropy_control=entropy_control,
             learning_starts=exploring_starts,
         )
-        print(f"Epoch {i} complete.")
+        print(f"Episode {episodes_so_far} completed with {ep_steps}.")
 
     return (
         policy,
