@@ -263,6 +263,7 @@ def train_sac(
     q_target: ContinuousClippedDoubleQNet | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
+    max_episodes: int | None = None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -271,6 +272,7 @@ def train_sac(
     nnx.Optimizer,
     EntropyControl,
     ReplayBuffer,
+    int,
 ]:
     r"""Soft actor-critic (SAC).
 
@@ -361,6 +363,9 @@ def train_sac(
     logger : LoggerBase, optional
         Experiment logger.
 
+    max_episodes : int
+        Number of maximum training episodes.
+
     Returns
     -------
     policy
@@ -377,6 +382,8 @@ def train_sac(
         State of entropy tuning.
     replay_buffer : ReplayBuffer
         Replay buffer.
+    steps_trained : int
+        Number of steps the policy was trained for.
 
     Notes
     -----
@@ -475,6 +482,7 @@ def train_sac(
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
+    training_eps = 0
 
     for global_step in tqdm.trange(total_timesteps):
         if global_step < learning_starts:
@@ -556,8 +564,33 @@ def train_sac(
                 logger.start_new_episode()
             obs, _ = env.reset()
             steps_per_episode = 0
-        else:
-            obs = next_obs
+
+            training_eps += 1
+            if max_episodes is not None and training_eps == max_episodes:
+                return namedtuple(
+                    "SACResult",
+                    [
+                        "policy",
+                        "policy_optimizer",
+                        "q",
+                        "q_target",
+                        "q_optimizer",
+                        "entropy_control",
+                        "replay_buffer",
+                        "steps_trained",
+                    ],
+                )(
+                    policy,
+                    policy_optimizer,
+                    q,
+                    q_target,
+                    q_optimizer,
+                    entropy_control,
+                    replay_buffer,
+                    global_step,
+                )
+    else:
+        obs = next_obs
 
     return namedtuple(
         "SACResult",
@@ -569,6 +602,7 @@ def train_sac(
             "q_optimizer",
             "entropy_control",
             "replay_buffer",
+            "steps_trained",
         ],
     )(
         policy,
@@ -578,6 +612,7 @@ def train_sac(
         q_optimizer,
         entropy_control,
         replay_buffer,
+        global_step,
     )
 
 
