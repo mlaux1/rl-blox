@@ -132,7 +132,11 @@ class EpisodicReplayBuffer:
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
 
         if sample["terminated"] or sample["truncated"]:
-            # TODO what about action, next observation, and reward?
+            for k in self.buffer:
+                if k == "reward":
+                    self.buffer[k][self.insert_idx] = 0.0
+                else:
+                    self.buffer[k][self.insert_idx] = sample[k]
             self.buffer["observation"][self.insert_idx] = sample[
                 "next_observation"
             ]
@@ -223,6 +227,10 @@ class EpisodicReplayBuffer:
         indices = rng.integers(0, len(nz), size=batch_size)
         self.sampled_indices = nz[indices]
         return self.sampled_indices
+
+    def __len__(self):
+        """Return current number of stored transitions in the replay buffer."""
+        return self.current_len
 
     # TODO save and load with pickle
 
