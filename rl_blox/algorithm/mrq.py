@@ -97,7 +97,7 @@ class EpisodicReplayBuffer:
 
         self.episode_timesteps = 0
         # track if there are any terminal transitions in the buffer
-        self.environment_terminates = True
+        self.environment_terminates = False
         self.horizon = horizon
         self.mask = np.zeros(self.buffer_size, dtype=int)
 
