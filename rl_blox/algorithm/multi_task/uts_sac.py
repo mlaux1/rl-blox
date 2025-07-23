@@ -1,4 +1,5 @@
 import random
+from dataclasses import dataclass
 
 import gymnasium as gym
 from flax import nnx
@@ -9,8 +10,15 @@ from ...blox.replay_buffer import ReplayBuffer
 from ..sac import EntropyControl, train_sac
 
 
+@dataclass(frozen=True)
+class EnvSpec:
+    name: str
+    id: int
+    context: float
+
+
 def train_uts_sac(
-    envs: list[gym.Env],
+    envs: dict[EnvSpec, gym.Env],
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     q_net: ContinuousClippedDoubleQNet,
@@ -35,7 +43,9 @@ def train_uts_sac(
     episodes_so_far = 0
 
     while steps_so_far < total_timesteps:
-        env = random.choice(envs)
+        spec, env = random.choice(list(envs.items()))
+        print(f"Selected env {spec.id} with context {spec.context}.")
+
         (
             policy,
             policy_optimizer,
@@ -65,7 +75,7 @@ def train_uts_sac(
         print(
             f"Episode {episodes_so_far} completed after {
                 ep_steps
-            } steps. Total: {steps_so_far}"
+            } steps in env {env}. Total: {steps_so_far}."
         )
 
     return (

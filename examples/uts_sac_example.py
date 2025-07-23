@@ -2,18 +2,18 @@ import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
 
-from rl_blox.algorithm.multi_task.uts_sac import train_uts_sac
+from rl_blox.algorithm.multi_task.uts_sac import EnvSpec, train_uts_sac
 from rl_blox.algorithm.sac import create_sac_state
 
 env_name = "Pendulum-v1"
-env1 = gym.make(env_name, g=9.81)
-env2 = gym.make(env_name, g=9.5)
-env3 = gym.make(env_name, g=10.0)
-env4 = gym.make(env_name, g=10.5)
 seed = 1
 verbose = 1
 
-train_envs = [env1, env2, env3, env4]
+train_envs = {
+    EnvSpec(env_name, 0, 10.0): gym.make(env_name, g=10.0),
+    EnvSpec(env_name, 1, 10.5): gym.make(env_name, g=10.5),
+    EnvSpec(env_name, 2, 9.5): gym.make(env_name, g=9.5),
+}
 
 hparams_models = dict(
     policy_hidden_nodes=[128, 128],
@@ -23,12 +23,14 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    epochs=10,
-    time_steps_per_epoch=5000,
+    total_timesteps=100_000,
     exploring_starts=0,
+    episodes_per_task=3,
 )
 
-sac_state = create_sac_state(env1, **hparams_models)
+sac_state = create_sac_state(
+    train_envs[next(iter(train_envs))], **hparams_models
+)
 sac_result = train_uts_sac(
     train_envs,
     sac_state.policy,
@@ -40,15 +42,15 @@ sac_result = train_uts_sac(
 
 
 for env in train_envs:
-    env.close()
+    train_envs[env].close()
 
 policy, _, q, _, _, _, _ = sac_result
 
 # Evaluation
 env1 = gym.make(env_name, render_mode="human", g=9.81)
 env2 = gym.make(env_name, render_mode="human", g=9.5)
-env3 = gym.make(env_name, render_mode="human", g=10.0)
-env4 = gym.make(env_name, render_mode="human", g=10.5)
+# env3 = gym.make(env_name, render_mode="human", g=10.0)
+# env4 = gym.make(env_name, render_mode="human", g=10.5)
 
 while True:
     env = env2
