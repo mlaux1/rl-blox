@@ -536,7 +536,7 @@ def update_encoder(
     done_weight: float,
     environment_terminates: bool,
 ):
-    (loss, losses), grads = nnx.value_and_grad(
+    (loss, (dynamics_loss, reward_loss, done_loss)), grads = nnx.value_and_grad(
         encoder_loss, argnums=0, has_aux=True
     )(
         encoder,
@@ -550,7 +550,7 @@ def update_encoder(
         environment_terminates,
     )
     encoder_optimizer.update(grads)
-    return loss, losses
+    return loss, dynamics_loss, reward_loss, done_loss
 
 
 def encoder_loss(
@@ -579,9 +579,9 @@ def encoder_loss(
     # after termination
     prev_not_done = 1
 
-    total_dynamics_loss = 0.0
-    total_reward_loss = 0.0
-    total_done_loss = 0.0
+    dynamics_loss = 0.0
+    reward_loss = 0.0
+    done_loss = 0.0
 
     for t in range(encoder_horizon):
         pred_done_t, pred_zs_t, pred_reward_t = encoder.model_head(
@@ -591,14 +591,12 @@ def encoder_loss(
         target_zs_t = next_zs[:, t]
         target_reward_t = batch.reward[:, t]
         target_done_t = batch.terminated[:, t]
-        total_dynamics_loss += masked_mse_loss(
-            pred_zs_t, target_zs_t, prev_not_done
-        )
-        total_reward_loss += jnp.mean(
+        dynamics_loss += masked_mse_loss(pred_zs_t, target_zs_t, prev_not_done)
+        reward_loss += jnp.mean(
             two_hot_cross_entropy_loss(the_bins, pred_reward_t, target_reward_t)
         )
         if environment_terminates:
-            total_done_loss += masked_mse_loss(
+            done_loss += masked_mse_loss(
                 pred_done_t, target_done_t, prev_not_done
             )
 
@@ -606,11 +604,11 @@ def encoder_loss(
         prev_not_done = not_done[:, t].reshape(-1, 1) * prev_not_done
 
     loss = (
-        dynamics_weight * total_dynamics_loss
-        + reward_weight * total_reward_loss
-        + done_weight * total_done_loss
+        dynamics_weight * dynamics_loss
+        + reward_weight * reward_loss
+        + done_weight * done_loss
     )
-    return loss, (total_dynamics_loss, total_reward_loss, total_done_loss)
+    return loss, (dynamics_loss, reward_loss, done_loss)
 
 
 @partial(
@@ -1140,7 +1138,7 @@ def train_mrq(
                         batch_size, encoder_horizon, True, rng
                     )
 
-                    enc_loss_value, (dynamics_loss, reward_loss, done_loss) = (
+                    enc_loss_value, dynamics_loss, reward_loss, done_loss = (
                         update_encoder(
                             encoder,
                             encoder_target,
