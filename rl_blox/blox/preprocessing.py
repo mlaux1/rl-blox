@@ -8,17 +8,22 @@ def make_two_hot_bins(
     upper_exponent: float = 10.0,
     n_bin_edges: int = 101,
 ):
-    """Create bins for two-hot encoding of continuous values.
+    r"""Create bins for two-hot encoding of continuous values.
+
+    To handle a wide range of magnitudes without prior knowledge, the locations
+    of the two-hot encoding are spaced at increasing non-uniform intervals,
+    according to :math:`\text{symexp}(x) = \text{sign}(x) (\exp(x) - 1)` with
+    :math:`x \in \left[ x_{lo}, x_{hi} \right]`.
 
     Parameters
     ----------
     lower_exponent : float, optional
-        Lower exponent to be transformed by symmetric exponential function
-        to define lower limit of the bins.
+        Lower exponent :math:`x_{lo}` to be transformed by symmetric
+        exponential function to define lower limit of the bins.
 
     upper_exponent : float, optional
-        Upper exponent to be transformed by symmetric exponential function
-        to define upper limit of the bins.
+        Upper exponent :math:`x_{hi}` to be transformed by symmetric
+        exponential function to define upper limit of the bins.
 
     n_bin_edges : int, optional
         Number of bin edges to create. Must be a positive integer.
@@ -94,7 +99,11 @@ def two_hot_decoding(
 def two_hot_cross_entropy_loss(
     bins: jnp.ndarray, logits: jnp.ndarray, target: jnp.ndarray
 ) -> jnp.ndarray:
-    """Cross-entropy loss between two-hot encoded prediction and targets.
+    """Cross-entropy (CE) loss between two-hot encoded prediction and targets.
+
+    The CE loss of two-hot encoded real values is more effective than
+    mean squared error (MSE) loss for sparse (i.e., mostly 0) real values, and
+    it is more robust to different magnitudes.
 
     Parameters
     ----------
