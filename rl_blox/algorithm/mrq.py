@@ -948,7 +948,7 @@ def train_mrq(
 
     policy : DeterministicTanhPolicy
         Policy for the MR.Q algorithm. Maps the latent state representation
-        to actions in the environment.
+        to actions in the environment, :math:`\pi(\boldsymbol{z}_s) = a`.
 
     policy_optimizer : nnx.Optimizer
         Optimizer for the policy.
@@ -956,7 +956,7 @@ def train_mrq(
     q : ContinuousClippedDoubleQNet
         Action-value function approximator for the MR.Q algorithm. Maps the
         latent state-action representation to the expected value of the
-        state-action pair.
+        state-action pair, :math:`Q(\boldsymbol{z}_{sa})`.
 
     q_optimizer : nnx.Optimizer
         Optimizer for the action-value function approximator.
