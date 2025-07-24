@@ -449,6 +449,8 @@ class Encoder(nnx.Module):
         zsa : array, shape (n_samples, zsa_dim)
             Latent state-action representation.
         """
+        # Difference to original implementation! The original implementation
+        # scales actions to [-1, 1]. We do not scale the actions here.
         za = self.activation(self.za(action))
         return self.zsa(jnp.concatenate((zs, za), axis=-1))
 
