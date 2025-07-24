@@ -29,6 +29,7 @@ Algorithm Interface
    td3.train_td3
    td3_lap.train_td3_lap
    td7.train_td7
+   mrq.train_mrq
    sac.train_sac
    pets.train_pets
    cmaes.train_cmaes
@@ -50,6 +51,9 @@ Functional Blox
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
    td7.td7_update_critic
+   mrq.encoder_loss
+   mrq.critic_loss
+   mrq.deterministic_policy_gradient_loss
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
@@ -70,6 +74,7 @@ Data Blox
    sac.EntropyControl
    pets.PETSMPCConfig
    pets.PETSMPCState
+   mrq.Encoder
 
 
 :mod:`rl_blox.blox`
@@ -109,6 +114,10 @@ Functional Blox
    losses.dqn_loss
    losses.nature_dqn_loss
    losses.ddqn_loss
+   preprocessing.make_two_hot_bins
+   preprocessing.two_hot_encoding
+   preprocessing.two_hot_decoding
+   preprocessing.two_hot_cross_entropy_loss
    function_approximator.norm.avg_l1_norm
    replay_buffer.lap_priority
 
