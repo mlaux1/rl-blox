@@ -776,7 +776,7 @@ def deterministic_policy_gradient_loss(
 
 def create_mrq_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    policy_hidden_nodes: list[int] | tuple[int] = (512, 512),
     policy_activation: str = "relu",
     policy_learning_rate: float = 3e-4,
     policy_weight_decay: float = 1e-4,
