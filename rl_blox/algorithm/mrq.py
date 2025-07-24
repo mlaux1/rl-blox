@@ -616,6 +616,7 @@ def encoder_loss(
 @partial(
     nnx.jit,
     static_argnames=(
+        "gamma",
         "reward_scale",
         "target_reward_scale",
         "activation_weight",
@@ -638,13 +639,16 @@ def update_critic_and_policy(
         jnp.ndarray,
         jnp.ndarray,
     ],
-    reward: jnp.ndarray,
-    term_discount: jnp.ndarray,
+    gamma: float,
     reward_scale: float,
     target_reward_scale: float,
     activation_weight: float,
 ) -> tuple[float, float, tuple[float, float], float, jnp.ndarray]:
     """Update the critic network."""
+    n_step_return, discount = n_step_truncated_return(
+        batch.reward, batch.terminated, gamma
+    )
+
     (q_loss, (zs, q_mean, max_abs_td_error)), grads = nnx.value_and_grad(
         critic_loss, argnums=0, has_aux=True
     )(
@@ -654,8 +658,8 @@ def update_critic_and_policy(
         encoder_target,
         next_action,
         batch,
-        reward,
-        term_discount,
+        n_step_return,
+        discount,
         reward_scale,
         target_reward_scale,
     )
@@ -689,8 +693,8 @@ def critic_loss(
         jnp.ndarray,
         jnp.ndarray,
     ],
-    reward: jnp.ndarray,
-    term_discount: jnp.ndarray,
+    n_step_return: jnp.ndarray,
+    discount: jnp.ndarray,
     reward_scale: float,
     target_reward_scale: float,
 ) -> tuple[jnp.ndarray, tuple[jnp.ndarray, float, jnp.ndarray]]:
@@ -701,7 +705,7 @@ def critic_loss(
     )
     q_next = jax.lax.stop_gradient(q_target(next_zsa).squeeze())
     q_target_value = (
-        reward + term_discount * q_next * target_reward_scale
+        n_step_return + discount * q_next * target_reward_scale
     ) / reward_scale
 
     zs = jax.lax.stop_gradient(encoder.encode_zs(observation))
@@ -1170,9 +1174,6 @@ def train_mrq(
             batch = replay_buffer.sample_batch(
                 batch_size, q_horizon, False, rng
             )
-            reward, term_discount = n_step_truncated_return(
-                batch.reward, batch.terminated, gamma
-            )
             # policy smoothing: sample next actions from target policy
             key, sampling_key = jax.random.split(key, 2)
             next_actions = _sample_target_actions(
@@ -1195,8 +1196,7 @@ def train_mrq(
                 encoder_target,
                 next_actions,
                 batch,
-                reward,
-                term_discount,
+                gamma,
                 reward_scale,
                 target_reward_scale,
                 activation_weight,
