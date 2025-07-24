@@ -674,6 +674,7 @@ def encoder_loss(
         dynamics_loss += masked_mse_loss(pred_zs_t, target_zs_t, prev_not_done)
         reward_loss += jnp.mean(
             two_hot_cross_entropy_loss(the_bins, pred_reward_t, target_reward_t)
+            * prev_not_done
         )
         if environment_terminates:
             done_loss += masked_mse_loss(
