@@ -29,6 +29,7 @@ Algorithm Interface
    td3.train_td3
    td3_lap.train_td3_lap
    td7.train_td7
+   mrq.train_mrq
    sac.train_sac
    pets.train_pets
    cmaes.train_cmaes
