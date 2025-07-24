@@ -191,7 +191,7 @@ class EpisodicReplayBuffer:
         indices = self._sample_idx(batch_size, rng)
         # TODO % self.current_len or % self.buffer_size? - maybe self.buffer_size is possible because of the mask?
         indices = (
-            indices[:, np.newaxis] + np.arange(self.horizon)[np.newaxis]
+            indices[:, np.newaxis] + np.arange(horizon)[np.newaxis]
         ) % self.current_len
 
         if include_intermediate:
