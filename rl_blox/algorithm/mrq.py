@@ -723,36 +723,37 @@ def critic_loss(
     return value_loss, (zs, q_mean, max_abs_td_error)
 
 
-def multistep_reward(
+def n_step_truncated_return(
     reward: jnp.ndarray, terminated: jnp.ndarray, gamma: float
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Compute the multistep reward.
+    """Compute the n-step truncated return.
 
     Parameters
     ----------
-    reward : jnp.ndarray
-        Reward array of shape (batch_size, horizon).
+    reward : jnp.ndarray, shape (batch_size, horizon)
+        Rewards.
 
-    terminated : jnp.ndarray
-        Termination flag array of shape (batch_size, horizon).
+    terminated : jnp.ndarray, shape (batch_size, horizon)
+        Termination flags.
 
     gamma : float
         Discount factor.
 
     Returns
     -------
-    ms_reward : jnp.ndarray, shape (batch_size,)
-        Multistep reward per sample.
+    n_step_return : jnp.ndarray, shape (batch_size,)
+        n-step truncated return.
 
-    scale : jnp.ndarray, shape (batch_size,)
-        Scale factor per sample.
+    discount : jnp.ndarray, shape (batch_size,)
+        Discount factor for the remaining steps (step n + 1) per sample.
+        This is zero when the episode terminated.
     """
-    ms_reward = 0.0
-    scale = 1.0
+    n_step_return = 0.0
+    discount = 1.0
     for t in range(reward.shape[1]):
-        ms_reward += scale * reward[:, t]
-        scale *= gamma * (1 - terminated[:, t])
-    return ms_reward, scale
+        n_step_return += discount * reward[:, t]
+        discount *= gamma * (1 - terminated[:, t])
+    return n_step_return, discount
 
 
 def deterministic_policy_gradient_loss(
@@ -1169,7 +1170,7 @@ def train_mrq(
             batch = replay_buffer.sample_batch(
                 batch_size, q_horizon, False, rng
             )
-            reward, term_discount = multistep_reward(
+            reward, term_discount = n_step_truncated_return(
                 batch.reward, batch.terminated, gamma
             )
             # policy smoothing: sample next actions from target policy
