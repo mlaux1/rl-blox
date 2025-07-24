@@ -747,8 +747,8 @@ def multistep_reward(
     scale : jnp.ndarray, shape (batch_size,)
         Scale factor per sample.
     """
-    ms_reward = 0
-    scale = 1
+    ms_reward = 0.0
+    scale = 1.0
     for t in range(reward.shape[1]):
         ms_reward += scale * reward[:, t]
         scale *= gamma * (1 - terminated[:, t])
@@ -922,6 +922,18 @@ def train_mrq(
     EpisodicReplayBuffer,
 ]:
     r"""Model-based Representation for Q-learning (MR.Q).
+
+    MR.Q is an attempt to find a unifying model-free reinforcement learning
+    algorithm that can address a diverse class of domains and problem settings
+    with model-based representation learning. The state representation and
+    state-action representation are trained such that a linear model can predict
+    from it if the episode is terminated, the next latent state, and the reward.
+
+    MR.Q is an extension of TD3 (see :func:`.td3.train_td3`) with LAP
+    (see :func:`.td3_lap.train_td3_lap`) and is similar to TD7
+    (see :func:`.td7.train_td7`). TD7 learns encoders for states and
+    state-action pairs, but uses a different loss and uses the embeddings
+    together with the original states and actions unlike MR.Q.
 
     Parameters
     ----------
