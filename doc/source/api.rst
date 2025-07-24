@@ -51,6 +51,9 @@ Functional Blox
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
    td7.td7_update_critic
+   mrq.encoder_loss
+   mrq.critic_loss
+   mrq.deterministic_policy_gradient_loss
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
@@ -71,6 +74,7 @@ Data Blox
    sac.EntropyControl
    pets.PETSMPCConfig
    pets.PETSMPCState
+   mrq.Encoder
 
 
 :mod:`rl_blox.blox`

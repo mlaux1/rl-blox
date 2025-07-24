@@ -323,7 +323,27 @@ class LayerNormMLP(nnx.Module):
 
 
 class Encoder(nnx.Module):
-    """Encoder for the MR.Q algorithm.
+    r"""Encoder for the MR.Q algorithm.
+
+    The state embedding vector :math:`\boldsymbol{z}_s` is obtained as an
+    intermediate component by training end-to-end with the state-action encoder.
+    MR.Q handles different input modalities by swapping the architecture of
+    the state encoder. Since :math:`\boldsymbol{z}_s` is a vector, the
+    remaining networks are independent of the observation space and use
+    feedforward networks. Note that in this implementation, we can only handle
+    observations / states represented by real vectors.
+
+    Given the transition :math:`(o, a, r, d, o')` consisting of observation,
+    action, reward, done flag (1 - terminated), and next observation
+    respectively, the encoder predicts
+
+    .. math::
+
+        \boldsymbol{z}_s &= f(o)\\
+        \boldsymbol{z}_{sa} &= g(\boldsymbol{z}_s, a)\\
+        (\tilde{d}, \boldsymbol{z}_{s'}, \tilde{r})
+        &= \boldsymbol{w}^T \boldsymbol{z}_{sa} + \boldsymbol{b}
+
 
     Parameters
     ----------
@@ -564,6 +584,66 @@ def encoder_loss(
     done_weight: float,
     environment_terminates: bool,
 ) -> tuple[float, tuple[float, float, float]]:
+    r"""Loss for encoder.
+
+    The encoder loss is based on unrolling the dynamics of the learned model
+    over a short horizon. Given a subsequence of an episode
+    :math:`(o_0, a_0, r_1, d_1, s_1, \ldots, r_H, d_H, s_H)` with the encoder
+    horizon :math:`H`, the model is unrolled by encoding the initial observation
+    :math:`\tilde{\boldsymbol{z}}_s^0 = f(o_0)`, then by repeatedly applying the
+    state-action encoder :math:`g` and linear MDP predictor:
+
+    .. math::
+
+        (\tilde{d}^t, \boldsymbol{z}_{s}^t, \tilde{r}^t)
+        = \boldsymbol{w}^T g(\boldsymbol{z}_s^{t-1}, a^{t-1}) + \boldsymbol{b}
+
+    The final loss is summed over the unrolled model and balanced by
+    corresponding hyperparameters:
+
+    .. math::
+
+        \mathcal{L} (f, g, \boldsymbol{w}, \boldsymbol{b})
+        = \sum_{t=1}^H
+        \lambda_{Reward} \mathcal{L}_{Reward}(\tilde{r}^t)
+        + \lambda_{Dynamics} \mathcal{L}_{Dynamics}(\boldsymbol{z}_s^t)
+        + \lambda_{Terminal} \mathcal{L}_{Terminal}(\tilde{d}^t)
+
+    The reward loss is :func:`~.blox.preprocessing.two_hot_cross_entropy_loss`.
+    The dynamics loss is a mean squared error (MSE) loss between the predicted
+    latent state and the latent representation of the observed state. The
+    terminal loss is an MSE loss between the observed and predicted flag.
+
+    Parameters
+    ----------
+    encoder : Encoder
+        Encoder for model-based representation learning.
+
+    encoder_target : Encoder
+        Target encoder.
+
+    the_bins : array, shape (n_bin_endges,)
+        Bin edges for two-hot encoding.
+
+    batch : tuple
+        Batch sampled from replay buffer.
+
+    encoder_horizon : int
+        Horizon :math:`H` for dynamics unrolling.
+
+    dynamics_weight : float
+        Weight for the dynamics loss.
+
+    reward_weight : float
+        Weight for the reward loss.
+
+    done_weight : float
+        Weight for the done loss.
+
+    environment_terminates : bool
+        Flag that indicates if the environment terminates. If it does not,
+        we will not use the done loss component.
+    """
     flat_next_observation = batch.next_observation.reshape(
         -1, *batch.next_observation.shape[2:]
     )
