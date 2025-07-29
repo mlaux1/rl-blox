@@ -519,27 +519,28 @@ class DeterministicPolicyWithEncoder(nnx.Module):
 
 def masked_mse_loss(
     predictions: jnp.ndarray, targets: jnp.ndarray, mask: jnp.ndarray
-) -> jnp.ndarray:
+) -> float:
     """Masked mean squared error loss.
 
     Parameters
     ----------
-    predictions : jnp.ndarray
+    predictions : array, shape (n_samples, n_features)
         Predicted values.
 
-    targets : jnp.ndarray
+    targets : array, shape (n_samples, n_features)
         Target values.
 
-    mask : jnp.ndarray
-        Mask indicating which values to include in the loss calculation.
+    mask : array, shape (n_samples,)
+        Mask indicating which values to include in the loss calculation with 1.
 
     Returns
     -------
-    loss : jnp.ndarray
+    loss : float
         Masked mean squared error loss.
     """
     return jnp.mean(
-        optax.squared_error(predictions=predictions, targets=targets) * mask
+        optax.squared_error(predictions=predictions, targets=targets)
+        * mask[:, jnp.newaxis]
     )
 
 
@@ -676,7 +677,7 @@ def encoder_loss(
     not_done = 1 - batch.terminated
     # in subtrajectories with termination mask, mask out losses
     # after termination
-    prev_not_done = 1
+    prev_not_done = jnp.ones_like(not_done[:, 0])
 
     dynamics_loss = 0.0
     reward_loss = 0.0
@@ -710,7 +711,7 @@ def encoder_loss(
             )
 
         # Update termination mask
-        prev_not_done = not_done[:, t].reshape(-1, 1) * prev_not_done
+        prev_not_done = not_done[:, t] * prev_not_done
 
     loss = (
         dynamics_weight * dynamics_loss
