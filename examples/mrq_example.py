@@ -1,4 +1,6 @@
 import gymnasium as gym
+import jax.numpy as jnp
+import numpy as np
 
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.logging.logger import AIMLogger, StdoutLogger
@@ -15,8 +17,8 @@ hparams_models = dict(
 )
 hparams_algorithm = dict(
     seed=seed,
-    total_timesteps=15_000,
-    buffer_size=15_000,
+    total_timesteps=12_000,
+    buffer_size=12_000,
     learning_starts=5_000,
 )
 
@@ -25,7 +27,7 @@ if verbose:
         "This example uses the AIM logger. You will not see any output on "
         "stdout. Run 'aim up' to analyze the progress."
     )
-logger = StdoutLogger()  # AIMLogger()
+logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="MR.Q",
@@ -48,4 +50,22 @@ result = train_mrq(
 )
 env.close()
 
-# TODO evaluation
+# Evaluation
+env = gym.make(env_name, render_mode="human")
+while True:
+    done = False
+    infos = {}
+    obs, _ = env.reset()
+    while not done:
+        obs = jnp.asarray(obs)
+        action = result.policy(result.encoder.encode_zs(obs))
+        next_obs, reward, termination, truncation, infos = env.step(
+            np.asarray(action)
+        )
+        done = termination or truncation
+        if verbose:
+            zs = result.encoder.encode_zs(obs)
+            zsa = result.encoder.encode_zsa(zs, action)
+            q_value = result.q(zsa)
+            print(f"{q_value=}")
+        obs = np.asarray(next_obs)
