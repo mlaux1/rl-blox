@@ -562,13 +562,15 @@ def update_encoder(
     encoder_target: Encoder,
     encoder_optimizer: nnx.Optimizer,
     the_bins: jnp.ndarray,
-    batch: tuple[jnp.ndarray],
+    batches: tuple[jnp.ndarray],
     encoder_horizon: int,
     dynamics_weight: float,
     reward_weight: float,
     done_weight: float,
     environment_terminates: bool,
+    delayed_train_step_idx: int,
 ):
+    batch = jax.tree_util.tree_map(lambda x: x[delayed_train_step_idx], batches)
     (
         loss,
         (dynamics_loss, reward_loss, done_loss, reward_mse),
@@ -1272,11 +1274,15 @@ def train_mrq(
                 target_reward_scale = reward_scale
                 reward_scale = replay_buffer.reward_scale()
 
-                for delayed_train_step_idx in range(1, target_delay + 1):
-                    batch = replay_buffer.sample_batch(
-                        batch_size, encoder_horizon, True, rng
-                    )
-
+                batch = replay_buffer.sample_batch(
+                    batch_size * target_delay, encoder_horizon, True, rng
+                )
+                # resize batch to (target_delay, batch_size, ...)
+                batches = jax.tree_util.tree_map(
+                    lambda x: x.reshape(target_delay, batch_size, *x.shape[1:]),
+                    batch,
+                )
+                for delayed_train_step_idx in range(target_delay):
                     (
                         enc_loss_value,
                         dynamics_loss,
@@ -1288,12 +1294,13 @@ def train_mrq(
                         policy_with_encoder_target.encoder,
                         encoder_optimizer,
                         the_bins,
-                        batch,
+                        batches,
                         encoder_horizon,
                         dynamics_weight,
                         reward_weight,
                         done_weight,
                         replay_buffer.environment_terminates,
+                        delayed_train_step_idx,
                     )
                     if logger is not None:
                         stats = {
@@ -1305,7 +1312,7 @@ def train_mrq(
                         }
                         log_step = (
                             global_step
-                            + 1
+                            + 2
                             - target_delay
                             + delayed_train_step_idx
                         )
