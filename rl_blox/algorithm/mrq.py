@@ -506,6 +506,9 @@ class Encoder(nnx.Module):
 class DeterministicPolicyWithEncoder(nnx.Module):
     """Combines encoder and deterministic policy."""
 
+    encoder: Encoder
+    policy: DeterministicTanhPolicy
+
     def __init__(self, encoder: Encoder, policy: DeterministicTanhPolicy):
         self.encoder = encoder
         self.policy = policy
@@ -1232,9 +1235,10 @@ def train_mrq(
         if global_step >= learning_starts:
             epoch += 1
             if epoch % target_delay == 0:
-                hard_target_net_update(policy, policy_target)
+                hard_target_net_update(
+                    policy_with_encoder, policy_with_encoder_target
+                )
                 hard_target_net_update(q, q_target)
-                hard_target_net_update(encoder, encoder_target)
 
                 target_reward_scale = reward_scale
                 reward_scale = replay_buffer.reward_scale()
@@ -1251,8 +1255,8 @@ def train_mrq(
                         done_loss,
                         reward_mse,
                     ) = update_encoder(
-                        encoder,
-                        encoder_target,
+                        policy_with_encoder.encoder,
+                        policy_with_encoder_target.encoder,
                         encoder_optimizer,
                         the_bins,
                         batch,
@@ -1299,10 +1303,10 @@ def train_mrq(
                 q,
                 q_target,
                 q_optimizer,
-                policy,
+                policy_with_encoder.policy,
                 policy_optimizer,
-                encoder,
-                encoder_target,
+                policy_with_encoder.encoder,
+                policy_with_encoder_target.encoder,
                 next_actions,
                 batch,
                 gamma,
