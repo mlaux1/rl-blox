@@ -282,6 +282,9 @@ class LayerNormMLP(nnx.Module):
     hidden_layers: list[nnx.Linear]
     """Hidden layers."""
 
+    layer_norms: list[nnx.LayerNorm]
+    """Layer normalization layers for hidden layers."""
+
     output_layer: nnx.Linear
     """Output layer."""
 
