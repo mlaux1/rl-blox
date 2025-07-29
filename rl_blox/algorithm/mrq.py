@@ -777,7 +777,7 @@ def update_critic_and_policy(
     q_optimizer.update(grads)
 
     (policy_loss, policy_loss_components), grads = nnx.value_and_grad(
-        deterministic_policy_gradient_loss, argnums=0, has_aux=True
+        mrq_policy_loss, argnums=0, has_aux=True
     )(
         policy,
         q,
@@ -871,23 +871,48 @@ def n_step_truncated_return(
     return n_step_return, discount
 
 
-def deterministic_policy_gradient_loss(
+def mrq_policy_loss(
     policy: DeterministicTanhPolicy,
     q: nnx.Module,
     encoder: Encoder,
     zs: jnp.ndarray,
     activation_weight: float,
 ) -> tuple[float, tuple[float, float]]:
+    """Compute the policy loss for MR.Q.
+
+    Parameters
+    ----------
+    policy : DeterministicTanhPolicy
+        The policy network.
+
+    q : nnx.Module
+        The Q-value network used to evaluate the policy.
+
+    encoder : Encoder
+        The encoder network to encode the state-action pairs.
+
+    zs : jnp.ndarray
+        The latent state representation of the current observation.
+
+    activation_weight : float
+        Weight for the regularization term on the policy activation.
+
+    Returns
+    -------
+    policy_loss : float
+        The computed policy loss.
+
+    loss_components : tuple
+        A tuple containing the DPG loss and the policy regularization term.
+    """
     activation = policy.policy_net(zs)
-    action = jax.lax.stop_gradient(policy.scale_output(activation))
-    zsa = jax.lax.stop_gradient(encoder.encode_zsa(zs, action))
+    action = policy.scale_output(activation)
+    zsa = encoder.encode_zsa(zs, action)
     # - to perform gradient ascent with a minimizer
     dpg_loss = -q(zsa).mean()
     policy_regularization = jnp.square(activation).mean()
-    return dpg_loss + activation_weight * policy_regularization, (
-        dpg_loss,
-        policy_regularization,
-    )
+    policy_loss = dpg_loss + activation_weight * policy_regularization
+    return policy_loss, (dpg_loss, policy_regularization)
 
 
 def create_mrq_state(
