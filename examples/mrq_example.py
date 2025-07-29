@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
-from rl_blox.logging.logger import AIMLogger, StdoutLogger
+from rl_blox.logging.logger import AIMLogger
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
