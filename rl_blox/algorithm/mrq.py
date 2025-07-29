@@ -15,7 +15,11 @@ from flax import nnx
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.losses import huber_loss
-from ..blox.preprocessing import make_two_hot_bins, two_hot_cross_entropy_loss
+from ..blox.preprocessing import (
+    make_two_hot_bins,
+    two_hot_cross_entropy_loss,
+    two_hot_decoding,
+)
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import make_sample_actions
@@ -558,9 +562,10 @@ def update_encoder(
     done_weight: float,
     environment_terminates: bool,
 ):
-    (loss, (dynamics_loss, reward_loss, done_loss)), grads = nnx.value_and_grad(
-        encoder_loss, argnums=0, has_aux=True
-    )(
+    (
+        loss,
+        (dynamics_loss, reward_loss, done_loss, reward_mse),
+    ), grads = nnx.value_and_grad(encoder_loss, argnums=0, has_aux=True)(
         encoder,
         encoder_target,
         the_bins,
@@ -572,7 +577,7 @@ def update_encoder(
         environment_terminates,
     )
     encoder_optimizer.update(grads)
-    return loss, dynamics_loss, reward_loss, done_loss
+    return loss, dynamics_loss, reward_loss, done_loss, reward_mse
 
 
 def encoder_loss(
@@ -585,7 +590,7 @@ def encoder_loss(
     reward_weight: float,
     done_weight: float,
     environment_terminates: bool,
-) -> tuple[float, tuple[float, float, float]]:
+) -> tuple[float, tuple[float, float, float, float]]:
     r"""Loss for encoder.
 
     The encoder loss is based on unrolling the dynamics of the learned model
@@ -645,6 +650,15 @@ def encoder_loss(
     environment_terminates : bool
         Flag that indicates if the environment terminates. If it does not,
         we will not use the done loss component.
+
+    Returns
+    -------
+    loss : float
+        Total loss for the encoder.
+
+    loss_components : tuple
+        Individual components of the loss: dynamics_loss, reward_loss,
+        done_loss, reward_mse.
     """
     flat_next_observation = batch.next_observation.reshape(
         -1, *batch.next_observation.shape[2:]
@@ -663,10 +677,11 @@ def encoder_loss(
 
     dynamics_loss = 0.0
     reward_loss = 0.0
+    reward_mse = 0.0
     done_loss = 0.0
 
     for t in range(encoder_horizon):
-        pred_done_t, pred_zs_t, pred_reward_t = encoder.model_head(
+        pred_done_t, pred_zs_t, pred_reward_logits_t = encoder.model_head(
             pred_zs_t, batch.action[:, t]
         )
 
@@ -675,8 +690,16 @@ def encoder_loss(
         target_done_t = batch.terminated[:, t]
         dynamics_loss += masked_mse_loss(pred_zs_t, target_zs_t, prev_not_done)
         reward_loss += jnp.mean(
-            two_hot_cross_entropy_loss(the_bins, pred_reward_t, target_reward_t)
+            two_hot_cross_entropy_loss(
+                the_bins, pred_reward_logits_t, target_reward_t
+            )
             * prev_not_done
+        )
+        pred_reward_t = two_hot_decoding(
+            the_bins, jax.nn.softmax(pred_reward_logits_t)
+        )
+        reward_mse += masked_mse_loss(
+            pred_reward_t, target_reward_t, prev_not_done
         )
         if environment_terminates:
             done_loss += masked_mse_loss(
@@ -691,7 +714,7 @@ def encoder_loss(
         + reward_weight * reward_loss
         + done_weight * done_loss
     )
-    return loss, (dynamics_loss, reward_loss, done_loss)
+    return loss, (dynamics_loss, reward_loss, done_loss, reward_mse)
 
 
 @partial(
@@ -1221,19 +1244,23 @@ def train_mrq(
                         batch_size, encoder_horizon, True, rng
                     )
 
-                    enc_loss_value, dynamics_loss, reward_loss, done_loss = (
-                        update_encoder(
-                            encoder,
-                            encoder_target,
-                            encoder_optimizer,
-                            the_bins,
-                            batch,
-                            encoder_horizon,
-                            dynamics_weight,
-                            reward_weight,
-                            done_weight,
-                            replay_buffer.environment_terminates,
-                        )
+                    (
+                        enc_loss_value,
+                        dynamics_loss,
+                        reward_loss,
+                        done_loss,
+                        reward_mse,
+                    ) = update_encoder(
+                        encoder,
+                        encoder_target,
+                        encoder_optimizer,
+                        the_bins,
+                        batch,
+                        encoder_horizon,
+                        dynamics_weight,
+                        reward_weight,
+                        done_weight,
+                        replay_buffer.environment_terminates,
                     )
                     if logger is not None:
                         stats = {
@@ -1241,6 +1268,7 @@ def train_mrq(
                             "dynamics loss": dynamics_loss,
                             "reward loss": reward_loss,
                             "done loss": done_loss,
+                            "reward mse": reward_mse,
                         }
                         log_step = (
                             global_step
