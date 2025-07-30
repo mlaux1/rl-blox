@@ -1349,6 +1349,15 @@ def train_mrq(
                     batch_size,
                 )
                 if logger is not None:
+                    log_step = global_step + 1
+                    logger.record_stat(
+                        "reward scale", reward_scale, step=log_step
+                    )
+                    logger.record_stat(
+                        "target reward scale",
+                        target_reward_scale,
+                        step=log_step,
+                    )
                     keys = [
                         "encoder loss",
                         "dynamics loss",
@@ -1356,10 +1365,13 @@ def train_mrq(
                         "done loss",
                         "reward mse",
                     ]
-                    log_step = global_step + 1
                     for k, v in zip(keys, losses, strict=False):
                         logger.record_stat(k, v, step=log_step)
-                    # TODO log epochs
+                    logger.record_epoch(
+                        "policy_with_encoder_target", policy_with_encoder_target
+                    )
+                    logger.record_epoch("q_target", q_target)
+                    logger.record_epoch("encoder", policy_with_encoder.encoder)
 
             batch = replay_buffer.sample_batch(
                 batch_size, q_horizon, False, rng
@@ -1403,15 +1415,8 @@ def train_mrq(
                     policy_regularization,
                     step=global_step + 1,
                 )
-                logger.record_stat(
-                    "reward scale", reward_scale, step=global_step + 1
-                )
-                logger.record_stat(
-                    "target reward scale",
-                    target_reward_scale,
-                    step=global_step + 1,
-                )
-                # TODO log epoch
+                logger.record_epoch("q", q)
+                logger.record_epoch("policy", policy_with_encoder.policy)
 
             # TODO define priority with max_abs_td_error
 
