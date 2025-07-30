@@ -555,6 +555,8 @@ def masked_mse_loss(
         "reward_weight",
         "done_weight",
         "environment_terminates",
+        "target_delay",
+        "batch_size",
     ),
 )
 def update_encoder(
@@ -570,7 +572,6 @@ def update_encoder(
     environment_terminates: bool,
     target_delay: int,
     batch_size: int,
-    losses: jnp.ndarray,
 ) -> jnp.ndarray:
     def loop_body(delayed_train_step_idx, args):
         encoder, encoder_optimizer, losses = args
@@ -597,7 +598,13 @@ def update_encoder(
         )
         return encoder, encoder_optimizer, losses
 
-    (encoder, encoder_optimizer, losses) = nnx.fori_loop(
+    # resize batches to (target_delay, batch_size, ...)
+    batches = jax.tree_util.tree_map(
+        lambda x: x.reshape(target_delay, batch_size, *x.shape[1:]),
+        batches,
+    )
+    losses = jnp.zeros((target_delay, 5), dtype=jnp.float32)
+    encoder, encoder_optimizer, losses = nnx.fori_loop(
         0, target_delay, loop_body, (encoder, encoder_optimizer, losses)
     )
     return losses
@@ -1327,11 +1334,6 @@ def train_mrq(
                 batches = replay_buffer.sample_batch(
                     batch_size * target_delay, encoder_horizon, True, rng
                 )
-                # resize batch to (target_delay, batch_size, ...)
-                batches = jax.tree_util.tree_map(
-                    lambda x: x.reshape(target_delay, batch_size, *x.shape[1:]),
-                    batches,
-                )
                 losses = update_encoder(
                     policy_with_encoder.encoder,
                     policy_with_encoder_target.encoder,
@@ -1345,7 +1347,6 @@ def train_mrq(
                     replay_buffer.environment_terminates,
                     target_delay,
                     batch_size,
-                    jnp.zeros((target_delay, 5), dtype=jnp.float32),
                 )
                 if logger is not None:
                     keys = [
