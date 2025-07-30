@@ -684,12 +684,22 @@ def encoder_loss(
     # after termination
     prev_not_done = jnp.ones_like(not_done[:, 0])
 
-    dynamics_loss = 0.0
-    reward_loss = 0.0
-    reward_mse = 0.0
-    done_loss = 0.0
+    @nnx.scan(
+        in_axes=(nnx.Carry, None, None, None, None, None, None, 0),
+        out_axes=(nnx.Carry, 0, 0, 0, 0),
+    )
+    def model_rollout(
+        zs_t_and_prev_not_done,
+        encoder,
+        the_bins,
+        batch,
+        next_zs,
+        not_done,
+        environment_terminates,
+        t,
+    ):
+        pred_zs_t, prev_not_done = zs_t_and_prev_not_done
 
-    for t in range(encoder_horizon):
         pred_done_t, pred_zs_t, pred_reward_logits_t = encoder.model_head(
             pred_zs_t, batch.action[:, t]
         )
@@ -697,8 +707,8 @@ def encoder_loss(
         target_zs_t = next_zs[:, t]
         target_reward_t = batch.reward[:, t]
         target_done_t = batch.terminated[:, t]
-        dynamics_loss += masked_mse_loss(pred_zs_t, target_zs_t, prev_not_done)
-        reward_loss += jnp.mean(
+        dynamics_loss = masked_mse_loss(pred_zs_t, target_zs_t, prev_not_done)
+        reward_loss = jnp.mean(
             two_hot_cross_entropy_loss(
                 the_bins, pred_reward_logits_t, target_reward_t
             )
@@ -707,23 +717,49 @@ def encoder_loss(
         pred_reward_t = two_hot_decoding(
             the_bins, jax.nn.softmax(pred_reward_logits_t)
         )
-        reward_mse += masked_mse_loss(
+        reward_mse = masked_mse_loss(
             pred_reward_t, target_reward_t, prev_not_done
         )
-        if environment_terminates:
-            done_loss += masked_mse_loss(
-                pred_done_t, target_done_t, prev_not_done
-            )
+        done_loss = jnp.where(
+            environment_terminates,
+            masked_mse_loss(pred_done_t, target_done_t, prev_not_done),
+            0.0,
+        )
 
         # Update termination mask
         prev_not_done = not_done[:, t] * prev_not_done
 
-    loss = (
+        return (
+            (pred_zs_t, prev_not_done),
+            dynamics_loss,
+            reward_loss,
+            done_loss,
+            reward_mse,
+        )
+
+    _, dynamics_loss, reward_loss, done_loss, reward_mse = model_rollout(
+        (pred_zs_t, prev_not_done),
+        encoder,
+        the_bins,
+        batch,
+        next_zs,
+        not_done,
+        environment_terminates,
+        jnp.arange(encoder_horizon),
+    )
+
+    dynamics_loss = jnp.sum(dynamics_loss)
+    reward_loss = jnp.sum(reward_loss)
+    done_loss = jnp.sum(done_loss)
+    reward_mse = jnp.sum(reward_mse)
+
+    total_loss = (
         dynamics_weight * dynamics_loss
         + reward_weight * reward_loss
         + done_weight * done_loss
     )
-    return loss, (dynamics_loss, reward_loss, done_loss, reward_mse)
+
+    return total_loss, (dynamics_loss, reward_loss, done_loss, reward_mse)
 
 
 @partial(
