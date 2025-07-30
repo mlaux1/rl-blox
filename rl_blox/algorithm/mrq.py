@@ -571,7 +571,7 @@ def update_encoder(
     target_delay: int,
     batch_size: int,
     losses: jnp.ndarray,
-):
+) -> jnp.ndarray:
     def loop_body(delayed_train_step_idx, args):
         encoder, encoder_optimizer, losses = args
         batch = jax.tree_util.tree_map(
@@ -600,7 +600,7 @@ def update_encoder(
     (encoder, encoder_optimizer, losses) = nnx.fori_loop(
         0, target_delay, loop_body, (encoder, encoder_optimizer, losses)
     )
-    return losses[:, 0], losses[:, 1], losses[:, 2], losses[:, 3], losses[:, 4]
+    return losses
 
 
 def encoder_loss(
@@ -1332,14 +1332,7 @@ def train_mrq(
                     lambda x: x.reshape(target_delay, batch_size, *x.shape[1:]),
                     batches,
                 )
-                losses = jnp.zeros((target_delay, 5), dtype=jnp.float32)
-                (
-                    enc_loss_value,
-                    dynamics_loss,
-                    reward_loss,
-                    done_loss,
-                    reward_mse,
-                ) = update_encoder(
+                losses = update_encoder(
                     policy_with_encoder.encoder,
                     policy_with_encoder_target.encoder,
                     encoder_optimizer,
@@ -1352,20 +1345,20 @@ def train_mrq(
                     replay_buffer.environment_terminates,
                     target_delay,
                     batch_size,
-                    losses,
+                    jnp.zeros((target_delay, 5), dtype=jnp.float32),
                 )
                 if logger is not None:
-                    stats = {
-                        "encoder loss": enc_loss_value,
-                        "dynamics loss": dynamics_loss,
-                        "reward loss": reward_loss,
-                        "done loss": done_loss,
-                        "reward mse": reward_mse,
-                    }
+                    keys = [
+                        "encoder loss",
+                        "dynamics loss",
+                        "reward loss",
+                        "done loss",
+                        "reward mse",
+                    ]
                     for i in range(target_delay):
                         log_step = global_step + 2 + i - target_delay
-                        for k, v in stats.items():
-                            logger.record_stat(k, v[i], step=log_step)
+                        for k, v in zip(keys, losses[i], strict=False):
+                            logger.record_stat(k, v, step=log_step)
                     # TODO log epochs
 
             batch = replay_buffer.sample_batch(
