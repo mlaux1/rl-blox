@@ -922,8 +922,8 @@ def n_step_truncated_return(
         Discount factor for the remaining steps (step n + 1) per sample.
         This is zero when the episode terminated.
     """
-    n_step_return = 0.0
-    discount = 1.0
+    n_step_return = jnp.zeros(reward.shape[0], dtype=jnp.float32)
+    discount = jnp.ones(reward.shape[0], dtype=jnp.float32)
     for t in range(reward.shape[1]):
         n_step_return += discount * reward[:, t]
         discount *= gamma * (1 - terminated[:, t])
