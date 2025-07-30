@@ -607,7 +607,7 @@ def update_encoder(
     encoder, encoder_optimizer, losses = nnx.fori_loop(
         0, target_delay, loop_body, (encoder, encoder_optimizer, losses)
     )
-    return losses
+    return jnp.mean(losses, axis=0)
 
 
 def encoder_loss(
@@ -1356,10 +1356,9 @@ def train_mrq(
                         "done loss",
                         "reward mse",
                     ]
-                    for i in range(target_delay):
-                        log_step = global_step + 2 + i - target_delay
-                        for k, v in zip(keys, losses[i], strict=False):
-                            logger.record_stat(k, v, step=log_step)
+                    log_step = global_step + 1
+                    for k, v in zip(keys, losses, strict=False):
+                        logger.record_stat(k, v, step=log_step)
                     # TODO log epochs
 
             batch = replay_buffer.sample_batch(
