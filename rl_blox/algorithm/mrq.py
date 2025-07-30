@@ -568,25 +568,39 @@ def update_encoder(
     reward_weight: float,
     done_weight: float,
     environment_terminates: bool,
-    delayed_train_step_idx: int,
+    target_delay: int,
+    batch_size: int,
+    losses: jnp.ndarray,
 ):
-    batch = jax.tree_util.tree_map(lambda x: x[delayed_train_step_idx], batches)
-    (
-        loss,
-        (dynamics_loss, reward_loss, done_loss, reward_mse),
-    ), grads = nnx.value_and_grad(encoder_loss, argnums=0, has_aux=True)(
-        encoder,
-        encoder_target,
-        the_bins,
-        batch,
-        encoder_horizon,
-        dynamics_weight,
-        reward_weight,
-        done_weight,
-        environment_terminates,
+    def loop_body(delayed_train_step_idx, args):
+        encoder, encoder_optimizer, losses = args
+        batch = jax.tree_util.tree_map(
+            lambda x: x[delayed_train_step_idx], batches
+        )
+        (
+            loss,
+            (dynamics_loss, reward_loss, done_loss, reward_mse),
+        ), grads = nnx.value_and_grad(encoder_loss, argnums=0, has_aux=True)(
+            encoder,
+            encoder_target,
+            the_bins,
+            batch,
+            encoder_horizon,
+            dynamics_weight,
+            reward_weight,
+            done_weight,
+            environment_terminates,
+        )
+        encoder_optimizer.update(grads)
+        losses = losses.at[delayed_train_step_idx].set(
+            (loss, dynamics_loss, reward_loss, done_loss, reward_mse)
+        )
+        return encoder, encoder_optimizer, losses
+
+    (encoder, encoder_optimizer, losses) = nnx.fori_loop(
+        0, target_delay, loop_body, (encoder, encoder_optimizer, losses)
     )
-    encoder_optimizer.update(grads)
-    return loss, dynamics_loss, reward_loss, done_loss, reward_mse
+    return losses[:, 0], losses[:, 1], losses[:, 2], losses[:, 3], losses[:, 4]
 
 
 def encoder_loss(
@@ -1310,51 +1324,49 @@ def train_mrq(
                 target_reward_scale = reward_scale
                 reward_scale = replay_buffer.reward_scale()
 
-                batch = replay_buffer.sample_batch(
+                batches = replay_buffer.sample_batch(
                     batch_size * target_delay, encoder_horizon, True, rng
                 )
                 # resize batch to (target_delay, batch_size, ...)
                 batches = jax.tree_util.tree_map(
                     lambda x: x.reshape(target_delay, batch_size, *x.shape[1:]),
-                    batch,
+                    batches,
                 )
-                for delayed_train_step_idx in range(target_delay):
-                    (
-                        enc_loss_value,
-                        dynamics_loss,
-                        reward_loss,
-                        done_loss,
-                        reward_mse,
-                    ) = update_encoder(
-                        policy_with_encoder.encoder,
-                        policy_with_encoder_target.encoder,
-                        encoder_optimizer,
-                        the_bins,
-                        batches,
-                        encoder_horizon,
-                        dynamics_weight,
-                        reward_weight,
-                        done_weight,
-                        replay_buffer.environment_terminates,
-                        delayed_train_step_idx,
-                    )
-                    if logger is not None:
-                        stats = {
-                            "encoder loss": enc_loss_value,
-                            "dynamics loss": dynamics_loss,
-                            "reward loss": reward_loss,
-                            "done loss": done_loss,
-                            "reward mse": reward_mse,
-                        }
-                        log_step = (
-                            global_step
-                            + 2
-                            - target_delay
-                            + delayed_train_step_idx
-                        )
+                losses = jnp.zeros((target_delay, 5), dtype=jnp.float32)
+                (
+                    enc_loss_value,
+                    dynamics_loss,
+                    reward_loss,
+                    done_loss,
+                    reward_mse,
+                ) = update_encoder(
+                    policy_with_encoder.encoder,
+                    policy_with_encoder_target.encoder,
+                    encoder_optimizer,
+                    the_bins,
+                    batches,
+                    encoder_horizon,
+                    dynamics_weight,
+                    reward_weight,
+                    done_weight,
+                    replay_buffer.environment_terminates,
+                    target_delay,
+                    batch_size,
+                    losses,
+                )
+                if logger is not None:
+                    stats = {
+                        "encoder loss": enc_loss_value,
+                        "dynamics loss": dynamics_loss,
+                        "reward loss": reward_loss,
+                        "done loss": done_loss,
+                        "reward mse": reward_mse,
+                    }
+                    for i in range(target_delay):
+                        log_step = global_step + 2 + i - target_delay
                         for k, v in stats.items():
-                            logger.record_stat(k, v, step=log_step)
-                        # TODO log epochs
+                            logger.record_stat(k, v[i], step=log_step)
+                    # TODO log epochs
 
             batch = replay_buffer.sample_batch(
                 batch_size, q_horizon, False, rng
