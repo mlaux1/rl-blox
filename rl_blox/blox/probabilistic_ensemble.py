@@ -4,9 +4,9 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
+import tensorflow_probability.substrates.jax.distributions as distrax
 from flax import nnx
 from jax.typing import ArrayLike
-from tensorflow_probability.substrates import jax as distrax
 
 from .function_approximator.gaussian_mlp import GaussianMLP
 
