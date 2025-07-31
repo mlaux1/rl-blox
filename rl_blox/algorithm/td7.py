@@ -27,6 +27,7 @@ from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.replay_buffer import LAP, lap_priority
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
+from ..util.nnx import Optimizer
 from .ddpg import make_sample_actions
 from .td3 import make_sample_target_actions
 
@@ -326,7 +327,7 @@ def create_td7_state(
         rngs,
     )
     embedding = SALE(state_embedding, state_action_embedding)
-    embedding_optimizer = nnx.Optimizer(
+    embedding_optimizer = Optimizer(
         embedding, optax.adam(learning_rate=embedding_learning_rate)
     )
 
@@ -344,7 +345,7 @@ def create_td7_state(
         policy_sa_encoding_nodes,
         rngs,
     )
-    actor_optimizer = nnx.Optimizer(
+    actor_optimizer = Optimizer(
         actor, optax.adam(learning_rate=policy_learning_rate)
     )
 
@@ -378,7 +379,7 @@ def create_td7_state(
         rngs,
     )
     critic = ContinuousClippedDoubleQNet(critic1, critic2)
-    critic_optimizer = nnx.Optimizer(
+    critic_optimizer = Optimizer(
         critic, optax.adam(learning_rate=q_learning_rate)
     )
 

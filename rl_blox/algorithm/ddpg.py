@@ -13,13 +13,11 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.losses import (
-    ddpg_loss,
-    deterministic_policy_gradient_loss,
-)
+from ..blox.losses import ddpg_loss, deterministic_policy_gradient_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
+from ..util.nnx import Optimizer
 from .dqn import train_step_with_loss
 
 
@@ -161,7 +159,7 @@ def create_ddpg_state(
         nnx.Rngs(seed),
     )
     policy = DeterministicTanhPolicy(policy_net, env.action_space)
-    policy_optimizer = nnx.Optimizer(
+    policy_optimizer = Optimizer(
         policy, optax.adam(learning_rate=policy_learning_rate)
     )
 
@@ -172,7 +170,7 @@ def create_ddpg_state(
         q_activation,
         nnx.Rngs(seed),
     )
-    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
+    q_optimizer = Optimizer(q, optax.adam(learning_rate=q_learning_rate))
 
     return namedtuple(
         "DDPGState",
