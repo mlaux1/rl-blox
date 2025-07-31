@@ -35,7 +35,7 @@ dependencies = [
     "tfp-nightly",
     "chex",
     "tqdm",
-    "flax",
+    "flax<0.11",
     "orbax-export",
     "orbax",
 ]
