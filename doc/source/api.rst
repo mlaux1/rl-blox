@@ -51,9 +51,9 @@ Functional Blox
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
    td7.td7_update_critic
+   mrq.update_encoder
    mrq.encoder_loss
-   mrq.critic_loss
-   mrq.deterministic_policy_gradient_loss
+   mrq.update_critic_and_policy
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
@@ -135,6 +135,7 @@ Data Blox
    replay_buffer.ReplayBuffer
    replay_buffer.LAP
    function_approximator.mlp.MLP
+   function_approximator.layer_norm_mlp.LayerNormMLP
    function_approximator.gaussian_mlp.GaussianMLP
    function_approximator.policy_head.DeterministicTanhPolicy
    function_approximator.policy_head.StochasticPolicyBase
