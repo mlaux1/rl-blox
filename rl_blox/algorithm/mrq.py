@@ -521,10 +521,6 @@ def update_critic_and_policy(
     activation_weight: float,
 ) -> tuple[float, float, tuple[float, float], float, jnp.ndarray]:
     """Update the critic network."""
-    n_step_return, discount = discounted_n_step_return(
-        batch.reward, batch.terminated, gamma
-    )
-
     (q_loss, (zs, q_mean, max_abs_td_error)), grads = nnx.value_and_grad(
         critic_loss, argnums=0, has_aux=True
     )(
@@ -534,8 +530,7 @@ def update_critic_and_policy(
         encoder_target,
         next_action,
         batch,
-        n_step_return,
-        discount,
+        gamma,
         reward_scale,
         target_reward_scale,
     )
@@ -569,12 +564,16 @@ def critic_loss(
         jnp.ndarray,
         jnp.ndarray,
     ],
-    n_step_return: jnp.ndarray,
-    discount: jnp.ndarray,
+    gamma: float,
     reward_scale: float,
     target_reward_scale: float,
 ) -> tuple[jnp.ndarray, tuple[jnp.ndarray, float, jnp.ndarray]]:
-    observation, action, _, next_observation, _, _ = batch
+    observation, action, reward, next_observation, terminated, _ = batch
+
+    n_step_return, discount = discounted_n_step_return(
+        reward, terminated, gamma
+    )
+
     next_zs = jax.lax.stop_gradient(encoder_target.encode_zs(next_observation))
     next_zsa = jax.lax.stop_gradient(
         encoder_target.encode_zsa(next_zs, next_action)
