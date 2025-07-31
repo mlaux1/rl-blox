@@ -26,6 +26,7 @@ from ..blox.replay_buffer import SubtrajectoryReplayBufferPER, lap_priority
 from ..blox.return_estimates import discounted_n_step_return
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
+from ..util.nnx import Optimizer
 from .ddpg import make_sample_actions
 from .td3 import make_sample_target_actions
 
@@ -655,7 +656,7 @@ def create_mrq_state(
         activation=encoder_activation,
         rngs=rngs,
     )
-    encoder_optimizer = nnx.Optimizer(
+    encoder_optimizer = Optimizer(
         encoder,
         optax.adamw(
             learning_rate=encoder_learning_rate,
@@ -678,7 +679,7 @@ def create_mrq_state(
         rngs=rngs,
     )
     q = ContinuousClippedDoubleQNet(q1, q2)
-    q_optimizer = nnx.Optimizer(
+    q_optimizer = Optimizer(
         q,
         optax.chain(
             optax.clip_by_global_norm(q_grad_clipping),
@@ -697,7 +698,7 @@ def create_mrq_state(
         rngs=rngs,
     )
     policy = DeterministicTanhPolicy(policy_net, env.action_space)
-    policy_optimizer = nnx.Optimizer(
+    policy_optimizer = Optimizer(
         policy,
         optax.adamw(
             learning_rate=policy_learning_rate,
