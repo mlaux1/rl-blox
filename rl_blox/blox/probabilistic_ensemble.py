@@ -1,12 +1,12 @@
 from typing import NamedTuple
 
 import chex
-import distrax
 import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
 from jax.typing import ArrayLike
+from tensorflow_probability.substrates import jax as distrax
 
 from .function_approximator.gaussian_mlp import GaussianMLP
 
