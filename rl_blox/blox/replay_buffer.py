@@ -4,7 +4,9 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jaxtyping import ArrayLike
 from numpy import typing as npt
+from pycparser.c_ast import ArrayDecl
 
 
 class ReplayBuffer:
@@ -358,6 +360,39 @@ class SubtrajectoryReplayBuffer:
         self.Batch = namedtuple("Batch", self.buffer)
 
 
+class PriorityBuffer:
+    max_priority: float
+    priority: npt.NDArray[float]
+    sampled_indices: npt.NDArray[int]
+
+    def __init__(self, buffer_size: int):
+        self.max_priority = 1.0
+        self.priority = np.empty(buffer_size, dtype=float)
+        self.sampled_indices = np.empty(0, dtype=int)
+
+    def initialize_priority(self, insert_idx: int):
+        """Initialize the priority of the next inserted sample."""
+        self.priority[insert_idx] = self.max_priority
+
+    def prioritized_sampling(
+        self, current_len: int, batch_size: int, rng: np.random.Generator
+    ) -> npt.NDArray[int]:
+        """Sample indices based on the priority distribution."""
+        probabilities = np.cumsum(self.priority[:current_len])
+        random_uniforms = rng.uniform(0, 1, size=batch_size) * probabilities[-1]
+        self.sampled_indices = np.searchsorted(probabilities, random_uniforms)
+        return self.sampled_indices
+
+    def update_priority(self, priority: ArrayLike):
+        """Update the priority of the sampled indices."""
+        self.priority[self.sampled_indices] = priority
+        self.max_priority = max(np.max(priority), self.max_priority)
+
+    def reset_max_priority(self, current_len: int):
+        """Recalculate the maximum priority."""
+        self.max_priority = np.max(self.priority[:current_len])
+
+
 class LAP(ReplayBuffer):
     r"""Prioritized replay buffer.
 
@@ -429,10 +464,7 @@ class LAP(ReplayBuffer):
        Representations. https://arxiv.org/abs/1511.05952
     """
 
-    insert_idx: int
-    max_priority: float
-    priority: npt.NDArray[float]
-    sampled_indices: npt.NDArray[int]
+    priority: PriorityBuffer
 
     def __init__(
         self,
@@ -442,9 +474,7 @@ class LAP(ReplayBuffer):
         discrete_actions: bool = False,
     ):
         super().__init__(buffer_size, keys, dtypes, discrete_actions)
-        self.max_priority = 1.0
-        self.priority = np.empty(buffer_size, dtype=float)
-        self.sampled_indices = np.empty(0, dtype=int)
+        self.priority = PriorityBuffer(buffer_size)
 
     def add_sample(self, **sample):
         """Add transition sample to the replay buffer.
@@ -453,7 +483,7 @@ class LAP(ReplayBuffer):
         arguments with keys matching the ones passed to the constructor or
         the default keys respectively.
         """
-        self.priority[self.insert_idx] = self.max_priority
+        self.priority.initialize_priority(self.insert_idx)
         super().add_sample(**sample)
 
     def sample_batch(
@@ -479,22 +509,18 @@ class LAP(ReplayBuffer):
             Named tuple with order defined by keys. Content is also accessible
             via names, e.g., ``batch.observation``.
         """
-        probabilities = np.cumsum(self.priority[: self.current_len])
-        random_uniforms = rng.uniform(0, 1, size=batch_size) * probabilities[-1]
-        self.sampled_indices = np.searchsorted(probabilities, random_uniforms)
+        indices = self.priority.prioritized_sampling(
+            self.current_len, batch_size, rng
+        )
         return self.Batch(
-            **{
-                k: jnp.asarray(self.buffer[k][self.sampled_indices])
-                for k in self.buffer
-            }
+            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
         )
 
     def update_priority(self, priority):
-        self.priority[self.sampled_indices] = priority
-        self.max_priority = max(np.max(priority), self.max_priority)
+        self.priority.update_priority(priority)
 
     def reset_max_priority(self):
-        self.max_priority = np.max(self.priority[: self.current_len])
+        self.priority.reset_max_priority(self.current_len)
 
 
 @partial(jax.jit, static_argnames=["min_priority", "alpha"])
