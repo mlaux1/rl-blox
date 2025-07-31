@@ -133,6 +133,224 @@ class ReplayBuffer:
         self.Batch = namedtuple("Batch", self.buffer)
 
 
+class SubtrajectoryReplayBuffer:
+    """Replay buffer for sampling batches of subtrajectories.
+
+    Parameters
+    ----------
+    buffer_size : int
+        Maximum size of the buffer.
+
+    horizon : int, optional
+        Maximum length of the horizon.
+
+    keys : list[str], optional
+        Names of the quantities that should be stored in the replay buffer.
+        Defaults to ['observation', 'action', 'reward', 'next_observation',
+        'terminated', 'truncated']. These names have to be used as key word
+        arguments when adding a sample. When sampling a batch, the arrays will
+        be returned in this order. Must contain at least 'observation',
+        'next_observation', 'terminated', and 'truncated'.
+
+    dtypes : list[dtype], optional
+        dtype used for each buffer. Defaults to float for everything except
+        'terminated' and 'truncated'.
+
+    discrete_actions : bool, optional
+        Changes the default dtype for actions to int.
+    """
+
+    def __init__(
+        self,
+        buffer_size: int,
+        horizon: int = 1,
+        keys: list[str] | None = None,
+        dtypes: list[npt.DTypeLike] | None = None,
+        discrete_actions: bool = False,
+    ):
+        assert buffer_size > 0
+        assert horizon > 0
+
+        if keys is None:
+            keys = [
+                "observation",
+                "action",
+                "reward",
+                "next_observation",
+                "terminated",
+                "truncated",
+            ]
+        if dtypes is None:
+            dtypes = [
+                float,
+                int if discrete_actions else float,
+                float,
+                float,
+                int,
+                int,
+            ]
+        for key in [
+            "observation",
+            "next_observation",
+            "terminated",
+            "truncated",
+        ]:
+            if key not in keys:
+                raise ValueError(f"'{key}' must be in keys")
+
+        self.buffer = OrderedDict()
+        for k, t in zip(keys, dtypes, strict=True):
+            self.buffer[k] = np.empty(0, dtype=t)
+        self.Batch = namedtuple("Batch", self.buffer)
+        self.buffer_size = buffer_size
+        self.current_len = 0
+        self.insert_idx = 0
+
+        self.episode_timesteps = 0
+        # track if there are any terminal transitions in the buffer
+        self.environment_terminates = False
+        self.horizon = horizon
+        self.mask_ = np.zeros(self.buffer_size, dtype=int)
+
+        # TODO prioritized experience replay
+
+    def add_sample(self, **sample):
+        """Add transition sample to the replay buffer.
+
+        Note that the individual arguments have to be passed as keyword
+        arguments with keys matching the ones passed to the constructor or
+        the default keys respectively.
+        """
+        if self.current_len == 0:
+            for k, v in sample.items():
+                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
+                self.buffer[k] = np.empty(
+                    (self.buffer_size,) + np.asarray(v).shape,
+                    dtype=self.buffer[k].dtype,
+                )
+        for k, v in sample.items():
+            self.buffer[k][self.insert_idx] = v
+
+        self.current_len = min(self.current_len + 1, self.buffer_size)
+        self.episode_timesteps += 1
+        if sample["terminated"]:
+            self.environment_terminates = True
+
+        self.mask_[self.insert_idx] = 0
+        if self.episode_timesteps > self.horizon:
+            self.mask_[(self.insert_idx - self.horizon) % self.buffer_size] = 1
+
+        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+
+        if sample["terminated"] or sample["truncated"]:
+            for k in self.buffer:
+                if k == "reward":
+                    self.buffer[k][self.insert_idx] = 0.0
+                else:
+                    self.buffer[k][self.insert_idx] = sample[k]
+            self.buffer["observation"][self.insert_idx] = sample[
+                "next_observation"
+            ]
+
+            self.mask_[self.insert_idx % self.buffer_size] = 0
+            past_idx = (
+                self.insert_idx
+                - np.arange(min(self.episode_timesteps, self.horizon))
+                - 1
+            ) % self.buffer_size
+            self.mask_[past_idx] = (
+                0 if sample["truncated"] else 1
+            )  # mask out truncated subtrajectories
+
+            self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+            self.current_len = min(self.current_len + 1, self.buffer_size)
+
+            self.episode_timesteps = 0
+
+    def sample_batch(
+        self,
+        batch_size: int,
+        horizon: int,
+        include_intermediate: bool,
+        rng: np.random.Generator,
+    ) -> tuple[jnp.ndarray]:
+        """Sample a batch of transitions from the replay buffer.
+
+        Parameters
+        ----------
+        batch_size : int
+            Number of samples to be returned.
+
+        horizon : int
+            Horizon for the sampled transitions.
+
+        include_intermediate : bool
+            Whether to include intermediate states in the sampled transitions.
+
+        rng : np.random.Generator
+            Random number generator for sampling.
+
+        Returns
+        -------
+        batch : tuple[jnp.ndarray]
+            A tuple containing the sampled observations, actions, rewards,
+            next observations, and terminations.
+        """
+        assert batch_size > 0
+        assert horizon > 0
+
+        indices = self._sample_idx(batch_size, rng)
+        # TODO % self.current_len or % self.buffer_size? - maybe self.buffer_size is possible because of the mask?
+        indices = (
+            indices[:, np.newaxis] + np.arange(horizon)[np.newaxis]
+        ) % self.current_len
+
+        if include_intermediate:
+            # sample subtrajectories (with horizon dimension) for unrolling
+            # dynamics
+            batch = self.Batch(
+                **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+            )
+        else:
+            # sample at specific horizon (used for multistep rewards)
+            batch = {}
+            for k in self.buffer:
+                if k in ["observation", "action"]:
+                    indices_without_intermediate = indices[:, 0]
+                elif k == "next_observation":
+                    indices_without_intermediate = indices[:, -1]
+                else:
+                    indices_without_intermediate = indices
+                batch[k] = jnp.asarray(
+                    self.buffer[k][indices_without_intermediate]
+                )
+            batch = self.Batch(**batch)
+
+        return batch
+
+    def _sample_idx(
+        self, batch_size: int, rng: np.random.Generator
+    ) -> npt.NDArray[int]:
+        # TODO prioritized experience replay
+        nz = np.nonzero(self.mask_)[0]
+        indices = rng.integers(0, len(nz), size=batch_size)
+        self.sampled_indices = nz[indices]
+        return self.sampled_indices
+
+    def reward_scale(self, eps: float = 1e-8):
+        assert "reward" in self.buffer
+        # very hacky way of computing the reward scale...
+        return max(
+            np.abs(self.buffer["reward"][: self.current_len]).mean(), eps
+        )
+
+    def __len__(self):
+        """Return current number of stored transitions in the replay buffer."""
+        return self.current_len
+
+    # TODO save and load with pickle
+
+
 class LAP(ReplayBuffer):
     r"""Prioritized replay buffer.
 
