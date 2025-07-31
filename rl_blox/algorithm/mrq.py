@@ -575,7 +575,7 @@ def update_encoder(
 ) -> jnp.ndarray:
     @nnx.scan(in_axes=(nnx.Carry, 0), out_axes=(nnx.Carry, 0, 0, 0, 0, 0))
     def update(args, batch):
-        encoder, encoder_optimizer = args
+        encoder, encoder_target, encoder_optimizer, the_bins = args
         (
             loss,
             (dynamics_loss, reward_loss, done_loss, reward_mse),
@@ -592,7 +592,7 @@ def update_encoder(
         )
         encoder_optimizer.update(grads)
         return (
-            (encoder, encoder_optimizer),
+            (encoder, encoder_target, encoder_optimizer, the_bins),
             loss,
             dynamics_loss,
             reward_loss,
@@ -606,7 +606,7 @@ def update_encoder(
         batches,
     )
     _, loss, dynamics_loss, reward_loss, done_loss, reward_mse = update(
-        (encoder, encoder_optimizer),
+        (encoder, encoder_target, encoder_optimizer, the_bins),
         batches,
     )
     losses = jnp.vstack(
