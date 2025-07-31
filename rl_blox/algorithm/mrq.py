@@ -22,7 +22,7 @@ from ..blox.preprocessing import (
     two_hot_cross_entropy_loss,
     two_hot_decoding,
 )
-from ..blox.replay_buffer import SubtrajectoryReplayBuffer
+from ..blox.replay_buffer import SubtrajectoryReplayBufferPER, lap_priority
 from ..blox.return_estimates import discounted_n_step_return
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
@@ -746,6 +746,8 @@ def train_mrq(
     exploration_noise: float = 0.2,
     target_policy_noise: float = 0.2,
     noise_clip: float = 0.3,
+    lap_min_priority: float = 1.0,
+    lap_alpha: float = 0.4,
     learning_starts: int = 10_000,
     encoder_horizon: int = 5,
     q_horizon: int = 3,
@@ -764,7 +766,7 @@ def train_mrq(
     nnx.Module,
     nnx.Module,
     nnx.Optimizer,
-    SubtrajectoryReplayBuffer,
+    SubtrajectoryReplayBufferPER,
 ]:
     r"""Model-based Representation for Q-learning (MR.Q).
 
@@ -840,6 +842,12 @@ def train_mrq(
         actions for the critic update. Will be scaled by half of the range
         of the action space.
 
+    lap_alpha : float, optional
+        Constant for probability smoothing in LAP.
+
+    lap_min_priority : float, optional
+        Minimum priority in LAP.
+
     learning_starts : int, optional
         Learning starts after this number of random steps was taken in the
         environment.
@@ -894,7 +902,7 @@ def train_mrq(
     q_optimizer : nnx.Optimizer
         Optimizer for the action-value function approximator.
 
-    replay_buffer : SubtrajectoryReplayBuffer
+    replay_buffer : SubtrajectoryReplayBufferPER
         Episodic replay buffer for the MR.Q algorithm.
 
     References
@@ -911,7 +919,7 @@ def train_mrq(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
 
-    replay_buffer = SubtrajectoryReplayBuffer(
+    replay_buffer = SubtrajectoryReplayBufferPER(
         buffer_size,
         horizon=max(encoder_horizon, q_horizon),
     )
@@ -975,6 +983,8 @@ def train_mrq(
 
                 target_reward_scale = reward_scale
                 reward_scale = replay_buffer.reward_scale()
+
+                replay_buffer.reset_max_priority()
 
                 batches = replay_buffer.sample_batch(
                     batch_size * target_delay, encoder_horizon, True, rng
@@ -1048,6 +1058,9 @@ def train_mrq(
                 target_reward_scale,
                 activation_weight,
             )
+            replay_buffer.update_priority(
+                lap_priority(max_abs_td_error, lap_min_priority, lap_alpha)
+            )
             if logger is not None:
                 logger.record_stat("q loss", q_loss_value, step=global_step + 1)
                 logger.record_stat("q mean", q_mean, step=global_step + 1)
@@ -1062,8 +1075,6 @@ def train_mrq(
                 )
                 logger.record_epoch("q", q)
                 logger.record_epoch("policy", policy_with_encoder.policy)
-
-            # TODO define priority with max_abs_td_error
 
         if terminated or truncated:
             if logger is not None:
