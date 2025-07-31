@@ -26,8 +26,8 @@ from .ddpg import make_sample_actions
 from .td3 import make_sample_target_actions
 
 
-class EpisodicReplayBuffer:
-    """Episodic replay buffer for the MR.Q algorithm.
+class SubtrajectoryReplayBuffer:
+    """Replay buffer for sampling batches of subtrajectories.
 
     Parameters
     ----------
@@ -1124,7 +1124,7 @@ def train_mrq(
     nnx.Module,
     nnx.Module,
     nnx.Optimizer,
-    EpisodicReplayBuffer,
+    SubtrajectoryReplayBuffer,
 ]:
     r"""Model-based Representation for Q-learning (MR.Q).
 
@@ -1254,7 +1254,7 @@ def train_mrq(
     q_optimizer : nnx.Optimizer
         Optimizer for the action-value function approximator.
 
-    replay_buffer : EpisodicReplayBuffer
+    replay_buffer : SubtrajectoryReplayBuffer
         Episodic replay buffer for the MR.Q algorithm.
 
     References
@@ -1271,7 +1271,7 @@ def train_mrq(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
 
-    replay_buffer = EpisodicReplayBuffer(
+    replay_buffer = SubtrajectoryReplayBuffer(
         buffer_size,
         horizon=max(encoder_horizon, q_horizon),
     )
