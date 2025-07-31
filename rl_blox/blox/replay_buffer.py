@@ -6,7 +6,6 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import ArrayLike
 from numpy import typing as npt
-from pycparser.c_ast import ArrayDecl
 
 
 class ReplayBuffer:
@@ -214,9 +213,7 @@ class SubtrajectoryReplayBuffer:
         self.horizon = horizon
         self.mask_ = np.zeros(self.buffer_size, dtype=int)
 
-        # TODO prioritized experience replay
-
-    def add_sample(self, **sample):
+    def add_sample(self, **sample) -> list[int]:
         """Add transition sample to the replay buffer.
 
         Note that the individual arguments have to be passed as keyword
@@ -242,6 +239,7 @@ class SubtrajectoryReplayBuffer:
         if self.episode_timesteps > self.horizon:
             self.mask_[(self.insert_idx - self.horizon) % self.buffer_size] = 1
 
+        inserted_at = [self.insert_idx]
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
 
         if sample["terminated"] or sample["truncated"]:
@@ -264,10 +262,13 @@ class SubtrajectoryReplayBuffer:
                 0 if sample["truncated"] else 1
             )  # mask out truncated subtrajectories
 
+            inserted_at += [self.insert_idx]
             self.insert_idx = (self.insert_idx + 1) % self.buffer_size
             self.current_len = min(self.current_len + 1, self.buffer_size)
 
             self.episode_timesteps = 0
+
+        return inserted_at
 
     def sample_batch(
         self,
@@ -302,7 +303,8 @@ class SubtrajectoryReplayBuffer:
         assert horizon > 0
 
         indices = self._sample_idx(batch_size, rng)
-        # TODO % self.current_len or % self.buffer_size? - maybe self.buffer_size is possible because of the mask?
+        # TODO % self.current_len or % self.buffer_size?
+        # - maybe self.buffer_size is possible because of the mask?
         indices = (
             indices[:, np.newaxis] + np.arange(horizon)[np.newaxis]
         ) % self.current_len
@@ -333,11 +335,9 @@ class SubtrajectoryReplayBuffer:
     def _sample_idx(
         self, batch_size: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
-        # TODO prioritized experience replay
         nz = np.nonzero(self.mask_)[0]
         indices = rng.integers(0, len(nz), size=batch_size)
-        self.sampled_indices = nz[indices]
-        return self.sampled_indices
+        return nz[indices]
 
     def reward_scale(self, eps: float = 1e-8):
         assert "reward" in self.buffer
@@ -370,15 +370,22 @@ class PriorityBuffer:
         self.priority = np.empty(buffer_size, dtype=float)
         self.sampled_indices = np.empty(0, dtype=int)
 
-    def initialize_priority(self, insert_idx: int):
+    def initialize_priority(self, insert_idx: npt.NDArray[int]):
         """Initialize the priority of the next inserted sample."""
         self.priority[insert_idx] = self.max_priority
 
     def prioritized_sampling(
-        self, current_len: int, batch_size: int, rng: np.random.Generator
+        self,
+        current_len: int,
+        batch_size: int,
+        rng: np.random.Generator,
+        mask: npt.NDArray[int] | None = None,
     ) -> npt.NDArray[int]:
         """Sample indices based on the priority distribution."""
-        probabilities = np.cumsum(self.priority[:current_len])
+        priority = self.priority[:current_len]
+        if mask is not None:
+            priority = priority * mask[:current_len]
+        probabilities = np.cumsum(priority)
         random_uniforms = rng.uniform(0, 1, size=batch_size) * probabilities[-1]
         self.sampled_indices = np.searchsorted(probabilities, random_uniforms)
         return self.sampled_indices
@@ -514,6 +521,70 @@ class LAP(ReplayBuffer):
         )
         return self.Batch(
             **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+        )
+
+    def update_priority(self, priority):
+        self.priority.update_priority(priority)
+
+    def reset_max_priority(self):
+        self.priority.reset_max_priority(self.current_len)
+
+
+class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
+    """Replay buffer for sampling batches of subtrajectories with PER or LAP.
+
+    Parameters
+    ----------
+    buffer_size : int
+        Maximum size of the buffer.
+
+    horizon : int, optional
+        Maximum length of the horizon.
+
+    keys : list[str], optional
+        Names of the quantities that should be stored in the replay buffer.
+        Defaults to ['observation', 'action', 'reward', 'next_observation',
+        'terminated', 'truncated']. These names have to be used as key word
+        arguments when adding a sample. When sampling a batch, the arrays will
+        be returned in this order. Must contain at least 'observation',
+        'next_observation', 'terminated', and 'truncated'.
+
+    dtypes : list[dtype], optional
+        dtype used for each buffer. Defaults to float for everything except
+        'terminated' and 'truncated'.
+
+    discrete_actions : bool, optional
+        Changes the default dtype for actions to int.
+    """
+
+    priority: PriorityBuffer
+
+    def __init__(
+        self,
+        buffer_size: int,
+        horizon: int = 1,
+        keys: list[str] | None = None,
+        dtypes: list[npt.DTypeLike] | None = None,
+        discrete_actions: bool = False,
+    ):
+        super().__init__(buffer_size, horizon, keys, dtypes, discrete_actions)
+        self.priority = PriorityBuffer(buffer_size)
+
+    def add_sample(self, **sample):
+        """Add transition sample to the replay buffer.
+
+        Note that the individual arguments have to be passed as keyword
+        arguments with keys matching the ones passed to the constructor or
+        the default keys respectively.
+        """
+        inserted_at = super().add_sample(**sample)
+        self.priority.initialize_priority(inserted_at)
+
+    def _sample_idx(
+        self, batch_size: int, rng: np.random.Generator
+    ) -> npt.NDArray[int]:
+        return self.priority.prioritized_sampling(
+            self.current_len, batch_size, rng, self.mask_
         )
 
     def update_priority(self, priority):
