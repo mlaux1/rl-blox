@@ -31,7 +31,7 @@ dependencies = [
     "jax>=0.5",
     "jaxlib",
     "optax",
-    "tfp-nightly",
+    "tfp-nightly[jax]",
     "chex",
     "tqdm",
     "flax<0.11",
