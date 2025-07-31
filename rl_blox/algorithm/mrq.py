@@ -573,8 +573,9 @@ def update_encoder(
     target_delay: int,
     batch_size: int,
 ) -> jnp.ndarray:
-    def loop_body(delayed_train_step_idx, args):
-        encoder, encoder_optimizer, losses = args
+    @nnx.scan(in_axes=(nnx.Carry, 0), out_axes=(nnx.Carry, 0, 0, 0, 0, 0))
+    def loop_body(args, delayed_train_step_idx):
+        encoder, encoder_optimizer = args
         batch = jax.tree_util.tree_map(
             lambda x: x[delayed_train_step_idx], batches
         )
@@ -593,21 +594,28 @@ def update_encoder(
             environment_terminates,
         )
         encoder_optimizer.update(grads)
-        losses = losses.at[delayed_train_step_idx].set(
-            (loss, dynamics_loss, reward_loss, done_loss, reward_mse)
+        return (
+            (encoder, encoder_optimizer),
+            loss,
+            dynamics_loss,
+            reward_loss,
+            done_loss,
+            reward_mse,
         )
-        return encoder, encoder_optimizer, losses
 
     # resize batches to (target_delay, batch_size, ...)
     batches = jax.tree_util.tree_map(
         lambda x: x.reshape(target_delay, batch_size, *x.shape[1:]),
         batches,
     )
-    losses = jnp.zeros((target_delay, 5), dtype=jnp.float32)
-    encoder, encoder_optimizer, losses = nnx.fori_loop(
-        0, target_delay, loop_body, (encoder, encoder_optimizer, losses)
+    _, loss, dynamics_loss, reward_loss, done_loss, reward_mse = loop_body(
+        (encoder, encoder_optimizer),
+        jnp.arange(target_delay),
     )
-    return jnp.mean(losses, axis=0)
+    losses = jnp.vstack(
+        (loss, dynamics_loss, reward_loss, done_loss, reward_mse)
+    )
+    return jnp.mean(losses, axis=1)
 
 
 def encoder_loss(
