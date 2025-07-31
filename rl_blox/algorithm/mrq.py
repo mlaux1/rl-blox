@@ -16,7 +16,7 @@ from ..blox.function_approximator.layer_norm_mlp import (
     default_init,
 )
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.losses import huber_loss
+from ..blox.losses import huber_loss, masked_mse_loss
 from ..blox.preprocessing import (
     make_two_hot_bins,
     two_hot_cross_entropy_loss,
@@ -219,33 +219,6 @@ class DeterministicPolicyWithEncoder(nnx.Module):
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         return self.policy(self.encoder.encode_zs(observation))
-
-
-def masked_mse_loss(
-    predictions: jnp.ndarray, targets: jnp.ndarray, mask: jnp.ndarray
-) -> float:
-    """Masked mean squared error loss.
-
-    Parameters
-    ----------
-    predictions : array, shape (n_samples, n_features)
-        Predicted values.
-
-    targets : array, shape (n_samples, n_features)
-        Target values.
-
-    mask : array, shape (n_samples,)
-        Mask indicating which values to include in the loss calculation with 1.
-
-    Returns
-    -------
-    loss : float
-        Masked mean squared error loss.
-    """
-    return jnp.mean(
-        optax.squared_error(predictions=predictions, targets=targets)
-        * mask[:, jnp.newaxis]
-    )
 
 
 @partial(

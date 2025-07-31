@@ -8,6 +8,33 @@ from .double_qnet import ContinuousClippedDoubleQNet
 from .function_approximator.policy_head import StochasticPolicyBase
 
 
+def masked_mse_loss(
+    predictions: jnp.ndarray, targets: jnp.ndarray, mask: jnp.ndarray
+) -> float:
+    """Masked mean squared error loss.
+
+    Parameters
+    ----------
+    predictions : array, shape (n_samples, n_features)
+        Predicted values.
+
+    targets : array, shape (n_samples, n_features)
+        Target values.
+
+    mask : array, shape (n_samples,)
+        Mask indicating which values to include in the loss calculation with 1.
+
+    Returns
+    -------
+    loss : float
+        Masked mean squared error loss.
+    """
+    return jnp.mean(
+        optax.squared_error(predictions=predictions, targets=targets)
+        * mask[:, jnp.newaxis]
+    )
+
+
 def stochastic_policy_gradient_pseudo_loss(
     observation: jnp.ndarray,
     action: jnp.ndarray,
