@@ -1,11 +1,11 @@
 import gymnasium as gym
 import numpy as np
 
-from rl_blox.algorithm.mrq import EpisodicReplayBuffer
+from rl_blox.algorithm.mrq import SubtrajectoryReplayBuffer
 
 
 def test_episodic_replay_buffer():
-    buffer = EpisodicReplayBuffer(buffer_size=10_000, horizon=5)
+    buffer = SubtrajectoryReplayBuffer(buffer_size=10_000, horizon=5)
 
     n_steps = 2_000
 
