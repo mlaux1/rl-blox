@@ -102,6 +102,7 @@ Functional Blox
    probabilistic_ensemble.gaussian_ensemble_loss
    probabilistic_ensemble.train_ensemble
    probabilistic_ensemble.restore_checkpoint
+   losses.masked_mse_loss
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
    losses.mse_value_loss
