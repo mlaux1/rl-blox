@@ -23,6 +23,7 @@ from ..blox.preprocessing import (
     two_hot_decoding,
 )
 from ..blox.replay_buffer import SubtrajectoryReplayBuffer
+from ..blox.return_estimates import discounted_n_step_return
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import make_sample_actions
@@ -520,7 +521,7 @@ def update_critic_and_policy(
     activation_weight: float,
 ) -> tuple[float, float, tuple[float, float], float, jnp.ndarray]:
     """Update the critic network."""
-    n_step_return, discount = n_step_truncated_return(
+    n_step_return, discount = discounted_n_step_return(
         batch.reward, batch.terminated, gamma
     )
 
@@ -600,39 +601,6 @@ def critic_loss(
 
     q_mean = jnp.minimum(q1_predicted, q2_predicted).mean()
     return value_loss, (zs, q_mean, max_abs_td_error)
-
-
-def n_step_truncated_return(
-    reward: jnp.ndarray, terminated: jnp.ndarray, gamma: float
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Compute the n-step truncated return.
-
-    Parameters
-    ----------
-    reward : jnp.ndarray, shape (batch_size, horizon)
-        Rewards.
-
-    terminated : jnp.ndarray, shape (batch_size, horizon)
-        Termination flags.
-
-    gamma : float
-        Discount factor.
-
-    Returns
-    -------
-    n_step_return : jnp.ndarray, shape (batch_size,)
-        n-step truncated return.
-
-    discount : jnp.ndarray, shape (batch_size,)
-        Discount factor for the remaining steps (step n + 1) per sample.
-        This is zero when the episode terminated.
-    """
-    n_step_return = jnp.zeros(reward.shape[0], dtype=jnp.float32)
-    discount = jnp.ones(reward.shape[0], dtype=jnp.float32)
-    for t in range(reward.shape[1]):
-        n_step_return += discount * reward[:, t]
-        discount *= gamma * (1 - terminated[:, t])
-    return n_step_return, discount
 
 
 def mrq_policy_loss(
