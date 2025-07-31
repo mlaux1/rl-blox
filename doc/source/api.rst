@@ -120,6 +120,7 @@ Functional Blox
    preprocessing.two_hot_cross_entropy_loss
    function_approximator.norm.avg_l1_norm
    replay_buffer.lap_priority
+   return_estimates.discounted_n_step_return
 
 Data Blox
 ---------
