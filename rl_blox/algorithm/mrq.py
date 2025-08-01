@@ -238,14 +238,14 @@ def update_encoder(
     encoder_target: Encoder,
     encoder_optimizer: nnx.Optimizer,
     the_bins: jnp.ndarray,
-    batches: tuple[jnp.ndarray],
     encoder_horizon: int,
     dynamics_weight: float,
     reward_weight: float,
     done_weight: float,
-    environment_terminates: bool,
     target_delay: int,
     batch_size: int,
+    batches: tuple[jnp.ndarray],
+    environment_terminates: bool,
 ) -> jnp.ndarray:
     @nnx.scan(in_axes=(nnx.Carry, 0), out_axes=(nnx.Carry, 0, 0, 0, 0, 0))
     def update(args, batch):
@@ -264,7 +264,7 @@ def update_encoder(
             done_weight,
             environment_terminates,
         )
-        encoder_optimizer.update(grads)
+        encoder_optimizer.update(encoder, grads)
         return (
             (encoder, encoder_target, encoder_optimizer, the_bins),
             loss,
@@ -479,6 +479,8 @@ def update_critic_and_policy(
     policy_optimizer: nnx.Optimizer,
     encoder: Encoder,
     encoder_target: Encoder,
+    gamma: float,
+    activation_weight: float,
     next_action: jnp.ndarray,
     batch: tuple[
         jnp.ndarray,
@@ -488,10 +490,8 @@ def update_critic_and_policy(
         jnp.ndarray,
         jnp.ndarray,
     ],
-    gamma: float,
     reward_scale: float,
     target_reward_scale: float,
-    activation_weight: float,
 ) -> tuple[float, float, tuple[float, float], float, jnp.ndarray]:
     """Update the critic and policy network."""
     (q_loss, (zs, q_mean, max_abs_td_error)), grads = nnx.value_and_grad(
@@ -507,7 +507,7 @@ def update_critic_and_policy(
         reward_scale,
         target_reward_scale,
     )
-    q_optimizer.update(grads)
+    q_optimizer.update(q, grads)
 
     (policy_loss, policy_loss_components), grads = nnx.value_and_grad(
         mrq_policy_loss, argnums=0, has_aux=True
@@ -518,7 +518,7 @@ def update_critic_and_policy(
         zs,
         activation_weight,
     )
-    policy_optimizer.update(grads)
+    policy_optimizer.update(policy, grads)
 
     return q_loss, policy_loss, policy_loss_components, q_mean, max_abs_td_error
 
@@ -661,6 +661,7 @@ def create_mrq_state(
             learning_rate=encoder_learning_rate,
             weight_decay=encoder_weight_decay,
         ),
+        wrt=nnx.Param,
     )
 
     q1 = LayerNormMLP(
@@ -687,6 +688,7 @@ def create_mrq_state(
                 weight_decay=q_weight_decay,
             ),
         ),
+        wrt=nnx.Param,
     )
 
     policy_net = LayerNormMLP(
@@ -703,6 +705,7 @@ def create_mrq_state(
             learning_rate=policy_learning_rate,
             weight_decay=policy_weight_decay,
         ),
+        wrt=nnx.Param,
     )
 
     the_bins = make_two_hot_bins(n_bin_edges=encoder_n_bins)
@@ -960,13 +963,6 @@ def train_mrq(
         horizon=max(encoder_horizon, q_horizon),
     )
 
-    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
-    _sample_target_actions = make_sample_target_actions(
-        env.action_space, target_policy_noise, noise_clip
-    )
-
-    epoch = 0
-
     encoder_target = nnx.clone(encoder)
     policy_target = nnx.clone(policy)
     q_target = nnx.clone(q)
@@ -974,6 +970,45 @@ def train_mrq(
     policy_with_encoder = DeterministicPolicyWithEncoder(encoder, policy)
     policy_with_encoder_target = DeterministicPolicyWithEncoder(
         encoder_target, policy_target
+    )
+
+    _sample_actions = nnx.cached_partial(
+        make_sample_actions(env.action_space, exploration_noise),
+        policy_with_encoder,
+    )
+    _sample_target_actions = nnx.cached_partial(
+        make_sample_target_actions(
+            env.action_space, target_policy_noise, noise_clip
+        ),
+        policy_with_encoder_target,
+    )
+
+    epoch = 0
+
+    _update_encoder = nnx.cached_partial(
+        update_encoder,
+        policy_with_encoder.encoder,
+        policy_with_encoder_target.encoder,
+        encoder_optimizer,
+        the_bins,
+        encoder_horizon,
+        dynamics_weight,
+        reward_weight,
+        done_weight,
+        target_delay,
+        batch_size,
+    )
+    _update_critic_and_policy = nnx.cached_partial(
+        update_critic_and_policy,
+        q,
+        q_target,
+        q_optimizer,
+        policy_with_encoder.policy,
+        policy_optimizer,
+        policy_with_encoder.encoder,
+        policy_with_encoder_target.encoder,
+        gamma,
+        activation_weight,
     )
 
     reward_scale = 1.0
@@ -990,11 +1025,7 @@ def train_mrq(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(
-                _sample_actions(
-                    policy_with_encoder, jnp.asarray(obs), action_key
-                )
-            )
+            action = np.asarray(_sample_actions(jnp.asarray(obs), action_key))
 
         next_obs, reward, terminated, truncated, info = env.step(action)
         steps_per_episode += 1
@@ -1025,19 +1056,9 @@ def train_mrq(
                 batches = replay_buffer.sample_batch(
                     batch_size * target_delay, encoder_horizon, True, rng
                 )
-                losses = update_encoder(
-                    policy_with_encoder.encoder,
-                    policy_with_encoder_target.encoder,
-                    encoder_optimizer,
-                    the_bins,
+                losses = _update_encoder(
                     batches,
-                    encoder_horizon,
-                    dynamics_weight,
-                    reward_weight,
-                    done_weight,
                     replay_buffer.environment_terminates,
-                    target_delay,
-                    batch_size,
                 )
                 if logger is not None:
                     log_step = global_step + 1
@@ -1065,7 +1086,7 @@ def train_mrq(
             # policy smoothing: sample next actions from target policy
             key, sampling_key = jax.random.split(key, 2)
             next_actions = _sample_target_actions(
-                policy_with_encoder_target, batch.next_observation, sampling_key
+                batch.next_observation, sampling_key
             )
 
             (
@@ -1074,20 +1095,11 @@ def train_mrq(
                 (dpg_loss, policy_regularization),
                 q_mean,
                 max_abs_td_error,
-            ) = update_critic_and_policy(
-                q,
-                q_target,
-                q_optimizer,
-                policy_with_encoder.policy,
-                policy_optimizer,
-                policy_with_encoder.encoder,
-                policy_with_encoder_target.encoder,
+            ) = _update_critic_and_policy(
                 next_actions,
                 batch,
-                gamma,
                 reward_scale,
                 target_reward_scale,
-                activation_weight,
             )
             replay_buffer.update_priority(
                 lap_priority(max_abs_td_error, lap_min_priority, lap_alpha)

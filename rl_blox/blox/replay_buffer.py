@@ -4,7 +4,6 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import ArrayLike
 from numpy import typing as npt
 
 
@@ -390,7 +389,7 @@ class PriorityBuffer:
         self.sampled_indices = np.searchsorted(probabilities, random_uniforms)
         return self.sampled_indices
 
-    def update_priority(self, priority: ArrayLike):
+    def update_priority(self, priority: npt.ArrayLike):
         """Update the priority of the sampled indices."""
         self.priority[self.sampled_indices] = priority
         self.max_priority = max(np.max(priority), self.max_priority)
