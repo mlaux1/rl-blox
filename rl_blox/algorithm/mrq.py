@@ -26,7 +26,6 @@ from ..blox.replay_buffer import SubtrajectoryReplayBufferPER, lap_priority
 from ..blox.return_estimates import discounted_n_step_return
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
-from ..util.nnx import Optimizer
 from .ddpg import make_sample_actions
 from .td3 import make_sample_target_actions
 
@@ -265,7 +264,7 @@ def update_encoder(
             done_weight,
             environment_terminates,
         )
-        encoder_optimizer.update(grads)
+        encoder_optimizer.update(encoder, grads)
         return (
             (encoder, encoder_target, encoder_optimizer, the_bins),
             loss,
@@ -508,7 +507,7 @@ def update_critic_and_policy(
         reward_scale,
         target_reward_scale,
     )
-    q_optimizer.update(grads)
+    q_optimizer.update(q, grads)
 
     (policy_loss, policy_loss_components), grads = nnx.value_and_grad(
         mrq_policy_loss, argnums=0, has_aux=True
@@ -519,7 +518,7 @@ def update_critic_and_policy(
         zs,
         activation_weight,
     )
-    policy_optimizer.update(grads)
+    policy_optimizer.update(policy, grads)
 
     return q_loss, policy_loss, policy_loss_components, q_mean, max_abs_td_error
 
@@ -656,12 +655,13 @@ def create_mrq_state(
         activation=encoder_activation,
         rngs=rngs,
     )
-    encoder_optimizer = Optimizer(
+    encoder_optimizer = nnx.Optimizer(
         encoder,
         optax.adamw(
             learning_rate=encoder_learning_rate,
             weight_decay=encoder_weight_decay,
         ),
+        wrt=nnx.Param,
     )
 
     q1 = LayerNormMLP(
@@ -679,7 +679,7 @@ def create_mrq_state(
         rngs=rngs,
     )
     q = ContinuousClippedDoubleQNet(q1, q2)
-    q_optimizer = Optimizer(
+    q_optimizer = nnx.Optimizer(
         q,
         optax.chain(
             optax.clip_by_global_norm(q_grad_clipping),
@@ -688,6 +688,7 @@ def create_mrq_state(
                 weight_decay=q_weight_decay,
             ),
         ),
+        wrt=nnx.Param,
     )
 
     policy_net = LayerNormMLP(
@@ -698,12 +699,13 @@ def create_mrq_state(
         rngs=rngs,
     )
     policy = DeterministicTanhPolicy(policy_net, env.action_space)
-    policy_optimizer = Optimizer(
+    policy_optimizer = nnx.Optimizer(
         policy,
         optax.adamw(
             learning_rate=policy_learning_rate,
             weight_decay=policy_weight_decay,
         ),
+        wrt=nnx.Param,
     )
 
     the_bins = make_two_hot_bins(n_bin_edges=encoder_n_bins)
