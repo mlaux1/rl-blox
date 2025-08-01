@@ -8,6 +8,33 @@ from .double_qnet import ContinuousClippedDoubleQNet
 from .function_approximator.policy_head import StochasticPolicyBase
 
 
+def masked_mse_loss(
+    predictions: jnp.ndarray, targets: jnp.ndarray, mask: jnp.ndarray
+) -> float:
+    """Masked mean squared error loss.
+
+    Parameters
+    ----------
+    predictions : array, shape (n_samples, n_features)
+        Predicted values.
+
+    targets : array, shape (n_samples, n_features)
+        Target values.
+
+    mask : array, shape (n_samples,)
+        Mask indicating which values to include in the loss calculation with 1.
+
+    Returns
+    -------
+    loss : float
+        Masked mean squared error loss.
+    """
+    return jnp.mean(
+        optax.squared_error(predictions=predictions, targets=targets)
+        * mask[:, jnp.newaxis]
+    )
+
+
 def stochastic_policy_gradient_pseudo_loss(
     observation: jnp.ndarray,
     action: jnp.ndarray,
@@ -443,8 +470,8 @@ def td3_lap_loss(
     td_error1 = jnp.abs(q1_predicted - q_target_value)
     td_error2 = jnp.abs(q2_predicted - q_target_value)
     return (
-        _huber_loss(td_error1, min_priority).mean()
-        + _huber_loss(td_error2, min_priority).mean(),
+        huber_loss(td_error1, min_priority).mean()
+        + huber_loss(td_error2, min_priority).mean(),
         (
             jnp.minimum(q1_predicted, q2_predicted).mean(),
             jnp.maximum(td_error1, td_error2),
@@ -452,7 +479,7 @@ def td3_lap_loss(
     )
 
 
-def _huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
+def huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
     # 0.5 * err^2                  if |err| <= d
     # 0.5 * d^2 + d * (|err| - d)  if |err| > d
     quadratic = jnp.minimum(abs_errors, delta)

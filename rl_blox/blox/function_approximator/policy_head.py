@@ -40,6 +40,9 @@ class DeterministicTanhPolicy(nnx.Module):
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         y = self.policy_net(observation)
+        return self.scale_output(y)
+
+    def scale_output(self, y: jnp.ndarray) -> jnp.ndarray:
         return nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
