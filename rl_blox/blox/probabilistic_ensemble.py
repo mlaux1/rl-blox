@@ -361,7 +361,7 @@ def train_epoch(
         loss, grads = nnx.value_and_grad(gaussian_ensemble_loss, argnums=0)(
             model, X[batch], Y[batch]
         )
-        optimizer.update(grads)
+        optimizer.update(model, grads)
         return (model, optimizer), loss
 
     (model, optimizer), loss = batch_update((model, optimizer), X, Y, indices)

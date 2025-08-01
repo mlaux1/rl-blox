@@ -334,7 +334,7 @@ def create_policy_gradient_continuous_state(
     )
     policy = GaussianPolicy(policy_net)
     policy_optimizer = nnx.Optimizer(
-        policy, policy_optimizer(policy_learning_rate)
+        policy, policy_optimizer(policy_learning_rate), wrt=nnx.Param
     )
 
     value_function = MLP(
@@ -345,7 +345,9 @@ def create_policy_gradient_continuous_state(
         rngs=nnx.Rngs(seed),
     )
     value_function_optimizer = nnx.Optimizer(
-        value_function, value_network_optimizer(value_network_learning_rate)
+        value_function,
+        value_network_optimizer(value_network_learning_rate),
+        wrt=nnx.Param,
     )
 
     return namedtuple(
@@ -385,7 +387,7 @@ def create_policy_gradient_discrete_state(
     )
     policy = SoftmaxPolicy(policy_net)
     policy_optimizer = nnx.Optimizer(
-        policy, policy_optimizer(policy_learning_rate)
+        policy, policy_optimizer(policy_learning_rate), wrt=nnx.Param
     )
 
     value_function = MLP(
@@ -396,7 +398,9 @@ def create_policy_gradient_discrete_state(
         rngs=nnx.Rngs(seed),
     )
     value_function_optimizer = nnx.Optimizer(
-        value_function, value_network_optimizer(value_network_learning_rate)
+        value_function,
+        value_network_optimizer(value_network_learning_rate),
+        wrt=nnx.Param,
     )
 
     return namedtuple(
@@ -650,7 +654,7 @@ def train_value_function(
         v_loss, v_grad = nnx.value_and_grad(mse_value_loss, argnums=2)(
             observations, returns, value_function
         )
-        value_function_optimizer.update(v_grad)
+        value_function_optimizer.update(value_function, v_grad)
     return v_loss
 
 
@@ -675,5 +679,5 @@ def train_policy_reinforce(
             returns,
             gamma_discount,
         )
-        policy_optimizer.update(p_grad)
+        policy_optimizer.update(policy, p_grad)
     return p_loss

@@ -129,7 +129,7 @@ def create_td3_state(
     )
     policy = DeterministicTanhPolicy(policy_net, env.action_space)
     policy_optimizer = nnx.Optimizer(
-        policy, optax.adam(learning_rate=policy_learning_rate)
+        policy, optax.adam(learning_rate=policy_learning_rate), wrt=nnx.Param
     )
 
     q1 = MLP(
@@ -147,7 +147,9 @@ def create_td3_state(
         nnx.Rngs(seed + 1),
     )
     q = ContinuousClippedDoubleQNet(q1, q2)
-    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
+    q_optimizer = nnx.Optimizer(
+        q, optax.adam(learning_rate=q_learning_rate), wrt=nnx.Param
+    )
 
     return namedtuple(
         "TD3State",

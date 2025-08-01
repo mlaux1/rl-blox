@@ -139,7 +139,9 @@ class EntropyControl:
             self._alpha = EntropyCoefficient(jnp.zeros(1))
             self.alpha_ = self._alpha()
             self.optimizer = nnx.Optimizer(
-                self._alpha, optax.adam(learning_rate=learning_rate)
+                self._alpha,
+                optax.adam(learning_rate=learning_rate),
+                wrt=nnx.Param,
             )
         else:
             self.target_entropy = alpha
@@ -180,7 +182,7 @@ def _update_entropy_coefficient(
         observations,
         log_alpha,
     )
-    optimizer.update(grad)
+    optimizer.update(log_alpha, grad)
     alpha = log_alpha()
     return exploration_loss, alpha
 
@@ -209,7 +211,7 @@ def create_sac_state(
     )
     policy = GaussianTanhPolicy(policy_net, env.action_space)
     policy_optimizer = nnx.Optimizer(
-        policy, optax.adam(learning_rate=policy_learning_rate)
+        policy, optax.adam(learning_rate=policy_learning_rate), wrt=nnx.Param
     )
 
     q1 = MLP(
@@ -228,7 +230,9 @@ def create_sac_state(
         nnx.Rngs(seed + 1),
     )
     q = ContinuousClippedDoubleQNet(q1, q2)
-    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
+    q_optimizer = nnx.Optimizer(
+        q, optax.adam(learning_rate=q_learning_rate), wrt=nnx.Param
+    )
 
     return namedtuple(
         "SACState",
@@ -628,5 +632,5 @@ def sac_update_actor(
     loss, grads = nnx.value_and_grad(sac_actor_loss, argnums=0)(
         policy, q, alpha, action_key, observation
     )
-    policy_optimizer.update(grads)
+    policy_optimizer.update(policy, grads)
     return loss

@@ -72,7 +72,9 @@ model = GaussianMLPEnsemble(
     activation="swish",
     rngs=nnx.Rngs(seed),
 )
-opt = nnx.Optimizer(model, optax.adam(learning_rate=learning_rate))
+opt = nnx.Optimizer(
+    model, optax.adam(learning_rate=learning_rate), wrt=nnx.Param
+)
 
 key, train_key = jax.random.split(key, 2)
 train_ensemble(
