@@ -493,7 +493,7 @@ def update_critic_and_policy(
     target_reward_scale: float,
     activation_weight: float,
 ) -> tuple[float, float, tuple[float, float], float, jnp.ndarray]:
-    """Update the critic network."""
+    """Update the critic and policy network."""
     (q_loss, (zs, q_mean, max_abs_td_error)), grads = nnx.value_and_grad(
         mrq_loss, argnums=0, has_aux=True
     )(
@@ -541,6 +541,7 @@ def mrq_loss(
     reward_scale: float,
     target_reward_scale: float,
 ) -> tuple[jnp.ndarray, tuple[jnp.ndarray, float, jnp.ndarray]]:
+    """Compute the MR.Q critic loss."""
     observation, action, reward, next_observation, terminated, _ = batch
 
     n_step_return, discount = discounted_n_step_return(
@@ -905,12 +906,47 @@ def train_mrq(
     replay_buffer : SubtrajectoryReplayBufferPER
         Episodic replay buffer for the MR.Q algorithm.
 
+    Notes
+    -----
+
+    Logging
+
+    * ``reward scale`` - mean absolute reward in replay buffer
+    * ``encoder loss`` - value of the loss function for ``encoder``
+    * ``dynamics loss`` - value of the loss function for the dynamics model
+    * ``reward loss`` - value of the loss function for the reward model
+    * ``done loss`` - value of the loss function for the done model
+    * ``reward mse`` - mean squared error of the reward model
+    * ``q loss`` - value of the loss function for ``q``
+    * ``q mean`` - mean Q value of batch used to update the critic
+    * ``policy loss`` - value of the loss function for the actor
+    * ``dpg loss`` - value of the DPG loss for the actor
+    * ``policy regularization`` - value of the policy regularization term
+    * ``return`` - return of the episode
+
+    Checkpointing
+
+    * ``q`` - clipped double Q network, critic
+    * ``q_target`` - target network for the critic
+    * ``policy_with_encoder_target`` - target policy, actor
+    * ``encoder`` - encoder for the state representation
+    * ``policy`` - target network for the actor
+
     References
     ----------
     .. [1] Fujimoto, S., D'Oro, P., Zhang, A., Tian, Y., Rabbat, M. (2025).
        Towards General-Purpose Model-Free Reinforcement Learning. In
        International Conference on Learning Representations (ICLR).
        https://openreview.net/forum?id=R1hIXdST22
+
+    See Also
+    --------
+    .td3.train_td3
+        TD3 algorithm.
+    .td3_lap.train_td3_lap
+        TD3 with LAP.
+    .td7.train_td7
+        TD7 algorithm, which is similar to MR.Q but uses a different encoder.
     """
     rng = np.random.default_rng(seed)
     key = jax.random.key(seed)
@@ -1007,11 +1043,6 @@ def train_mrq(
                     log_step = global_step + 1
                     logger.record_stat(
                         "reward scale", reward_scale, step=log_step
-                    )
-                    logger.record_stat(
-                        "target reward scale",
-                        target_reward_scale,
-                        step=log_step,
                     )
                     keys = [
                         "encoder loss",
