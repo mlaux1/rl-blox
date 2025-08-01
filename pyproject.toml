@@ -35,8 +35,7 @@ dependencies = [
     "chex",
     "tqdm",
     "flax<0.11",
-    "orbax-export",
-    "orbax",
+    "orbax-checkpoint",
 ]
 dynamic = ["version", "readme"]
 
