@@ -4,7 +4,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
-import tensorflow_probability.substrates.jax.distributions as distrax
+import tensorflow_probability.substrates.jax.distributions as dist
 from flax import nnx
 from jax.typing import ArrayLike
 
@@ -191,7 +191,7 @@ class GaussianMLPEnsemble(nnx.Module):
 
     def base_distribution(
         self, x: jnp.ndarray, i: int
-    ) -> distrax.MultivariateNormalDiag:
+    ) -> dist.MultivariateNormalDiag:
         """Sample from individual model of the ensemble.
 
         Parameters
@@ -215,7 +215,7 @@ class GaussianMLPEnsemble(nnx.Module):
             log_var_i, self.min_log_var, self.max_log_var
         )
         std_i = jnp.exp(0.5 * log_var_i)
-        return distrax.MultivariateNormalDiag(loc=mean_i, scale_diag=std_i)
+        return dist.MultivariateNormalDiag(loc=mean_i, scale_diag=std_i)
 
 
 def gaussian_nll(
