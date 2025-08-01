@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rl_blox"
 maintainers = [
-
+    { name="Melvin Laux", email="melvin.laux@uni-bremen.de" },
 ]
 authors = [
     { name="Melvin Laux", email="melvin.laux@uni-bremen.de" },
@@ -18,10 +18,10 @@ keywords = ["Reinforcement Learning", "RL", "JAX"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -37,7 +37,9 @@ dependencies = [
     "flax",
     "orbax-checkpoint",
 ]
-dynamic = ["version", "readme"]
+
+readme = { file = "README.md", content-type = "text/markdown" }
+dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = [
