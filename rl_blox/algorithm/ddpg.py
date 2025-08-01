@@ -13,10 +13,7 @@ from flax import nnx
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.losses import (
-    ddpg_loss,
-    deterministic_policy_gradient_loss,
-)
+from ..blox.losses import ddpg_loss, deterministic_policy_gradient_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
 from ..logging.logger import LoggerBase
@@ -62,7 +59,7 @@ def ddpg_update_actor(
     actor_loss_value, grads = nnx.value_and_grad(
         deterministic_policy_gradient_loss, argnums=2
     )(q, observation, policy)
-    policy_optimizer.update(grads)
+    policy_optimizer.update(policy, grads)
     return actor_loss_value
 
 
@@ -162,7 +159,7 @@ def create_ddpg_state(
     )
     policy = DeterministicTanhPolicy(policy_net, env.action_space)
     policy_optimizer = nnx.Optimizer(
-        policy, optax.adam(learning_rate=policy_learning_rate)
+        policy, optax.adam(learning_rate=policy_learning_rate), wrt=nnx.Param
     )
 
     q = MLP(
@@ -172,7 +169,9 @@ def create_ddpg_state(
         q_activation,
         nnx.Rngs(seed),
     )
-    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
+    q_optimizer = nnx.Optimizer(
+        q, optax.adam(learning_rate=q_learning_rate), wrt=nnx.Param
+    )
 
     return namedtuple(
         "DDPGState",

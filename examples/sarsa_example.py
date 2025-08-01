@@ -9,7 +9,7 @@ from rl_blox.logging.logger import AIMLogger
 NUM_TIMESTEPS = 200_00
 LEARNING_RATE = 0.1
 EPSILON = 0.2
-ENV_NAME = "CliffWalking-v0"
+ENV_NAME = "CliffWalking-v1"
 
 env = gym.make(ENV_NAME)
 env = RecordEpisodeStatistics(env, buffer_length=2000)

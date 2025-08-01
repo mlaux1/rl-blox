@@ -358,6 +358,7 @@ def create_pets_state(
         optimizer=nnx.Optimizer(
             model,
             optax.adamw(learning_rate=learning_rate, weight_decay=weight_decay),
+            wrt=nnx.Param,
         ),
         train_size=train_size,
         batch_size=batch_size,

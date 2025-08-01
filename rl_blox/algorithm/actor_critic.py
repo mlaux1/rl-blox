@@ -238,5 +238,5 @@ def train_policy_actor_critic(
             gamma_discount,
             gamma,
         )
-        policy_optimizer.update(p_grad)
+        policy_optimizer.update(policy, p_grad)
     return p_loss
