@@ -4,7 +4,7 @@ from rl_blox.algorithm.dynaq import train_dynaq
 from rl_blox.blox.value_policy import greedy_policy, make_q_table
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
-env_name = "CliffWalking-v0"
+env_name = "CliffWalking-v1"
 env = gym.make(env_name)
 
 q_table = make_q_table(env)

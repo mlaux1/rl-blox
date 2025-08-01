@@ -7,7 +7,7 @@ from rl_blox.blox.value_policy import greedy_policy, make_q_table
 NUM_STEPS = 50_000
 LEARNING_RATE = 0.1
 EPSILON = 0.1
-ENV_NAME = "CliffWalking-v0"
+ENV_NAME = "CliffWalking-v1"
 
 env = gym.make(ENV_NAME)
 env = RecordEpisodeStatistics(env, buffer_length=2000)
