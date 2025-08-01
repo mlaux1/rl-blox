@@ -94,7 +94,7 @@ Dependencies
 * We use JAX for everything.
 * We use Chex to write reliable code.
 * For optimization algorithms we use Optax.
-* For probability distributions we use Distrax.
+* For probability distributions we use TensorFlow Probability.
 * For all neural networks we use Flax NNX.
 * To save checkpoints we use Orbax.
 

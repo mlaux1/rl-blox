@@ -38,7 +38,7 @@ The implementation of this project follows the following principles:
 2. We use [JAX](https://github.com/jax-ml/jax) for everything.
 3. We use [Chex](https://github.com/google-deepmind/chex) to write reliable code.
 4. For optimization algorithms we use [Optax](https://github.com/google-deepmind/optax).
-5. For probability distributions we use [Distrax](https://github.com/google-deepmind/distrax).
+5. For probability distributions we use [TensorFlow Probability](https://www.tensorflow.org/probability).
 6. For all neural networks we use [Flax NNX](https://github.com/google/flax).
 7. To save checkpoints we use [Orbax](https://github.com/google/orbax).
 
