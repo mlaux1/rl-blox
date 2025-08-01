@@ -495,7 +495,7 @@ def update_critic_and_policy(
 ) -> tuple[float, float, tuple[float, float], float, jnp.ndarray]:
     """Update the critic network."""
     (q_loss, (zs, q_mean, max_abs_td_error)), grads = nnx.value_and_grad(
-        critic_loss, argnums=0, has_aux=True
+        mrq_loss, argnums=0, has_aux=True
     )(
         q,
         q_target,
@@ -523,7 +523,7 @@ def update_critic_and_policy(
     return q_loss, policy_loss, policy_loss_components, q_mean, max_abs_td_error
 
 
-def critic_loss(
+def mrq_loss(
     q: ContinuousClippedDoubleQNet,
     q_target: ContinuousClippedDoubleQNet,
     encoder: Encoder,
