@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import optax
-import tqdm
+import tqdm.rich as tqdm
 from flax import nnx
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
