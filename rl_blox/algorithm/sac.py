@@ -267,6 +267,7 @@ def train_sac(
     q_target: ContinuousClippedDoubleQNet | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
+    show_progress: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -364,6 +365,9 @@ def train_sac(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    show_progress : bool, optional
+        Flag to enable/disable the tqdm progressbar.
 
     Returns
     -------
@@ -478,7 +482,7 @@ def train_sac(
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in tqdm.trange(total_timesteps, disable=not show_progress):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
