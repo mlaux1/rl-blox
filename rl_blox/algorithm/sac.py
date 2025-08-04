@@ -471,9 +471,7 @@ def train_sac(
         replay_buffer = ReplayBuffer(buffer_size)
 
     train_step = partial(train_step_with_loss, sac_loss)
-    train_step = partial(nnx.jit, static_argnames=("gamma", "alpha"))(
-        train_step
-    )
+    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     if logger is not None:
         logger.start_new_episode()
