@@ -18,11 +18,11 @@
 <img src="doc/source/_static/blox.svg" width="100%"/>
 
 > [!CAUTION]
-> This library is still experimental and under development. Using it will not
-> result in a good user experience. It is not well-documented, it is buggy,
-> its interface is not clearly defined, its most interesting features are in
-> feature branches. We recommend not to use it now. If you are an RL developer
-> and want to collaborate, feel free to contact us.
+> This library is still experimental and under development. Using it may lead
+> to experiencing bugs or changing interfaces. If you encounter any bugs or
+> other issues, please let us know via the
+> [issue tracker](https://github.com/mlaux1/rl-blox/issues). If you are an
+> RL developer and want to collaborate, feel free to contact us.
 
 ## Design Principles
 
@@ -44,6 +44,18 @@ The implementation of this project follows the following principles:
 
 ## Installation
 
+### Install via PyPI
+
+The easiest way to install is via PyPI:
+```bash
+pip install rl-blox
+```
+
+### Install from source
+
+Alternatively, e.g. if you want to develop extensions for the library, you can
+also install rl-blox from source:
+
 ```bash
 git clone git@github.com:mlaux1/rl-blox.git
 ```
@@ -54,10 +66,15 @@ After cloning the repository, it is recommended to install the library in editab
 pip install -e .
 ```
 
-To be able to run the provided examples use `pip install -e '.[examples]'`.
-To install development dependencies, please use `pip install -e '.[dev]'`.
-To enable logging with [aim](https://github.com/aimhubio/aim), please use `pip install -e '.[logging]'`
-You can install all optional dependencies using `pip install -e '.[all]'`.
+### Optional dependencies
+
+To be able to run the provided examples use `pip install 'rl-blox[examples]'`.
+
+To install development dependencies, please use `pip install 'rl-blox[dev]'`.
+
+To enable logging with [aim](https://github.com/aimhubio/aim), please use `pip install 'rl_blox[logging]'`
+
+You can install all optional dependencies (except logging) using `pip install 'rl_blox[all]'`.
 
 ## Getting Started
 
