@@ -228,7 +228,6 @@ class DeterministicPolicyWithEncoder(nnx.Module):
         "dynamics_weight",
         "reward_weight",
         "done_weight",
-        "environment_terminates",
         "target_delay",
         "batch_size",
     ),
@@ -466,8 +465,6 @@ def encoder_loss(
     nnx.jit,
     static_argnames=(
         "gamma",
-        "reward_scale",
-        "target_reward_scale",
         "activation_weight",
     ),
 )
