@@ -74,8 +74,6 @@ def _sum_of_qnet_losses(
     static_argnames=[
         "gamma",
         "min_priority",
-        "q_min",
-        "q_max",
     ],
 )
 def td7_update_critic(
