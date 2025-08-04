@@ -8,8 +8,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.mlp import MLP
@@ -183,6 +183,7 @@ def train_td3(
     policy_target: nnx.Module | None = None,
     q_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -294,6 +295,9 @@ def train_td3(
     replay_buffer : ReplayBuffer
         Replay buffer.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Notes
     -----
 
@@ -388,7 +392,7 @@ def train_td3(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

@@ -7,8 +7,8 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import trange
 
 from ..blox.checkpointing import (
     CheckpointState,
@@ -163,6 +163,9 @@ def td7_update_critic(
 
     q_max : float
         Maximum value.
+
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
 
     Returns
     -------
@@ -431,6 +434,7 @@ def train_td7(
     actor_target: ActorSALE | None = None,
     critic_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -696,7 +700,7 @@ def train_td7(
     value_clipping_state = ValueClippingState()
     checkpoint_state = CheckpointState()
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

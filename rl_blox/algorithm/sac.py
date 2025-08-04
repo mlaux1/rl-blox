@@ -7,8 +7,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
@@ -267,6 +267,7 @@ def train_sac(
     q_target: ContinuousClippedDoubleQNet | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -364,6 +365,9 @@ def train_sac(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
 
     Returns
     -------
@@ -478,7 +482,7 @@ def train_sac(
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

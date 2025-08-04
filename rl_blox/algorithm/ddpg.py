@@ -8,8 +8,8 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import tqdm, trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
@@ -203,6 +203,7 @@ def train_ddpg(
     policy_target: nnx.Optimizer | None = None,
     q_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -277,6 +278,9 @@ def train_ddpg(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
 
     Returns
     -------
@@ -383,7 +387,7 @@ def train_ddpg(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

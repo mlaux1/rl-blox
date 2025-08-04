@@ -4,8 +4,8 @@ from functools import partial
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
-import tqdm
 from flax import nnx
+from tqdm.rich import tqdm
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
@@ -85,6 +85,7 @@ def train_ac(
     steps_per_update: int = 1_000,
     train_after_episode: bool = False,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[StochasticPolicyBase, nnx.Optimizer, nnx.Module, nnx.Optimizer]:
     """Train with actor-critic.
 
@@ -135,6 +136,9 @@ def train_ac(
     logger : logger.LoggerBase, optional
         Experiment logger.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     policy : StochasticPolicyBase
@@ -150,7 +154,7 @@ def train_ac(
         Optimizer for value function.
     """
     key = jax.random.key(seed)
-    progress = tqdm.tqdm(total=total_timesteps)
+    progress = tqdm(total=total_timesteps, disable=not progress_bar)
     step = 0
     while step < total_timesteps:
         key, skey = jax.random.split(key, 2)
