@@ -4,7 +4,7 @@ import jax.numpy as jnp
 def discounted_n_step_return(
     reward: jnp.ndarray, terminated: jnp.ndarray, gamma: float
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Compute the n-step return for a batch of subtrajectories.
+    r"""Compute the n-step return for a batch of subtrajectories.
 
     Estimates
 
