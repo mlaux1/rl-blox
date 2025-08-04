@@ -44,6 +44,9 @@ def train_q_learning(
         The random seed.
     logger: LoggerBase, optional
         Experiment Logger.
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
 
     Returns
     -------

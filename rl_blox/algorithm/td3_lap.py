@@ -156,6 +156,9 @@ def train_td3_lap(
     replay_buffer : ReplayBuffer
         Replay buffer.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Notes
     -----
 

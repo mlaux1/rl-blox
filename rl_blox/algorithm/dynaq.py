@@ -162,6 +162,9 @@ def train_dynaq(
     logger : LoggerBase, optional
         Logger.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     q_table : array

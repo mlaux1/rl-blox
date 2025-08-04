@@ -136,6 +136,9 @@ def train_ac(
     logger : logger.LoggerBase, optional
         Experiment logger.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     policy : StochasticPolicyBase

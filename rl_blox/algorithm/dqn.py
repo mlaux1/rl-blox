@@ -95,6 +95,9 @@ def train_dqn(
         The random seed, which can be set to reproduce results.
     logger : LoggerBase
         Logger for experiment tracking.
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
 
     Returns
     -------

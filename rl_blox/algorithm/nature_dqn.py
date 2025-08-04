@@ -74,6 +74,9 @@ def train_nature_dqn(
         The random seed, which can be set to reproduce results.
     logger : LoggerBase, optional
         Experiment Logger.
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
 
     Returns
     -------

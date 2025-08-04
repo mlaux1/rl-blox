@@ -629,6 +629,9 @@ def train_cmaes(
     logger : LoggerBase, optional
         Logger for experiment tracking.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     policy : nnx.Module

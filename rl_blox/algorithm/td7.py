@@ -164,6 +164,9 @@ def td7_update_critic(
     q_max : float
         Maximum value.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     q_loss_value : float

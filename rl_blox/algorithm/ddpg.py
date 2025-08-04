@@ -279,6 +279,9 @@ def train_ddpg(
     logger : LoggerBase, optional
         Experiment logger.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     policy : nnx.Module

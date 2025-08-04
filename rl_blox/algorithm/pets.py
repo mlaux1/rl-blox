@@ -450,6 +450,9 @@ def train_pets(
         Replay buffer.
     logger : logger.LoggerBase, optional
         Experiment logger.
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
 
     Returns
     -------
