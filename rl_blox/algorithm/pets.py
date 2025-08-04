@@ -383,6 +383,7 @@ def train_pets(
     gradient_steps: int = 10,
     replay_buffer: ReplayBuffer | None = None,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     PETSMPCConfig,
     PETSMPCState,
@@ -587,7 +588,7 @@ def train_pets(
         logger.start_new_episode()
     steps_per_episode = 0
 
-    for t in tqdm.trange(total_timesteps):
+    for t in tqdm.trange(total_timesteps, disable=not progress_bar):
         if (
             t >= learning_starts
             and (t - learning_starts) % n_steps_per_iteration == 0

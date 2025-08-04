@@ -431,6 +431,7 @@ def train_td7(
     actor_target: ActorSALE | None = None,
     critic_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -696,7 +697,7 @@ def train_td7(
     value_clipping_state = ValueClippingState()
     checkpoint_state = CheckpointState()
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in tqdm.trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

@@ -20,6 +20,7 @@ def train_double_q_learning(
     total_timesteps: int = 10_000,
     seed: int = 1,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[ArrayLike, ArrayLike]:
     r"""Double Q-Learning.
 
@@ -69,7 +70,7 @@ def train_double_q_learning(
     observation, _ = env.reset()
     steps_per_episode = 0
 
-    for i in tqdm.trange(total_timesteps):
+    for i in tqdm.trange(total_timesteps, disable=not progress_bar):
         key, subkey1, subkey2, subkey3 = jax.random.split(key, 4)
 
         q_table = q_table1 + q_table2

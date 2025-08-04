@@ -43,6 +43,7 @@ def train_td3_lap(
     policy_target: nnx.Module | None = None,
     q_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -215,7 +216,7 @@ def train_td3_lap(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in tqdm.trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

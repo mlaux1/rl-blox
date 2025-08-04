@@ -428,6 +428,7 @@ def train_reinforce(
     steps_per_update: int = 1_000,
     train_after_episode: bool = False,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[StochasticPolicyBase, nnx.Optimizer, nnx.Module, nnx.Optimizer]:
     """Train with REINFORCE.
 
@@ -490,7 +491,7 @@ def train_reinforce(
         Optimizer for value function.
     """
     key = jax.random.key(seed)
-    progress = tqdm.tqdm(total=total_timesteps)
+    progress = tqdm.tqdm(total=total_timesteps, disable=not progress_bar)
     step = 0
     while step < total_timesteps:
         key, skey = jax.random.split(key, 2)

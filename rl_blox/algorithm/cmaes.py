@@ -567,6 +567,7 @@ def train_cmaes(
     n_samples_per_update: int | None = None,
     active: bool = False,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[nnx.Module, float, bool]:
     """Train policy using Covariance Matrix Adaptation Evolution Strategy.
 
@@ -678,7 +679,7 @@ def train_cmaes(
     step_counter = 0
     if logger is not None:
         logger.start_new_episode()
-    for _ in tqdm.trange(total_episodes):
+    for _ in tqdm.trange(total_episodes, disable=not progress_bar):
         set_params(policy, get_next_parameters(config, state, population))
         ret = 0.0
         done = False

@@ -19,6 +19,7 @@ def train_monte_carlo(
     gamma: float = 0.99,
     seed: int = 42,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     r"""Monte-Carlo Learning.
 
@@ -70,7 +71,7 @@ def train_monte_carlo(
     start_t = 0
     steps_per_episode = 0
 
-    for i in tqdm.trange(total_timesteps):
+    for i in tqdm.trange(total_timesteps, disable=not progress_bar):
         steps_per_episode += 1
         key, action_key = jax.random.split(key)
         action = epsilon_greedy_policy(

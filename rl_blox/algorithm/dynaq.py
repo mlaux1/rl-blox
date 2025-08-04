@@ -119,6 +119,7 @@ def train_dynaq(
     total_timesteps: int = 1_000_000,
     seed: int = 0,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> jnp.ndarray:
     """Train tabular Dyna-Q for discrete state and action spaces.
 
@@ -196,7 +197,7 @@ def train_dynaq(
     obs, _ = env.reset(seed=seed)
     obs = int(obs)
     accumulated_reward = 0.0
-    for t in tqdm.trange(total_timesteps):
+    for t in tqdm.trange(total_timesteps, disable=not progress_bar):
         key, sampling_key = jax.random.split(key, 2)
         act = int(epsilon_greedy_policy(q_table, obs, epsilon, sampling_key))
         next_obs, reward, terminated, truncated, _ = env.step(act)
