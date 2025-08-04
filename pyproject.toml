@@ -74,6 +74,9 @@ addopts = [
     "--cov-report=html",
     "--doctest-modules",
 ]
+filterwarnings = [
+    "ignore::tqdm.std.TqdmExperimentalWarning"
+]
 
 [tool.coverage.run]
 branch = true
