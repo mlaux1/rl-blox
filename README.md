@@ -18,11 +18,11 @@
 <img src="doc/source/_static/blox.svg" width="100%"/>
 
 > [!CAUTION]
-> This library is still experimental and under development. Using it will not
-> result in a good user experience. It is not well-documented, it is buggy,
-> its interface is not clearly defined, its most interesting features are in
-> feature branches. We recommend not to use it now. If you are an RL developer
-> and want to collaborate, feel free to contact us.
+> This library is still experimental and under development. Using it may lead
+> to experiencing bugs or changing interfaces. If you encounter any bugs or
+> other issues, please let us know via the
+> [issue tracker](https://github.com/mlaux1/rl-blox/issues). If you are an
+> RL developer and want to collaborate, feel free to contact us.
 
 ## Design Principles
 
