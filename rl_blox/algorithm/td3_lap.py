@@ -6,8 +6,8 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tqdm
 from flax import nnx
+from tqdm.rich import trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.losses import td3_lap_loss
@@ -219,7 +219,7 @@ def train_td3_lap(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in tqdm.trange(total_timesteps, disable=not progress_bar):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

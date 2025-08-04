@@ -7,8 +7,8 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import trange
 
 from ..blox.checkpointing import (
     CheckpointState,
@@ -700,7 +700,7 @@ def train_td7(
     value_clipping_state = ValueClippingState()
     checkpoint_state = CheckpointState()
 
-    for global_step in tqdm.trange(total_timesteps, disable=not progress_bar):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

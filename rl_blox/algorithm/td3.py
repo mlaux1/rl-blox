@@ -8,8 +8,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.mlp import MLP
@@ -392,7 +392,7 @@ def train_td3(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in tqdm.trange(total_timesteps, disable=not progress_bar):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

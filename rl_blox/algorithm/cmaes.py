@@ -9,10 +9,10 @@ import gymnasium
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tqdm
 from flax import nnx, struct
 from jax.typing import ArrayLike
 from scipy.spatial.distance import pdist
+from tqdm.rich import trange
 
 from ..logging.logger import LoggerBase
 
@@ -682,7 +682,7 @@ def train_cmaes(
     step_counter = 0
     if logger is not None:
         logger.start_new_episode()
-    for _ in tqdm.trange(total_episodes, disable=not progress_bar):
+    for _ in trange(total_episodes, disable=not progress_bar):
         set_params(policy, get_next_parameters(config, state, population))
         ret = 0.0
         done = False

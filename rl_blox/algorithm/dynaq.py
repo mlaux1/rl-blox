@@ -5,7 +5,7 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tqdm
+from tqdm.rich import trange
 
 from ..blox.value_policy import epsilon_greedy_policy, greedy_policy
 from ..logging.logger import LoggerBase
@@ -200,7 +200,7 @@ def train_dynaq(
     obs, _ = env.reset(seed=seed)
     obs = int(obs)
     accumulated_reward = 0.0
-    for t in tqdm.trange(total_timesteps, disable=not progress_bar):
+    for t in trange(total_timesteps, disable=not progress_bar):
         key, sampling_key = jax.random.split(key, 2)
         act = int(epsilon_greedy_policy(q_table, obs, epsilon, sampling_key))
         next_obs, reward, terminated, truncated, _ = env.step(act)

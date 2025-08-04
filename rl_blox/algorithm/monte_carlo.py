@@ -3,8 +3,8 @@ from collections import namedtuple
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
-import tqdm
 from jax.typing import ArrayLike
+from tqdm.rich import tqdm, trange
 
 from ..blox.value_policy import epsilon_greedy_policy
 from ..logging.logger import LoggerBase
@@ -74,7 +74,7 @@ def train_monte_carlo(
     start_t = 0
     steps_per_episode = 0
 
-    for i in tqdm.trange(total_timesteps, disable=not progress_bar):
+    for i in trange(total_timesteps, disable=not progress_bar):
         steps_per_episode += 1
         key, action_key = jax.random.split(key)
         action = epsilon_greedy_policy(

@@ -8,8 +8,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import tqdm
 
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
 from ..blox.function_approximator.mlp import MLP
@@ -494,7 +494,7 @@ def train_reinforce(
         Optimizer for value function.
     """
     key = jax.random.key(seed)
-    progress = tqdm.tqdm(total=total_timesteps, disable=not progress_bar)
+    progress = tqdm(total=total_timesteps, disable=not progress_bar)
     step = 0
     while step < total_timesteps:
         key, skey = jax.random.split(key, 2)

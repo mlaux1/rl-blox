@@ -2,8 +2,8 @@ from collections import namedtuple
 
 import gymnasium
 import jax
-import tqdm
 from jax.typing import ArrayLike
+from tqdm.rich import tqdm, trange
 
 from ..blox.value_policy import epsilon_greedy_policy, greedy_policy
 from ..logging.logger import LoggerBase
@@ -73,7 +73,7 @@ def train_double_q_learning(
     observation, _ = env.reset()
     steps_per_episode = 0
 
-    for i in tqdm.trange(total_timesteps, disable=not progress_bar):
+    for i in trange(total_timesteps, disable=not progress_bar):
         key, subkey1, subkey2, subkey3 = jax.random.split(key, 4)
 
         q_table = q_table1 + q_table2
