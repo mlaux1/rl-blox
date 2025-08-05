@@ -1,5 +1,6 @@
 from collections.abc import Callable
 
+import gymnasium as gym
 import jax.numpy as jnp
 from flax import nnx
 
@@ -208,3 +209,42 @@ class DeterministicPolicyWithEncoder(nnx.Module):
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         return self.policy(self.encoder.encode_zs(observation))
+
+
+def create_model_based_encoder_and_policy(
+    n_state_features: int,
+    n_action_features: int,
+    action_space: gym.spaces.Box,
+    policy_hidden_nodes: list[int] | tuple[int] = (512, 512),
+    policy_activation: str = "relu",
+    encoder_n_bins: int = 65,
+    encoder_zs_dim: int = 512,
+    encoder_za_dim: int = 256,
+    encoder_zsa_dim: int = 512,
+    encoder_hidden_nodes: list[int] | tuple[int] = (512, 512),
+    encoder_activation: str = "elu",
+    rngs: nnx.Rngs | None = None,
+) -> DeterministicPolicyWithEncoder:
+    """Creates a model-based encoder."""
+    if rngs is None:
+        rngs = nnx.Rngs(0)
+    encoder = ModelBasedEncoder(
+        n_state_features=n_state_features,
+        n_action_features=n_action_features,
+        n_bins=encoder_n_bins,
+        zs_dim=encoder_zs_dim,
+        za_dim=encoder_za_dim,
+        zsa_dim=encoder_zsa_dim,
+        hidden_nodes=encoder_hidden_nodes,
+        activation=encoder_activation,
+        rngs=rngs,
+    )
+    policy_net = LayerNormMLP(
+        encoder_zs_dim,
+        action_space.shape[0],
+        policy_hidden_nodes,
+        policy_activation,
+        rngs=rngs,
+    )
+    policy = DeterministicTanhPolicy(policy_net, action_space)
+    return DeterministicPolicyWithEncoder(encoder, policy)

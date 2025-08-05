@@ -16,6 +16,7 @@ from ..blox.losses import huber_loss, masked_mse_loss
 from ..blox.model_based_encoder import (
     DeterministicPolicyWithEncoder,
     ModelBasedEncoder,
+    create_model_based_encoder_and_policy,
 )
 from ..blox.preprocessing import (
     make_two_hot_bins,
@@ -450,19 +451,22 @@ def create_mrq_state(
     env.action_space.seed(seed)
 
     rngs = nnx.Rngs(seed)
-    encoder = ModelBasedEncoder(
+    policy_with_encoder = create_model_based_encoder_and_policy(
         n_state_features=env.observation_space.shape[0],
         n_action_features=env.action_space.shape[0],
-        n_bins=encoder_n_bins,
-        zs_dim=encoder_zs_dim,
-        za_dim=encoder_za_dim,
-        zsa_dim=encoder_zsa_dim,
-        hidden_nodes=encoder_hidden_nodes,
-        activation=encoder_activation,
+        action_space=env.action_space,
+        policy_hidden_nodes=policy_hidden_nodes,
+        policy_activation=policy_activation,
+        encoder_n_bins=encoder_n_bins,
+        encoder_zs_dim=encoder_zs_dim,
+        encoder_za_dim=encoder_za_dim,
+        encoder_zsa_dim=encoder_zsa_dim,
+        encoder_hidden_nodes=encoder_hidden_nodes,
+        encoder_activation=encoder_activation,
         rngs=rngs,
     )
     encoder_optimizer = nnx.Optimizer(
-        encoder,
+        policy_with_encoder.encoder,
         optax.adamw(
             learning_rate=encoder_learning_rate,
             weight_decay=encoder_weight_decay,
@@ -497,16 +501,8 @@ def create_mrq_state(
         wrt=nnx.Param,
     )
 
-    policy_net = LayerNormMLP(
-        encoder_zs_dim,
-        env.action_space.shape[0],
-        policy_hidden_nodes,
-        policy_activation,
-        rngs=rngs,
-    )
-    policy = DeterministicTanhPolicy(policy_net, env.action_space)
     policy_optimizer = nnx.Optimizer(
-        policy,
+        policy_with_encoder.policy,
         optax.adamw(
             learning_rate=policy_learning_rate,
             weight_decay=policy_weight_decay,
@@ -519,30 +515,27 @@ def create_mrq_state(
     return namedtuple(
         "MRQState",
         [
-            "encoder",
+            "policy_with_encoder",
             "encoder_optimizer",
+            "policy_optimizer",
             "q",
             "q_optimizer",
-            "policy",
-            "policy_optimizer",
             "the_bins",
         ],
     )(
-        encoder,
+        policy_with_encoder,
         encoder_optimizer,
+        policy_optimizer,
         q,
         q_optimizer,
-        policy,
-        policy_optimizer,
         the_bins,
     )
 
 
 def train_mrq(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    encoder: ModelBasedEncoder,
+    policy_with_encoder: DeterministicPolicyWithEncoder,
     encoder_optimizer: nnx.Optimizer,
-    policy: DeterministicTanhPolicy,
     policy_optimizer: nnx.Optimizer,
     q: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
@@ -570,8 +563,6 @@ def train_mrq(
     nnx.Module,
     nnx.Module,
     nnx.Optimizer,
-    nnx.Module,
-    nnx.Module,
     nnx.Optimizer,
     nnx.Module,
     nnx.Module,
@@ -597,15 +588,11 @@ def train_mrq(
     env : gymnasium.Env
         Gymnasium environment.
 
-    encoder : ModelBasedEncoder
-        Encoder for the MR.Q algorithm.
+    policy_with_encoder : DeterministicPolicyWithEncoder
+        Policy and encoder for the MR.Q algorithm.
 
     encoder_optimizer : nnx.Optimizer
         Optimizer for the encoder.
-
-    policy : DeterministicTanhPolicy
-        Policy for the MR.Q algorithm. Maps the latent state representation
-        to actions in the environment, :math:`\pi(\boldsymbol{z}_s) = a`.
 
     policy_optimizer : nnx.Optimizer
         Optimizer for the policy.
@@ -685,17 +672,14 @@ def train_mrq(
 
     Returns
     -------
-    encoder : ModelBasedEncoder
-        Encoder for the MR.Q algorithm.
+    policy_with_encoder : DeterministicPolicyWithEncoder
+        Policy and encoder for the MR.Q algorithm.
 
-    encoder_target : ModelBasedEncoder
-        Target encoder for the MR.Q algorithm.
+    policy_with_encoder : DeterministicPolicyWithEncoder
+        Target policy and encoder.
 
     encoder_optimizer : nnx.Optimizer
         Optimizer for the encoder.
-
-    policy : DeterministicTanhPolicy
-        Policy for the MR.Q algorithm.
 
     policy_target : DeterministicTanhPolicy
         Target policy for the MR.Q algorithm.
@@ -769,14 +753,8 @@ def train_mrq(
         horizon=max(encoder_horizon, q_horizon),
     )
 
-    encoder_target = nnx.clone(encoder)
-    policy_target = nnx.clone(policy)
+    policy_with_encoder_target = nnx.clone(policy_with_encoder)
     q_target = nnx.clone(q)
-
-    policy_with_encoder = DeterministicPolicyWithEncoder(encoder, policy)
-    policy_with_encoder_target = DeterministicPolicyWithEncoder(
-        encoder_target, policy_target
-    )
 
     _sample_actions = nnx.cached_partial(
         make_sample_actions(env.action_space, exploration_noise),
@@ -943,11 +921,9 @@ def train_mrq(
     return namedtuple(
         "MRQResult",
         [
-            "encoder",
-            "encoder_target",
+            "policy_with_encoder",
+            "policy_with_encoder_target",
             "encoder_optimizer",
-            "policy",
-            "policy_target",
             "policy_optimizer",
             "q",
             "q_target",
@@ -955,11 +931,9 @@ def train_mrq(
             "replay_buffer",
         ],
     )(
-        encoder,
-        encoder_target,
+        policy_with_encoder,
+        policy_with_encoder_target,
         encoder_optimizer,
-        policy,
-        policy_target,
         policy_optimizer,
         q,
         q_target,

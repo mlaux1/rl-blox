@@ -38,9 +38,8 @@ state = create_mrq_state(env, **hparams_models)
 
 result = train_mrq(
     env,
-    state.encoder,
+    state.policy_with_encoder,
     state.encoder_optimizer,
-    state.policy,
     state.policy_optimizer,
     state.q,
     state.q_optimizer,
@@ -58,14 +57,14 @@ while True:
     obs, _ = env.reset()
     while not done:
         obs = jnp.asarray(obs)
-        action = result.policy(result.encoder.encode_zs(obs))
+        action = result.policy_with_encoder(obs)
         next_obs, reward, termination, truncation, infos = env.step(
             np.asarray(action)
         )
         done = termination or truncation
         if verbose:
-            zs = result.encoder.encode_zs(obs)
-            zsa = result.encoder.encode_zsa(zs, action)
+            zs = result.policy_with_encoder.encoder.encode_zs(obs)
+            zsa = result.policy_with_encoder.encoder.encode_zsa(zs, action)
             q_value = result.q(zsa)
             print(f"{q_value=}")
         obs = np.asarray(next_obs)
