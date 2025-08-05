@@ -11,8 +11,8 @@ verbose = 1
 
 train_envs = {
     EnvSpec(env_name, 0, 10.0): gym.make(env_name, g=10.0),
-    EnvSpec(env_name, 1, 10.5): gym.make(env_name, g=10.5),
-    EnvSpec(env_name, 2, 9.5): gym.make(env_name, g=9.5),
+    EnvSpec(env_name, 1, 10.1): gym.make(env_name, g=10.1),
+    EnvSpec(env_name, 2, 9.9): gym.make(env_name, g=9.9),
 }
 
 hparams_models = dict(
@@ -47,8 +47,8 @@ for env in train_envs:
 policy, _, q, _, _, _, _ = sac_result
 
 # Evaluation
-env1 = gym.make(env_name, render_mode="human", g=9.81)
-env2 = gym.make(env_name, render_mode="human", g=9.5)
+env1 = gym.make(env_name, render_mode="human", g=10.0)
+env2 = gym.make(env_name, render_mode="human", g=9.9)
 # env3 = gym.make(env_name, render_mode="human", g=10.0)
 # env4 = gym.make(env_name, render_mode="human", g=10.5)
 

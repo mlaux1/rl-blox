@@ -27,6 +27,7 @@ def train_uts_sac(
     episodes_per_task: int = 1,
     seed: int = 1,
     exploring_starts: int = 0,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -68,6 +69,7 @@ def train_uts_sac(
             q_target=q_target,
             entropy_control=entropy_control,
             learning_starts=exploring_starts,
+            progress_bar=progress_bar,
         )
 
         steps_so_far += ep_steps
