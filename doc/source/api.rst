@@ -51,8 +51,6 @@ Functional Blox
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
    td7.td7_update_critic
-   mrq.update_model_based_encoder
-   mrq.model_based_encoder_loss
    mrq.update_critic_and_policy
    sac.sac_actor_loss
    sac.sac_exploration_loss
@@ -91,6 +89,8 @@ Functional Blox
 
    embedding.sale.state_action_embedding_loss
    embedding.sale.update_sale
+   model_based_encoder.update_model_based_encoder
+   model_based_encoder.model_based_encoder_loss
    checkpointing.assess_performance_and_checkpoint
    target_net.soft_target_net_update
    target_net.hard_target_net_update
