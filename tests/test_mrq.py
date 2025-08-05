@@ -6,9 +6,8 @@ def test_td7(pendulum_env):
     state = create_mrq_state(pendulum_env, seed=seed)
     train_mrq(
         pendulum_env,
-        state.encoder,
+        state.policy_with_encoder,
         state.encoder_optimizer,
-        state.policy,
         state.policy_optimizer,
         state.q,
         state.q_optimizer,
