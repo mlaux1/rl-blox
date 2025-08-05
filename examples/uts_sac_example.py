@@ -10,9 +10,9 @@ seed = 1
 verbose = 1
 
 train_envs = {
-    EnvSpec(env_name, 0, 10.0): gym.make(env_name, g=10.0),
-    EnvSpec(env_name, 1, 10.1): gym.make(env_name, g=10.1),
-    EnvSpec(env_name, 2, 9.9): gym.make(env_name, g=9.9),
+    EnvSpec(0, 10.0): gym.make(env_name, g=10.0),
+    EnvSpec(1, 10.1): gym.make(env_name, g=10.1),
+    EnvSpec(2, 9.9): gym.make(env_name, g=9.9),
 }
 
 hparams_models = dict(
@@ -25,7 +25,7 @@ hparams_models = dict(
 hparams_algorithm = dict(
     total_timesteps=100_000,
     exploring_starts=0,
-    episodes_per_task=3,
+    episodes_per_task=1,
 )
 
 sac_state = create_sac_state(
@@ -48,12 +48,12 @@ policy, _, q, _, _, _, _ = sac_result
 
 # Evaluation
 env1 = gym.make(env_name, render_mode="human", g=10.0)
-env2 = gym.make(env_name, render_mode="human", g=9.9)
+# env2 = gym.make(env_name, render_mode="human", g=9.9)
 # env3 = gym.make(env_name, render_mode="human", g=10.0)
 # env4 = gym.make(env_name, render_mode="human", g=10.5)
 
 while True:
-    env = env2
+    env = env1
     done = False
     obs, _ = env.reset()
     while not done:
@@ -61,8 +61,3 @@ while True:
         next_obs, reward, termination, truncation, info = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
-
-        if verbose >= 2:
-            q_value = float(
-                q(jnp.concatenate((obs, action), axis=-1)).squeeze()
-            )

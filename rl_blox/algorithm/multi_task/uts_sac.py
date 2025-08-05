@@ -1,8 +1,7 @@
-import random
-from dataclasses import dataclass
-
 import gymnasium as gym
-from flax import nnx
+import jax
+import jax.numpy as jnp
+from flax import nnx, struct
 from tqdm.rich import tqdm
 
 from ...blox.double_qnet import ContinuousClippedDoubleQNet
@@ -11,9 +10,8 @@ from ...blox.replay_buffer import ReplayBuffer
 from ..sac import EntropyControl, train_sac
 
 
-@dataclass(frozen=True)
+@struct.dataclass(frozen=True)
 class EnvSpec:
-    name: str
     id: int
     context: float
 
@@ -44,9 +42,14 @@ def train_uts_sac(
     steps_so_far = 0
     episodes_so_far = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
+    key = jax.random.key(seed)
+    indices = jnp.arange(len(envs))
 
     while steps_so_far < total_timesteps:
-        spec, env = random.choice(list(envs.items()))
+        key, skey = jax.random.split(key)
+        selected = jax.random.choice(key, indices).item()
+        spec = list(envs.keys())[selected]
+        env = envs[spec]
 
         (
             policy,
