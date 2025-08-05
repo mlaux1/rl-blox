@@ -572,7 +572,7 @@ def train_sac(
             steps_per_episode = 0
 
             training_eps += 1
-            if max_episodes is not None and training_eps == max_episodes:
+            if max_episodes is not None and training_eps >= max_episodes:
                 return namedtuple(
                     "SACResult",
                     [
