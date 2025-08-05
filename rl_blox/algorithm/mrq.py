@@ -719,11 +719,10 @@ def train_mrq(
 
     Checkpointing
 
+    * ``policy_with_encoder`` - actor, policy and encoder
+    * ``policy_with_encoder_target`` - target policy, actor
     * ``q`` - clipped double Q network, critic
     * ``q_target`` - target network for the critic
-    * ``policy_with_encoder_target`` - target policy, actor
-    * ``encoder`` - encoder for the state representation
-    * ``policy`` - target network for the actor
 
     References
     ----------
@@ -862,7 +861,6 @@ def train_mrq(
                         "policy_with_encoder_target", policy_with_encoder_target
                     )
                     logger.record_epoch("q_target", q_target)
-                    logger.record_epoch("encoder", policy_with_encoder.encoder)
 
             batch = replay_buffer.sample_batch(
                 batch_size, q_horizon, False, rng
@@ -901,7 +899,7 @@ def train_mrq(
                     step=global_step + 1,
                 )
                 logger.record_epoch("q", q)
-                logger.record_epoch("policy", policy_with_encoder.policy)
+                logger.record_epoch("policy_with_encoder", policy_with_encoder)
 
         if terminated or truncated:
             if logger is not None:
