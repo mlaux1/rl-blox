@@ -334,6 +334,8 @@ def train_mrq(
     with model-based representation learning. The state representation and
     state-action representation are trained such that a linear model can predict
     from it if the episode is terminated, the next latent state, and the reward.
+    See :class:`~.blox.embedding.model_based_encoder.ModelBasedEncoder` for
+    more details.
 
     MR.Q is an extension of TD3 (see :func:`.td3.train_td3`) with LAP
     (see :func:`.td3_lap.train_td3_lap`) and is similar to TD7
