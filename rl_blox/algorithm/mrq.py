@@ -315,6 +315,8 @@ def train_mrq(
     reward_weight: float = 0.1,
     done_weight: float = 0.1,
     activation_weight: float = 1e-5,
+    policy_with_encoder_target: DeterministicPolicyWithEncoder | None = None,
+    q_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
 ) -> tuple[
@@ -427,6 +429,12 @@ def train_mrq(
     activation_weight : float, optional
         Weight for the activation regularization in the policy training.
 
+    policy_with_encoder_target : DeterministicPolicyWithEncoder, optional
+        Target policy and encoder for the MR.Q algorithm.
+
+    q_target : ContinuousClippedDoubleQNet, optional
+        Target action-value function approximator for the MR.Q algorithm.
+
     logger : LoggerBase, optional
         Experiment logger.
 
@@ -515,8 +523,10 @@ def train_mrq(
         horizon=max(encoder_horizon, q_horizon),
     )
 
-    policy_with_encoder_target = nnx.clone(policy_with_encoder)
-    q_target = nnx.clone(q)
+    if policy_with_encoder_target is None:
+        policy_with_encoder_target = nnx.clone(policy_with_encoder)
+    if q_target is None:
+        q_target = nnx.clone(q)
 
     _sample_actions = nnx.cached_partial(
         make_sample_actions(env.action_space, exploration_noise),
