@@ -51,7 +51,7 @@ Functional Blox
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
    td7.td7_update_critic
-   mrq.update_encoder
+   mrq.update_model_based_encoder
    mrq.encoder_loss
    mrq.update_critic_and_policy
    sac.sac_actor_loss

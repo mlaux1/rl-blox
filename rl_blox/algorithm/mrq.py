@@ -42,7 +42,7 @@ from .td3 import make_sample_target_actions
         "batch_size",
     ),
 )
-def update_encoder(
+def update_model_based_encoder(
     encoder: ModelBasedEncoder,
     encoder_target: ModelBasedEncoder,
     encoder_optimizer: nnx.Optimizer,
@@ -773,7 +773,7 @@ def train_mrq(
     epoch = 0
 
     _update_encoder = nnx.cached_partial(
-        update_encoder,
+        update_model_based_encoder,
         policy_with_encoder.encoder,
         policy_with_encoder_target.encoder,
         encoder_optimizer,
