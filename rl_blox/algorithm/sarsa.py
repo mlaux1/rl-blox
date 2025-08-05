@@ -1,7 +1,7 @@
 import gymnasium
 import jax
-import tqdm
 from jax.typing import ArrayLike
+from tqdm.rich import trange
 
 from ..blox.value_policy import epsilon_greedy_policy
 from ..logging.logger import LoggerBase
@@ -17,6 +17,7 @@ def train_sarsa(
     total_timesteps: int = 100_000,
     seed: int = 1,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> ArrayLike:
     r"""
     State-action-reward-state-action algorithm.
@@ -43,6 +44,9 @@ def train_sarsa(
         The random seed.
     logger : LoggerBase, optional
         Experiment logger.
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
 
     Returns
     -------
@@ -72,7 +76,7 @@ def train_sarsa(
 
     steps_per_episode = 0
 
-    for i in tqdm.trange(total_timesteps):
+    for i in trange(total_timesteps, disable=not progress_bar):
         # get action from policy and perform environment step
         key, subkey = jax.random.split(key)
         action = epsilon_greedy_policy(q_table, observation, epsilon, subkey)

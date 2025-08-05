@@ -19,7 +19,7 @@ def test_ddqn(cart_pole_env):
         nnx.Rngs(seed),
     )
 
-    optimizer = nnx.Optimizer(q_net, optax.rprop(0.0003))
+    optimizer = nnx.Optimizer(q_net, optax.rprop(0.0003), wrt=nnx.Param)
 
     train_ddqn(
         q_net,

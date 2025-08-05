@@ -7,8 +7,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
@@ -139,7 +139,9 @@ class EntropyControl:
             self._alpha = EntropyCoefficient(jnp.zeros(1))
             self.alpha_ = self._alpha()
             self.optimizer = nnx.Optimizer(
-                self._alpha, optax.adam(learning_rate=learning_rate)
+                self._alpha,
+                optax.adam(learning_rate=learning_rate),
+                wrt=nnx.Param,
             )
         else:
             self.target_entropy = alpha
@@ -180,7 +182,7 @@ def _update_entropy_coefficient(
         observations,
         log_alpha,
     )
-    optimizer.update(grad)
+    optimizer.update(log_alpha, grad)
     alpha = log_alpha()
     return exploration_loss, alpha
 
@@ -209,7 +211,7 @@ def create_sac_state(
     )
     policy = GaussianTanhPolicy(policy_net, env.action_space)
     policy_optimizer = nnx.Optimizer(
-        policy, optax.adam(learning_rate=policy_learning_rate)
+        policy, optax.adam(learning_rate=policy_learning_rate), wrt=nnx.Param
     )
 
     q1 = MLP(
@@ -228,7 +230,9 @@ def create_sac_state(
         nnx.Rngs(seed + 1),
     )
     q = ContinuousClippedDoubleQNet(q1, q2)
-    q_optimizer = nnx.Optimizer(q, optax.adam(learning_rate=q_learning_rate))
+    q_optimizer = nnx.Optimizer(
+        q, optax.adam(learning_rate=q_learning_rate), wrt=nnx.Param
+    )
 
     return namedtuple(
         "SACState",
@@ -264,6 +268,7 @@ def train_sac(
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
     max_episodes: int | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -365,6 +370,9 @@ def train_sac(
 
     max_episodes : int, optional
         Number of maximum training episodes.
+
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
 
     Returns
     -------
@@ -474,9 +482,7 @@ def train_sac(
         replay_buffer = ReplayBuffer(buffer_size)
 
     train_step = partial(train_step_with_loss, sac_loss)
-    train_step = partial(nnx.jit, static_argnames=("gamma", "alpha"))(
-        train_step
-    )
+    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     if logger is not None:
         logger.start_new_episode()
@@ -484,7 +490,7 @@ def train_sac(
     steps_per_episode = 0
     training_eps = 0
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
@@ -663,5 +669,5 @@ def sac_update_actor(
     loss, grads = nnx.value_and_grad(sac_actor_loss, argnums=0)(
         policy, q, alpha, action_key, observation
     )
-    policy_optimizer.update(grads)
+    policy_optimizer.update(policy, grads)
     return loss

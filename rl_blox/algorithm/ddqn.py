@@ -30,6 +30,7 @@ def train_ddqn(
     q_target_net: MLP | None = None,
     seed: int = 1,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
@@ -74,6 +75,9 @@ def train_ddqn(
         The random seed, which can be set to reproduce results.
     logger : LoggerBase, optional
         Experiment Logger.
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
 
     Returns
     -------
@@ -119,7 +123,7 @@ def train_ddqn(
     episode = 1
     accumulated_reward = 0.0
 
-    for step in trange(total_timesteps):
+    for step in trange(total_timesteps, disable=not progress_bar):
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:

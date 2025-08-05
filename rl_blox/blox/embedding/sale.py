@@ -281,5 +281,5 @@ def update_sale(
     embedding_loss_value, grads = nnx.value_and_grad(
         state_action_embedding_loss, argnums=0
     )(embedding, observations, actions, next_observations)
-    embedding_optimizer.update(grads)
+    embedding_optimizer.update(embedding, grads)
     return embedding_loss_value

@@ -29,6 +29,7 @@ Algorithm Interface
    td3.train_td3
    td3_lap.train_td3_lap
    td7.train_td7
+   mrq.train_mrq
    sac.train_sac
    pets.train_pets
    cmaes.train_cmaes
@@ -50,6 +51,7 @@ Functional Blox
    td7.td7_update_actor
    td7.deterministic_policy_gradient_loss_sale
    td7.td7_update_critic
+   mrq.update_critic_and_policy
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
@@ -87,6 +89,8 @@ Functional Blox
 
    embedding.sale.state_action_embedding_loss
    embedding.sale.update_sale
+   embedding.model_based_encoder.update_model_based_encoder
+   embedding.model_based_encoder.model_based_encoder_loss
    checkpointing.assess_performance_and_checkpoint
    target_net.soft_target_net_update
    target_net.hard_target_net_update
@@ -97,6 +101,7 @@ Functional Blox
    probabilistic_ensemble.gaussian_ensemble_loss
    probabilistic_ensemble.train_ensemble
    probabilistic_ensemble.restore_checkpoint
+   losses.masked_mse_loss
    losses.stochastic_policy_gradient_pseudo_loss
    losses.deterministic_policy_gradient_loss
    losses.mse_value_loss
@@ -109,8 +114,13 @@ Functional Blox
    losses.dqn_loss
    losses.nature_dqn_loss
    losses.ddqn_loss
+   preprocessing.make_two_hot_bins
+   preprocessing.two_hot_encoding
+   preprocessing.two_hot_decoding
+   preprocessing.two_hot_cross_entropy_loss
    function_approximator.norm.avg_l1_norm
    replay_buffer.lap_priority
+   return_estimates.discounted_n_step_return
 
 Data Blox
 ---------
@@ -122,10 +132,13 @@ Data Blox
    embedding.sale.ActorSALE
    embedding.sale.CriticSALE
    embedding.sale.DeterministicSALEPolicy
+   embedding.model_based_encoder.ModelBasedEncoder
+   embedding.model_based_encoder.DeterministicPolicyWithEncoder
    checkpointing.CheckpointState
    replay_buffer.ReplayBuffer
    replay_buffer.LAP
    function_approximator.mlp.MLP
+   function_approximator.layer_norm_mlp.LayerNormMLP
    function_approximator.gaussian_mlp.GaussianMLP
    function_approximator.policy_head.DeterministicTanhPolicy
    function_approximator.policy_head.StochasticPolicyBase

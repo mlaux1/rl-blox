@@ -5,7 +5,7 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tqdm
+from tqdm.rich import trange
 
 from ..blox.value_policy import epsilon_greedy_policy, greedy_policy
 from ..logging.logger import LoggerBase
@@ -119,6 +119,7 @@ def train_dynaq(
     total_timesteps: int = 1_000_000,
     seed: int = 0,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> jnp.ndarray:
     """Train tabular Dyna-Q for discrete state and action spaces.
 
@@ -161,6 +162,9 @@ def train_dynaq(
     logger : LoggerBase, optional
         Logger.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     q_table : array
@@ -196,7 +200,7 @@ def train_dynaq(
     obs, _ = env.reset(seed=seed)
     obs = int(obs)
     accumulated_reward = 0.0
-    for t in tqdm.trange(total_timesteps):
+    for t in trange(total_timesteps, disable=not progress_bar):
         key, sampling_key = jax.random.split(key, 2)
         act = int(epsilon_greedy_policy(q_table, obs, epsilon, sampling_key))
         next_obs, reward, terminated, truncated, _ = env.step(act)

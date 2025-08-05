@@ -1,7 +1,7 @@
-import distrax
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import tensorflow_probability.substrates.jax.distributions as dist
 from flax import nnx
 
 
@@ -40,6 +40,9 @@ class DeterministicTanhPolicy(nnx.Module):
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         y = self.policy_net(observation)
+        return self.scale_output(y)
+
+    def scale_output(self, y: jnp.ndarray) -> jnp.ndarray:
         return nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
@@ -163,9 +166,9 @@ class GaussianTanhPolicy(StochasticPolicyBase):
         # -jnp.log(std)
         # - 0.5 * jnp.log(2.0 * jnp.pi)
         # - 0.5 * ((action - mean) / std) ** 2
-        return distrax.MultivariateNormalDiag(
-            loc=mean, scale_diag=std
-        ).log_prob(action)
+        return dist.MultivariateNormalDiag(loc=mean, scale_diag=std).log_prob(
+            action
+        )
 
 
 class GaussianPolicy(StochasticPolicyBase):
@@ -197,7 +200,7 @@ class GaussianPolicy(StochasticPolicyBase):
         # jax.random.normal(key, mean.shape)
         # * jnp.exp(jnp.clip(0.5 * log_var, -20.0, 2.0))
         # + mean
-        return distrax.MultivariateNormalDiag(loc=mean, scale_diag=std).sample(
+        return dist.MultivariateNormalDiag(loc=mean, scale_diag=std).sample(
             seed=key,
             sample_shape=(),
         )
@@ -215,9 +218,9 @@ class GaussianPolicy(StochasticPolicyBase):
         # -jnp.log(std)
         # - 0.5 * jnp.log(2.0 * jnp.pi)
         # - 0.5 * ((action - mean) / std) ** 2
-        return distrax.MultivariateNormalDiag(
-            loc=mean, scale_diag=std
-        ).log_prob(action)
+        return dist.MultivariateNormalDiag(loc=mean, scale_diag=std).log_prob(
+            action
+        )
 
 
 class SoftmaxPolicy(StochasticPolicyBase):
@@ -244,7 +247,7 @@ class SoftmaxPolicy(StochasticPolicyBase):
         return self.net(observation)
 
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        return distrax.Categorical(logits=self.logits(observation)).sample(
+        return dist.Categorical(logits=self.logits(observation)).sample(
             seed=key,
             sample_shape=(),
         )
@@ -252,6 +255,6 @@ class SoftmaxPolicy(StochasticPolicyBase):
     def log_probability(
         self, observation: jnp.ndarray, action: jnp.ndarray
     ) -> jnp.ndarray:
-        return distrax.Categorical(logits=self.logits(observation)).log_prob(
+        return dist.Categorical(logits=self.logits(observation)).log_prob(
             action
         )

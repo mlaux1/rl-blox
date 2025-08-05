@@ -16,7 +16,7 @@ from ..logging.logger import LoggerBase
 
 
 def train_step_with_loss(
-    loss, optimizer: nnx.Optimizer, *args, **kwargs
+    loss, optimizer: nnx.Optimizer, q: nnx.Module, *args, **kwargs
 ) -> tuple[float, float]:
     """Performs a single training step to optimize a Q-network.
 
@@ -28,6 +28,9 @@ def train_step_with_loss(
         loss should be the Q-network that will be optimized.
     optimizer : nnx.Optimizer
         The optimizer to be used.
+    q : nnx.Module
+        The deep Q-network to be optimized. It should be a Flax module that
+        implements the forward pass.
     *args : tuple
         Arguments to be passed to the loss function.
     **kwargs : dict
@@ -40,8 +43,8 @@ def train_step_with_loss(
         value as the first element and possibly as the only element.
     """
     grad_fn = nnx.value_and_grad(loss, argnums=0, has_aux=True)
-    value, grad = grad_fn(*args, **kwargs)
-    optimizer.update(grad)
+    value, grad = grad_fn(q, *args, **kwargs)
+    optimizer.update(q, grad)
     return value
 
 
@@ -55,6 +58,7 @@ def train_dqn(
     gamma: float = 0.99,
     seed: int = 1,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
@@ -91,6 +95,9 @@ def train_dqn(
         The random seed, which can be set to reproduce results.
     logger : LoggerBase
         Logger for experiment tracking.
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
 
     Returns
     -------
@@ -130,7 +137,7 @@ def train_dqn(
     episode = 1
     accumulated_reward = 0.0
 
-    for step in trange(total_timesteps):
+    for step in trange(total_timesteps, disable=not progress_bar):
         if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:

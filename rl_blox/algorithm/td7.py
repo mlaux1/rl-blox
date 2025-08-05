@@ -7,8 +7,8 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import optax
-import tqdm
 from flax import nnx
+from tqdm.rich import trange
 
 from ..blox.checkpointing import (
     CheckpointState,
@@ -74,8 +74,6 @@ def _sum_of_qnet_losses(
     static_argnames=[
         "gamma",
         "min_priority",
-        "q_min",
-        "q_max",
     ],
 )
 def td7_update_critic(
@@ -166,6 +164,9 @@ def td7_update_critic(
     q_max : float
         Maximum value.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     q_loss_value : float
@@ -213,7 +214,7 @@ def td7_update_critic(
     (q_loss_value, max_abs_td_error), grads = nnx.value_and_grad(
         _sum_of_qnet_losses, has_aux=True, argnums=6
     )(observation, action, zsa, zs, q_target, min_priority, critic)
-    critic_optimizer.update(grads)
+    critic_optimizer.update(critic, grads)
 
     return q_loss_value, max_abs_td_error, q_target
 
@@ -285,7 +286,7 @@ def td7_update_actor(
     actor_loss_value, grads = nnx.value_and_grad(
         deterministic_policy_gradient_loss_sale, argnums=3
     )(policy.embedding, critic, observation, policy.actor)
-    actor_optimizer.update(grads)
+    actor_optimizer.update(policy.actor, grads)
     return actor_loss_value
 
 
@@ -327,7 +328,9 @@ def create_td7_state(
     )
     embedding = SALE(state_embedding, state_action_embedding)
     embedding_optimizer = nnx.Optimizer(
-        embedding, optax.adam(learning_rate=embedding_learning_rate)
+        embedding,
+        optax.adam(learning_rate=embedding_learning_rate),
+        wrt=nnx.Param,
     )
 
     policy_net = MLP(
@@ -345,7 +348,7 @@ def create_td7_state(
         rngs,
     )
     actor_optimizer = nnx.Optimizer(
-        actor, optax.adam(learning_rate=policy_learning_rate)
+        actor, optax.adam(learning_rate=policy_learning_rate), wrt=nnx.Param
     )
 
     n_q_inputs = q_sa_encoding_nodes + 2 * n_embedding_dimensions
@@ -379,7 +382,7 @@ def create_td7_state(
     )
     critic = ContinuousClippedDoubleQNet(critic1, critic2)
     critic_optimizer = nnx.Optimizer(
-        critic, optax.adam(learning_rate=q_learning_rate)
+        critic, optax.adam(learning_rate=q_learning_rate), wrt=nnx.Param
     )
 
     return namedtuple(
@@ -431,6 +434,7 @@ def train_td7(
     actor_target: ActorSALE | None = None,
     critic_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -696,7 +700,7 @@ def train_td7(
     value_clipping_state = ValueClippingState()
     checkpoint_state = CheckpointState()
 
-    for global_step in tqdm.trange(total_timesteps):
+    for global_step in trange(total_timesteps, disable=not progress_bar):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:

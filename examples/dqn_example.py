@@ -46,7 +46,7 @@ rb = ReplayBuffer(hparams_algorithm.pop("buffer_size"), discrete_actions=True)
 
 # initialise optimiser
 optimizer = nnx.Optimizer(
-    q_net, optax.rprop(hparams_algorithm.pop("learning_rate"))
+    q_net, optax.rprop(hparams_algorithm.pop("learning_rate")), wrt=nnx.Param
 )
 
 # Train
