@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import gymnasium as gym
 from flax import nnx
+from tqdm.rich import tqdm
 
 from ...blox.double_qnet import ContinuousClippedDoubleQNet
 from ...blox.function_approximator.policy_head import StochasticPolicyBase
@@ -42,10 +43,10 @@ def train_uts_sac(
     entropy_control = None
     steps_so_far = 0
     episodes_so_far = 0
+    progress = tqdm(total=total_timesteps, disable=not progress_bar)
 
     while steps_so_far < total_timesteps:
         spec, env = random.choice(list(envs.items()))
-        print(f"Selected env {spec.id} with context {spec.context}.")
 
         (
             policy,
@@ -69,16 +70,12 @@ def train_uts_sac(
             q_target=q_target,
             entropy_control=entropy_control,
             learning_starts=exploring_starts,
-            progress_bar=progress_bar,
+            progress_bar=False,
         )
 
         steps_so_far += ep_steps
         episodes_so_far += 1
-        print(
-            f"Episode {episodes_so_far} completed after {
-                ep_steps
-            } steps in env {env}. Total: {steps_so_far}."
-        )
+        progress.update(ep_steps)
 
     return (
         policy,
