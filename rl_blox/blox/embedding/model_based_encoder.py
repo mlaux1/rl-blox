@@ -6,13 +6,13 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 
-from ..blox.function_approximator.layer_norm_mlp import (
+from ...blox.function_approximator.layer_norm_mlp import (
     LayerNormMLP,
     default_init,
 )
-from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.losses import masked_mse_loss
-from ..blox.preprocessing import two_hot_cross_entropy_loss, two_hot_decoding
+from ...blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ...blox.losses import masked_mse_loss
+from ...blox.preprocessing import two_hot_cross_entropy_loss, two_hot_decoding
 
 
 class ModelBasedEncoder(nnx.Module):

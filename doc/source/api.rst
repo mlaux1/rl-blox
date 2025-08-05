@@ -89,8 +89,8 @@ Functional Blox
 
    embedding.sale.state_action_embedding_loss
    embedding.sale.update_sale
-   model_based_encoder.update_model_based_encoder
-   model_based_encoder.model_based_encoder_loss
+   embedding.model_based_encoder.update_model_based_encoder
+   embedding.model_based_encoder.model_based_encoder_loss
    checkpointing.assess_performance_and_checkpoint
    target_net.soft_target_net_update
    target_net.hard_target_net_update
@@ -132,8 +132,8 @@ Data Blox
    embedding.sale.ActorSALE
    embedding.sale.CriticSALE
    embedding.sale.DeterministicSALEPolicy
-   model_based_encoder.ModelBasedEncoder
-   model_based_encoder.DeterministicPolicyWithEncoder
+   embedding.model_based_encoder.ModelBasedEncoder
+   embedding.model_based_encoder.DeterministicPolicyWithEncoder
    checkpointing.CheckpointState
    replay_buffer.ReplayBuffer
    replay_buffer.LAP

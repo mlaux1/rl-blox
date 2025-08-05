@@ -10,15 +10,15 @@ from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
-from ..blox.function_approximator.layer_norm_mlp import LayerNormMLP
-from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
-from ..blox.losses import huber_loss
-from ..blox.model_based_encoder import (
+from ..blox.embedding.model_based_encoder import (
     DeterministicPolicyWithEncoder,
     ModelBasedEncoder,
     create_model_based_encoder_and_policy,
     update_model_based_encoder,
 )
+from ..blox.function_approximator.layer_norm_mlp import LayerNormMLP
+from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
+from ..blox.losses import huber_loss
 from ..blox.preprocessing import make_two_hot_bins
 from ..blox.replay_buffer import SubtrajectoryReplayBufferPER, lap_priority
 from ..blox.return_estimates import discounted_n_step_return
