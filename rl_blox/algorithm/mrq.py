@@ -1,5 +1,4 @@
 from collections import namedtuple
-from collections.abc import Callable
 from functools import partial
 
 import gymnasium as gym
@@ -11,12 +10,13 @@ import tqdm.rich as tqdm
 from flax import nnx
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
-from ..blox.function_approximator.layer_norm_mlp import (
-    LayerNormMLP,
-    default_init,
-)
+from ..blox.function_approximator.layer_norm_mlp import LayerNormMLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
 from ..blox.losses import huber_loss, masked_mse_loss
+from ..blox.model_based_encoder import (
+    DeterministicPolicyWithEncoder,
+    ModelBasedEncoder,
+)
 from ..blox.preprocessing import (
     make_two_hot_bins,
     two_hot_cross_entropy_loss,
@@ -28,197 +28,6 @@ from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .ddpg import make_sample_actions
 from .td3 import make_sample_target_actions
-
-
-class Encoder(nnx.Module):
-    r"""Encoder for the MR.Q algorithm.
-
-    The state embedding vector :math:`\boldsymbol{z}_s` is obtained as an
-    intermediate component by training end-to-end with the state-action encoder.
-    MR.Q handles different input modalities by swapping the architecture of
-    the state encoder. Since :math:`\boldsymbol{z}_s` is a vector, the
-    remaining networks are independent of the observation space and use
-    feedforward networks. Note that in this implementation, we can only handle
-    observations / states represented by real vectors.
-
-    Given the transition :math:`(o, a, r, d, o')` consisting of observation,
-    action, reward, done flag (1 - terminated), and next observation
-    respectively, the encoder predicts
-
-    .. math::
-
-        \boldsymbol{z}_s &= f(o)\\
-        \boldsymbol{z}_{sa} &= g(\boldsymbol{z}_s, a)\\
-        (\tilde{d}, \boldsymbol{z}_{s'}, \tilde{r})
-        &= \boldsymbol{w}^T \boldsymbol{z}_{sa} + \boldsymbol{b}
-
-
-    Parameters
-    ----------
-    n_bins : int
-        Number of bins for the two-hot encoding.
-
-    n_state_features : int
-        Number of state components.
-
-    n_action_features : int
-        Number of action components.
-
-    zs_dim : int
-        Dimension of the latent state representation.
-
-    za_dim : int
-        Dimension of the latent action representation.
-
-    zsa_dim : int
-        Dimension of the latent state-action representation.
-
-    hidden_nodes : list
-        Numbers of hidden nodes of the MLP.
-
-    activation : str
-        Activation function. Has to be the name of a function defined in the
-        flax.nnx module.
-
-    rngs : nnx.Rngs
-        Random number generator.
-    """
-
-    zs: LayerNormMLP
-    """Maps observations to latent state representations (nonlinear)."""
-
-    za: nnx.Linear
-    """Maps actions to latent action representations (linear)."""
-
-    zsa: LayerNormMLP
-    """Maps zs and za to latent state-action representations (nonlinear)."""
-
-    model: nnx.Linear
-    """Maps zsa to done flag, next latent state (zs), and reward (linear)."""
-
-    zs_dim: int
-    """Dimension of the latent state representation."""
-
-    activation: Callable[[jnp.ndarray], jnp.ndarray]
-    """Activation function."""
-
-    zs_layer_norm: nnx.LayerNorm
-    """Layer normalization for the latent state representation."""
-
-    def __init__(
-        self,
-        n_state_features: int,
-        n_action_features: int,
-        n_bins: int,
-        zs_dim: int,
-        za_dim: int,
-        zsa_dim: int,
-        hidden_nodes: list[int],
-        activation: str,
-        rngs: nnx.Rngs,
-    ):
-        self.zs = LayerNormMLP(
-            n_state_features,
-            zs_dim,
-            hidden_nodes,
-            activation,
-            rngs=rngs,
-        )
-        self.za = nnx.Linear(
-            n_action_features, za_dim, rngs=rngs, kernel_init=default_init
-        )
-        self.zsa = LayerNormMLP(
-            zs_dim + za_dim,
-            zsa_dim,
-            hidden_nodes,
-            activation,
-            rngs=rngs,
-        )
-        self.model = nnx.Linear(
-            zsa_dim, n_bins + zs_dim + 1, rngs=rngs, kernel_init=default_init
-        )
-        self.zs_dim = zs_dim
-        self.activation = getattr(nnx, activation)
-        self.zs_layer_norm = nnx.LayerNorm(num_features=zs_dim, rngs=rngs)
-
-    def encode_zsa(self, zs: jnp.ndarray, action: jnp.ndarray) -> jnp.ndarray:
-        """Encodes the state and action into latent representation.
-
-        Parameters
-        ----------
-        zs : array, shape (n_samples, n_state_features)
-            State representation.
-
-        action : array, shape (n_samples, n_action_features)
-            Action representation.
-
-        Returns
-        -------
-        zsa : array, shape (n_samples, zsa_dim)
-            Latent state-action representation.
-        """
-        # Difference to original implementation! The original implementation
-        # scales actions to [-1, 1]. We do not scale the actions here.
-        za = self.activation(self.za(action))
-        return self.zsa(jnp.concatenate((zs, za), axis=-1))
-
-    def encode_zs(self, observation: jnp.ndarray) -> jnp.ndarray:
-        """Encodes the observation into a latent state representation.
-
-        Parameters
-        ----------
-        observation : array, shape (n_samples, n_state_features)
-            Observation representation.
-
-        Returns
-        -------
-        zs : array, shape (n_samples, zs_dim)
-            Latent state representation.
-        """
-        return self.activation(self.zs_layer_norm(self.zs(observation)))
-
-    def model_head(
-        self, zs: jnp.ndarray, action: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        """Predicts the full model.
-
-        Parameters
-        ----------
-        zs : array, shape (n_samples, zs_dim)
-            Latent state representation.
-
-        action : array, shape (n_samples, n_action_features)
-            Action.
-
-        Returns
-        -------
-        done : array, shape (n_samples,)
-            Flag indicating whether the episode is done.
-        next_zs : array, shape (n_samples, zs_dim)
-            Predicted next state representation.
-        reward : array, shape (n_samples, n_bins)
-            Two-hot encoded reward.
-        """
-        zsa = self.encode_zsa(zs, action)
-        dzr = self.model(zsa)
-        done = dzr[:, 0]
-        next_zs = dzr[:, 1 : 1 + self.zs_dim]
-        reward = dzr[:, 1 + self.zs_dim :]
-        return done, next_zs, reward
-
-
-class DeterministicPolicyWithEncoder(nnx.Module):
-    """Combines encoder and deterministic policy."""
-
-    encoder: Encoder
-    policy: DeterministicTanhPolicy
-
-    def __init__(self, encoder: Encoder, policy: DeterministicTanhPolicy):
-        self.encoder = encoder
-        self.policy = policy
-
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        return self.policy(self.encoder.encode_zs(observation))
 
 
 @partial(
@@ -233,8 +42,8 @@ class DeterministicPolicyWithEncoder(nnx.Module):
     ),
 )
 def update_encoder(
-    encoder: Encoder,
-    encoder_target: Encoder,
+    encoder: ModelBasedEncoder,
+    encoder_target: ModelBasedEncoder,
     encoder_optimizer: nnx.Optimizer,
     the_bins: jnp.ndarray,
     encoder_horizon: int,
@@ -289,8 +98,8 @@ def update_encoder(
 
 
 def encoder_loss(
-    encoder: Encoder,
-    encoder_target: Encoder,
+    encoder: ModelBasedEncoder,
+    encoder_target: ModelBasedEncoder,
     the_bins: jnp.ndarray,
     batch: tuple[jnp.ndarray],
     encoder_horizon: int,
@@ -331,10 +140,10 @@ def encoder_loss(
 
     Parameters
     ----------
-    encoder : Encoder
+    encoder : ModelBasedEncoder
         Encoder for model-based representation learning.
 
-    encoder_target : Encoder
+    encoder_target : ModelBasedEncoder
         Target encoder.
 
     the_bins : array, shape (n_bin_endges,)
@@ -474,8 +283,8 @@ def update_critic_and_policy(
     q_optimizer: nnx.Optimizer,
     policy: DeterministicTanhPolicy,
     policy_optimizer: nnx.Optimizer,
-    encoder: Encoder,
-    encoder_target: Encoder,
+    encoder: ModelBasedEncoder,
+    encoder_target: ModelBasedEncoder,
     gamma: float,
     activation_weight: float,
     next_action: jnp.ndarray,
@@ -523,8 +332,8 @@ def update_critic_and_policy(
 def mrq_loss(
     q: ContinuousClippedDoubleQNet,
     q_target: ContinuousClippedDoubleQNet,
-    encoder: Encoder,
-    encoder_target: Encoder,
+    encoder: ModelBasedEncoder,
+    encoder_target: ModelBasedEncoder,
     next_action: jnp.ndarray,
     batch: tuple[
         jnp.ndarray,
@@ -576,7 +385,7 @@ def mrq_loss(
 def mrq_policy_loss(
     policy: DeterministicTanhPolicy,
     q: nnx.Module,
-    encoder: Encoder,
+    encoder: ModelBasedEncoder,
     zs: jnp.ndarray,
     activation_weight: float,
 ) -> tuple[float, tuple[float, float]]:
@@ -590,7 +399,7 @@ def mrq_policy_loss(
     q : nnx.Module
         The Q-value network used to evaluate the policy.
 
-    encoder : Encoder
+    encoder : ModelBasedEncoder
         The encoder network to encode the state-action pairs.
 
     zs : jnp.ndarray
@@ -641,7 +450,7 @@ def create_mrq_state(
     env.action_space.seed(seed)
 
     rngs = nnx.Rngs(seed)
-    encoder = Encoder(
+    encoder = ModelBasedEncoder(
         n_state_features=env.observation_space.shape[0],
         n_action_features=env.action_space.shape[0],
         n_bins=encoder_n_bins,
@@ -731,7 +540,7 @@ def create_mrq_state(
 
 def train_mrq(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    encoder: Encoder,
+    encoder: ModelBasedEncoder,
     encoder_optimizer: nnx.Optimizer,
     policy: DeterministicTanhPolicy,
     policy_optimizer: nnx.Optimizer,
@@ -788,7 +597,7 @@ def train_mrq(
     env : gymnasium.Env
         Gymnasium environment.
 
-    encoder : Encoder
+    encoder : ModelBasedEncoder
         Encoder for the MR.Q algorithm.
 
     encoder_optimizer : nnx.Optimizer
@@ -876,10 +685,10 @@ def train_mrq(
 
     Returns
     -------
-    encoder : Encoder
+    encoder : ModelBasedEncoder
         Encoder for the MR.Q algorithm.
 
-    encoder_target : Encoder
+    encoder_target : ModelBasedEncoder
         Target encoder for the MR.Q algorithm.
 
     encoder_optimizer : nnx.Optimizer

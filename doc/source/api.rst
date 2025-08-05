@@ -74,7 +74,6 @@ Data Blox
    sac.EntropyControl
    pets.PETSMPCConfig
    pets.PETSMPCState
-   mrq.Encoder
 
 
 :mod:`rl_blox.blox`
@@ -133,6 +132,8 @@ Data Blox
    embedding.sale.ActorSALE
    embedding.sale.CriticSALE
    embedding.sale.DeterministicSALEPolicy
+   model_based_encoder.ModelBasedEncoder
+   model_based_encoder.DeterministicPolicyWithEncoder
    checkpointing.CheckpointState
    replay_buffer.ReplayBuffer
    replay_buffer.LAP
