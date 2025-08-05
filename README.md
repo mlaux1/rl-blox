@@ -76,6 +76,13 @@ To enable logging with [aim](https://github.com/aimhubio/aim), please use `pip i
 
 You can install all optional dependencies (except logging) using `pip install 'rl_blox[all]'`.
 
+## Algorithm Implementations
+
+We currently provide implementations of the following algorithms (ordered from
+SotA to classic RL algorithms):
+MR.Q, TD7, TD3+LAP, PE-TS, SAC, TD3, DDPG, DDQN, DQN, double Q-learning,
+CMA-ES, Dyna-Q, actor-critic, REINFORCE, Q-learning, MC.
+
 ## Getting Started
 
 RL-BLOX relies on gymnasium's environment interface. This is an example with
@@ -83,8 +90,6 @@ the SAC RL algorithm.
 
 ```python
 import gymnasium as gym
-import jax.numpy as jnp
-import numpy as np
 
 from rl_blox.algorithm.sac import create_sac_state, train_sac
 from rl_blox.logging.checkpointer import OrbaxCheckpointer
