@@ -62,7 +62,9 @@ def update_model_based_encoder(
         (
             loss,
             (dynamics_loss, reward_loss, done_loss, reward_mse),
-        ), grads = nnx.value_and_grad(encoder_loss, argnums=0, has_aux=True)(
+        ), grads = nnx.value_and_grad(
+            model_based_encoder_loss, argnums=0, has_aux=True
+        )(
             encoder,
             encoder_target,
             the_bins,
@@ -98,7 +100,7 @@ def update_model_based_encoder(
     return jnp.mean(losses, axis=1)
 
 
-def encoder_loss(
+def model_based_encoder_loss(
     encoder: ModelBasedEncoder,
     encoder_target: ModelBasedEncoder,
     the_bins: jnp.ndarray,
