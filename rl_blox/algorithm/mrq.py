@@ -230,6 +230,14 @@ def create_mrq_state(
         ),
         wrt=nnx.Param,
     )
+    policy_optimizer = nnx.Optimizer(
+        policy_with_encoder.policy,
+        optax.adamw(
+            learning_rate=policy_learning_rate,
+            weight_decay=policy_weight_decay,
+        ),
+        wrt=nnx.Param,
+    )
 
     q1 = LayerNormMLP(
         encoder_zsa_dim,
@@ -254,15 +262,6 @@ def create_mrq_state(
                 learning_rate=q_learning_rate,
                 weight_decay=q_weight_decay,
             ),
-        ),
-        wrt=nnx.Param,
-    )
-
-    policy_optimizer = nnx.Optimizer(
-        policy_with_encoder.policy,
-        optax.adamw(
-            learning_rate=policy_learning_rate,
-            weight_decay=policy_weight_decay,
         ),
         wrt=nnx.Param,
     )
