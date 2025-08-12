@@ -27,6 +27,10 @@ class TaskSet:
         assert task_id >= 0 and task_id < len(self.contexts)
         return self.task_envs[task_id]
 
+    def get_task_and_context(self, task_id: int) -> tuple[gym.Env, jnp.ndarray]:
+        assert task_id >= 0 and task_id < len(self.contexts)
+        return self.task_envs[task_id], self.contexts[task_id]
+
     def __len__(self) -> int:
         return len(self.contexts)
 
@@ -42,11 +46,11 @@ class PrioritisedTaskSampler:
         self.task_set = task_set
         self.priorities = priorities
 
-    def sample(self, key) -> gym.Env:
+    def sample(self, key) -> tuple[gym.Env, jnp.ndarray]:
         env_id = jax.random.choice(
             key, jnp.arange(len(self.task_set)), p=self.priorities
         ).item()
-        return self.task_set.get_task_env(env_id)
+        return self.task_set.get_task_and_context(env_id)
 
     def update_priorities(self, priorities) -> None:
         self.priorities = priorities
@@ -83,7 +87,7 @@ def train_uts_sac(
 
     while steps_so_far < total_timesteps:
         key, skey = jax.random.split(key)
-        env = task_sampler.sample(skey)
+        env, context = task_sampler.sample(skey)
         (
             policy,
             policy_optimizer,
