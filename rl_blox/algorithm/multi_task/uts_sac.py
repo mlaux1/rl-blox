@@ -31,6 +31,27 @@ class TaskSet:
         return len(self.contexts)
 
 
+class PrioritisedTaskSampler:
+    """A sampler that returns envs from a TaskSet given priorities."""
+
+    def __init__(
+        self,
+        task_set: TaskSet,
+        priorities: ArrayLike | None = None,
+    ):
+        self.task_set = task_set
+        self.priorities = priorities
+
+    def sample(self, key) -> gym.Env:
+        env_id = jax.random.choice(
+            key, jnp.arange(len(self.task_set)), p=self.priorities
+        ).item()
+        return self.task_set.get_task_env(env_id)
+
+    def update_priorities(self, priorities) -> None:
+        self.priorities = priorities
+
+
 def train_uts_sac(
     envs: TaskSet,
     policy: StochasticPolicyBase,
@@ -58,11 +79,11 @@ def train_uts_sac(
     episodes_so_far = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
+    task_sampler = PrioritisedTaskSampler(envs)
 
     while steps_so_far < total_timesteps:
         key, skey = jax.random.split(key)
-        env_id = jax.random.choice(key, jnp.arange(len(envs))).item()
-        env = envs.get_task_env(env_id)
+        env = task_sampler.sample(skey)
         (
             policy,
             policy_optimizer,
