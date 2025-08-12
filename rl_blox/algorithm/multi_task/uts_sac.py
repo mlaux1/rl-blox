@@ -1,7 +1,8 @@
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
-from flax import nnx, struct
+from flax import nnx
+from jax.typing import ArrayLike
 from tqdm.rich import tqdm
 
 from ...blox.double_qnet import ContinuousClippedDoubleQNet
@@ -10,14 +11,28 @@ from ...blox.replay_buffer import ReplayBuffer
 from ..sac import EntropyControl, train_sac
 
 
-@struct.dataclass(frozen=True)
-class EnvSpec:
-    id: int
-    context: float
+class TaskSet:
+    """A collection of tasks (environments)."""
+
+    def __init__(self, contexts: ArrayLike, envs: list[gym.Env]):
+        assert len(contexts) == len(envs)
+        self.contexts = contexts
+        self.task_envs = envs
+
+    def get_context(self, task_id: int) -> jnp.ndarray:
+        assert task_id >= 0 and task_id < len(self.contexts)
+        return self.contexts[task_id]
+
+    def get_task_env(self, task_id: int) -> gym.Env:
+        assert task_id >= 0 and task_id < len(self.contexts)
+        return self.task_envs[task_id]
+
+    def __len__(self) -> int:
+        return len(self.contexts)
 
 
 def train_uts_sac(
-    envs: dict[EnvSpec, gym.Env],
+    envs: TaskSet,
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     q_net: ContinuousClippedDoubleQNet,
@@ -43,14 +58,11 @@ def train_uts_sac(
     episodes_so_far = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
-    indices = jnp.arange(len(envs))
 
     while steps_so_far < total_timesteps:
         key, skey = jax.random.split(key)
-        selected = jax.random.choice(key, indices).item()
-        spec = list(envs.keys())[selected]
-        env = envs[spec]
-
+        env_id = jax.random.choice(key, jnp.arange(len(envs))).item()
+        env = envs.get_task_env(env_id)
         (
             policy,
             policy_optimizer,
