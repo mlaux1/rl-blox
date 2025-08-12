@@ -61,7 +61,7 @@ def train_uts_sac(
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
     seed: int = 1,
-    exploring_starts: int = 0,
+    exploring_starts: int = 1_000,
     progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
@@ -105,7 +105,7 @@ def train_uts_sac(
             replay_buffer=replay_buffer,
             q_target=q_target,
             entropy_control=entropy_control,
-            learning_starts=exploring_starts,
+            learning_starts=exploring_starts - steps_so_far,
             progress_bar=False,
         )
 
