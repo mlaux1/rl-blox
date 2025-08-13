@@ -111,8 +111,6 @@ def train_uts_sac(
     while steps_so_far < total_timesteps:
         key, skey = jax.random.split(key)
         env, context = task_sampler.sample(skey)
-        print(env.observation_space)
-        print(context)
         (
             policy,
             policy_optimizer,
