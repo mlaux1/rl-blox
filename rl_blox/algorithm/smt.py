@@ -138,8 +138,7 @@ def train_smt(
 
     progress = tqdm(total=b_total, disable=not progress_bar)
 
-    remaining_budget = b_total
-    while remaining_budget > b1:
+    while global_step < b1:
         updated_training_pool = copy.deepcopy(training_pool)
         for task_id in training_pool:
             env = mt_def.get_task(task_id)
@@ -154,12 +153,11 @@ def train_smt(
                 learning_starts=learning_starts,
                 total_timesteps=total_timesteps,
                 replay_buffer=replay_buffer,
-                seed=seed + remaining_budget,
+                seed=seed + global_step,
                 logger=logger,
                 global_step=global_step,
                 progress_bar=False,
             )
-            remaining_budget -= scheduling_interval
             training_steps[task_id] += scheduling_interval
             global_step = total_timesteps
 
@@ -206,7 +204,10 @@ def train_smt(
                 )
         training_pool = updated_training_pool
 
-    while remaining_budget > 0:
+    while global_step < b_total:
+        if len(unsolvable_pool) == 0:
+            break
+
         for task_id in unsolvable_pool:
             env = mt_def.get_task(task_id)
             replay_buffer.select_task(task_id)
@@ -216,12 +217,11 @@ def train_smt(
                 learning_starts=learning_starts,
                 total_timesteps=total_timesteps,
                 replay_buffer=replay_buffer,
-                seed=seed + remaining_budget,
+                seed=seed + global_step,
                 logger=logger,
                 global_step=global_step,
                 progress_bar=False,
             )
-            remaining_budget -= scheduling_interval
             training_steps[task_id] += scheduling_interval
             global_step = total_timesteps
 
