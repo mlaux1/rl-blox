@@ -20,15 +20,15 @@ class TaskSet:
         self.task_envs = envs
 
     def get_context(self, task_id: int) -> jnp.ndarray:
-        assert task_id >= 0 and task_id < len(self.contexts)
+        assert 0 <= task_id < len(self.contexts)
         return self.contexts[task_id]
 
     def get_task_env(self, task_id: int) -> gym.Env:
-        assert task_id >= 0 and task_id < len(self.contexts)
+        assert 0 <= task_id < len(self.contexts)
         return self.task_envs[task_id]
 
     def get_task_and_context(self, task_id: int) -> tuple[gym.Env, jnp.ndarray]:
-        assert task_id >= 0 and task_id < len(self.contexts)
+        assert 0 <= task_id < len(self.contexts)
         return self.task_envs[task_id], self.contexts[task_id]
 
     def __len__(self) -> int:
