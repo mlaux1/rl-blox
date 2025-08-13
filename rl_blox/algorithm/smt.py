@@ -4,6 +4,7 @@ from collections.abc import Callable
 import gymnasium as gym
 import numpy as np
 from numpy.typing import ArrayLike
+from tqdm.rich import tqdm
 
 from ..blox.replay_buffer import MultiTaskReplayBuffer
 from ..logging.logger import LoggerBase
@@ -48,6 +49,7 @@ def train_smt(
     learning_starts: int = 5_000,
     seed: int = 0,
     logger: LoggerBase | None = None,
+    progress_bar: bool = True,
 ) -> tuple:
     r"""Scheduled Multi-Task (SMT) training.
 
@@ -104,6 +106,9 @@ def train_smt(
     logger : LoggerBase, optional
         Experiment logger.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     Returns
     -------
     result
@@ -126,8 +131,11 @@ def train_smt(
     unsolvable_pool = set()
 
     b_total = b1 + b2
+    global_step = 0
     training_steps = np.zeros(n_tasks, dtype=int)
     training_performances = np.full(n_tasks, -np.finfo(float).max)
+
+    progress = tqdm(total=b_total, disable=not progress_bar)
 
     remaining_budget = b_total
     while remaining_budget > b1:
@@ -138,18 +146,22 @@ def train_smt(
             )
             replay_buffer.select_task(task_id)
 
+            total_timesteps = global_step + scheduling_interval
             result_st = train_st(
                 env=env_with_stats,
-                learning_starts=max(
-                    0, learning_starts - training_steps[task_id]
-                ),
-                total_timesteps=scheduling_interval,
+                learning_starts=learning_starts,
+                total_timesteps=total_timesteps,
                 replay_buffer=replay_buffer,
                 seed=seed + remaining_budget,
                 logger=logger,
+                global_step=global_step,
+                progress_bar=False,
             )
             remaining_budget -= scheduling_interval
             training_steps[task_id] += scheduling_interval
+            global_step = total_timesteps
+
+            progress.update(scheduling_interval)
 
             training_performances[task_id] = np.mean(
                 env_with_stats.return_queue
@@ -177,16 +189,22 @@ def train_smt(
         for task_id in unsolvable_pool:
             env = mt_def.get_task(task_id)
             replay_buffer.select_task(task_id)
+            total_timesteps = global_step + scheduling_interval
             result_st = train_st(
                 env=env,
-                learning_starts=max(
-                    0, learning_starts - training_steps[task_id]
-                ),
-                total_timesteps=scheduling_interval,
+                learning_starts=learning_starts,
+                total_timesteps=total_timesteps,
                 replay_buffer=replay_buffer,
                 seed=seed + remaining_budget,
+                logger=logger,
+                global_step=global_step,
+                progress_bar=False,
             )
             remaining_budget -= scheduling_interval
             training_steps[task_id] += scheduling_interval
+            global_step = total_timesteps
+
+            progress.update(scheduling_interval)
+    progress.close()
 
     return result_st  # TODO return training steps and performances as well?
