@@ -191,7 +191,9 @@ def train_smt(
                     updated_training_pool.remove(task_id)
 
         while len(updated_training_pool) < K:
-            worst = np.argmin(training_performances[list(main_pool)])
+            main_pool_indices = list(main_pool)
+            worst_index = np.argmin(training_performances[main_pool_indices])
+            worst = main_pool_indices[worst_index]
             updated_training_pool.add(worst)
             main_pool.remove(worst)
 
