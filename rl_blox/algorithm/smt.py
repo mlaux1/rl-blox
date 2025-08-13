@@ -5,9 +5,7 @@ import gymnasium as gym
 import numpy as np
 from numpy.typing import ArrayLike
 
-from tmp.CrossQ.train import total_timesteps
-
-from ..blox.replay_buffer import ReplayBuffer
+from ..blox.replay_buffer import MultiTaskReplayBuffer
 
 
 class ContextualMultiTaskDefinition(metaclass=ABCMeta):
@@ -39,7 +37,7 @@ class ContextualMultiTaskDefinition(metaclass=ABCMeta):
 def train_smt(
     mt_def: ContextualMultiTaskDefinition,
     train_st: Callable,
-    replay_buffer: ReplayBuffer,
+    replay_buffer: MultiTaskReplayBuffer,
     b1: int = 17_000_000,
     b2: int = 3_000_000,
     scheduling_interval: int = 1_000,
@@ -67,7 +65,7 @@ def train_smt(
     train_st : callable
         The single-task training algorithm.
 
-    replay_buffer : ReplayBuffer
+    replay_buffer : MultiTaskReplayBuffer
         Replay buffer.
 
     b1 : int
@@ -133,6 +131,7 @@ def train_smt(
             env_with_stats = gym.wrappers.RecordEpisodeStatistics(
                 env, buffer_length=n_average
             )
+            replay_buffer.select_task(task_id)
 
             result_st = train_st(
                 env=env_with_stats,
@@ -140,10 +139,6 @@ def train_smt(
                     0, learning_starts - training_steps[task_id]
                 ),
                 total_timesteps=scheduling_interval,
-                # TODO we need a specific replay buffer that stores data per
-                #      task, but samples from all tasks equally; could be
-                #      implemented as a wrapper around the existing replay
-                #      buffers
                 replay_buffer=replay_buffer,
                 seed=seed + remaining_budget,
             )
@@ -175,16 +170,13 @@ def train_smt(
     while remaining_budget > 0:
         for task_id in unsolvable_pool:
             env = mt_def.get_task(task_id)
+            replay_buffer.select_task(task_id)
             result_st = train_st(
                 env=env,
                 learning_starts=max(
                     0, learning_starts - training_steps[task_id]
                 ),
                 total_timesteps=scheduling_interval,
-                # TODO we need a specific replay buffer that stores data per
-                #      task, but samples from all tasks equally; could be
-                #      implemented as a wrapper around the existing replay
-                #      buffers
                 replay_buffer=replay_buffer,
                 seed=seed + remaining_budget,
             )
