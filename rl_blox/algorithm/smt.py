@@ -167,6 +167,14 @@ def train_smt(
                 env_with_stats.return_queue
             )
 
+            if logger is not None:
+                logger.record_stat("task_id", task_id, global_step + 1)
+                logger.record_stat(
+                    "task_performance",
+                    training_performances[task_id],
+                    global_step + 1,
+                )
+
             M = mt_def.get_solved_threshold(task_id)
             if training_performances[task_id] > M:
                 solved_pool.add(task_id)

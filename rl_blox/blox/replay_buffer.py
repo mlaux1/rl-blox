@@ -699,6 +699,7 @@ class MultiTaskReplayBuffer:
         else:
             raise ValueError("No batch_size provided.")
 
+        # TODO accelerate sampling procedure
         lengths = [len(buffer) for buffer in self.buffers]
         explored_tasks = np.where(np.array(lengths) > 0)[0]
         task_indices = rng.choice(explored_tasks, size=batch_size, replace=True)
