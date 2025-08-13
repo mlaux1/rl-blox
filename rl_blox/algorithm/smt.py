@@ -190,12 +190,18 @@ def train_smt(
                     main_pool.add(task_id)
                     updated_training_pool.remove(task_id)
 
-        if len(updated_training_pool) < K:
-            updated_training_pool = updated_training_pool.union(
-                np.argsort(training_performances)[
-                    : K - len(updated_training_pool)
-                ]
-            )
+        while len(updated_training_pool) < K:
+            worst = np.argmin(training_performances[list(main_pool)])
+            updated_training_pool.add(worst)
+            main_pool.remove(worst)
+
+            if logger is not None:
+                logger.record_stat("worst task", worst, global_step + 1)
+                logger.record_stat(
+                    "worst performance",
+                    training_performances[worst],
+                    global_step + 1,
+                )
         training_pool = updated_training_pool
 
     while remaining_budget > 0:

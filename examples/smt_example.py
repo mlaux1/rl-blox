@@ -72,6 +72,7 @@ result = train_smt(
     b1=110_000,
     b2=10_000,
     learning_starts=1_000,
+    scheduling_interval=200,
     logger=logger,
     seed=seed,
 )
