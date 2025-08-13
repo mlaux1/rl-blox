@@ -721,9 +721,12 @@ class MultiTaskReplayBuffer:
 
     def reward_scale(self, eps: float = 1e-8):
         """Compute the reward scale for all tasks."""
-        return max(  # TODO weighted mean?
-            [buffer.reward_scale(eps) for buffer in self.buffers]
-        )
+        n_samples = 0
+        accumulated_reward = 0.0
+        for buffer in self.buffers:
+            n_samples += len(buffer)
+            accumulated_reward += buffer.reward_scale(eps) * len(buffer)
+        return accumulated_reward / n_samples
 
     def update_priority(self, priority):
         """Update the priority of previous samples."""
