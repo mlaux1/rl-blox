@@ -27,11 +27,11 @@ class ContextualMultiTaskDefinition(metaclass=ABCMeta):
 
     @abstractmethod
     def get_solved_threshold(self, task_id: int) -> float:
-        """Returns the performance threshold for a task to be considered solved."""
+        """Performance threshold for a task to be considered solved."""
 
     @abstractmethod
     def get_unsolvable_threshold(self, task_id: int) -> float:
-        """Returns the performance threshold for a task to be considered unsolvable."""
+        """Performance threshold for a task to be considered unsolvable."""
 
     def __len__(self) -> int:
         return len(self.contexts)
