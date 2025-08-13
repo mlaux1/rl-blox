@@ -3,6 +3,7 @@ from functools import partial
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
+from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
@@ -52,6 +53,8 @@ replay_buffer = MultiTaskReplayBuffer(
 )
 
 state = create_ddpg_state(mt_def.env, seed=seed)
+policy_target = nnx.clone(state.policy)
+q_target = nnx.clone(state.q)
 
 train_st = partial(
     train_ddpg,
@@ -59,6 +62,8 @@ train_st = partial(
     policy_optimizer=state.policy_optimizer,
     q=state.q,
     q_optimizer=state.q_optimizer,
+    policy_target=policy_target,
+    q_target=q_target,
 )
 result = train_smt(
     mt_def,
