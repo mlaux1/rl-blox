@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from ..blox.replay_buffer import MultiTaskReplayBuffer
+from ..logging.logger import LoggerBase
 
 
 class ContextualMultiTaskDefinition(metaclass=ABCMeta):
@@ -46,6 +47,7 @@ def train_smt(
     n_average: int = 3,
     learning_starts: int = 5_000,
     seed: int = 0,
+    logger: LoggerBase | None = None,
 ) -> tuple:
     r"""Scheduled Multi-Task (SMT) training.
 
@@ -99,6 +101,9 @@ def train_smt(
     seed : int
         Seed for random number generation.
 
+    logger : LoggerBase, optional
+        Experiment logger.
+
     Returns
     -------
     result
@@ -141,6 +146,7 @@ def train_smt(
                 total_timesteps=scheduling_interval,
                 replay_buffer=replay_buffer,
                 seed=seed + remaining_budget,
+                logger=logger,
             )
             remaining_budget -= scheduling_interval
             training_steps[task_id] += scheduling_interval
@@ -153,7 +159,7 @@ def train_smt(
             if training_performances[task_id] > M:
                 solved_pool.add(task_id)
                 training_pool.remove(task_id)
-            elif training_steps[task_id] >= kappa * b_total:
+            elif training_steps[task_id] >= kappa * b_total:  # TODO sure?
                 m = mt_def.get_unsolvable_threshold(task_id)
                 if training_performances[task_id] < m:
                     unsolvable_pool.add(task_id)

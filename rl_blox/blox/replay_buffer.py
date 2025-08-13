@@ -693,15 +693,15 @@ class MultiTaskReplayBuffer:
             raise ValueError("No rng provided.")
         if "batch_size" in kwargs:
             batch_size = kwargs.pop("batch_size")
-        elif len(kwargs) == 1:
+        elif len(kwargs) == 0:
             batch_size = args[0]
             del args[0]
         else:
             raise ValueError("No batch_size provided.")
 
-        task_indices = rng.choice(
-            len(self.buffers), size=batch_size, replace=True
-        )
+        lengths = [len(buffer) for buffer in self.buffers]
+        explored_tasks = np.where(np.array(lengths) > 0)[0]
+        task_indices = rng.choice(explored_tasks, size=batch_size, replace=True)
         task_indices = np.sort(task_indices)
         self.task_indices, self.batch_sizes = np.unique(
             task_indices, return_counts=True
@@ -714,10 +714,13 @@ class MultiTaskReplayBuffer:
                     n_samples, *args, rng=rng, **kwargs
                 )
             )
-        batch = jax.tree_util.tree_map(
-            lambda *args: jnp.concatenate(args, axis=0), *batch
-        )
-        return batch
+        batch = {
+            k: jnp.concatenate(
+                [getattr(st_batch, k) for st_batch in batch], axis=0
+            )
+            for k in self.buffers[0].buffer.keys()
+        }
+        return self.buffers[0].Batch(**batch)
 
     def reward_scale(self, eps: float = 1e-8):
         """Compute the reward scale for all tasks."""
