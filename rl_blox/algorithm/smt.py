@@ -1,3 +1,4 @@
+import copy
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable
 
@@ -139,6 +140,7 @@ def train_smt(
 
     remaining_budget = b_total
     while remaining_budget > b1:
+        updated_training_pool = copy.deepcopy(training_pool)
         for task_id in training_pool:
             env = mt_def.get_task(task_id)
             env_with_stats = gym.wrappers.RecordEpisodeStatistics(
@@ -178,20 +180,23 @@ def train_smt(
             M = mt_def.get_solved_threshold(task_id)
             if training_performances[task_id] > M:
                 solved_pool.add(task_id)
-                training_pool.remove(task_id)
+                updated_training_pool.remove(task_id)
             elif training_steps[task_id] >= kappa * b_total:  # TODO sure?
                 m = mt_def.get_unsolvable_threshold(task_id)
                 if training_performances[task_id] < m:
                     unsolvable_pool.add(task_id)
-                    training_pool.remove(task_id)
+                    updated_training_pool.remove(task_id)
                 else:
                     main_pool.add(task_id)
-                    training_pool.remove(task_id)
+                    updated_training_pool.remove(task_id)
 
-        if len(training_pool) < K:
-            training_pool = training_pool.union(
-                np.argsort(training_performances)[: K - len(training_pool)]
+        if len(updated_training_pool) < K:
+            updated_training_pool = updated_training_pool.union(
+                np.argsort(training_performances)[
+                    : K - len(updated_training_pool)
+                ]
             )
+        training_pool = updated_training_pool
 
     while remaining_budget > 0:
         for task_id in unsolvable_pool:
