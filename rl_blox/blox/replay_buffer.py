@@ -667,6 +667,7 @@ class MultiTaskReplayBuffer:
         for _ in range(n_tasks - 1):
             self.buffers.append(copy.deepcopy(replay_buffer))
         self.selected_task = 0
+        self.active_buffers = set()
 
     def select_task(self, task_id: int):
         """Select the task for which samples will be added."""
@@ -680,6 +681,7 @@ class MultiTaskReplayBuffer:
     def add_sample(self, *args, **kwargs):
         """Add transition sample to the replay buffer for a specific task."""
         self.buffers[self.selected_task].add_sample(*args, **kwargs)
+        self.active_buffers.add(self.selected_task)
 
     def sample_batch(self, *args, **kwargs):
         """Sample a batch of transitions from all replay buffers."""
@@ -700,10 +702,8 @@ class MultiTaskReplayBuffer:
             raise ValueError("No batch_size provided.")
 
         # TODO accelerate sampling procedure
-        lengths = [len(buffer) for buffer in self.buffers]
-        explored_tasks = np.where(np.array(lengths) > 0)[0]
+        explored_tasks = list(self.active_buffers)
         task_indices = rng.choice(explored_tasks, size=batch_size, replace=True)
-        task_indices = np.sort(task_indices)
         self.task_indices, self.batch_sizes = np.unique(
             task_indices, return_counts=True
         )
