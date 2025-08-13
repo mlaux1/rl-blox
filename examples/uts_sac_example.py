@@ -9,7 +9,7 @@ env_name = "Pendulum-v1"
 seed = 1
 verbose = 1
 
-train_contexts = jnp.array([10.0, 10.1, 9.9])
+train_contexts = jnp.array([[10.0], [10.1], [9.9]])
 
 train_envs = [
     gym.make(env_name, g=10.0),

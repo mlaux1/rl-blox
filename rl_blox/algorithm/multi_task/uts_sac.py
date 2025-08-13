@@ -1,7 +1,9 @@
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import numpy as np
 from flax import nnx
+from gymnasium.wrappers import TransformObservation
 from jax.typing import ArrayLike
 from tqdm.rich import tqdm
 
@@ -14,10 +16,31 @@ from ..sac import EntropyControl, train_sac
 class TaskSet:
     """A collection of tasks (environments)."""
 
-    def __init__(self, contexts: ArrayLike, envs: list[gym.Env]):
+    def __init__(
+        self, contexts: list[ArrayLike], envs: list[gym.Env], context_aware=True
+    ):
         assert len(contexts) == len(envs)
         self.contexts = contexts
         self.task_envs = envs
+        self.context_aware = context_aware
+
+        if context_aware:
+            for i in range(len(contexts)):
+                assert isinstance(
+                    self.task_envs[i].observation_space, gym.spaces.Box
+                )
+                new_low = np.concatenate(
+                    [self.task_envs[i].observation_space.low, self.contexts[i]]
+                )
+                new_high = np.concatenate(
+                    [self.task_envs[i].observation_space.high, self.contexts[i]]
+                )
+                new_obs_space = gym.spaces.Box(low=new_low, high=new_high)
+                self.task_envs[i] = TransformObservation(
+                    self.task_envs[i],
+                    lambda obs: np.concatenate([obs, self.contexts[i]]),
+                    new_obs_space,
+                )
 
     def get_context(self, task_id: int) -> jnp.ndarray:
         assert 0 <= task_id < len(self.contexts)
@@ -88,6 +111,8 @@ def train_uts_sac(
     while steps_so_far < total_timesteps:
         key, skey = jax.random.split(key)
         env, context = task_sampler.sample(skey)
+        print(env.observation_space)
+        print(context)
         (
             policy,
             policy_optimizer,
