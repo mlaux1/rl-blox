@@ -52,7 +52,7 @@ logger.define_experiment(
 
 mt_def = MultiTaskPendulum()
 replay_buffer = MultiTaskReplayBuffer(
-    ReplayBuffer(buffer_size=100_0000),
+    ReplayBuffer(buffer_size=100_000),
     len(mt_def),
 )
 
