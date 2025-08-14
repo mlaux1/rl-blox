@@ -119,6 +119,9 @@ def train_smt(
     training_steps : np.ndarray
         Number of training steps for each task.
 
+    training_performances : np.ndarray
+        Average training performance for each task from stage 1.
+
     References
     ----------
     .. [1] Cho, M., Park, J., Lee, S., Sung, Y. (2024). Hard tasks first:
