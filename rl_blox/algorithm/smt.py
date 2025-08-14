@@ -132,21 +132,78 @@ def train_smt(
     """
     rng = np.random.default_rng(seed)
 
+    b_total = b1 + b2
+    global_step = 0
+    training_steps = np.zeros(len(mt_def), dtype=int)
+    progress = tqdm(total=b_total, disable=not progress_bar)
+
+    avg_training_performances, global_step, result_st, unsolvable_pool = (
+        smt_stage1(
+            mt_def,
+            train_st,
+            replay_buffer,
+            training_steps,
+            global_step,
+            scheduling_interval,
+            b1,
+            b_total,
+            n_average,
+            K,
+            kappa,
+            learning_starts,
+            logger,
+            seed,
+            rng,
+            progress,
+        )
+    )
+
+    if len(unsolvable_pool) > 0:
+        result_st = smt_stage2(
+            mt_def,
+            train_st,
+            replay_buffer,
+            unsolvable_pool,
+            training_steps,
+            global_step,
+            scheduling_interval,
+            b_total,
+            learning_starts,
+            logger,
+            seed,
+            progress,
+        )
+    progress.close()
+
+    return result_st, training_steps, avg_training_performances
+
+
+def smt_stage1(
+    mt_def,
+    train_st,
+    replay_buffer,
+    training_steps,
+    global_step,
+    scheduling_interval,
+    b1,
+    b_total,
+    n_average,
+    K,
+    kappa,
+    learning_starts,
+    logger,
+    seed,
+    rng,
+    progress,
+):
     n_tasks = len(mt_def)
     training_pool = set(rng.choice(n_tasks, size=K, replace=False))
     main_pool = set(range(n_tasks)) - training_pool
     solved_pool = set()
     unsolvable_pool = set()
-
-    b_total = b1 + b2
-    global_step = 0
-    training_steps = np.zeros(n_tasks, dtype=int)
     avg_training_performances = np.full(n_tasks, -np.finfo(float).max)
     training_performances = [deque(maxlen=n_average) for _ in range(n_tasks)]
     task_budgets = np.full(n_tasks, kappa * b_total)
-
-    progress = tqdm(total=b_total, disable=not progress_bar)
-
     while global_step < b1:
         updated_training_pool = copy.deepcopy(training_pool)
         for task_id in training_pool:
@@ -234,25 +291,7 @@ def train_smt(
             break
 
         training_pool = updated_training_pool
-
-    if len(unsolvable_pool) > 0:
-        result_st = smt_stage2(
-            mt_def,
-            train_st,
-            replay_buffer,
-            unsolvable_pool,
-            training_steps,
-            global_step,
-            scheduling_interval,
-            b_total,
-            learning_starts,
-            logger,
-            seed,
-            progress,
-        )
-    progress.close()
-
-    return result_st, training_steps, avg_training_performances
+    return avg_training_performances, global_step, result_st, unsolvable_pool
 
 
 def smt_stage2(
