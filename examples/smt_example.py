@@ -34,9 +34,9 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
         self.env.close()
 
 
-seed = 1
+seed = 2
 verbose = 2
-backbone = "DDPG"  # Backbone algorithm to use for SMT: "DDPG" or "SAC"
+backbone = "SAC"  # Backbone algorithm to use for SMT: "DDPG" or "SAC"
 
 if verbose:
     print(
