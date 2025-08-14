@@ -143,6 +143,7 @@ def train_smt(
         updated_training_pool = copy.deepcopy(training_pool)
         for task_id in training_pool:
             env = mt_def.get_task(task_id)
+            # TODO reuse stats wrapper per task
             env_with_stats = gym.wrappers.RecordEpisodeStatistics(
                 env, buffer_length=n_average
             )
