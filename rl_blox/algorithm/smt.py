@@ -100,10 +100,7 @@ def train_smt(
     Multi-task RL faces the challenge of varying task difficulties, often
     leading to negative transfer when simpler tasks overshadow the learning of
     more complex ones. To overcome this challenge, SMT strategically prioritizes
-    more challenging tasks, thereby enhancing overall learning efficiency. SMT
-    uses a dynamic task prioritization strategy, underpinned by an effective
-    metric for assessing task difficulty. This metric ensures an efficient and
-    targeted allocation of training resources.
+    more challenging tasks, thereby enhancing overall learning efficiency.
 
     Parameters
     ----------
@@ -111,7 +108,21 @@ def train_smt(
         The multi-task environment definition.
 
     train_st : callable
-        The single-task training algorithm.
+        The single-task training algorithm. The training function should accept
+        the following parameters:
+
+        - ``env``: The environment to train on.
+        - ``learning_starts``: Number of steps to wait before starting training.
+        - ``total_timesteps``: Total number of timesteps to train the agent.
+        - ``replay_buffer``: The replay buffer to use for training.
+        - ``seed``: Seed for random number generation.
+        - ``logger``: Logger to record training statistics.
+        - ``global_step``: Current global step in the training process.
+        - ``progress_bar``: Flag to enable/disable the tqdm progress bar.
+
+        No other parameters will be passed to the training function by SMT.
+        Hence, for any other parameters, the training function should be
+        prepared with ``functools.partial`` or similar.
 
     replay_buffer : MultiTaskReplayBuffer
         Replay buffer.
