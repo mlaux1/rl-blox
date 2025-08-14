@@ -135,6 +135,7 @@ def train_smt(
     global_step = 0
     training_steps = np.zeros(n_tasks, dtype=int)
     training_performances = np.full(n_tasks, -np.finfo(float).max)
+    task_budgets = np.full(n_tasks, kappa * b_total)
 
     progress = tqdm(total=b_total, disable=not progress_bar)
 
@@ -179,7 +180,7 @@ def train_smt(
             if training_performances[task_id] > M:
                 solved_pool.add(task_id)
                 updated_training_pool.remove(task_id)
-            elif training_steps[task_id] >= kappa * b_total:  # TODO sure?
+            elif training_steps[task_id] >= task_budgets[task_id]:
                 m = mt_def.get_unsolvable_threshold(task_id)
                 if training_performances[task_id] < m:
                     unsolvable_pool.add(task_id)
@@ -188,12 +189,19 @@ def train_smt(
                     main_pool.add(task_id)
                     updated_training_pool.remove(task_id)
 
+        # The original SMT algorithm would evaluate the performance on each task
+        # and reset the networks here, i.e., randomly initialize them.
+
         while len(updated_training_pool) < K:
+            # Select task with the lowest performance (from main pool)
             main_pool_indices = list(main_pool)
             worst_index = np.argmin(training_performances[main_pool_indices])
             worst = main_pool_indices[worst_index]
+            # Move it to training pool
             updated_training_pool.add(worst)
             main_pool.remove(worst)
+            # Set its budget to kappa * B (B: remaining total budget)
+            task_budgets[worst] = kappa * (b_total - global_step)
 
             if logger is not None:
                 logger.record_stat("worst task", worst, global_step + 1)
