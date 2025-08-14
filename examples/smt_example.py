@@ -111,7 +111,10 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy(jnp.asarray(obs)))
+        if backbone == "DDPG":
+            action = np.asarray(policy(jnp.asarray(obs)))
+        else:
+            action = np.asarray(policy(jnp.asarray(obs))[0])
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         if verbose:
