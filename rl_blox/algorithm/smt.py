@@ -1,5 +1,6 @@
 import copy
 from abc import ABCMeta, abstractmethod
+from collections import deque
 from collections.abc import Callable
 
 import gymnasium as gym
@@ -134,7 +135,8 @@ def train_smt(
     b_total = b1 + b2
     global_step = 0
     training_steps = np.zeros(n_tasks, dtype=int)
-    training_performances = np.full(n_tasks, -np.finfo(float).max)
+    avg_training_performances = np.full(n_tasks, -np.finfo(float).max)
+    training_performances = [deque(maxlen=n_average) for _ in range(n_tasks)]
     task_budgets = np.full(n_tasks, kappa * b_total)
 
     progress = tqdm(total=b_total, disable=not progress_bar)
@@ -143,7 +145,6 @@ def train_smt(
         updated_training_pool = copy.deepcopy(training_pool)
         for task_id in training_pool:
             env = mt_def.get_task(task_id)
-            # TODO reuse stats wrapper per task
             env_with_stats = gym.wrappers.RecordEpisodeStatistics(
                 env, buffer_length=n_average
             )
@@ -165,25 +166,26 @@ def train_smt(
 
             progress.update(scheduling_interval)
 
-            training_performances[task_id] = np.mean(
-                env_with_stats.return_queue
+            training_performances[task_id].extend(env_with_stats.return_queue)
+            avg_training_performances[task_id] = np.mean(
+                training_performances[task_id]
             )
 
             if logger is not None:
                 logger.record_stat("task_id", task_id, global_step + 1)
                 logger.record_stat(
                     "task_performance",
-                    training_performances[task_id],
+                    avg_training_performances[task_id],
                     global_step + 1,
                 )
 
             M = mt_def.get_solved_threshold(task_id)
-            if training_performances[task_id] > M:
+            if avg_training_performances[task_id] > M:
                 solved_pool.add(task_id)
                 updated_training_pool.remove(task_id)
             elif training_steps[task_id] >= task_budgets[task_id]:
                 m = mt_def.get_unsolvable_threshold(task_id)
-                if training_performances[task_id] < m:
+                if avg_training_performances[task_id] < m:
                     unsolvable_pool.add(task_id)
                     updated_training_pool.remove(task_id)
                 else:
@@ -204,7 +206,9 @@ def train_smt(
 
             # Select task with the lowest performance (from main pool)
             main_pool_indices = list(main_pool)
-            worst_index = np.argmin(training_performances[main_pool_indices])
+            worst_index = np.argmin(
+                avg_training_performances[main_pool_indices]
+            )
             worst = main_pool_indices[worst_index]
             # Move it to training pool
             updated_training_pool.add(worst)
@@ -216,7 +220,7 @@ def train_smt(
                 logger.record_stat("worst task", worst, global_step + 1)
                 logger.record_stat(
                     "worst performance",
-                    training_performances[worst],
+                    avg_training_performances[worst],
                     global_step + 1,
                 )
 
