@@ -2,9 +2,11 @@ import copy
 from abc import ABCMeta, abstractmethod
 from collections import deque
 from collections.abc import Callable
+from functools import partial
 
 import gymnasium as gym
 import numpy as np
+from flax import nnx
 from numpy.typing import ArrayLike
 from tqdm.rich import tqdm
 
@@ -78,6 +80,119 @@ class ContextualMultiTaskDefinition(metaclass=ABCMeta):
 
     def __len__(self) -> int:
         return len(self.contexts)
+
+
+def make_ddpg_train_fn(
+    mt_def: ContextualMultiTaskDefinition,
+    policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    policy_activation: str = "relu",
+    policy_learning_rate: float = 1e-3,
+    q_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    q_activation: str = "relu",
+    q_learning_rate: float = 1e-3,
+    gamma: float = 0.99,
+    tau: float = 0.005,
+    batch_size: int = 256,
+    gradient_steps: int = 1,
+    exploration_noise: float = 0.1,
+    seed: int = 0,
+) -> Callable:
+    """Creates a function to train DDPG on a single task."""
+    from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
+
+    env = mt_def.get_task(0)
+    state = create_ddpg_state(
+        env,
+        policy_hidden_nodes=policy_hidden_nodes,
+        policy_activation=policy_activation,
+        policy_learning_rate=policy_learning_rate,
+        q_hidden_nodes=q_hidden_nodes,
+        q_activation=q_activation,
+        q_learning_rate=q_learning_rate,
+        seed=seed,
+    )
+
+    q_target = nnx.clone(state.q)
+    policy_target = nnx.clone(state.policy)
+
+    train_st = partial(
+        train_ddpg,
+        policy=state.policy,
+        policy_optimizer=state.policy_optimizer,
+        q=state.q,
+        q_optimizer=state.q_optimizer,
+        q_target=q_target,
+        policy_target=policy_target,
+        gamma=gamma,
+        tau=tau,
+        batch_size=batch_size,
+        gradient_steps=gradient_steps,
+        exploration_noise=exploration_noise,
+    )
+
+    return train_st
+
+
+def make_sac_train_fn(
+    mt_def: ContextualMultiTaskDefinition,
+    policy_shared_head: bool = False,
+    policy_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    policy_activation: str = "swish",
+    policy_learning_rate: float = 3e-4,
+    q_hidden_nodes: list[int] | tuple[int] = (256, 256),
+    q_activation: str = "relu",
+    q_learning_rate: float = 1e-3,
+    gamma: float = 0.99,
+    tau: float = 0.005,
+    batch_size: int = 256,
+    entropy_learning_rate: float = 1e-3,
+    policy_delay: int = 2,
+    target_network_delay: int = 1,
+    alpha: float = 0.2,
+    autotune: bool = True,
+    seed: int = 0,
+) -> Callable:
+    """Creates a function to train SAC on a single task."""
+    from rl_blox.algorithm.sac import (
+        EntropyControl,
+        create_sac_state,
+        train_sac,
+    )
+
+    env = mt_def.get_task(0)
+    state = create_sac_state(
+        env,
+        policy_shared_head=policy_shared_head,
+        policy_hidden_nodes=policy_hidden_nodes,
+        policy_activation=policy_activation,
+        policy_learning_rate=policy_learning_rate,
+        q_hidden_nodes=q_hidden_nodes,
+        q_activation=q_activation,
+        q_learning_rate=q_learning_rate,
+        seed=seed,
+    )
+
+    q_target = nnx.clone(state.q)
+    entropy_control = EntropyControl(
+        env, alpha, autotune, entropy_learning_rate
+    )
+
+    train_st = partial(
+        train_sac,
+        policy=state.policy,
+        policy_optimizer=state.policy_optimizer,
+        q=state.q,
+        q_optimizer=state.q_optimizer,
+        q_target=q_target,
+        entropy_control=entropy_control,
+        gamma=gamma,
+        tau=tau,
+        batch_size=batch_size,
+        policy_delay=policy_delay,
+        target_network_delay=target_network_delay,
+    )
+
+    return train_st
 
 
 def train_smt(

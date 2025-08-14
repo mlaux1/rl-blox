@@ -1,12 +1,13 @@
-from functools import partial
-
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
-from flax import nnx
 
-from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
-from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
+from rl_blox.algorithm.smt import (
+    ContextualMultiTaskDefinition,
+    make_ddpg_train_fn,
+    make_sac_train_fn,
+    train_smt,
+)
 from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 from rl_blox.logging.logger import AIMLogger
 
@@ -35,6 +36,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 1
 verbose = 2
+backbone = "ddpg"  # or "sac"
 
 if verbose:
     print(
@@ -44,7 +46,7 @@ if verbose:
 logger = AIMLogger()
 logger.define_experiment(
     env_name="Pendulum-v1",
-    algorithm_name="SMT-DDPG",
+    algorithm_name=f"SMT-{backbone}",
     hparams={},
 )
 
@@ -54,19 +56,11 @@ replay_buffer = MultiTaskReplayBuffer(
     len(mt_def),
 )
 
-state = create_ddpg_state(mt_def.get_task(0), seed=seed)
-policy_target = nnx.clone(state.policy)
-q_target = nnx.clone(state.q)
-
-train_st = partial(
-    train_ddpg,
-    policy=state.policy,
-    policy_optimizer=state.policy_optimizer,
-    q=state.q,
-    q_optimizer=state.q_optimizer,
-    policy_target=policy_target,
-    q_target=q_target,
-)
+if backbone == "ddpg":
+    train_st = make_ddpg_train_fn(mt_def)
+else:
+    assert backbone == "sac", "Backbone must be either 'ddpg' or 'sac'."
+    train_st = make_sac_train_fn(mt_def)
 result = train_smt(
     mt_def,
     train_st,
