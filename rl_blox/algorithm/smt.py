@@ -128,11 +128,11 @@ def train_smt(
         Replay buffer.
 
     b1 : int
-        Total number of timesteps to train the agent in first phase.
+        Total number of timesteps to train the agent in first stage.
         Corresponds to :math:`B_1` in the paper [1]_.
 
     b2 : int
-        Total number of timesteps to train the agent in second phase.
+        Total number of timesteps to train the agent in second stage.
         Corresponds to :math:`B_2` in the paper [1]_.
 
     scheduling_interval : int
@@ -167,13 +167,22 @@ def train_smt(
     Returns
     -------
     result
-        The training result. Same as the result of the `train_st` function.
+        The training result. Same as the result of the ``train_st`` function.
 
     training_steps : np.ndarray
         Number of training steps for each task.
 
     training_performances : np.ndarray
         Average training performance for each task from stage 1.
+
+    Notes
+    -----
+    In comparison to the original SMT algorithm [1]_, this implementation
+    does not reset networks. Furthermore, it allows any underlying RL
+    algorithm to be used as a backbone (not just SAC) and instead of estimating
+    the task encoding with a recurrent neural network, it can use a context
+    vector provided by the multi-task environment definition to distinguish
+    tasks.
 
     References
     ----------
