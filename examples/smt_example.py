@@ -78,21 +78,20 @@ result = train_smt(
 )
 mt_def.close()
 
-exit()
-
-# TODO
-
 # Evaluation
-env = gym.make(env_name, render_mode="human")
+result_st = result[0]
+policy = result_st.policy
+q = result_st.q
+env = gym.make("Pendulum-v1", render_mode="human")
 while True:
     done = False
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(result.policy(jnp.asarray(obs)))
+        action = np.asarray(policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
-        q_value = result.q(jnp.concatenate((obs, action)))
         if verbose:
+            q_value = q(jnp.concatenate((obs, action)))
             print(f"{q_value=}")
         obs = np.asarray(next_obs)
