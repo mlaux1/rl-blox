@@ -36,7 +36,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 1
 verbose = 2
-backbone = "SAC"  # Backbone algorithm to use for SMT: "DDPG" or "SAC"
+backbone = "DDPG"  # Backbone algorithm to use for SMT: "DDPG" or "SAC"
 
 if verbose:
     print(
