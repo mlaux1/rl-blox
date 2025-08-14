@@ -116,6 +116,9 @@ def train_smt(
     result
         The training result. Same as the result of the `train_st` function.
 
+    training_steps : np.ndarray
+        Number of training steps for each task.
+
     References
     ----------
     .. [1] Cho, M., Park, J., Lee, S., Sung, Y. (2024). Hard tasks first:
@@ -229,10 +232,42 @@ def train_smt(
 
         training_pool = updated_training_pool
 
-    while global_step < b_total:
-        if len(unsolvable_pool) == 0:
-            break
+    if len(unsolvable_pool) > 0:
+        result_st = smt_stage2(
+            mt_def,
+            train_st,
+            replay_buffer,
+            unsolvable_pool,
+            training_steps,
+            global_step,
+            scheduling_interval,
+            b_total,
+            learning_starts,
+            logger,
+            seed,
+            progress,
+        )
+    progress.close()
 
+    return result_st  # TODO return training steps and performances as well?
+
+
+def smt_stage2(
+    mt_def,
+    train_st,
+    replay_buffer,
+    unsolvable_pool,
+    training_steps,
+    global_step,
+    scheduling_interval,
+    b_total,
+    learning_starts,
+    logger,
+    seed,
+    progress,
+):
+    """SMT will iterate over the unsolvable tasks in stage 2."""
+    while global_step < b_total:
         for task_id in unsolvable_pool:
             env = mt_def.get_task(task_id)
             replay_buffer.select_task(task_id)
@@ -251,6 +286,8 @@ def train_smt(
             global_step = total_timesteps
 
             progress.update(scheduling_interval)
-    progress.close()
 
-    return result_st  # TODO return training steps and performances as well?
+            if global_step + 1 >= b_total:
+                break
+
+    return result_st, training_steps
