@@ -51,12 +51,9 @@ class ContextualMultiTaskDefinition(metaclass=ABCMeta):
         self.contexts = contexts
         self.context_in_observation = context_in_observation
 
-    def get_task_context(self, task_id: int) -> ArrayLike:
-        assert task_id < len(self.contexts)
-        return self.contexts[task_id]
-
     def get_task(self, task_id: int) -> gym.Env:
         """Returns the task environment for the given task ID."""
+        assert 0 <= task_id < len(self.contexts)
         context = self.contexts[task_id]
         st_env = self._get_env(context)
         if self.context_in_observation:
