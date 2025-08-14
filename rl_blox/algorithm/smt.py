@@ -249,7 +249,7 @@ def train_smt(
         )
     progress.close()
 
-    return result_st  # TODO return training steps and performances as well?
+    return result_st, training_steps, avg_training_performances
 
 
 def smt_stage2(
@@ -290,4 +290,4 @@ def smt_stage2(
             if global_step + 1 >= b_total:
                 break
 
-    return result_st, training_steps
+    return result_st
