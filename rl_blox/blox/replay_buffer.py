@@ -701,37 +701,6 @@ class MultiTaskReplayBuffer:
             *args, rng=rng, **kwargs
         )
 
-        """slow...
-        if "batch_size" in kwargs:
-            batch_size = kwargs.pop("batch_size")
-        elif len(kwargs) == 0:
-            batch_size = args[0]
-            del args[0]
-        else:
-            raise ValueError("No batch_size provided.")
-
-        explored_tasks = list(self.active_buffers)
-        task_indices = rng.choice(explored_tasks, size=batch_size, replace=True)
-        self.task_indices, self.batch_sizes = np.unique(
-            task_indices, return_counts=True
-        )
-
-        batch = []
-        for task_id, n_samples in zip(self.task_indices, self.batch_sizes):
-            batch.append(
-                self.buffers[task_id].sample_batch(
-                    n_samples, *args, rng=rng, **kwargs
-                )
-            )
-        batch = {
-            k: jnp.concatenate(
-                [getattr(st_batch, k) for st_batch in batch], axis=0
-            )
-            for k in self.buffers[0].buffer.keys()
-        }
-        return self.buffers[0].Batch(**batch)
-        """
-
     def reward_scale(self, eps: float = 1e-8):
         """Compute the reward scale for all tasks."""
         n_samples = 0
@@ -744,15 +713,6 @@ class MultiTaskReplayBuffer:
     def update_priority(self, priority):
         """Update the priority of previous samples."""
         self.buffers[self.sampled_task_idx].update_priority(priority)
-
-        """slow
-        priority_idx = 0
-        for task_id, n_samples in zip(self.task_indices, self.batch_sizes):
-            self.buffers[task_id].update_priority(
-                priority[priority_idx : priority_idx + n_samples]
-            )
-            priority_idx += n_samples
-        """
 
     def reset_max_priority(self):
         """Recalculate the maximum priority for all tasks."""
