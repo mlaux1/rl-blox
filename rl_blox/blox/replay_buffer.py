@@ -1,3 +1,4 @@
+import copy
 from collections import OrderedDict, namedtuple
 from functools import partial
 
@@ -643,3 +644,77 @@ def lap_priority(
        Representations. https://arxiv.org/abs/1511.05952
     """
     return jnp.maximum(abs_td_error, min_priority) ** alpha
+
+
+class MultiTaskReplayBuffer:
+    """Replay buffer for discrete set of tasks.
+
+    For each task we will create a separate replay buffer. During sampling,
+    we will store samples in the corresponding task's replay buffer. We will
+    sample batches from all replay buffers.
+
+    Parameters
+    ----------
+    replay_buffer : object
+        Replay buffer instance that will be copied for each task.
+
+    n_tasks : int
+        Number of tasks.
+    """
+
+    def __init__(self, replay_buffer, n_tasks: int):
+        self.buffers = [replay_buffer]
+        for _ in range(n_tasks - 1):
+            self.buffers.append(copy.deepcopy(replay_buffer))
+        self.selected_task = 0
+        self.active_buffers = set()
+
+    def select_task(self, task_id: int):
+        """Select the task for which samples will be added."""
+        if 0 <= task_id < len(self.buffers):
+            self.selected_task = task_id
+        else:
+            raise ValueError(
+                f"Invalid task id: {task_id}. Must be in [0, {len(self.buffers) - 1}]."
+            )
+
+    def add_sample(self, *args, **kwargs):
+        """Add transition sample to the replay buffer for a specific task."""
+        self.buffers[self.selected_task].add_sample(*args, **kwargs)
+        self.active_buffers.add(self.selected_task)
+
+    def sample_batch(self, *args, **kwargs):
+        """Sample a batch of transitions from all replay buffers."""
+        args = list(args)
+        if "rng" in kwargs:
+            rng = kwargs.pop("rng")
+        elif len(kwargs) == 0:
+            rng = args[-1]
+            del args[-1]
+        else:
+            raise ValueError("No rng provided.")
+
+        self.sampled_task_idx = int(
+            rng.choice(list(self.active_buffers), size=1)
+        )
+        return self.buffers[self.sampled_task_idx].sample_batch(
+            *args, rng=rng, **kwargs
+        )
+
+    def reward_scale(self, eps: float = 1e-8):
+        """Compute the reward scale for all tasks."""
+        n_samples = 0
+        accumulated_reward = 0.0
+        for buffer in self.buffers:
+            n_samples += len(buffer)
+            accumulated_reward += buffer.reward_scale(eps) * len(buffer)
+        return accumulated_reward / n_samples
+
+    def update_priority(self, priority):
+        """Update the priority of previous samples."""
+        self.buffers[self.sampled_task_idx].update_priority(priority)
+
+    def reset_max_priority(self):
+        """Recalculate the maximum priority for all tasks."""
+        for buffer in self.buffers:
+            buffer.reset_max_priority()

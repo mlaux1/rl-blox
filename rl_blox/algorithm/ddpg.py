@@ -203,6 +203,7 @@ def train_ddpg(
     policy_target: nnx.Optimizer | None = None,
     q_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
+    global_step: int = 0,
     progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
@@ -278,6 +279,9 @@ def train_ddpg(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    global_step : int, optional
+        Global step to start training from. If not set, will start from 0.
 
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
@@ -387,7 +391,9 @@ def train_ddpg(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in trange(total_timesteps, disable=not progress_bar):
+    for global_step in trange(
+        global_step, total_timesteps, disable=not progress_bar
+    ):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
