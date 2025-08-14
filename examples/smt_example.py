@@ -12,12 +12,12 @@ from rl_blox.logging.logger import AIMLogger
 
 
 class MultiTaskPendulum(ContextualMultiTaskDefinition):
-    def __init__(self):
+    def __init__(self, render_mode=None):
         super().__init__(
             contexts=np.linspace(5, 15, 11)[:, np.newaxis],
             context_in_observation=True,
         )
-        self.env = gym.make("Pendulum-v1")
+        self.env = gym.make("Pendulum-v1", render_mode=render_mode)
 
     def _get_env(self, context):
         self.env.unwrapped.g = context[0]
@@ -84,7 +84,8 @@ mt_def.close()
 result_st = result[0]
 policy = result_st.policy
 q = result_st.q
-env = gym.make("Pendulum-v1", render_mode="human")
+mt_env = MultiTaskPendulum(render_mode="human")
+env = mt_env.get_task(5)
 while True:
     done = False
     infos = {}
