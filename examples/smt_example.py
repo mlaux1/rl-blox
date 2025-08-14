@@ -13,12 +13,14 @@ from rl_blox.logging.logger import AIMLogger
 
 class MultiTaskPendulum(ContextualMultiTaskDefinition):
     def __init__(self):
-        super().__init__(contexts=np.linspace(5, 15, 11))
+        super().__init__(
+            contexts=np.linspace(5, 15, 11)[:, np.newaxis],
+            context_in_observation=True,
+        )
         self.env = gym.make("Pendulum-v1")
 
-    def get_task(self, task_id: int) -> gym.Env:
-        """Returns the task environment for the given task ID."""
-        self.env.unwrapped.g = self.get_task_context(task_id)
+    def _get_env(self, context):
+        self.env.unwrapped.g = context[0]
         return self.env
 
     def get_solved_threshold(self, task_id: int) -> float:
@@ -52,7 +54,7 @@ replay_buffer = MultiTaskReplayBuffer(
     len(mt_def),
 )
 
-state = create_ddpg_state(mt_def.env, seed=seed)
+state = create_ddpg_state(mt_def.get_task(0), seed=seed)
 policy_target = nnx.clone(state.policy)
 q_target = nnx.clone(state.q)
 
