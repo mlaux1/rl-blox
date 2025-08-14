@@ -33,7 +33,7 @@ def linear_schedule(
     )  # Number of steps for decay
     schedule = jnp.ones(total_timesteps) * end  # Default value after decay
 
-    schedule.at[:transition_steps].set(
+    schedule = schedule.at[:transition_steps].set(
         jnp.linspace(start, end, transition_steps)
     )
 
