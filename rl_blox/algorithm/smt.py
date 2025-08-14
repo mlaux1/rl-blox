@@ -192,12 +192,12 @@ def train_smt(
         # The original SMT algorithm would evaluate the performance on each task
         # and reset the networks here, i.e., randomly initialize them.
 
-        stop_stage_1 = False
+        early_stop_stage = False
         while len(updated_training_pool) < K:
             if len(main_pool) == 0:
                 # All tasks outside the training pool are solved or unsolvable.
                 if len(updated_training_pool) == 0:  # No tasks left to train.
-                    stop_stage_1 = True
+                    early_stop_stage = True
                 # else: Continue until training pool is solved or unsolvable.
                 break
 
@@ -219,7 +219,7 @@ def train_smt(
                     global_step + 1,
                 )
 
-        if stop_stage_1:
+        if early_stop_stage:
             break
 
         training_pool = updated_training_pool
