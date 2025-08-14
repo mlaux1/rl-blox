@@ -192,25 +192,33 @@ def train_smt(
         # The original SMT algorithm would evaluate the performance on each task
         # and reset the networks here, i.e., randomly initialize them.
 
-        while len(updated_training_pool) < K:
-            # Select task with the lowest performance (from main pool)
-            main_pool_indices = list(main_pool)
-            worst_index = np.argmin(training_performances[main_pool_indices])
-            worst = main_pool_indices[worst_index]
-            # Move it to training pool
-            updated_training_pool.add(worst)
-            main_pool.remove(worst)
-            # Set its budget to kappa * B (B: remaining total budget)
-            task_budgets[worst] = kappa * (b_total - global_step)
-
-            if logger is not None:
-                logger.record_stat("worst task", worst, global_step + 1)
-                logger.record_stat(
-                    "worst performance",
-                    training_performances[worst],
-                    global_step + 1,
+        if len(main_pool) == 0:
+            # All tasks are either solved or unsolvable.
+            if len(training_pool) == 0:
+                # No tasks left to train.
+                break
+        else:
+            while len(updated_training_pool) < K:
+                # Select task with the lowest performance (from main pool)
+                main_pool_indices = list(main_pool)
+                worst_index = np.argmin(
+                    training_performances[main_pool_indices]
                 )
-        training_pool = updated_training_pool
+                worst = main_pool_indices[worst_index]
+                # Move it to training pool
+                updated_training_pool.add(worst)
+                main_pool.remove(worst)
+                # Set its budget to kappa * B (B: remaining total budget)
+                task_budgets[worst] = kappa * (b_total - global_step)
+
+                if logger is not None:
+                    logger.record_stat("worst task", worst, global_step + 1)
+                    logger.record_stat(
+                        "worst performance",
+                        training_performances[worst],
+                        global_step + 1,
+                    )
+            training_pool = updated_training_pool
 
     while global_step < b_total:
         if len(unsolvable_pool) == 0:
