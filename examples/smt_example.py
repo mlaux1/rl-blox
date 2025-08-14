@@ -6,6 +6,7 @@ import numpy as np
 from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
+from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
 from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
 from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 from rl_blox.logging.logger import AIMLogger
@@ -35,6 +36,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 1
 verbose = 2
+backbone = "SAC"  # Backbone algorithm to use for SMT: "DDPG" or "SAC"
 
 if verbose:
     print(
@@ -44,7 +46,7 @@ if verbose:
 logger = AIMLogger()
 logger.define_experiment(
     env_name="Pendulum-v1",
-    algorithm_name="SMT-DDPG",
+    algorithm_name=f"SMT-{backbone}",
     hparams={},
 )
 
@@ -54,19 +56,37 @@ replay_buffer = MultiTaskReplayBuffer(
     len(mt_def),
 )
 
-state = create_ddpg_state(mt_def.get_task(0), seed=seed)
-policy_target = nnx.clone(state.policy)
-q_target = nnx.clone(state.q)
+env = mt_def.get_task(0)
+if backbone == "DDPG":
+    state = create_ddpg_state(env, seed=seed)
+    policy_target = nnx.clone(state.policy)
+    q_target = nnx.clone(state.q)
 
-train_st = partial(
-    train_ddpg,
-    policy=state.policy,
-    policy_optimizer=state.policy_optimizer,
-    q=state.q,
-    q_optimizer=state.q_optimizer,
-    policy_target=policy_target,
-    q_target=q_target,
-)
+    train_st = partial(
+        train_ddpg,
+        policy=state.policy,
+        policy_optimizer=state.policy_optimizer,
+        q=state.q,
+        q_optimizer=state.q_optimizer,
+        policy_target=policy_target,
+        q_target=q_target,
+    )
+else:
+    assert backbone == "SAC", "Backbone must be either 'DDPG' or 'SAC'."
+    state = create_sac_state(env, seed=seed)
+    q_target = nnx.clone(state.q)
+    entroy_control = EntropyControl(env, 0.2, True, 1e-3)
+
+    train_st = partial(
+        train_sac,
+        policy=state.policy,
+        policy_optimizer=state.policy_optimizer,
+        q=state.q,
+        q_optimizer=state.q_optimizer,
+        q_target=q_target,
+        entropy_control=entroy_control,
+    )
+
 result = train_smt(
     mt_def,
     train_st,
