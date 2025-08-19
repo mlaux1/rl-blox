@@ -10,6 +10,7 @@ from tqdm.rich import tqdm
 from ...blox.double_qnet import ContinuousClippedDoubleQNet
 from ...blox.function_approximator.policy_head import StochasticPolicyBase
 from ...blox.replay_buffer import ReplayBuffer
+from ...logging.logger import LoggerBase
 from ..sac import EntropyControl, train_sac
 
 
@@ -90,6 +91,7 @@ def train_uts_sac(
     seed: int = 1,
     exploring_starts: int = 1_000,
     progress_bar: bool = True,
+    logger: LoggerBase = None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -134,6 +136,7 @@ def train_uts_sac(
             entropy_control=entropy_control,
             learning_starts=exploring_starts - steps_so_far,
             progress_bar=False,
+            logger=logger,
         )
 
         steps_so_far += ep_steps

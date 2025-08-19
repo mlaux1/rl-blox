@@ -4,6 +4,7 @@ import numpy as np
 
 from rl_blox.algorithm.multi_task.uts_sac import TaskSet, train_uts_sac
 from rl_blox.algorithm.sac import create_sac_state
+from rl_blox.logging.logger import AIMLogger
 
 env_name = "Pendulum-v1"
 seed = 1
@@ -32,6 +33,13 @@ hparams_algorithm = dict(
     episodes_per_task=1,
 )
 
+logger = AIMLogger()
+logger.define_experiment(
+    env_name=env_name,
+    algorithm_name="UTS-SAC",
+    hparams=hparams_models | hparams_algorithm,
+)
+
 sac_state = create_sac_state(train_envs[0], **hparams_models)
 sac_result = train_uts_sac(
     train_set,
@@ -40,6 +48,7 @@ sac_result = train_uts_sac(
     sac_state.q,
     sac_state.q_optimizer,
     **hparams_algorithm,
+    logger=logger,
 )
 
 
