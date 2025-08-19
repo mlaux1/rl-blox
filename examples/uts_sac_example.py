@@ -27,7 +27,7 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=100_000,
+    total_timesteps=1_000,
     exploring_starts=0,
     episodes_per_task=1,
 )
@@ -44,18 +44,21 @@ sac_result = train_uts_sac(
 
 
 for env in train_envs:
-    train_envs[env].close()
+    env.close()
 
 policy, _, q, _, _, _, _ = sac_result
 
 # Evaluation
-env1 = gym.make(env_name, render_mode="human", g=10.0)
-# env2 = gym.make(env_name, render_mode="human", g=9.9)
-# env3 = gym.make(env_name, render_mode="human", g=10.0)
-# env4 = gym.make(env_name, render_mode="human", g=10.5)
+test_contexts = jnp.array([[10.0], [9.9], [10.2]])
+test_envs = [
+    gym.make(env_name, render_mode="human", g=10.0),
+    gym.make(env_name, render_mode="human", g=9.9),
+    gym.make(env_name, render_mode="human", g=10.2),
+]
+test_set = TaskSet(test_contexts, test_envs)
 
-while True:
-    env = env1
+for i in range(3):
+    env = test_set.get_task_env(i)
     done = False
     obs, _ = env.reset()
     while not done:
