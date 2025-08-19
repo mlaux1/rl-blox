@@ -66,3 +66,6 @@ for i in range(3):
         next_obs, reward, termination, truncation, info = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
+
+for env in test_envs:
+    env.close()
