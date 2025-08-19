@@ -28,6 +28,9 @@ class LayerNormMLP(nnx.Module):
         Activation function. Has to be the name of a function defined in the
         flax.nnx module.
 
+    normalization : str
+        Normalization layer. Has to be a layer defined in the flax.nnx module.
+
     rngs : nnx.Rngs
         Random number generator.
 
@@ -44,8 +47,8 @@ class LayerNormMLP(nnx.Module):
     hidden_layers: list[nnx.Linear]
     """Hidden layers."""
 
-    layer_norms: list[nnx.LayerNorm]
-    """Layer normalization layers for hidden layers."""
+    norms: list[nnx.Module]
+    """Normalization layers for hidden layers."""
 
     output_layer: nnx.Linear
     """Output layer."""
@@ -56,6 +59,7 @@ class LayerNormMLP(nnx.Module):
         n_outputs: int,
         hidden_nodes: list[int],
         activation: str,
+        normalization: str,
         rngs: nnx.Rngs,
         kernel_init: nnx.Initializer = default_init,
     ):
@@ -66,14 +70,14 @@ class LayerNormMLP(nnx.Module):
         self.activation = getattr(nnx, activation)
 
         self.hidden_layers = []
-        self.layer_norms = []
+        self.norms = []
         n_in = n_features
         for n_out in hidden_nodes:
             self.hidden_layers.append(
                 nnx.Linear(n_in, n_out, rngs=rngs, kernel_init=kernel_init)
             )
-            self.layer_norms.append(
-                nnx.LayerNorm(num_features=n_out, rngs=rngs)
+            self.norms.append(
+                getattr(nnx, normalization)(num_features=n_out, rngs=rngs)
             )
             n_in = n_out
 
@@ -86,7 +90,7 @@ class LayerNormMLP(nnx.Module):
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         for layer, norm in zip(
-            self.hidden_layers, self.layer_norms, strict=True
+            self.hidden_layers, self.norms, strict=True
         ):
             x = self.activation(norm(layer(x)))
         return self.output_layer(x)

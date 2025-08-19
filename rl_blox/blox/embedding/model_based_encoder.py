@@ -94,7 +94,7 @@ class ModelBasedEncoder(nnx.Module):
     activation: Callable[[jnp.ndarray], jnp.ndarray]
     """Activation function."""
 
-    zs_layer_norm: nnx.LayerNorm
+    zs_layer_norm: nnx.Module
     """Layer normalization for the latent state representation."""
 
     def __init__(
@@ -107,6 +107,7 @@ class ModelBasedEncoder(nnx.Module):
         zsa_dim: int,
         hidden_nodes: list[int],
         activation: str,
+        normalization: str,
         rngs: nnx.Rngs,
     ):
         self.zs = LayerNormMLP(
@@ -114,6 +115,7 @@ class ModelBasedEncoder(nnx.Module):
             zs_dim,
             hidden_nodes,
             activation,
+            normalization,
             rngs=rngs,
         )
         self.za = nnx.Linear(
@@ -124,6 +126,7 @@ class ModelBasedEncoder(nnx.Module):
             zsa_dim,
             hidden_nodes,
             activation,
+            normalization,
             rngs=rngs,
         )
         self.model = nnx.Linear(
@@ -131,7 +134,9 @@ class ModelBasedEncoder(nnx.Module):
         )
         self.zs_dim = zs_dim
         self.activation = getattr(nnx, activation)
-        self.zs_layer_norm = nnx.LayerNorm(num_features=zs_dim, rngs=rngs)
+        self.zs_layer_norm = getattr(nnx, normalization)(
+            num_features=zs_dim, rngs=rngs
+        )
 
     def encode_zsa(self, zs: jnp.ndarray, action: jnp.ndarray) -> jnp.ndarray:
         """Encodes the state and action into latent representation.
@@ -221,12 +226,14 @@ def create_model_based_encoder_and_policy(
     action_space: gym.spaces.Box,
     policy_hidden_nodes: list[int] | tuple[int] = (512, 512),
     policy_activation: str = "relu",
+    policy_normalization: str = "RMSNorm",
     encoder_n_bins: int = 65,
     encoder_zs_dim: int = 512,
     encoder_za_dim: int = 256,
     encoder_zsa_dim: int = 512,
     encoder_hidden_nodes: list[int] | tuple[int] = (512, 512),
     encoder_activation: str = "elu",
+    encoder_normalization: str = "RMSNorm",
     rngs: nnx.Rngs | None = None,
 ) -> DeterministicPolicyWithEncoder:
     """Creates a model-based encoder."""
@@ -241,6 +248,7 @@ def create_model_based_encoder_and_policy(
         zsa_dim=encoder_zsa_dim,
         hidden_nodes=encoder_hidden_nodes,
         activation=encoder_activation,
+        normalization=encoder_normalization,
         rngs=rngs,
     )
     policy_net = LayerNormMLP(
@@ -248,6 +256,7 @@ def create_model_based_encoder_and_policy(
         action_space.shape[0],
         policy_hidden_nodes,
         policy_activation,
+        policy_normalization,
         rngs=rngs,
     )
     policy = DeterministicTanhPolicy(policy_net, action_space)

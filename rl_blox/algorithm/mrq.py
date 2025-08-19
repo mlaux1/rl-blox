@@ -188,10 +188,12 @@ def create_mrq_state(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy_hidden_nodes: list[int] | tuple[int] = (512, 512),
     policy_activation: str = "relu",
+    policy_normalization: str = "RMSNorm",
     policy_learning_rate: float = 3e-4,
     policy_weight_decay: float = 1e-4,
     q_hidden_nodes: list[int] | tuple[int] = (512, 512, 512),
     q_activation: str = "elu",
+    q_normalization: str = "RMSNorm",
     q_learning_rate: float = 3e-4,
     q_weight_decay: float = 1e-4,
     q_grad_clipping: float = 20.0,
@@ -201,6 +203,7 @@ def create_mrq_state(
     encoder_zsa_dim: int = 512,
     encoder_hidden_nodes: list[int] | tuple[int] = (512, 512),
     encoder_activation: str = "elu",
+    encoder_normalization: str = "RMSNorm",
     encoder_learning_rate: float = 1e-4,
     encoder_weight_decay: float = 1e-4,
     seed: int = 0,
@@ -214,12 +217,14 @@ def create_mrq_state(
         action_space=env.action_space,
         policy_hidden_nodes=policy_hidden_nodes,
         policy_activation=policy_activation,
+        policy_normalization=policy_normalization,
         encoder_n_bins=encoder_n_bins,
         encoder_zs_dim=encoder_zs_dim,
         encoder_za_dim=encoder_za_dim,
         encoder_zsa_dim=encoder_zsa_dim,
         encoder_hidden_nodes=encoder_hidden_nodes,
         encoder_activation=encoder_activation,
+        encoder_normalization=encoder_normalization,
         rngs=rngs,
     )
     encoder_optimizer = nnx.Optimizer(
@@ -244,6 +249,7 @@ def create_mrq_state(
         1,
         q_hidden_nodes,
         q_activation,
+        q_normalization,
         rngs=rngs,
     )
     q2 = LayerNormMLP(
@@ -251,6 +257,7 @@ def create_mrq_state(
         1,
         q_hidden_nodes,
         q_activation,
+        q_normalization,
         rngs=rngs,
     )
     q = ContinuousClippedDoubleQNet(q1, q2)
