@@ -1,6 +1,7 @@
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
+from gymnasium.wrappers import RecordEpisodeStatistics
 
 from rl_blox.algorithm.multi_task.uts_sac import TaskSet, train_uts_sac
 from rl_blox.algorithm.sac import create_sac_state
@@ -13,24 +14,24 @@ verbose = 1
 train_contexts = jnp.array([[10.0], [10.1], [9.9]])
 
 train_envs = [
-    gym.make(env_name, g=10.0),
-    gym.make(env_name, g=10.1),
-    gym.make(env_name, g=9.9),
+    RecordEpisodeStatistics(gym.make(env_name, g=10.0)),
+    RecordEpisodeStatistics(gym.make(env_name, g=10.1)),
+    RecordEpisodeStatistics(gym.make(env_name, g=9.9)),
 ]
 
 train_set = TaskSet(train_contexts, train_envs)
 
 hparams_models = dict(
-    policy_hidden_nodes=[128, 128],
-    policy_learning_rate=3e-4,
     q_hidden_nodes=[512, 512],
-    q_learning_rate=1e-3,
+    q_learning_rate=3e-4,
+    policy_learning_rate=1e-3,
+    policy_hidden_nodes=[128, 128],
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=1_000,
-    exploring_starts=0,
-    episodes_per_task=1,
+    total_timesteps=100_000,
+    exploring_starts=1_000,
+    episodes_per_task=5000,
 )
 
 logger = AIMLogger()
@@ -60,9 +61,9 @@ policy, _, q, _, _, _, _ = sac_result
 # Evaluation
 test_contexts = jnp.array([[10.0], [9.9], [10.2]])
 test_envs = [
-    gym.make(env_name, render_mode="human", g=10.0),
-    gym.make(env_name, render_mode="human", g=9.9),
-    gym.make(env_name, render_mode="human", g=10.2),
+    RecordEpisodeStatistics(gym.make(env_name, g=10.0)),
+    RecordEpisodeStatistics(gym.make(env_name, g=9.9)),
+    RecordEpisodeStatistics(gym.make(env_name, g=10.2)),
 ]
 test_set = TaskSet(test_contexts, test_envs)
 

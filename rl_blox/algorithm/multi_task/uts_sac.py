@@ -137,6 +137,7 @@ def train_uts_sac(
             learning_starts=exploring_starts - steps_so_far,
             progress_bar=False,
             logger=logger,
+            step_offset=steps_so_far + 1,
         )
 
         steps_so_far += ep_steps

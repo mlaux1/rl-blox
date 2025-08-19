@@ -269,6 +269,7 @@ def train_sac(
     logger: LoggerBase | None = None,
     max_episodes: int | None = None,
     progress_bar: bool = True,
+    step_offset: int = 1,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -558,9 +559,9 @@ def train_sac(
 
             if logger is not None:
                 for k, v in stats.items():
-                    logger.record_stat(k, v, step=global_step + 1)
+                    logger.record_stat(k, v, step=global_step + step_offset)
                 for k, v in updated_modules.items():
-                    logger.record_epoch(k, v, step=global_step + 1)
+                    logger.record_epoch(k, v, step=global_step + step_offset)
 
         if termination or truncation:
             if logger is not None:
