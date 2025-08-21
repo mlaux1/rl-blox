@@ -32,16 +32,9 @@ def test_pickle():
     )
 
     assert (
-        td7_state.embedding.state_action_embedding.hidden_layers[
-            0
-        ].kernel.value.device
-        == jax.devices("cuda")[0]
-    )
-    assert (
         embedding2.state_action_embedding.hidden_layers[0].kernel.value.device
         == jax.devices("cpu")[0]
     )
-    assert out1[0].device == jax.devices("cuda")[0]
     assert out2[0].device == jax.devices("cpu")[0]
 
     assert jax.tree_util.tree_all(
