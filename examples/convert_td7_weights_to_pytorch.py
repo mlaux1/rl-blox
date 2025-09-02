@@ -1,3 +1,4 @@
+import contextlib
 from collections import OrderedDict
 
 import gymnasium as gym
@@ -11,21 +12,21 @@ from flax import nnx
 from rl_blox.algorithm.td7 import create_td7_state
 
 
-def translate_to_torch(flax_module: nnx.Module, torch_module: nn.Module):
+def transfer_parameters_flax_to_torch(
+    flax_module: nnx.Module, torch_module: nn.Module
+):
     torch_state = torch_module.state_dict()  # flat state dict
     flax_state = nnx.state(flax_module)  # nested state dict
 
     output_state = OrderedDict()
 
     # Converted nested flax state dict to flat torch state dict.
-    for torch_param_key in torch_state.keys():
+    for torch_param_key in torch_state:
         attributes = torch_param_key.split(".")
         obj = flax_state
         for attr in attributes:
-            try:
+            with contextlib.suppress(ValueError):
                 attr = int(attr)  # for list indices
-            except ValueError:
-                pass  # not int
             if attr == "weight":
                 attr = "kernel"
             obj = obj[attr]
@@ -83,11 +84,14 @@ class DeterministicTanhPolicy(nn.Module):
         super().__init__()
 
         self.policy_net = policy_net
-        self.action_scale = torch.Tensor(
-            (action_space.high - action_space.low) / 2.0
+
+        self.register_buffer(
+            "action_scale",
+            torch.Tensor((action_space.high - action_space.low) / 2.0),
         )
-        self.action_bias = torch.Tensor(
-            (action_space.high + action_space.low) / 2.0
+        self.register_buffer(
+            "action_bias",
+            torch.Tensor((action_space.high + action_space.low) / 2.0),
         )
 
     def __call__(self, observation):
@@ -190,18 +194,25 @@ state = create_td7_state(
     seed=1,
 )
 
-translate_to_torch(state.embedding, embedding)
-translate_to_torch(state.actor, actor)
+# Transfer weights from flax modules to pytorch modules
+transfer_parameters_flax_to_torch(state.embedding, embedding)
+transfer_parameters_flax_to_torch(state.actor, actor)
 
-observation = np.zeros((1, env.observation_space.shape[0]), dtype=np.float32)
-observation_jax = jnp.array(observation)
-action_flax = state.actor(
-    observation_jax, state.embedding.state_embedding(observation_jax)
-)
-observation_torch = torch.Tensor(observation[None, :]).to(torch_device)
-action_torch = actor(
-    observation_torch, embedding.state_embedding(observation_torch)
-)
+rng = np.random.default_rng(42)
+for i in range(10):
+    observation = rng.normal(size=(1, env.observation_space.shape[0])).astype(
+        dtype=np.float32
+    )
+    observation_jax = jnp.array(observation)
+    action_flax = state.actor(
+        observation_jax, state.embedding.state_embedding(observation_jax)
+    )
+    observation_torch = torch.Tensor(observation).to(torch_device)
+    action_torch = actor(
+        observation_torch, embedding.state_embedding(observation_torch)
+    )
 
-print(action_flax)
-print(action_torch)
+    print(f"Test {i}:")
+    print(f"Flax output: {np.asarray(action_flax)}")
+    print(f"Torch output: {action_torch.cpu().detach().numpy()}")
+    print()
