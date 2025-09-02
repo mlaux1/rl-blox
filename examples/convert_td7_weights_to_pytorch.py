@@ -1,6 +1,7 @@
 from collections import OrderedDict
 
 import gymnasium as gym
+import jax.numpy as jnp
 import numpy as np
 import torch
 import torch.nn as nn
@@ -105,7 +106,7 @@ class SALE(nn.Module):
     ):
         super().__init__()
 
-        self.state_embedding = state_embedding
+        self._state_embedding = state_embedding
         self.state_action_embedding = state_action_embedding
 
     def __call__(self, state, action):
@@ -162,7 +163,7 @@ state_action_embedding = MLP(
     state_action_embedding_hidden_nodes,
     embedding_activation,
 )
-embedding = SALE(state_embedding, state_action_embedding)
+embedding = SALE(state_embedding, state_action_embedding).to(torch_device)
 
 policy_net = MLP(
     policy_sa_encoding_nodes + n_embedding_dimensions,
@@ -191,3 +192,16 @@ state = create_td7_state(
 
 translate_to_torch(state.embedding, embedding)
 translate_to_torch(state.actor, actor)
+
+observation = np.zeros((1, env.observation_space.shape[0]), dtype=np.float32)
+observation_jax = jnp.array(observation)
+action_flax = state.actor(
+    observation_jax, state.embedding.state_embedding(observation_jax)
+)
+observation_torch = torch.Tensor(observation[None, :]).to(torch_device)
+action_torch = actor(
+    observation_torch, embedding.state_embedding(observation_torch)
+)
+
+print(action_flax)
+print(action_torch)
