@@ -69,7 +69,7 @@ class SALE(nnx.Module):
     def __init__(
         self, state_embedding: nnx.Module, state_action_embedding: nnx.Module
     ):
-        self.state_embedding = state_embedding
+        self._state_embedding = state_embedding
         self.state_action_embedding = state_action_embedding
 
     def __call__(
