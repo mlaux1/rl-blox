@@ -92,6 +92,7 @@ result = train_active_mt(
     mt_def,
     train_st,
     replay_buffer,
+    task_selector="Diversity",
     learning_starts=1_000,
     scheduling_interval=200,
     total_timesteps=50_000,

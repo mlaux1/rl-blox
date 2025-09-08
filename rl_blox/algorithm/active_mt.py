@@ -169,6 +169,68 @@ def train_active_mt(
     A multi-task extension of deep reinforcement learning similar to the method
     proposeed by Fabisch and Metzen [1]_ for contextual policy search.
 
+    Parameters
+    ----------
+    mt_def
+        The multi-task environment definition.
+
+    train_st : callable
+        The single-task training algorithm. The training function should accept
+        the following parameters:
+
+        - ``env``: The environment to train on.
+        - ``learning_starts``: Number of steps to wait before starting training.
+        - ``total_timesteps``: Total number of timesteps to train the agent.
+        - ``replay_buffer``: The replay buffer to use for training.
+        - ``seed``: Seed for random number generation.
+        - ``logger``: Logger to record training statistics.
+        - ``global_step``: Current global step in the training process.
+        - ``progress_bar``: Flag to enable/disable the tqdm progress bar.
+
+        No other parameters will be passed to the training function by SMT.
+        Hence, for any other parameters, the training function should be
+        prepared with ``functools.partial`` or similar.
+
+    replay_buffer : MultiTaskReplayBuffer
+        Replay buffer.
+
+    task_selector : TaskSelector or str, default="Monotonic Progress"
+        The task selection strategy. Can be an instance of ``TaskSelector`` or
+        one of the predefined strategies:
+
+        - "Round Robin": Cycles through tasks in order.
+        - "1-step Progress": Selects tasks based on immediate progress.
+        - "Monotonic Progress": Selects tasks based on the strictly positive
+          immediate progress.
+        - "Best Reward": Chooses tasks with the highest rewards.
+        - "Diversity": Chooses tasks with the lowest rewards.
+
+    total_timesteps : int
+        The number of environment sets to train for.
+
+    scheduling_interval : int
+        Number of steps after which the task scheduling is performed.
+
+    learning_starts : int
+        Number of steps to wait before starting training per task.
+
+    seed : int
+        Seed for random number generation.
+
+    logger : LoggerBase, optional
+        Experiment logger.
+
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
+    Returns
+    -------
+    result
+        The training result. Same as the result of the ``train_st`` function.
+
+    training_steps : np.ndarray
+        Number of training steps for each task.
+
     References
     ----------
     .. [1] Fabisch, A., Metzen, J. H. (2014). Active Contextual Policy Search.

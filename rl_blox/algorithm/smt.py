@@ -149,9 +149,6 @@ def train_smt(
     learning_starts : int
         Number of steps to wait before starting training per task.
 
-    learning_starts : int
-        Timestep to start learning.
-
     seed : int
         Seed for random number generation.
 
