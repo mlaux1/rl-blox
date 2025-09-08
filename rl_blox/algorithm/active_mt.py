@@ -1,11 +1,19 @@
+from collections.abc import Callable
+
+import gymnasium as gym
 import numpy as np
+from numpy.typing import ArrayLike
+from tqdm.rich import tqdm
 
 from ..blox.mapb import DUCB
+from ..blox.replay_buffer import MultiTaskReplayBuffer
+from ..logging.logger import LoggerBase
+from .smt import ContextualMultiTaskDefinition
 
 
 class TaskSelector:
-    def __init__(self, targets):
-        self.targets = targets
+    def __init__(self, tasks):
+        self.tasks = tasks
         self.waiting_for_reward = False
 
     def select(self):
@@ -22,22 +30,22 @@ class TaskSelector:
 class DUCBGeneralized(TaskSelector):
     def __init__(
         self,
-        targets,
-        upper_bound,
-        ducb_gamma,
-        zeta,
-        baseline,
-        op,
-        verbose=False,
+        tasks: ArrayLike,
+        upper_bound: float,
+        ducb_gamma: float,
+        zeta: float,
+        baseline: str | None,
+        op: str | None,
+        verbose: bool = False,
         **kwargs,
     ):
-        super().__init__(targets)
+        super().__init__(tasks)
         self.baseline = baseline
         self.op = op
         self.verbose = verbose
         self.heuristic_params = kwargs
 
-        self.n_contexts = targets.shape[0]
+        self.n_contexts = tasks.shape[0]
         self.ducb = DUCB(
             n_arms=self.n_contexts,
             upper_bound=upper_bound,
@@ -47,12 +55,12 @@ class DUCBGeneralized(TaskSelector):
         self.last_rewards = [[] for _ in range(self.n_contexts)]
         self.chosen_arm = -1
 
-    def select(self):
+    def select(self) -> int:
         super().select()
         self.chosen_arm = self.ducb.choose_arm()
-        return self.targets[self.chosen_arm]
+        return self.tasks[self.chosen_arm]
 
-    def feedback(self, reward):
+    def feedback(self, reward: float):
         last_rewards = np.array(self.last_rewards[self.chosen_arm])[::-1]
 
         if len(last_rewards) == 0:
@@ -86,223 +94,128 @@ class DUCBGeneralized(TaskSelector):
 
 
 class RoundRobinSelector(TaskSelector):
-    def __init__(self, targets, **kwargs):
-        super().__init__(targets)
+    def __init__(self, tasks, **kwargs):
+        super().__init__(tasks)
         self.i = 0
 
-    def select(self):
+    def select(self) -> int:
         super().select()
         self.i += 1
-        return self.targets[self.i % len(self.targets)]
+        return self.tasks[self.i % len(self.tasks)]
 
-    def feedback(self, reward):
+    def feedback(self, reward: float):
         super().feedback(reward)
 
 
-class SAGG_RIAC(TaskSelector):
-    def __init__(
-        self,
-        _,
-        x_train_range,
-        y_train_range,
-        g_max,
-        max_close_dist,
-        interest_window_size,
-        n_split_samples,
-        verbose=0,
-        **kwargs,
-    ):
-        super().__init__(None)
-        # Regions will be split after g_max goals have been attempted inside
-        self.g_max = g_max
-        # Samples that are "close" to another goal should be within this radius
-        self.max_close_dist = max_close_dist
-        # Window size for the interest value
-        self.interest_window_size = interest_window_size
-        # Number of splits that will be sampled and tested
-        self.n_split_samples = n_split_samples
-        # Verbosity level
-        self.verbose = verbose
+TASK_SELECTORS = {
+    "Round Robin": (RoundRobinSelector, {}),
+    "1-step Progress": (
+        DUCBGeneralized,
+        {
+            "upper_bound": 0.25,
+            "ducb_gamma": 0.95,
+            "zeta": 1e-8,
+            "baseline": "last",
+            "op": None,
+        },
+    ),
+    "Monotonic Progress": (
+        DUCBGeneralized,
+        {
+            "upper_bound": 0.25,
+            "ducb_gamma": 0.95,
+            "zeta": 1e-8,
+            "baseline": "max",
+            "op": "max-with-0",
+        },
+    ),
+    "Best Reward": (
+        DUCBGeneralized,
+        {
+            "upper_bound": 0.25,
+            "ducb_gamma": 0.95,
+            "zeta": 1e-8,
+            "baseline": None,
+            "op": None,
+        },
+    ),
+    "Diversity": (
+        DUCBGeneralized,
+        {
+            "upper_bound": 0.25,
+            "ducb_gamma": 0.95,
+            "zeta": 1e-8,
+            "baseline": None,
+            "op": "neg",
+        },
+    ),
+}
 
-        if y_train_range is None:
-            space = np.array(x_train_range).astype(float)[:, np.newaxis]
-        else:
-            space = np.array([x_train_range, y_train_range]).T.astype(float)
-        self.space = np.sort(space, axis=0)
-        # Regions are defined by their upper and lower bound
-        self.regions = [self.space]
-        # All goals that have been visited in each region
-        self.goals = [[]]
-        # All rewards that have been obtained in each region
-        self.rewards = [[]]
-        # The interest values of each region
-        self.interests = [1.0]
-        # The region has been split before
-        self.split = [False]
 
-        # Temporary variables
-        self.goal = None
-        if y_train_range is None:
-            self.n_context_dims = 1
-        else:
-            self.n_context_dims = 2
+def train_active_mt(
+    mt_def: ContextualMultiTaskDefinition,
+    train_st: Callable,
+    replay_buffer: MultiTaskReplayBuffer,
+    task_selector: TaskSelector | str = "Monotonic Progress",
+    total_timesteps: int = 1_000_000,
+    scheduling_interval: int = 1_000,
+    learning_starts: int = 5_000,
+    seed: int = 0,
+    logger: LoggerBase | None = None,
+    progress_bar: bool = True,
+) -> tuple:
+    """Active Multi-Task Training.
 
-    def select(self):
-        super().select()
+    A multi-task extension of deep reinforcement learning similar to the method
+    proposeed by Fabisch and Metzen [1]_ for contextual policy search.
 
-        if len(self.regions) == 1:
-            # Initial phase: random explorations of the whole space
-            region = self.regions[0]
-            self.goal = np.random.uniform(region[0], region[1])
-        else:
-            p = np.random.rand()
-            if p < 0.7:
-                # Mode 1: a random goal is chosen along a uniform distribution
-                # inside a region which is selected with a probability
-                # proportional to its interest value
-                P = self._interests_to_probs()
-                region_idx = np.random.choice(len(P), p=P)
-                region = self.regions[region_idx]
-                self.goal = np.random.uniform(region[0], region[1])
-            elif p < 0.7 + 0.2:
-                # Mode 2: a random goal is chosen inside the whole space
-                self.region_idx = 0
-                region = self.regions[0]
-                self.goal = np.random.uniform(region[0], region[1])
-            else:
-                # Mode 3: a region is first selected according to the interest
-                # value and then a new goal is generated close to the already
-                # experimented one which received the lowest competence
-                # estimation
-                P = self._interests_to_probs()
-                region_idx = np.random.choice(len(P), p=P)
-                region = self.regions[region_idx]
-                goal_idx = np.argmin(self.rewards[region_idx])
-                goal = self.goals[region_idx][goal_idx]
-                self.goal = self._sample_near(goal)
+    References
+    ----------
+    .. [1] Fabisch, A., Metzen, J. H. (2014). Active Contextual Policy Search.
+       Journal of Machine Learning Research, 15(97), 3371-3399.
+       https://jmlr.org/papers/v15/fabisch14a.html
+    """
+    global_step = 0
+    training_steps = np.zeros(len(mt_def), dtype=int)
+    progress = tqdm(total=total_timesteps, disable=not progress_bar)
 
-        return self.goal
-
-    def _interests_to_probs(self):
-        interests = np.array(self.interests)
-        P = interests - np.min(interests)
-        P_sum = np.sum(P)
-        if P_sum == 0:
-            return np.ones(len(self.interests)) / len(self.interests)
-        else:
-            return P / P_sum
-
-    def _sample_near(self, goal):
-        goal = np.asarray(goal)
-        lo = goal - self.max_close_dist
-        hi = goal + self.max_close_dist
-        sample = np.random.uniform(lo, hi)
-        while np.linalg.norm(sample - goal) > self.max_close_dist:
-            sample = np.random.uniform(lo, hi)
-            if self.verbose >= 1:
-                print(f"Resampling, goal {sample!r} out of bounds!")
-        return sample
-
-    def feedback(self, reward):
-        super().feedback(reward)
-
-        check_split_indices = []
-
-        # Save goal and reward for all regions that contain the goal
-        for region_idx in range(len(self.regions)):
-            if self._in_region(self.goal, self.regions[region_idx]):
-                self.goals[region_idx].append(self.goal)
-                self.rewards[region_idx].append(reward)
-                self._update_interest(region_idx)
-                check_split_indices.append(region_idx)
-
-        for region_idx in check_split_indices:
-            n_goals = len(self.goals[region_idx])
-            if not self.split[region_idx] and n_goals >= self.g_max:
-                self.split[region_idx] = True
-                region = self.regions[region_idx]
-
-                if self.verbose >= 1:
-                    print(f"Splitting region #{region_idx}")
-                if self.verbose >= 2:
-                    print("From")
-                    print(region)
-
-                split = None
-                quality = -np.inf
-                for _ in range(self.n_split_samples):
-                    j = np.random.choice(self.n_context_dims)
-                    vj = np.random.uniform(region[0, j], region[1, j])
-
-                    R1 = region.copy()
-                    R1[1, j] = vj
-                    R2 = region.copy()
-                    R2[0, j] = vj
-
-                    r1_indices = np.where(
-                        [
-                            self._in_region(self.goals[region_idx][i], R1)
-                            for i in range(n_goals)
-                        ]
-                    )[0]
-                    r2_indices = np.where(
-                        [
-                            self._in_region(self.goals[region_idx][i], R2)
-                            for i in range(n_goals)
-                        ]
-                    )[0]
-
-                    rewards = np.asarray(self.rewards[region_idx])
-                    rewards1 = rewards[r1_indices]
-                    interest1 = self._interest(rewards1)
-                    rewards2 = rewards[r2_indices]
-                    interest2 = self._interest(rewards2)
-
-                    q = (
-                        len(rewards1)
-                        * len(rewards2)
-                        * np.abs(interest1 - interest2)
-                    )
-                    if q > quality:
-                        goals = np.asarray(self.goals[region_idx])
-                        goals1 = goals[r1_indices]
-                        goals2 = goals[r2_indices]
-                        q = quality
-                        split = (
-                            (R1, rewards1, goals1, interest1),
-                            (R2, rewards2, goals2, interest2),
-                        )
-
-                if self.verbose >= 2:
-                    print("To")
-                for region, rewards, goals, interest in split:
-                    if self.verbose >= 2:
-                        print(region)
-                    self.regions.append(region)
-                    self.rewards.append(rewards.tolist())
-                    self.goals.append(goals.tolist())
-                    self.interests.append(interest)
-                    self.split.append(False)
-
-    def _interest(self, rewards):
-        start_idx = -np.min((self.interest_window_size, len(rewards)))
-        separation_idx = start_idx // 2
-        return np.abs(
-            (
-                np.sum(rewards[start_idx:separation_idx])
-                - np.sum(rewards[separation_idx:])
-            )
-            / self.interest_window_size
+    if isinstance(task_selector, str):
+        assert task_selector in TASK_SELECTORS, (
+            f"task_selector must be one of {list(TASK_SELECTORS.keys())}"
+            " or an instance of TaskSelector."
+        )
+        selector_class, selector_kwargs = TASK_SELECTORS[task_selector]
+        task_selector = selector_class(
+            tasks=np.arange(len(mt_def)), **selector_kwargs
         )
 
-    def _update_interest(self, region_idx):
-        rewards = self.rewards[region_idx]
-        interest = self._interest(rewards)
-        self.interests[region_idx] = interest
-        if self.verbose >= 1:
-            print(f"Updated interest of region #{region_idx} to {interest:.2f}")
+    while global_step < total_timesteps:
+        task_id = task_selector.select()
+        if logger is not None:
+            logger.record_stat("task_id", task_id, global_step + 1)
 
-    def _in_region(self, context, region):
-        context = np.asarray(context)
-        inside = np.all(context > region[0]) and np.all(context < region[1])
-        return inside
+        env = mt_def.get_task(task_id)
+        env_with_stats = gym.wrappers.RecordEpisodeStatistics(
+            env, buffer_length=1
+        )
+        replay_buffer.select_task(task_id)
+
+        result_st = train_st(
+            env=env_with_stats,
+            learning_starts=learning_starts,
+            total_timesteps=global_step + scheduling_interval,
+            replay_buffer=replay_buffer,
+            seed=seed + global_step,
+            logger=logger,
+            global_step=global_step,
+            progress_bar=False,
+        )
+        training_steps[task_id] += scheduling_interval
+        global_step += scheduling_interval
+
+        accumulated_reward = env_with_stats.return_queue.pop()
+        task_selector.feedback(accumulated_reward)
+
+        progress.update(scheduling_interval)
+
+    return result_st, training_steps
