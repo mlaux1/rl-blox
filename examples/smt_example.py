@@ -134,8 +134,9 @@ result_st = result[0]
 policy = result_st.policy
 q = result_st.q
 mt_env = MultiTaskPendulum(render_mode="human")
-env = mt_env.get_task(5)
-while True:
+for task_id in range(len(mt_env)):
+    print(f"Evaluating task {task_id}")
+    env = mt_env.get_task(task_id)
     done = False
     infos = {}
     obs, _ = env.reset()
