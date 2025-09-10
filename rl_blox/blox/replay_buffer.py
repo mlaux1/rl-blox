@@ -706,6 +706,8 @@ class MultiTaskReplayBuffer:
         n_samples = 0
         accumulated_reward = 0.0
         for buffer in self.buffers:
+            if len(buffer) == 0:
+                continue
             n_samples += len(buffer)
             accumulated_reward += buffer.reward_scale(eps) * len(buffer)
         return accumulated_reward / n_samples
@@ -718,3 +720,6 @@ class MultiTaskReplayBuffer:
         """Recalculate the maximum priority for all tasks."""
         for buffer in self.buffers:
             buffer.reset_max_priority()
+
+    def __len__(self):
+        return sum(len(buffer) for buffer in self.buffers)

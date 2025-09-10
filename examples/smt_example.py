@@ -6,9 +6,14 @@ import numpy as np
 from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
+from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
 from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
-from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
+from rl_blox.blox.replay_buffer import (
+    MultiTaskReplayBuffer,
+    ReplayBuffer,
+    SubtrajectoryReplayBufferPER,
+)
 from rl_blox.logging.logger import AIMLogger
 
 
@@ -36,7 +41,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 2
 verbose = 2
-backbone = "SAC"  # Backbone algorithm to use for SMT: "DDPG" or "SAC"
+backbone = "MR.Q"  # Backbone algorithm to use for SMT: "DDPG", "SAC", "MR.Q"
 
 if verbose:
     print(
@@ -51,16 +56,16 @@ logger.define_experiment(
 )
 
 mt_def = MultiTaskPendulum()
-replay_buffer = MultiTaskReplayBuffer(
-    ReplayBuffer(buffer_size=100_000),
-    len(mt_def),
-)
 
 env = mt_def.get_task(0)
 if backbone == "DDPG":
     state = create_ddpg_state(env, seed=seed)
     policy_target = nnx.clone(state.policy)
     q_target = nnx.clone(state.q)
+    replay_buffer = MultiTaskReplayBuffer(
+        ReplayBuffer(buffer_size=100_000),
+        len(mt_def),
+    )
 
     train_st = partial(
         train_ddpg,
@@ -71,11 +76,35 @@ if backbone == "DDPG":
         policy_target=policy_target,
         q_target=q_target,
     )
+elif backbone == "MR.Q":
+    state = create_mrq_state(env, seed=seed)
+    q_target = nnx.clone(state.q)
+    policy_with_encoder_target = nnx.clone(state.policy_with_encoder)
+    replay_buffer = MultiTaskReplayBuffer(
+        SubtrajectoryReplayBufferPER(buffer_size=100_000, horizon=5),
+        len(mt_def),
+    )
+
+    train_st = partial(
+        train_mrq,
+        policy_with_encoder=state.policy_with_encoder,
+        encoder_optimizer=state.encoder_optimizer,
+        policy_optimizer=state.policy_optimizer,
+        q=state.q,
+        q_optimizer=state.q_optimizer,
+        the_bins=state.the_bins,
+        q_target=q_target,
+        policy_with_encoder_target=policy_with_encoder_target,
+    )
 else:
     assert backbone == "SAC", "Backbone must be either 'DDPG' or 'SAC'."
     state = create_sac_state(env, seed=seed)
     q_target = nnx.clone(state.q)
     entroy_control = EntropyControl(env, 0.2, True, 1e-3)
+    replay_buffer = MultiTaskReplayBuffer(
+        ReplayBuffer(buffer_size=100_000),
+        len(mt_def),
+    )
 
     train_st = partial(
         train_sac,
@@ -111,7 +140,7 @@ while True:
     infos = {}
     obs, _ = env.reset()
     while not done:
-        if backbone == "DDPG":
+        if backbone in ["DDPG", "MR.Q"]:
             action = np.asarray(policy(jnp.asarray(obs)))
         else:
             action = np.asarray(policy(jnp.asarray(obs))[0])

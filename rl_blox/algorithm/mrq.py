@@ -577,6 +577,9 @@ def train_mrq(
 
     reward_scale = 1.0
     target_reward_scale = 0.0
+    if len(replay_buffer) > 0:
+        reward_scale = replay_buffer.reward_scale()
+        target_reward_scale = reward_scale
 
     if logger is not None:
         logger.start_new_episode()
