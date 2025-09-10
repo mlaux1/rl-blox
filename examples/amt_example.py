@@ -121,9 +121,9 @@ result = train_active_mt(
     mt_def,
     train_st,
     replay_buffer,
-    task_selector="Diversity",
+    task_selector="Monotonic Progress",
     learning_starts=1_000,
-    scheduling_interval=200,
+    scheduling_interval=1_000,
     total_timesteps=50_000,
     logger=logger,
     seed=seed,
@@ -135,8 +135,9 @@ result_st = result[0]
 policy = result_st.policy
 q = result_st.q
 mt_env = MultiTaskPendulum(render_mode="human")
-env = mt_env.get_task(5)
-while True:
+for task_id in range(len(mt_env)):
+    print(f"Evaluating task {task_id}")
+    env = mt_env.get_task(task_id)
     done = False
     infos = {}
     obs, _ = env.reset()
