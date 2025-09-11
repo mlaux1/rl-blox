@@ -41,7 +41,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 2
 verbose = 2
-backbone = "MR.Q"  # Backbone algorithm to use for SMT: "DDPG", "SAC", "MR.Q"
+backbone = "DDPG"  # Backbone algorithm to use for SMT: "DDPG", "SAC", "MR.Q"
 
 if verbose:
     print(
@@ -131,7 +131,10 @@ mt_def.close()
 
 # Evaluation
 result_st = result[0]
-policy = result_st.policy
+if backbone == "MR.Q":
+    policy = result_st.policy_with_encoder
+else:
+    policy = result_st.policy
 q = result_st.q
 mt_env = MultiTaskPendulum(render_mode="human")
 for task_id in range(len(mt_env)):
