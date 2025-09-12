@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import warnings
 
 import gymnasium as gym
 import numpy as np
@@ -257,9 +258,7 @@ def train_active_mt(
             logger.record_stat("task_id", task_id, global_step + 1)
 
         env = mt_def.get_task(task_id)
-        env_with_stats = gym.wrappers.RecordEpisodeStatistics(
-            env, buffer_length=1
-        )
+        env_with_stats = gym.wrappers.RecordEpisodeStatistics(env)
         replay_buffer.select_task(task_id)
 
         result_st = train_st(
@@ -275,7 +274,19 @@ def train_active_mt(
         training_steps[task_id] += scheduling_interval
         global_step += scheduling_interval
 
-        accumulated_reward = env_with_stats.return_queue.pop()
+        if len(env_with_stats.return_queue) == 0:
+            accumulated_reward = mt_def.get_unsolvable_threshold(task_id)
+            warnings.warn(
+                f"No return measured for task {task_id}. "
+                f"Scheduling interval is probably too short. "
+                f"Assuming {accumulated_reward}."
+            )
+        else:
+            if len(env_with_stats.return_queue) == env_with_stats.return_queue.maxlen:
+                warnings.warn(
+                    f"Return queue is completely filled for task {task_id}. "
+                    f"Scheduling interval is probably too long. ")
+            accumulated_reward = np.mean(env_with_stats.return_queue)
         task_selector.feedback(accumulated_reward)
 
         progress.update(scheduling_interval)
