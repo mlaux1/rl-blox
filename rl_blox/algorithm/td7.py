@@ -415,6 +415,7 @@ def train_td7(
     critic_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
+    total_episodes: int | None = None,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     target_delay: int = 250,
@@ -495,6 +496,11 @@ def train_td7(
 
     total_timesteps : int, optional
         Number of steps to execute in the environment.
+
+    total_episodes : int, optional
+        Total episodes for training. This is an alternative termination
+        criterion for training. Set it to None to use ``total_timesteps`` or
+        set it to a positive integer to overwrite the step criterion.
 
     buffer_size : int, optional
         Size of the replay buffer.
@@ -678,6 +684,7 @@ def train_td7(
 
     epoch = 0
 
+    episode_idx = 0
     if logger is not None:
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
@@ -806,10 +813,12 @@ def train_td7(
                     "return", accumulated_reward, step=global_step + 1
                 )
                 logger.stop_episode(steps_per_episode)
+            episode_idx += 1
+            if total_episodes is not None and episode_idx >= total_episodes:
+                break
+            if logger is not None:
                 logger.start_new_episode()
-
             obs, _ = env.reset()
-
             steps_per_episode = 0
             accumulated_reward = 0.0
         else:

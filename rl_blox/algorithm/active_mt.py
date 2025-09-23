@@ -159,7 +159,7 @@ def train_active_mt(
     replay_buffer: MultiTaskReplayBuffer,
     task_selector: TaskSelector | str = "Monotonic Progress",
     total_timesteps: int = 1_000_000,
-    scheduling_interval: int = 1_000,
+    scheduling_interval: int = 1,
     learning_starts: int = 5_000,
     seed: int = 0,
     logger: LoggerBase | None = None,
@@ -210,7 +210,7 @@ def train_active_mt(
         The number of environment sets to train for.
 
     scheduling_interval : int
-        Number of steps after which the task scheduling is performed.
+        Number of episodes after which the task scheduling is performed.
 
     learning_starts : int
         Number of steps to wait before starting training per task.
@@ -258,37 +258,32 @@ def train_active_mt(
             logger.record_stat("task_id", task_id, global_step + 1)
 
         env = mt_def.get_task(task_id)
-        env_with_stats = gym.wrappers.RecordEpisodeStatistics(env)
+        env_with_stats = gym.wrappers.RecordEpisodeStatistics(
+            env, buffer_length=scheduling_interval
+        )
         replay_buffer.select_task(task_id)
 
         result_st = train_st(
             env=env_with_stats,
             learning_starts=learning_starts,
-            total_timesteps=global_step + scheduling_interval,
+            total_timesteps=total_timesteps,
+            total_episodes=scheduling_interval,
             replay_buffer=replay_buffer,
             seed=seed + global_step,
             logger=logger,
             global_step=global_step,
             progress_bar=False,
         )
-        training_steps[task_id] += scheduling_interval
-        global_step += scheduling_interval
 
-        if len(env_with_stats.return_queue) == 0:
-            accumulated_reward = mt_def.get_unsolvable_threshold(task_id)
-            warnings.warn(
-                f"No return measured for task {task_id}. "
-                f"Scheduling interval is probably too short. "
-                f"Assuming {accumulated_reward}."
-            )
-        else:
-            if len(env_with_stats.return_queue) == env_with_stats.return_queue.maxlen:
-                warnings.warn(
-                    f"Return queue is completely filled for task {task_id}. "
-                    f"Scheduling interval is probably too long. ")
-            accumulated_reward = np.mean(env_with_stats.return_queue)
-        task_selector.feedback(accumulated_reward)
+        assert len(env_with_stats.return_queue) == scheduling_interval
 
-        progress.update(scheduling_interval)
+        mean_return = np.mean(env_with_stats.return_queue)
+        task_selector.feedback(mean_return)
+
+        steps = sum(env_with_stats.length_queue)
+        training_steps[task_id] += steps
+        global_step += steps
+
+        progress.update(steps)
 
     return result_st, training_steps

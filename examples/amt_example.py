@@ -9,10 +9,13 @@ from rl_blox.algorithm.active_mt import train_active_mt
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
+from rl_blox.algorithm.td3 import create_td3_state, train_td3
+from rl_blox.algorithm.td7 import create_td7_state, train_td7
 from rl_blox.algorithm.smt import ContextualMultiTaskDefinition
 from rl_blox.blox.replay_buffer import (
     MultiTaskReplayBuffer,
     ReplayBuffer,
+    LAP,
     SubtrajectoryReplayBufferPER,
 )
 from rl_blox.logging.logger import AIMLogger
@@ -42,7 +45,8 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 2
 verbose = 2
-backbone = "SAC"  # Backbone algorithm to use for SMT: "DDPG", "SAC", "MR.Q"
+# Backbone algorithm to use for Active MT: "SAC", "DDPG", "TD3", "TD7", "MR.Q"
+backbone = "MR.Q"
 
 if verbose:
     print(
@@ -76,6 +80,44 @@ if backbone == "DDPG":
         q_optimizer=state.q_optimizer,
         policy_target=policy_target,
         q_target=q_target,
+    )
+elif backbone == "TD3":
+    state = create_td3_state(env, seed=seed)
+    q_target = nnx.clone(state.q)
+    policy_target = nnx.clone(state.policy)
+    replay_buffer = MultiTaskReplayBuffer(
+        ReplayBuffer(buffer_size=100_000),
+        len(mt_def),
+    )
+
+    train_st = partial(
+        train_td3,
+        policy=state.policy,
+        policy_optimizer=state.policy_optimizer,
+        q=state.q,
+        q_optimizer=state.q_optimizer,
+        q_target=q_target,
+        policy_target=policy_target,
+    )
+elif backbone == "TD7":
+    state = create_td7_state(env, seed=seed)
+    actor_target = nnx.clone(state.actor)
+    critic_target = nnx.clone(state.critic)
+    replay_buffer = MultiTaskReplayBuffer(
+        LAP(buffer_size=100_000),
+        len(mt_def),
+    )
+
+    train_st = partial(
+        train_td7,
+        embedding=state.embedding,
+        embedding_optimizer=state.embedding_optimizer,
+        actor=state.actor,
+        actor_optimizer=state.actor_optimizer,
+        critic=state.critic,
+        critic_optimizer=state.critic_optimizer,
+        critic_target=critic_target,
+        actor_target=actor_target,
     )
 elif backbone == "MR.Q":
     state = create_mrq_state(env, seed=seed)
@@ -121,9 +163,9 @@ result = train_active_mt(
     mt_def,
     train_st,
     replay_buffer,
-    task_selector="Monotonic Progress",
-    learning_starts=1_000,
-    scheduling_interval=1_000,
+    task_selector="Round Robin",
+    learning_starts=11 * 200,  # collect samples from each task before starting
+    scheduling_interval=1,
     total_timesteps=50_000,
     logger=logger,
     seed=seed,
