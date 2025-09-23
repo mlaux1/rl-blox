@@ -112,9 +112,6 @@ TASK_SELECTORS = {
     "1-step Progress": (
         DUCBGeneralized,
         {
-            "upper_bound": 0.25,
-            "ducb_gamma": 0.95,
-            "zeta": 1e-8,
             "baseline": "last",
             "op": None,
         },
@@ -122,9 +119,6 @@ TASK_SELECTORS = {
     "Monotonic Progress": (
         DUCBGeneralized,
         {
-            "upper_bound": 0.25,
-            "ducb_gamma": 0.95,
-            "zeta": 1e-8,
             "baseline": "max",
             "op": "max-with-0",
         },
@@ -132,9 +126,6 @@ TASK_SELECTORS = {
     "Best Reward": (
         DUCBGeneralized,
         {
-            "upper_bound": 0.25,
-            "ducb_gamma": 0.95,
-            "zeta": 1e-8,
             "baseline": None,
             "op": None,
         },
@@ -142,9 +133,6 @@ TASK_SELECTORS = {
     "Diversity": (
         DUCBGeneralized,
         {
-            "upper_bound": 0.25,
-            "ducb_gamma": 0.95,
-            "zeta": 1e-8,
             "baseline": None,
             "op": "neg",
         },
@@ -156,6 +144,9 @@ def train_active_mt(
     mt_def: ContextualMultiTaskDefinition,
     train_st: Callable,
     replay_buffer: MultiTaskReplayBuffer,
+    r_max: float,
+    ducb_gamma: float = 0.95,
+    xi: float = 0.002,
     task_selector: TaskSelector | str = "Monotonic Progress",
     total_timesteps: int = 1_000_000,
     scheduling_interval: int = 1,
@@ -193,6 +184,15 @@ def train_active_mt(
 
     replay_buffer : MultiTaskReplayBuffer
         Replay buffer.
+
+    r_max : float
+        Upper bound for task selection reward.
+
+    ducb_gamma : float
+        Discount factor for D-UCB.
+
+    xi : float, optional
+        Padding function strength.
 
     task_selector : TaskSelector or str, default="Monotonic Progress"
         The task selection strategy. Can be an instance of ``TaskSelector`` or
@@ -247,8 +247,14 @@ def train_active_mt(
             " or an instance of TaskSelector."
         )
         selector_class, selector_kwargs = TASK_SELECTORS[task_selector]
+        hparams = {
+            "upper_bound": r_max,
+            "ducb_gamma": ducb_gamma,
+            "zeta": xi,
+        }
+        hparams.update(selector_kwargs)
         task_selector = selector_class(
-            tasks=np.arange(len(mt_def)), **selector_kwargs
+            tasks=np.arange(len(mt_def)), **hparams
         )
 
     while global_step < total_timesteps:
