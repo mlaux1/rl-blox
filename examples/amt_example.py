@@ -9,13 +9,14 @@ from rl_blox.algorithm.active_mt import train_active_mt
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
+from rl_blox.algorithm.smt import ContextualMultiTaskDefinition
 from rl_blox.algorithm.td3 import create_td3_state, train_td3
 from rl_blox.algorithm.td7 import create_td7_state, train_td7
-from rl_blox.algorithm.smt import ContextualMultiTaskDefinition
+from rl_blox.blox.embedding.sale import DeterministicSALEPolicy
 from rl_blox.blox.replay_buffer import (
+    LAP,
     MultiTaskReplayBuffer,
     ReplayBuffer,
-    LAP,
     SubtrajectoryReplayBufferPER,
 )
 from rl_blox.logging.logger import AIMLogger
@@ -163,8 +164,8 @@ result = train_active_mt(
     mt_def,
     train_st,
     replay_buffer,
-    task_selector="Round Robin",
-    learning_starts=11 * 200,  # collect samples from each task before starting
+    task_selector="1-step Progress",
+    learning_starts=11 * 200,
     scheduling_interval=1,
     total_timesteps=50_000,
     logger=logger,
@@ -176,9 +177,10 @@ mt_def.close()
 result_st = result[0]
 if backbone == "MR.Q":
     policy = result_st.policy_with_encoder
+elif backbone == "TD7":
+    policy = DeterministicSALEPolicy(result_st.embedding, result_st.actor)
 else:
     policy = result_st.policy
-q = result_st.q
 mt_env = MultiTaskPendulum(render_mode="human")
 for task_id in range(len(mt_env)):
     print(f"Evaluating task {task_id}")
@@ -187,13 +189,28 @@ for task_id in range(len(mt_env)):
     infos = {}
     obs, _ = env.reset()
     while not done:
-        if backbone in ["DDPG", "MR.Q"]:
-            action = np.asarray(policy(jnp.asarray(obs)))
-        else:
+        if backbone == "SAC":
             action = np.asarray(policy(jnp.asarray(obs))[0])
+        else:
+            action = np.asarray(policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         if verbose:
-            q_value = q(jnp.concatenate((obs, action)))
+            if backbone == "MR.Q":
+                zsa = policy.encoder.encode_zsa(
+                    policy.encoder.encode_zs(jnp.asarray(obs)),
+                    jnp.asarray(action),
+                )
+                q_value = result_st.q(zsa)
+            elif backbone == "TD7":
+                zsa, zs = result_st.embedding(
+                    jnp.asarray(obs),
+                    jnp.asarray(action),
+                )
+                q_value = result_st.critic(
+                    jnp.concatenate((obs, action)), zsa=zsa, zs=zs
+                )
+            else:
+                q_value = result_st.q(jnp.concatenate((obs, action)))
             print(f"{q_value=}")
         obs = np.asarray(next_obs)

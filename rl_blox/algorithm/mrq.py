@@ -553,7 +553,7 @@ def train_mrq(
         policy_with_encoder_target,
     )
 
-    epoch = 0
+    epoch = max(0, global_step - learning_starts)
 
     _update_encoder = nnx.cached_partial(
         update_model_based_encoder,

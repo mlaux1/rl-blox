@@ -1,5 +1,4 @@
 from collections.abc import Callable
-import warnings
 
 import gymnasium as gym
 import numpy as np

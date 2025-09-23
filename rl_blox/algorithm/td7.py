@@ -682,7 +682,7 @@ def train_td7(
         env.action_space, target_policy_noise, noise_clip
     )
 
-    epoch = 0
+    epoch = max(0, global_step - learning_starts)
 
     episode_idx = 0
     if logger is not None:
