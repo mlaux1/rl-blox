@@ -62,7 +62,7 @@ def test_smt():
         b1=110,
         b2=10,
         learning_starts=50,
-        scheduling_interval=50,
+        scheduling_interval=1,
         seed=seed,
     )
     mt_def.close()
