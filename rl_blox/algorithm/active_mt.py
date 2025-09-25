@@ -260,7 +260,7 @@ def train_active_mt(
     while global_step < total_timesteps:
         task_id = task_selector.select()
         if logger is not None:
-            logger.record_stat("task_id", task_id, global_step + 1)
+            logger.record_stat("task_id", task_id, step=global_step)
 
         env = mt_def.get_task(task_id)
         env_with_stats = gym.wrappers.RecordEpisodeStatistics(

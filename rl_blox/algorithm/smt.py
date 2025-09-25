@@ -296,11 +296,11 @@ def smt_stage1(
             )
 
             if logger is not None:
-                logger.record_stat("task_id", task_id, global_step + 1)
+                logger.record_stat("task_id", task_id, step=global_step)
                 logger.record_stat(
                     "task_performance",
                     avg_training_performances[task_id],
-                    global_step + 1,
+                    step=global_step,
                 )
 
             M = mt_def.get_solved_threshold(task_id)
@@ -345,11 +345,11 @@ def smt_stage1(
             task_budgets[worst] = kappa * (b_total - global_step)
 
             if logger is not None:
-                logger.record_stat("worst task", worst, global_step + 1)
+                logger.record_stat("worst task", worst, step=global_step)
                 logger.record_stat(
                     "worst performance",
                     avg_training_performances[worst],
-                    global_step + 1,
+                    step=global_step,
                 )
 
         if early_stop_stage:
@@ -406,7 +406,7 @@ def smt_stage2(
             progress.update(steps)
 
             if logger is not None:
-                logger.record_stat("task_id", task_id, global_step + 1)
+                logger.record_stat("task_id", task_id, step=global_step)
 
             if global_step >= b_total:
                 break
