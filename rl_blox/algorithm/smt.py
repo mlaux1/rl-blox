@@ -388,7 +388,9 @@ def smt_stage2(
                 global_step=global_step,
                 progress_bar=False,
             )
-            assert len(env_with_stats.return_queue) == scheduling_interval
+            assert (
+                len(env_with_stats.return_queue) == scheduling_interval
+            ), f"{env_with_stats.return_queue=}, {scheduling_interval=}"
 
             steps = sum(env_with_stats.length_queue)
             training_steps[task_id] += steps
