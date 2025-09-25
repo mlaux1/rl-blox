@@ -9,7 +9,7 @@ import jax.random
 import numpy as np
 import optax
 from flax import nnx
-from tqdm.rich import tqdm, trange
+from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy

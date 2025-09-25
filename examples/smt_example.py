@@ -9,7 +9,11 @@ from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
 from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
+from rl_blox.algorithm.td3 import create_td3_state, train_td3
+from rl_blox.algorithm.td7 import create_td7_state, train_td7
+from rl_blox.blox.embedding.sale import DeterministicSALEPolicy
 from rl_blox.blox.replay_buffer import (
+    LAP,
     MultiTaskReplayBuffer,
     ReplayBuffer,
     SubtrajectoryReplayBufferPER,
@@ -41,7 +45,8 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 2
 verbose = 2
-backbone = "DDPG"  # Backbone algorithm to use for SMT: "DDPG", "SAC", "MR.Q"
+# Backbone algorithm to use for Active MT: "SAC", "DDPG", "TD3", "TD7", "MR.Q"
+backbone = "SAC"
 
 if verbose:
     print(
@@ -75,6 +80,44 @@ if backbone == "DDPG":
         q_optimizer=state.q_optimizer,
         policy_target=policy_target,
         q_target=q_target,
+    )
+elif backbone == "TD3":
+    state = create_td3_state(env, seed=seed)
+    q_target = nnx.clone(state.q)
+    policy_target = nnx.clone(state.policy)
+    replay_buffer = MultiTaskReplayBuffer(
+        ReplayBuffer(buffer_size=100_000),
+        len(mt_def),
+    )
+
+    train_st = partial(
+        train_td3,
+        policy=state.policy,
+        policy_optimizer=state.policy_optimizer,
+        q=state.q,
+        q_optimizer=state.q_optimizer,
+        q_target=q_target,
+        policy_target=policy_target,
+    )
+elif backbone == "TD7":
+    state = create_td7_state(env, seed=seed)
+    actor_target = nnx.clone(state.actor)
+    critic_target = nnx.clone(state.critic)
+    replay_buffer = MultiTaskReplayBuffer(
+        LAP(buffer_size=100_000),
+        len(mt_def),
+    )
+
+    train_st = partial(
+        train_td7,
+        embedding=state.embedding,
+        embedding_optimizer=state.embedding_optimizer,
+        actor=state.actor,
+        actor_optimizer=state.actor_optimizer,
+        critic=state.critic,
+        critic_optimizer=state.critic_optimizer,
+        critic_target=critic_target,
+        actor_target=actor_target,
     )
 elif backbone == "MR.Q":
     state = create_mrq_state(env, seed=seed)
@@ -123,7 +166,7 @@ result = train_smt(
     b1=110_000,
     b2=10_000,
     learning_starts=1_000,
-    scheduling_interval=200,
+    scheduling_interval=1,
     logger=logger,
     seed=seed,
 )
@@ -133,9 +176,10 @@ mt_def.close()
 result_st = result[0]
 if backbone == "MR.Q":
     policy = result_st.policy_with_encoder
+elif backbone == "TD7":
+    policy = DeterministicSALEPolicy(result_st.embedding, result_st.actor)
 else:
     policy = result_st.policy
-q = result_st.q
 mt_env = MultiTaskPendulum(render_mode="human")
 for task_id in range(len(mt_env)):
     print(f"Evaluating task {task_id}")
@@ -144,13 +188,28 @@ for task_id in range(len(mt_env)):
     infos = {}
     obs, _ = env.reset()
     while not done:
-        if backbone in ["DDPG", "MR.Q"]:
-            action = np.asarray(policy(jnp.asarray(obs)))
-        else:
+        if backbone == "SAC":
             action = np.asarray(policy(jnp.asarray(obs))[0])
+        else:
+            action = np.asarray(policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         if verbose:
-            q_value = q(jnp.concatenate((obs, action)))
+            if backbone == "MR.Q":
+                zsa = policy.encoder.encode_zsa(
+                    policy.encoder.encode_zs(jnp.asarray(obs)),
+                    jnp.asarray(action),
+                )
+                q_value = result_st.q(zsa)
+            elif backbone == "TD7":
+                zsa, zs = result_st.embedding(
+                    jnp.asarray(obs),
+                    jnp.asarray(action),
+                )
+                q_value = result_st.critic(
+                    jnp.concatenate((obs, action)), zsa=zsa, zs=zs
+                )
+            else:
+                q_value = result_st.q(jnp.concatenate((obs, action)))
             print(f"{q_value=}")
         obs = np.asarray(next_obs)
