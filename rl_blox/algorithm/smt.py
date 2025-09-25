@@ -280,7 +280,9 @@ def smt_stage1(
                 global_step=global_step,
                 progress_bar=False,
             )
-            assert len(env_with_stats.return_queue) == scheduling_interval
+            assert (
+                len(env_with_stats.return_queue) == scheduling_interval
+            ), f"{env_with_stats.return_queue=}, {scheduling_interval=}"
 
             steps = sum(env_with_stats.length_queue)
             training_steps[task_id] += steps
@@ -313,6 +315,10 @@ def smt_stage1(
                 else:
                     main_pool.add(task_id)
                     updated_training_pool.remove(task_id)
+
+            if global_step >= b1:
+                print("break2")
+                break
 
         # The original SMT algorithm would evaluate the performance on each task
         # and reset the networks here, i.e., randomly initialize them.
@@ -350,6 +356,7 @@ def smt_stage1(
             break
 
         training_pool = updated_training_pool
+
     return avg_training_performances, global_step, result_st, unsolvable_pool
 
 
@@ -378,7 +385,7 @@ def smt_stage2(
             )
 
             result_st = train_st(
-                env=env,
+                env=env_with_stats,
                 learning_starts=learning_starts,
                 total_timesteps=b_total,
                 total_episodes=scheduling_interval,
@@ -401,7 +408,7 @@ def smt_stage2(
             if logger is not None:
                 logger.record_stat("task_id", task_id, global_step + 1)
 
-            if global_step + 1 >= b_total:
+            if global_step >= b_total:
                 break
 
     return result_st
