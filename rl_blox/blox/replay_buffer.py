@@ -397,7 +397,8 @@ class PriorityBuffer:
 
     def reset_max_priority(self, current_len: int):
         """Recalculate the maximum priority."""
-        self.max_priority = np.max(self.priority[:current_len])
+        if current_len > 0:
+            self.max_priority = np.max(self.priority[:current_len])
 
 
 class LAP(ReplayBuffer):
@@ -706,6 +707,8 @@ class MultiTaskReplayBuffer:
         n_samples = 0
         accumulated_reward = 0.0
         for buffer in self.buffers:
+            if len(buffer) == 0:
+                continue
             n_samples += len(buffer)
             accumulated_reward += buffer.reward_scale(eps) * len(buffer)
         return accumulated_reward / n_samples
@@ -718,3 +721,14 @@ class MultiTaskReplayBuffer:
         """Recalculate the maximum priority for all tasks."""
         for buffer in self.buffers:
             buffer.reset_max_priority()
+
+    @property
+    def environment_terminates(self):
+        return any(
+            hasattr(buffer, "environment_terminates")
+            and buffer.environment_terminates
+            for buffer in self.buffers
+        )
+
+    def __len__(self):
+        return sum(len(buffer) for buffer in self.buffers)

@@ -5,10 +5,11 @@ import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 
+from rl_blox.algorithm.active_mt import train_active_mt
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
-from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
+from rl_blox.algorithm.smt import ContextualMultiTaskDefinition
 from rl_blox.algorithm.td3 import create_td3_state, train_td3
 from rl_blox.algorithm.td7 import create_td7_state, train_td7
 from rl_blox.blox.embedding.sale import DeterministicSALEPolicy
@@ -46,7 +47,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 seed = 2
 verbose = 2
 # Backbone algorithm to use for Active MT: "SAC", "DDPG", "TD3", "TD7", "MR.Q"
-backbone = "SAC"
+backbone = "MR.Q"
 
 if verbose:
     print(
@@ -56,7 +57,7 @@ if verbose:
 logger = AIMLogger()
 logger.define_experiment(
     env_name="Pendulum-v1",
-    algorithm_name=f"SMT-{backbone}",
+    algorithm_name=f"AMT-{backbone}",
     hparams={},
 )
 
@@ -159,14 +160,17 @@ else:
         entropy_control=entroy_control,
     )
 
-result = train_smt(
+result = train_active_mt(
     mt_def,
     train_st,
     replay_buffer,
-    b1=110_000,
-    b2=10_000,
-    learning_starts=1_000,
+    task_selector="1-step Progress",
+    r_max=2_000,
+    ducb_gamma=0.95,
+    xi=0.002,
+    learning_starts=11 * 200,
     scheduling_interval=1,
+    total_timesteps=50_000,
     logger=logger,
     seed=seed,
 )

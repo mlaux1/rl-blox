@@ -253,6 +253,7 @@ def train_sac(
     q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
+    total_episodes: int | None = None,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     tau: float = 0.005,
@@ -322,7 +323,12 @@ def train_sac(
         Seed for random number generation.
 
     total_timesteps : int
-        Total timesteps of the experiments.
+        Total timesteps for training.
+
+    total_episodes : int, optional
+        Total episodes for training. This is an alternative termination
+        criterion for training. Set it to None to use ``total_timesteps`` or
+        set it to a positive integer to overwrite the step criterion.
 
     buffer_size : int
         The replay memory buffer size.
@@ -481,10 +487,12 @@ def train_sac(
     train_step = partial(train_step_with_loss, sac_loss)
     train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
+    episode_idx = 0
     if logger is not None:
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
+    accumulated_reward = 0.0
 
     for global_step in trange(
         global_step, total_timesteps, disable=not progress_bar
@@ -499,6 +507,7 @@ def train_sac(
 
         next_obs, reward, termination, truncation, info = env.step(action)
         steps_per_episode += 1
+        accumulated_reward += reward
 
         replay_buffer.add_sample(
             observation=obs,
@@ -562,12 +571,18 @@ def train_sac(
 
         if termination or truncation:
             if logger is not None:
-                if "episode" in info:
-                    logger.record_stat("return", info["episode"]["r"])
+                logger.record_stat(
+                    "return", accumulated_reward, step=global_step + 1
+                )
                 logger.stop_episode(steps_per_episode)
+            episode_idx += 1
+            if total_episodes is not None and episode_idx >= total_episodes:
+                break
+            if logger is not None:
                 logger.start_new_episode()
             obs, _ = env.reset()
             steps_per_episode = 0
+            accumulated_reward = 0.0
         else:
             obs = next_obs
 

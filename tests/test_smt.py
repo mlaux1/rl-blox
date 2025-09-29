@@ -59,10 +59,10 @@ def test_smt():
         mt_def,
         train_st,
         replay_buffer,
-        b1=110,
-        b2=10,
+        b1=200,
+        b2=200,
         learning_starts=50,
-        scheduling_interval=50,
+        scheduling_interval=1,
         seed=seed,
     )
     mt_def.close()
