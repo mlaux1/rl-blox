@@ -31,7 +31,7 @@ hparams_models = dict(
 hparams_algorithm = dict(
     total_timesteps=100_000,
     exploring_starts=1_000,
-    episodes_per_task=5000,
+    episodes_per_task=1,
 )
 
 logger = AIMLogger()
