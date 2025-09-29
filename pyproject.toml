@@ -34,7 +34,7 @@ dependencies = [
     "tfp-nightly[jax]",
     "chex",
     "tqdm",
-    "flax",
+    "flax<0.12",
     "orbax-checkpoint",
 ]
 
