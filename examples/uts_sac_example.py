@@ -63,19 +63,22 @@ test_contexts = jnp.array([[10.0], [9.9], [10.2]])
 test_envs = [
     RecordEpisodeStatistics(gym.make(env_name, g=10.0)),
     RecordEpisodeStatistics(gym.make(env_name, g=9.9)),
-    RecordEpisodeStatistics(gym.make(env_name, g=10.2)),
+    RecordEpisodeStatistics(gym.make(env_name, g=10.3)),
 ]
 test_set = TaskSet(test_contexts, test_envs)
 
 for i in range(3):
     env = test_set.get_task_env(i)
+    ep_return = 0.0
     done = False
     obs, _ = env.reset()
     while not done:
         action = np.asarray(policy(jnp.asarray(obs))[0])
         next_obs, reward, termination, truncation, info = env.step(action)
+        ep_return += reward
         done = termination or truncation
         obs = np.asarray(next_obs)
+    print(f"Episode terminated in with {ep_return=}")
 
 for env in test_envs:
     env.close()
