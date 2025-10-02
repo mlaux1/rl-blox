@@ -8,7 +8,8 @@ from rl_blox.algorithm.multi_task.uniform_task_sampling import (
     train_uts,
 )
 from rl_blox.algorithm.sac import create_sac_state
-from rl_blox.logging.logger import AIMLogger
+from rl_blox.logging.checkpointer import OrbaxCheckpointer
+from rl_blox.logging.logger import AIMLogger, LoggerList
 
 env_name = "Pendulum-v1"
 seed = 42
@@ -44,7 +45,7 @@ hparams_algorithm = dict(
     episodes_per_task=10,
 )
 
-logger = AIMLogger()
+logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="UTS-SAC",
