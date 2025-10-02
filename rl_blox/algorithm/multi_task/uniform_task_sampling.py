@@ -11,6 +11,7 @@ from ...blox.double_qnet import ContinuousClippedDoubleQNet
 from ...blox.function_approximator.policy_head import StochasticPolicyBase
 from ...blox.replay_buffer import ReplayBuffer
 from ...logging.logger import LoggerBase
+from ..ddqn import train_ddqn
 from ..sac import EntropyControl, train_sac
 
 

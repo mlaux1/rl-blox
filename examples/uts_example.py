@@ -11,15 +11,22 @@ from rl_blox.algorithm.sac import create_sac_state
 from rl_blox.logging.logger import AIMLogger
 
 env_name = "Pendulum-v1"
-seed = 1
+seed = 42
 verbose = 1
 
-train_contexts = jnp.array([[10.0], [10.1], [9.9]])
-
+train_contexts = jnp.linspace(5, 15, 11)[:, jnp.newaxis]
 train_envs = [
-    RecordEpisodeStatistics(gym.make(env_name, g=10.0)),
-    RecordEpisodeStatistics(gym.make(env_name, g=10.1)),
-    RecordEpisodeStatistics(gym.make(env_name, g=9.9)),
+    RecordEpisodeStatistics(gym.make(env_name, g=5)),
+    RecordEpisodeStatistics(gym.make(env_name, g=6)),
+    RecordEpisodeStatistics(gym.make(env_name, g=7)),
+    RecordEpisodeStatistics(gym.make(env_name, g=8)),
+    RecordEpisodeStatistics(gym.make(env_name, g=9)),
+    RecordEpisodeStatistics(gym.make(env_name, g=10)),
+    RecordEpisodeStatistics(gym.make(env_name, g=11)),
+    RecordEpisodeStatistics(gym.make(env_name, g=12)),
+    RecordEpisodeStatistics(gym.make(env_name, g=13)),
+    RecordEpisodeStatistics(gym.make(env_name, g=14)),
+    RecordEpisodeStatistics(gym.make(env_name, g=15)),
 ]
 
 train_set = TaskSet(train_contexts, train_envs)
@@ -32,9 +39,9 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=10_000_000,
+    total_timesteps=1_000_000,
     exploring_starts=10_000,
-    episodes_per_task=1,
+    episodes_per_task=10,
 )
 
 logger = AIMLogger()
@@ -56,22 +63,11 @@ sac_result = train_uts(
 )
 
 
-for env in train_envs:
-    env.close()
-
 policy, _, q, _, _, _, _ = sac_result
 
-# Evaluation
-test_contexts = jnp.array([[10.0], [9.9], [10.2]])
-test_envs = [
-    RecordEpisodeStatistics(gym.make(env_name, g=10.0)),
-    RecordEpisodeStatistics(gym.make(env_name, g=9.9)),
-    RecordEpisodeStatistics(gym.make(env_name, g=10.3)),
-]
-test_set = TaskSet(test_contexts, test_envs)
 
-for i in range(3):
-    env = test_set.get_task_env(i)
+for i in range(11):
+    env = train_set.get_task_env(i)
     ep_return = 0.0
     done = False
     obs, _ = env.reset()
@@ -83,5 +79,5 @@ for i in range(3):
         obs = np.asarray(next_obs)
     print(f"Episode terminated in with {ep_return=}")
 
-for env in test_envs:
+for env in train_set:
     env.close()
