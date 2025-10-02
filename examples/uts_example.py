@@ -15,19 +15,10 @@ env_name = "Pendulum-v1"
 seed = 42
 verbose = 1
 
-train_contexts = jnp.linspace(5, 15, 11)[:, jnp.newaxis]
+train_contexts = jnp.linspace(10, 11, 2)[:, jnp.newaxis]
 train_envs = [
-    RecordEpisodeStatistics(gym.make(env_name, g=5)),
-    RecordEpisodeStatistics(gym.make(env_name, g=6)),
-    RecordEpisodeStatistics(gym.make(env_name, g=7)),
-    RecordEpisodeStatistics(gym.make(env_name, g=8)),
-    RecordEpisodeStatistics(gym.make(env_name, g=9)),
     RecordEpisodeStatistics(gym.make(env_name, g=10)),
     RecordEpisodeStatistics(gym.make(env_name, g=11)),
-    RecordEpisodeStatistics(gym.make(env_name, g=12)),
-    RecordEpisodeStatistics(gym.make(env_name, g=13)),
-    RecordEpisodeStatistics(gym.make(env_name, g=14)),
-    RecordEpisodeStatistics(gym.make(env_name, g=15)),
 ]
 
 train_set = TaskSet(train_contexts, train_envs)
@@ -40,9 +31,9 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=1_000_000,
-    exploring_starts=10_000,
-    episodes_per_task=10,
+    total_timesteps=10_000,
+    exploring_starts=1_000,
+    episodes_per_task=1,
 )
 
 logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
@@ -67,7 +58,7 @@ sac_result = train_uts(
 policy, _, q, _, _, _, _ = sac_result
 
 
-for i in range(11):
+for i in range(2):
     env = train_set.get_task_env(i)
     ep_return = 0.0
     done = False
