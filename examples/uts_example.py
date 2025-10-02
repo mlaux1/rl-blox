@@ -3,7 +3,10 @@ import jax.numpy as jnp
 import numpy as np
 from gymnasium.wrappers import RecordEpisodeStatistics
 
-from rl_blox.algorithm.multi_task.uts_sac import TaskSet, train_uts_sac
+from rl_blox.algorithm.multi_task.uniform_task_sampling import (
+    TaskSet,
+    train_uts,
+)
 from rl_blox.algorithm.sac import create_sac_state
 from rl_blox.logging.logger import AIMLogger
 
@@ -25,12 +28,12 @@ hparams_models = dict(
     q_hidden_nodes=[512, 512],
     q_learning_rate=3e-4,
     policy_learning_rate=1e-3,
-    policy_hidden_nodes=[128, 128],
+    policy_hidden_nodes=[256, 256],
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=100_000,
-    exploring_starts=1_000,
+    total_timesteps=10_000_000,
+    exploring_starts=10_000,
     episodes_per_task=1,
 )
 
@@ -42,7 +45,7 @@ logger.define_experiment(
 )
 
 sac_state = create_sac_state(train_envs[0], **hparams_models)
-sac_result = train_uts_sac(
+sac_result = train_uts(
     train_set,
     sac_state.policy,
     sac_state.policy_optimizer,

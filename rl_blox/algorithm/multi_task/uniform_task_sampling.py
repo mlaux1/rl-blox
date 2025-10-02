@@ -80,7 +80,7 @@ class PrioritisedTaskSampler:
         self.priorities = priorities
 
 
-def train_uts_sac(
+def train_uts(
     envs: TaskSet,
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
