@@ -38,7 +38,7 @@ state = create_mrq_state(env, **hparams_models)
 
 result = train_mrq(
     env,
-    state.policy_with_encoder,
+    state.policy_with_encoder_flax,
     state.encoder_optimizer,
     state.policy_optimizer,
     state.q,
