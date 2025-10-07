@@ -284,13 +284,14 @@ def smt_stage1(
             steps = sum(env_with_stats.length_queue)
             training_steps[task_id] += steps
             global_step += steps
-
-            assert (
-                len(env_with_stats.return_queue) == scheduling_interval
-                or global_step == b1
-            ), f"{env_with_stats.return_queue=}, {scheduling_interval=}"
-
             progress.update(steps)
+
+            if len(env_with_stats.return_queue) != scheduling_interval:
+                # early termination because we reached step limit
+                unlogged_steps = b1 - global_step
+                global_step = b1
+                training_steps[task_id] += unlogged_steps
+                progress.update(unlogged_steps)
 
             training_performances[task_id].extend(env_with_stats.return_queue)
             avg_training_performances[task_id] = np.mean(
@@ -401,13 +402,14 @@ def smt_stage2(
             steps = sum(env_with_stats.length_queue)
             training_steps[task_id] += steps
             global_step += steps
-
-            assert (
-                len(env_with_stats.return_queue) == scheduling_interval
-                or global_step == b_total
-            ), f"{env_with_stats.return_queue=}, {scheduling_interval=}"
-
             progress.update(steps)
+
+            if len(env_with_stats.return_queue) != scheduling_interval:
+                # early termination because we reached step limit
+                unlogged_steps = b_total - global_step
+                global_step = b_total
+                training_steps[task_id] += unlogged_steps
+                progress.update(unlogged_steps)
 
             if logger is not None:
                 logger.record_stat("task_id", task_id, step=global_step)
