@@ -495,7 +495,7 @@ def train_sac(
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
-            key, action_key = jax.random.split(key, 2)
+            key, action_key = jax.random.split(key)
             action = np.asarray(
                 _sample_action(policy, jnp.asarray(obs), action_key)
             )
@@ -514,7 +514,7 @@ def train_sac(
         if global_step >= learning_starts:
             batch = replay_buffer.sample_batch(batch_size, rng)
 
-            key, action_key = jax.random.split(key, 2)
+            key, action_key = jax.random.split(key)
             q_loss_value, q_mean = train_step(
                 q_optimizer,
                 q,
@@ -531,7 +531,7 @@ def train_sac(
             if global_step % policy_delay == 0:
                 # compensate for delay by doing 'policy_frequency' updates
                 for _ in range(policy_delay):
-                    key, action_key = jax.random.split(key, 2)
+                    key, action_key = jax.random.split(key)
                     policy_loss_value = sac_update_actor(
                         policy,
                         policy_optimizer,
@@ -543,9 +543,9 @@ def train_sac(
                     stats["policy loss"] = policy_loss_value
                     updated_modules["policy"] = policy
 
-                    key, action_key = jax.random.split(key, 2)
+                    key, action_key = jax.random.split(key)
                     exploration_loss_value = entropy_control.update(
-                        policy, batch.observation, key
+                        policy, batch.observation, action_key
                     )
                     if autotune:
                         stats["alpha"] = float(
@@ -574,7 +574,6 @@ def train_sac(
 
             training_eps += 1
             if max_episodes is not None and training_eps >= max_episodes:
-                break
                 return namedtuple(
                     "SACResult",
                     [
