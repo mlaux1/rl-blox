@@ -67,11 +67,11 @@ class ContextualMultiTaskDefinition(metaclass=ABCMeta):
 
     @abstractmethod
     def get_solved_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered solved."""
+        """Performance threshold for a task to be considered solved (>=)."""
 
     @abstractmethod
     def get_unsolvable_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered unsolvable."""
+        """Performance threshold for a task to be considered unsolvable (<=)."""
 
     def __len__(self) -> int:
         return len(self.contexts)
@@ -304,12 +304,12 @@ def smt_stage1(
                 )
 
             M = mt_def.get_solved_threshold(task_id)
-            if avg_training_performances[task_id] > M:
+            if avg_training_performances[task_id] >= M:
                 solved_pool.add(task_id)
                 updated_training_pool.remove(task_id)
             elif training_steps[task_id] >= task_budgets[task_id]:
                 m = mt_def.get_unsolvable_threshold(task_id)
-                if avg_training_performances[task_id] < m:
+                if avg_training_performances[task_id] <= m:
                     unsolvable_pool.add(task_id)
                     updated_training_pool.remove(task_id)
                 else:

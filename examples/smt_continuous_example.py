@@ -45,7 +45,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 2
 verbose = 2
-# Backbone algorithm to use for Active MT: "SAC", "DDPG", "TD3", "TD7", "MR.Q"
+# Backbone algorithm to use for SMT: "SAC", "DDPG", "TD3", "TD7", "MR.Q"
 backbone = "SAC"
 
 if verbose:
