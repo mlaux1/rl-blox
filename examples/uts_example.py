@@ -31,8 +31,8 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=10_000,
-    exploring_starts=1_000,
+    total_timesteps=100_000,
+    exploring_starts=10_000,
     episodes_per_task=1,
 )
 
@@ -70,6 +70,3 @@ for i in range(2):
         done = termination or truncation
         obs = np.asarray(next_obs)
     print(f"Episode terminated in with {ep_return=}")
-
-for env in train_set:
-    env.close()
