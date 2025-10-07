@@ -1,4 +1,5 @@
 import copy
+import warnings
 from abc import ABCMeta, abstractmethod
 from collections import deque
 from collections.abc import Callable
@@ -229,6 +230,11 @@ def train_smt(
             seed,
             progress,
         )
+    else:
+        warnings.warn(
+            "Unsolvable pool is empty. There is no second SMT stage.",
+            stacklevel=2,
+        )
     progress.close()
 
     return result_st, training_steps, avg_training_performances
@@ -305,6 +311,17 @@ def smt_stage1(
                     avg_training_performances[task_id],
                     step=global_step,
                 )
+                logger.record_stat(
+                    "pool_size_main", len(main_pool), step=global_step
+                )
+                logger.record_stat(
+                    "pool_size_solved", len(solved_pool), step=global_step
+                )
+                logger.record_stat(
+                    "pool_size_unsolvable",
+                    len(unsolvable_pool),
+                    step=global_step,
+                )
 
             M = mt_def.get_solved_threshold(task_id)
             if avg_training_performances[task_id] >= M:
@@ -360,6 +377,11 @@ def smt_stage1(
 
         training_pool = updated_training_pool
 
+    if len(unsolvable_pool) == 0 and len(main_pool) > 0:
+        # If there are no unsolvable tasks, iterate over the main pool instead.
+        # This is different from the original implementation.
+        unsolvable_pool = main_pool
+
     return avg_training_performances, global_step, result_st, unsolvable_pool
 
 
@@ -413,6 +435,11 @@ def smt_stage2(
 
             if logger is not None:
                 logger.record_stat("task_id", task_id, step=global_step)
+                logger.record_stat(
+                    "pool_size_unsolvable",
+                    len(unsolvable_pool),
+                    step=global_step,
+                )
 
             if global_step >= b_total:
                 break
