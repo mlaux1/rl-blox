@@ -7,6 +7,7 @@ from flax import nnx
 import optax
 
 from rl_blox.algorithm.ddqn import train_ddqn
+from rl_blox.algorithm.nature_dqn import train_nature_dqn
 from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.replay_buffer import (
@@ -40,7 +41,7 @@ class MultiTaskMountainCar(ContextualMultiTaskDefinition):
 
 seed = 2
 verbose = 2
-# Backbone algorithm to use for SMT: "DDQN"
+# Backbone algorithm to use for SMT: "DDQN", "NDQN"
 backbone = "DDQN"
 
 if verbose:
@@ -58,25 +59,31 @@ logger.define_experiment(
 mt_def = MultiTaskMountainCar()
 
 env = mt_def.get_task(0)
+q_net = MLP(
+    env.observation_space.shape[0],
+    int(env.action_space.n),
+    activation="relu",
+    hidden_nodes=[128, 128],
+    rngs=nnx.Rngs(seed),
+)
+q_target_net = nnx.clone(q_net)
+replay_buffer = MultiTaskReplayBuffer(
+    ReplayBuffer(buffer_size=100_000, discrete_actions=True),
+    len(mt_def),
+)
+optimizer = nnx.Optimizer(
+    q_net, optax.adam(0.003), wrt=nnx.Param
+)
 if backbone == "DDQN":
-    q_net = MLP(
-        env.observation_space.shape[0],
-        int(env.action_space.n),
-        activation="relu",
-        hidden_nodes=[128, 128],
-        rngs=nnx.Rngs(seed),
-    )
-    q_target_net = nnx.clone(q_net)
-    replay_buffer = MultiTaskReplayBuffer(
-        ReplayBuffer(buffer_size=100_000, discrete_actions=True),
-        len(mt_def),
-    )
-    optimizer = nnx.Optimizer(
-        q_net, optax.adam(0.003), wrt=nnx.Param
-    )
-
     train_st = partial(
         train_ddqn,
+        q_net=q_net,
+        optimizer=optimizer,
+        q_target_net=q_target_net,
+    )
+elif backbone == "NDQN":
+    train_st = partial(
+        train_nature_dqn,
         q_net=q_net,
         optimizer=optimizer,
         q_target_net=q_target_net,
