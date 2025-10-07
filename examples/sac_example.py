@@ -20,10 +20,10 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=200_000,
-    buffer_size=50_000,
+    total_timesteps=11_000,
+    buffer_size=11_000,
     gamma=0.99,
-    learning_starts=1_000,
+    learning_starts=5_000,
 )
 
 if verbose:

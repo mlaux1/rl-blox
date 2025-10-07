@@ -31,8 +31,8 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=100_000,
-    exploring_starts=10_000,
+    total_timesteps=20_000,
+    exploring_starts=5_000,
     episodes_per_task=1,
 )
 
@@ -43,7 +43,7 @@ logger.define_experiment(
     hparams=hparams_models | hparams_algorithm,
 )
 
-sac_state = create_sac_state(train_envs[0], **hparams_models)
+sac_state = create_sac_state(train_set.get_task_env(0), **hparams_models)
 sac_result = train_uts(
     train_set,
     sac_state.policy,
