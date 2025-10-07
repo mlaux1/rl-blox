@@ -50,7 +50,7 @@ if verbose:
     )
 logger = AIMLogger()
 logger.define_experiment(
-    env_name="Pendulum-v1",
+    env_name="MountainCar-v0",
     algorithm_name=f"SMT-{backbone}",
     hparams={},
 )
@@ -66,6 +66,7 @@ if backbone == "DDQN":
         hidden_nodes=[128, 128],
         rngs=nnx.Rngs(seed),
     )
+    q_target_net = nnx.clone(q_net)
     replay_buffer = MultiTaskReplayBuffer(
         ReplayBuffer(buffer_size=100_000, discrete_actions=True),
         len(mt_def),
@@ -78,6 +79,7 @@ if backbone == "DDQN":
         train_ddqn,
         q_net=q_net,
         optimizer=optimizer,
+        q_target_net=q_target_net,
     )
 else:
     raise NotImplementedError(f"Unknown backbone '{backbone}'")
@@ -89,7 +91,7 @@ result = train_smt(
     b1=110_000,
     b2=10_000,
     learning_starts=0,
-    scheduling_interval=1,
+    scheduling_interval=10,
     logger=logger,
     seed=seed,
 )
