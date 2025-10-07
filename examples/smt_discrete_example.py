@@ -19,7 +19,7 @@ from rl_blox.logging.logger import AIMLogger
 class MultiTaskMountainCar(ContextualMultiTaskDefinition):
     def __init__(self, render_mode=None):
         super().__init__(
-            contexts=np.linspace(0, 1, 11)[:, np.newaxis],
+            contexts=np.linspace(0, 0.3, 11)[:, np.newaxis],
             context_in_observation=True,
         )
         self.env = gym.make("MountainCar-v0", render_mode=render_mode)
@@ -88,10 +88,10 @@ result = train_smt(
     mt_def,
     train_st,
     replay_buffer,
-    b1=110_000,
-    b2=10_000,
+    b1=170_000,
+    b2=30_000,
     learning_starts=0,
-    scheduling_interval=10,
+    scheduling_interval=20,
     logger=logger,
     seed=seed,
 )
