@@ -31,10 +31,13 @@ class TaskSet:
                     self.task_envs[i].observation_space, gym.spaces.Box
                 )
                 new_low = np.concatenate(
-                    [self.task_envs[i].observation_space.low, self.contexts[i]]
+                    [self.task_envs[i].observation_space.low, self.contexts[0]]
                 )
                 new_high = np.concatenate(
-                    [self.task_envs[i].observation_space.high, self.contexts[i]]
+                    [
+                        self.task_envs[i].observation_space.high,
+                        self.contexts[-1],
+                    ]
                 )
                 new_obs_space = gym.spaces.Box(low=new_low, high=new_high)
                 self.task_envs[i] = TransformObservation(
@@ -102,6 +105,10 @@ def train_uts(
     ReplayBuffer,
 ]:
     replay_buffer = None
+    pol = policy
+    pol_opt = policy_optimizer
+    q = q_net
+    q_opt = q_optimizer
     q_target = None
     entropy_control = None
     steps_so_far = 0
@@ -113,22 +120,13 @@ def train_uts(
     while steps_so_far < total_timesteps:
         key, skey = jax.random.split(key)
         env, context = task_sampler.sample(skey)
-        (
-            policy,
-            policy_optimizer,
-            q_net,
-            q_target,
-            q_optimizer,
-            entropy_control,
-            replay_buffer,
-            ep_steps,
-        ) = train_sac(
+        sac_result = train_sac(
             env,
-            policy,
-            policy_optimizer,
-            q_net,
-            q_optimizer,
-            seed=seed,
+            pol,
+            pol_opt,
+            q,
+            q_opt,
+            seed=seed + episodes_so_far,
             total_timesteps=total_timesteps - steps_so_far,
             max_episodes=episodes_per_task,
             replay_buffer=replay_buffer,
@@ -140,16 +138,19 @@ def train_uts(
             step_offset=steps_so_far + 1,
         )
 
+        (
+            pol,
+            pol_opt,
+            q,
+            q_target,
+            q_opt,
+            entropy_control,
+            replay_buffer,
+            ep_steps,
+        ) = sac_result
+
         steps_so_far += ep_steps
-        episodes_so_far += 1
+        episodes_so_far += episodes_per_task
         progress.update(ep_steps)
 
-    return (
-        policy,
-        policy_optimizer,
-        q_net,
-        q_target,
-        q_optimizer,
-        entropy_control,
-        replay_buffer,
-    )
+    return sac_result
