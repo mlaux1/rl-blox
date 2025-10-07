@@ -15,10 +15,11 @@ env_name = "Pendulum-v1"
 seed = 42
 verbose = 1
 
-train_contexts = jnp.linspace(10, 11, 2)[:, jnp.newaxis]
+train_contexts = jnp.linspace(5, 15, 3)[:, jnp.newaxis]
 train_envs = [
+    RecordEpisodeStatistics(gym.make(env_name, g=5)),
     RecordEpisodeStatistics(gym.make(env_name, g=10)),
-    RecordEpisodeStatistics(gym.make(env_name, g=11)),
+    RecordEpisodeStatistics(gym.make(env_name, g=15)),
 ]
 
 train_set = TaskSet(train_contexts, train_envs)
@@ -27,11 +28,11 @@ hparams_models = dict(
     q_hidden_nodes=[512, 512],
     q_learning_rate=3e-4,
     policy_learning_rate=1e-3,
-    policy_hidden_nodes=[256, 256],
+    policy_hidden_nodes=[128, 128],
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=20_000,
+    total_timesteps=11_000,
     exploring_starts=5_000,
     episodes_per_task=1,
 )
@@ -55,14 +56,30 @@ sac_result = train_uts(
 )
 
 
-policy, _, q, _, _, _, _ = sac_result
+policy, _, q, _, _, _, _, _ = sac_result
 
+test_contexts = jnp.linspace(5, 15, 11)[:, jnp.newaxis]
+test_envs = [
+    RecordEpisodeStatistics(gym.make(env_name, g=5.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=6.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=7.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=8.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=9.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=10.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=11.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=12.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=13.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=14.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=15.0, render_mode="human")),
+]
+test_set = TaskSet(test_contexts, test_envs)
 
-for i in range(2):
-    env = train_set.get_task_env(i)
+for i in range(len(test_envs)):
+    env = test_set.get_task_env(i)
     ep_return = 0.0
     done = False
     obs, _ = env.reset()
+    print(f"{obs=}")
     while not done:
         action = np.asarray(policy(jnp.asarray(obs))[0])
         next_obs, reward, termination, truncation, info = env.step(action)
