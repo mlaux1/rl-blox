@@ -574,6 +574,7 @@ def train_sac(
 
             training_eps += 1
             if max_episodes is not None and training_eps >= max_episodes:
+                break
                 return namedtuple(
                     "SACResult",
                     [
@@ -596,8 +597,8 @@ def train_sac(
                     replay_buffer,
                     global_step + 1,
                 )
-    else:
-        obs = next_obs
+        else:
+            obs = next_obs
 
     return namedtuple(
         "SACResult",
