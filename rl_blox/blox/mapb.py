@@ -27,11 +27,12 @@ class DUCB:
        http://arxiv.org/abs/0805.3415
     """
 
-    def __init__(self, n_arms, upper_bound, gamma, zeta=0.002):
+    def __init__(self, n_arms, upper_bound, gamma, zeta=0.002, verbose=0):
         self.n_arms = n_arms
         self.upper_bound = upper_bound
         self.gamma = gamma
         self.zeta = zeta
+        self.verbose = verbose
         self.chosen_arms = []
         self.rewards = []
         self.discounted_frequencies = np.zeros(self.n_arms)
@@ -74,13 +75,27 @@ class DUCB:
         if len(self.rewards) < 2 * self.n_arms:
             arm_idx = len(self.rewards) % self.n_arms
         else:
-            arm_idx = np.argmax(
+            mean = np.array(
                 [
                     self._discounted_empirical_mean(arm_idx)
-                    + self._padding_function(arm_idx)
                     for arm_idx in range(self.n_arms)
                 ]
             )
+            padding = np.array(
+                [
+                    self._padding_function(arm_idx)
+                    for arm_idx in range(self.n_arms)
+                ]
+            )
+            ducb = mean + padding
+            arm_idx = np.argmax(ducb)
+
+            if self.verbose:
+                print(f"Rewards: {len(self.rewards)}")
+                print(f"Means:   {np.round(mean, 1)}")
+                print(f"Padding: {np.round(padding, 1)}")
+                print(f"D-UCB:   {np.round(ducb, 1)}")
+                print(f"Arm:     {arm_idx}")
         self.chosen_arms.append(arm_idx)
         return arm_idx
 
