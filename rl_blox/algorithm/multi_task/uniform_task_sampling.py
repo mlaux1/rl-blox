@@ -31,18 +31,20 @@ class TaskSet:
                     self.task_envs[i].observation_space, gym.spaces.Box
                 )
                 new_low = np.concatenate(
-                    [self.task_envs[i].observation_space.low, self.contexts[0]]
+                    [self.task_envs[i].observation_space.low, contexts[0]]
                 )
                 new_high = np.concatenate(
                     [
                         self.task_envs[i].observation_space.high,
-                        self.contexts[-1],
+                        contexts[-1],
                     ]
                 )
                 new_obs_space = gym.spaces.Box(low=new_low, high=new_high)
+                print(contexts[i])
+                ctx_i = np.asarray(self.contexts[i])
                 self.task_envs[i] = TransformObservation(
                     self.task_envs[i],
-                    lambda obs: np.concatenate([obs, self.contexts[i]]),
+                    lambda obs, ctx=ctx_i: np.concatenate([obs, ctx]),
                     new_obs_space,
                 )
 
