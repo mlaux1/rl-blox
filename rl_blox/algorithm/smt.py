@@ -1,4 +1,5 @@
 import copy
+import warnings
 from abc import ABCMeta, abstractmethod
 from collections import deque
 from collections.abc import Callable
@@ -67,11 +68,11 @@ class ContextualMultiTaskDefinition(metaclass=ABCMeta):
 
     @abstractmethod
     def get_solved_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered solved."""
+        """Performance threshold for a task to be considered solved (>=)."""
 
     @abstractmethod
     def get_unsolvable_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered unsolvable."""
+        """Performance threshold for a task to be considered unsolvable (<=)."""
 
     def __len__(self) -> int:
         return len(self.contexts)
@@ -229,6 +230,11 @@ def train_smt(
             seed,
             progress,
         )
+    else:
+        warnings.warn(
+            "Unsolvable pool is empty. There is no second SMT stage.",
+            stacklevel=2,
+        )
     progress.close()
 
     return result_st, training_steps, avg_training_performances
@@ -280,15 +286,18 @@ def smt_stage1(
                 global_step=global_step,
                 progress_bar=False,
             )
-            assert (
-                len(env_with_stats.return_queue) == scheduling_interval
-            ), f"{env_with_stats.return_queue=}, {scheduling_interval=}"
 
             steps = sum(env_with_stats.length_queue)
             training_steps[task_id] += steps
             global_step += steps
-
             progress.update(steps)
+
+            if len(env_with_stats.return_queue) != scheduling_interval:
+                # early termination because we reached step limit
+                unlogged_steps = b1 - global_step
+                global_step = b1
+                training_steps[task_id] += unlogged_steps
+                progress.update(unlogged_steps)
 
             training_performances[task_id].extend(env_with_stats.return_queue)
             avg_training_performances[task_id] = np.mean(
@@ -302,14 +311,25 @@ def smt_stage1(
                     avg_training_performances[task_id],
                     step=global_step,
                 )
+                logger.record_stat(
+                    "pool_size_main", len(main_pool), step=global_step
+                )
+                logger.record_stat(
+                    "pool_size_solved", len(solved_pool), step=global_step
+                )
+                logger.record_stat(
+                    "pool_size_unsolvable",
+                    len(unsolvable_pool),
+                    step=global_step,
+                )
 
             M = mt_def.get_solved_threshold(task_id)
-            if avg_training_performances[task_id] > M:
+            if avg_training_performances[task_id] >= M:
                 solved_pool.add(task_id)
                 updated_training_pool.remove(task_id)
             elif training_steps[task_id] >= task_budgets[task_id]:
                 m = mt_def.get_unsolvable_threshold(task_id)
-                if avg_training_performances[task_id] < m:
+                if avg_training_performances[task_id] <= m:
                     unsolvable_pool.add(task_id)
                     updated_training_pool.remove(task_id)
                 else:
@@ -357,6 +377,11 @@ def smt_stage1(
 
         training_pool = updated_training_pool
 
+    if len(unsolvable_pool) == 0 and len(main_pool) > 0:
+        # If there are no unsolvable tasks, iterate over the main pool instead.
+        # This is different from the original implementation.
+        unsolvable_pool = main_pool
+
     return avg_training_performances, global_step, result_st, unsolvable_pool
 
 
@@ -395,18 +420,26 @@ def smt_stage2(
                 global_step=global_step,
                 progress_bar=False,
             )
-            assert (
-                len(env_with_stats.return_queue) == scheduling_interval
-            ), f"{env_with_stats.return_queue=}, {scheduling_interval=}"
 
             steps = sum(env_with_stats.length_queue)
             training_steps[task_id] += steps
             global_step += steps
-
             progress.update(steps)
+
+            if len(env_with_stats.return_queue) != scheduling_interval:
+                # early termination because we reached step limit
+                unlogged_steps = b_total - global_step
+                global_step = b_total
+                training_steps[task_id] += unlogged_steps
+                progress.update(unlogged_steps)
 
             if logger is not None:
                 logger.record_stat("task_id", task_id, step=global_step)
+                logger.record_stat(
+                    "pool_size_unsolvable",
+                    len(unsolvable_pool),
+                    step=global_step,
+                )
 
             if global_step >= b_total:
                 break

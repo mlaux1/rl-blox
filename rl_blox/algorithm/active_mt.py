@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Callable
 
 import gymnasium as gym
@@ -280,10 +281,14 @@ def train_active_mt(
             progress_bar=False,
         )
 
-        assert (
-                len(env_with_stats.return_queue) == scheduling_interval
-        ), f"{env_with_stats.return_queue=}, {scheduling_interval=}"
+        if len(env_with_stats.return_queue) != scheduling_interval:
+            # limit total_timesteps reached
+            unlogged_steps = total_timesteps - global_step
+            training_steps[task_id] += unlogged_steps
+            progress.update(unlogged_steps)
+            break
 
+        assert len(env_with_stats.return_queue) > 0
         mean_return = np.mean(env_with_stats.return_queue)
         task_selector.feedback(mean_return)
 
