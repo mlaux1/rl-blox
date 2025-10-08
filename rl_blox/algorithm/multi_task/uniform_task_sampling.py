@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
@@ -7,11 +9,9 @@ from gymnasium.wrappers import TransformObservation
 from jax.typing import ArrayLike
 from tqdm.rich import tqdm
 
-from ...blox.double_qnet import ContinuousClippedDoubleQNet
-from ...blox.function_approximator.policy_head import StochasticPolicyBase
 from ...blox.replay_buffer import ReplayBuffer
 from ...logging.logger import LoggerBase
-from ..sac import EntropyControl, train_sac
+from ..sac import EntropyControl
 
 
 class TaskSet:
@@ -40,7 +40,6 @@ class TaskSet:
                     ]
                 )
                 new_obs_space = gym.spaces.Box(low=new_low, high=new_high)
-                print(contexts[i])
                 ctx_i = np.asarray(self.contexts[i])
                 self.task_envs[i] = TransformObservation(
                     self.task_envs[i],
@@ -87,32 +86,14 @@ class PrioritisedTaskSampler:
 
 def train_uts(
     envs: TaskSet,
-    policy: StochasticPolicyBase,
-    policy_optimizer: nnx.Optimizer,
-    q_net: ContinuousClippedDoubleQNet,
-    q_optimizer: nnx.Optimizer,
+    train_st: Callable,
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
     seed: int = 1,
     exploring_starts: int = 1_000,
     progress_bar: bool = True,
     logger: LoggerBase = None,
-) -> tuple[
-    nnx.Module,
-    nnx.Optimizer,
-    nnx.Module,
-    nnx.Module,
-    nnx.Optimizer,
-    EntropyControl,
-    ReplayBuffer,
-]:
-    replay_buffer = None
-    pol = policy
-    pol_opt = policy_optimizer
-    q = q_net
-    q_opt = q_optimizer
-    q_target = None
-    entropy_control = None
+) -> tuple:
     steps_so_far = 0
     episodes_so_far = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
@@ -122,37 +103,21 @@ def train_uts(
     while steps_so_far < total_timesteps:
         key, skey = jax.random.split(key)
         env, context = task_sampler.sample(skey)
-        sac_result = train_sac(
+        st_result = train_st(
             env,
-            pol,
-            pol_opt,
-            q,
-            q_opt,
-            seed=seed + episodes_so_far,
+            seed=seed + steps_so_far,
             total_timesteps=total_timesteps - steps_so_far,
             max_episodes=episodes_per_task,
-            replay_buffer=replay_buffer,
-            q_target=q_target,
-            entropy_control=entropy_control,
             learning_starts=exploring_starts - steps_so_far,
             progress_bar=False,
             logger=logger,
             step_offset=steps_so_far + 1,
         )
 
-        (
-            pol,
-            pol_opt,
-            q,
-            q_target,
-            q_opt,
-            entropy_control,
-            replay_buffer,
-            ep_steps,
-        ) = sac_result
+        _, _, _, _, _, _, _, ep_steps = st_result
 
         steps_so_far += ep_steps
         episodes_so_far += episodes_per_task
         progress.update(ep_steps)
 
-    return sac_result
+    return st_result

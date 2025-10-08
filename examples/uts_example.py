@@ -1,19 +1,24 @@
+from functools import partial
+
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
+from flax import nnx
 from gymnasium.wrappers import RecordEpisodeStatistics
 
 from rl_blox.algorithm.multi_task.uniform_task_sampling import (
     TaskSet,
     train_uts,
 )
-from rl_blox.algorithm.sac import create_sac_state
+from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
+from rl_blox.blox.replay_buffer import ReplayBuffer
 from rl_blox.logging.checkpointer import OrbaxCheckpointer
 from rl_blox.logging.logger import AIMLogger, LoggerList
 
 env_name = "Pendulum-v1"
 seed = 42
 verbose = 1
+base_algorithm = "SAC"
 
 train_contexts = jnp.linspace(5, 15, 3)[:, jnp.newaxis]
 train_envs = [
@@ -40,23 +45,35 @@ hparams_algorithm = dict(
 logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name="UTS-SAC",
+    algorithm_name=f"UTS-{base_algorithm}",
     hparams=hparams_models | hparams_algorithm,
 )
 
 sac_state = create_sac_state(train_set.get_task_env(0), **hparams_models)
-sac_result = train_uts(
+
+q_target = nnx.clone(sac_state.q)
+replay_buffer = ReplayBuffer(buffer_size=11_000)
+entropy_control = EntropyControl(train_set.get_task_env(0), 0.2, True, 1e-3)
+
+train_st = partial(
+    train_sac,
+    policy=sac_state.policy,
+    policy_optimizer=sac_state.policy_optimizer,
+    q=sac_state.q,
+    q_target=q_target,
+    q_optimizer=sac_state.q_optimizer,
+    entropy_control=entropy_control,
+    replay_buffer=replay_buffer,
+)
+
+uts_result = train_uts(
     train_set,
-    sac_state.policy,
-    sac_state.policy_optimizer,
-    sac_state.q,
-    sac_state.q_optimizer,
+    train_st,
     **hparams_algorithm,
     logger=logger,
 )
 
-
-policy, _, q, _, _, _, _, _ = sac_result
+policy, _, q, _, _, _, _, _ = uts_result
 
 test_contexts = jnp.linspace(5, 15, 11)[:, jnp.newaxis]
 test_envs = [
@@ -75,11 +92,10 @@ test_envs = [
 test_set = TaskSet(test_contexts, test_envs)
 
 for i in range(len(test_envs)):
-    env = test_set.get_task_env(i)
+    env, context = test_set.get_task_and_context(i)
     ep_return = 0.0
     done = False
     obs, _ = env.reset()
-    print(f"{obs=}")
     while not done:
         action = np.asarray(policy(jnp.asarray(obs))[0])
         next_obs, reward, termination, truncation, info = env.step(action)
