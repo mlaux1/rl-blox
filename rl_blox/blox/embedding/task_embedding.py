@@ -9,6 +9,7 @@ from flax import nnx
 from ..double_qnet import ContinuousClippedDoubleQNet
 from ..function_approximator.layer_norm_mlp import LayerNormMLP, default_init
 from ..function_approximator.policy_head import DeterministicTanhPolicy
+from ..multitask import TaskSelectionMixin
 from ..preprocessing import make_two_hot_bins
 from .model_based_encoder import DeterministicPolicyWithEncoder
 
@@ -37,7 +38,7 @@ def embedding_renorm(embedding, max_norm):
     )
 
 
-class ModelBasedMTEncoder(nnx.Module):
+class ModelBasedMTEncoder(nnx.Module, TaskSelectionMixin):
     r"""Encoder for the MR.Q algorithm in multi-task setting.
 
     Parameters
@@ -83,9 +84,6 @@ class ModelBasedMTEncoder(nnx.Module):
     _task_embedding: nnx.Embed
     """Embedding layer for the task."""
 
-    task_id: int
-    """Current task ID."""
-
     zs: LayerNormMLP
     """Maps observations to latent state representations (nonlinear)."""
 
@@ -125,6 +123,7 @@ class ModelBasedMTEncoder(nnx.Module):
         rngs: nnx.Rngs,
         max_task_embedding_norm: float = 1.0,
     ):
+        super().__init__()
         self._task_embedding = nnx.Embed(
             num_embeddings=n_tasks,
             features=task_embedding_dim,
@@ -132,10 +131,7 @@ class ModelBasedMTEncoder(nnx.Module):
             embedding_init=default_task_embedding_init,
         )
         self.max_task_embedding_norm = max_task_embedding_norm
-        self.task_id = 0
-        embedding_renorm(
-            self._task_embedding, max_norm=self.max_task_embedding_norm
-        )
+        embedding_renorm(self._task_embedding, max_norm=max_task_embedding_norm)
 
         self.zs = LayerNormMLP(
             n_state_features + task_embedding_dim,
@@ -165,9 +161,7 @@ class ModelBasedMTEncoder(nnx.Module):
         )
         self.zs_dim = zs_dim
         self.activation = getattr(nnx, activation)
-        self.zs_layer_norm = nnx.LayerNorm(
-            num_features=zs_dim + task_embedding_dim, rngs=rngs
-        )
+        self.zs_layer_norm = nnx.LayerNorm(num_features=zs_dim, rngs=rngs)
 
     def select_task(self, task_id: int) -> None:
         """Selects the task.
@@ -175,17 +169,20 @@ class ModelBasedMTEncoder(nnx.Module):
         Parameters
         ----------
         task_id : int
-            ID of the task to select.
+            Index of the task to select.
         """
-        self.task_id = task_id
+        super().select_task(task_id)
         embedding_renorm(
             self._task_embedding, max_norm=self.max_task_embedding_norm
         )
+        print(self._task_embedding.embedding.value)
 
     def task_embedding(self, x: jnp.ndarray) -> jnp.ndarray:
         """Returns the input with task embedding."""
         embedding = self._task_embedding(jnp.array([self.task_id]))
-        if x.ndim == 2:
+        if x.ndim == 1:
+            embedding = embedding.squeeze()
+        elif x.ndim == 2:
             embedding = jnp.tile(embedding, (x.shape[0], 1))
         return jnp.concatenate((x, embedding), axis=-1)
 
