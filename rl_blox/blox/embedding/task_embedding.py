@@ -251,7 +251,7 @@ class ModelBasedMTEncoder(nnx.Module, TaskSelectionMixin):
         zsa = self.encode_zsa(zs, action)
         dzr = self.model(zsa)
         done = dzr[:, 0]
-        next_zs = dzr[:, 1 : 1 + self.zs_dim]
+        next_zs = self.task_embedding(dzr[:, 1 : 1 + self.zs_dim])
         reward = dzr[:, 1 + self.zs_dim :]
         return done, next_zs, reward
 
