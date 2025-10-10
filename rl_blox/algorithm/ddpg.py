@@ -9,7 +9,7 @@ import jax.random
 import numpy as np
 import optax
 from flax import nnx
-from tqdm.rich import tqdm, trange
+from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
@@ -195,6 +195,7 @@ def train_ddpg(
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     tau: float = 0.005,
+    max_episodes: int | None = None,
     batch_size: int = 256,
     gradient_steps: int = 1,
     exploration_noise: float = 0.1,
@@ -204,6 +205,7 @@ def train_ddpg(
     q_target: nnx.Optimizer | None = None,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
+    step_offset: int = 0,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -381,6 +383,7 @@ def train_ddpg(
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
+    training_eps = 0
 
     if policy_target is None:
         policy_target = nnx.clone(policy)
@@ -432,7 +435,7 @@ def train_ddpg(
                         "policy loss": actor_loss_value,
                     }
                     for k, v in stats.items():
-                        logger.record_stat(k, v, step=global_step + 1)
+                        logger.record_stat(k, v, step=global_step + step_offset)
                     updated_modules = {
                         "q": q,
                         "q_target": q_target,
@@ -440,16 +443,24 @@ def train_ddpg(
                         "policy_target": policy_target,
                     }
                     for k, v in updated_modules.items():
-                        logger.record_epoch(k, v, step=global_step + 1)
+                        logger.record_epoch(
+                            k, v, step=global_step + step_offset
+                        )
 
         if termination or truncated:
             if logger is not None:
                 if "episode" in info:
                     logger.record_stat(
-                        "return", info["episode"]["r"], step=global_step + 1
+                        "return",
+                        info["episode"]["r"],
+                        step=global_step + step_offset,
                     )
                 logger.stop_episode(steps_per_episode)
                 logger.start_new_episode()
+
+            training_eps += 1
+            if max_episodes is not None and training_eps >= max_episodes:
+                break
 
             obs, _ = env.reset()
             steps_per_episode = 0
@@ -466,6 +477,7 @@ def train_ddpg(
             "q_target",
             "q_optimizer",
             "replay_buffer",
+            "steps_trained",
         ],
     )(
         policy,
@@ -475,4 +487,5 @@ def train_ddpg(
         q_target,
         q_optimizer,
         replay_buffer,
+        global_step + 1,
     )
