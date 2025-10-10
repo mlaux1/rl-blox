@@ -7,6 +7,7 @@ import optax
 from flax import nnx
 
 from ..double_qnet import ContinuousClippedDoubleQNet
+from ..function_approximator.mlp import MLP
 from ..function_approximator.layer_norm_mlp import LayerNormMLP, default_init
 from ..function_approximator.policy_head import DeterministicTanhPolicy
 from ..multitask import TaskSelectionMixin
@@ -38,8 +39,110 @@ def embedding_renorm(embedding, max_norm):
     )
 
 
+def concatenate_embedding(x, embedding):
+    if x.ndim == 1:
+        embedding = embedding.squeeze()
+    elif x.ndim == 2:
+        embedding = jnp.tile(embedding, (x.shape[0], 1))
+    return jnp.concatenate((x, embedding), axis=-1)
+
+
+class MTMLPQNetwork(nnx.Module, TaskSelectionMixin):
+    """Q network for multitask setting with standard MLP.
+
+    The Q network automatically learns an embedding of the tasks.
+
+    Parameters
+    ----------
+    n_tasks : int
+        Number of tasks.
+
+    task_embedding_dim : int
+        Number of features in task embedding.
+
+    n_features : int
+        Number of features.
+
+    n_outputs : int
+        Number of output components.
+
+    hidden_nodes : list
+        Numbers of hidden nodes of the MLP.
+
+    activation : str
+        Activation function. Has to be the name of a function defined in the
+        flax.nnx module.
+
+    rngs : nnx.Rngs
+        Random number generator.
+
+    max_task_embedding_norm : float
+        Maximum norm for the task embedding.
+    """
+
+    _task_embedding: nnx.Embed
+    """Embedding layer for the task."""
+
+    _q : MLP
+    """Q network."""
+
+    max_task_embedding_norm: float
+    """Maximum norm for the task embedding."""
+
+    def __init__(
+        self,
+        n_tasks: int,
+        task_embedding_dim: int,
+        n_features: int,
+        n_outputs: int,
+        hidden_nodes: list[int],
+        activation: str,
+        rngs: nnx.Rngs,
+        max_task_embedding_norm: float = 1.0,
+    ):
+        super().__init__()
+        self._task_embedding = nnx.Embed(
+            num_embeddings=n_tasks,
+            features=task_embedding_dim,
+            rngs=rngs,
+            embedding_init=default_task_embedding_init,
+        )
+        self.max_task_embedding_norm = max_task_embedding_norm
+        embedding_renorm(self._task_embedding, max_norm=max_task_embedding_norm)
+        self._q = MLP(
+            n_features=n_features + task_embedding_dim,
+            n_outputs=n_outputs,
+            hidden_nodes=hidden_nodes,
+            activation=activation,
+            rngs=rngs,
+        )
+
+    def select_task(self, task_id: int) -> None:
+        """Selects the task.
+
+        Parameters
+        ----------
+        task_id : int
+            Index of the task to select.
+        """
+        super().select_task(task_id)
+        embedding_renorm(
+            self._task_embedding, max_norm=self.max_task_embedding_norm
+        )
+
+    def task_embedding(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Returns the input with task embedding."""
+        embedding = self._task_embedding(jnp.array([self.task_id]))
+        return concatenate_embedding(x, embedding)
+
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        return self._q(self.task_embedding(x))
+
+
 class ModelBasedMTEncoder(nnx.Module, TaskSelectionMixin):
-    r"""Encoder for the MR.Q algorithm in multi-task setting.
+    r"""Encoder for the MR.Q algorithm in multitask setting.
+
+    The encoder automatically learns an embedding of the tasks.
 
     Parameters
     ----------
@@ -175,16 +278,11 @@ class ModelBasedMTEncoder(nnx.Module, TaskSelectionMixin):
         embedding_renorm(
             self._task_embedding, max_norm=self.max_task_embedding_norm
         )
-        print(self._task_embedding.embedding.value)
 
     def task_embedding(self, x: jnp.ndarray) -> jnp.ndarray:
         """Returns the input with task embedding."""
         embedding = self._task_embedding(jnp.array([self.task_id]))
-        if x.ndim == 1:
-            embedding = embedding.squeeze()
-        elif x.ndim == 2:
-            embedding = jnp.tile(embedding, (x.shape[0], 1))
-        return jnp.concatenate((x, embedding), axis=-1)
+        return concatenate_embedding(x, embedding)
 
     def encode_zsa(self, zs: jnp.ndarray, action: jnp.ndarray) -> jnp.ndarray:
         """Encodes the state and action into latent representation.

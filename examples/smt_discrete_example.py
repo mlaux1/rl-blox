@@ -10,6 +10,7 @@ from rl_blox.algorithm.ddqn import train_ddqn
 from rl_blox.algorithm.nature_dqn import train_nature_dqn
 from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
 from rl_blox.blox.function_approximator.mlp import MLP
+from rl_blox.blox.embedding.task_embedding import MTMLPQNetwork
 from rl_blox.blox.replay_buffer import (
     MultiTaskReplayBuffer,
     ReplayBuffer,
@@ -18,10 +19,10 @@ from rl_blox.logging.logger import AIMLogger
 
 
 class MultiTaskMountainCar(ContextualMultiTaskDefinition):
-    def __init__(self, render_mode=None):
+    def __init__(self, render_mode=None, context_in_observation=True):
         super().__init__(
             contexts=np.linspace(0, 0.3, 11)[:, np.newaxis],
-            context_in_observation=True,
+            context_in_observation=context_in_observation,
         )
         self.env = gym.make("MountainCar-v0", render_mode=render_mode)
 
@@ -43,6 +44,7 @@ seed = 2
 verbose = 2
 # Backbone algorithm to use for SMT: "DDQN", "NDQN"
 backbone = "DDQN"
+context_in_observation = True
 
 if verbose:
     print(
@@ -56,16 +58,27 @@ logger.define_experiment(
     hparams={},
 )
 
-mt_def = MultiTaskMountainCar()
+mt_def = MultiTaskMountainCar(context_in_observation=context_in_observation)
 
 env = mt_def.get_task(0)
-q_net = MLP(
-    env.observation_space.shape[0],
-    int(env.action_space.n),
-    activation="relu",
-    hidden_nodes=[128, 128],
-    rngs=nnx.Rngs(seed),
-)
+if context_in_observation:
+    q_net = MLP(
+        n_features=env.observation_space.shape[0],
+        n_outputs=int(env.action_space.n),
+        activation="relu",
+        hidden_nodes=[128, 128],
+        rngs=nnx.Rngs(seed),
+    )
+else:
+    q_net = MTMLPQNetwork(
+        n_tasks=len(mt_def),
+        task_embedding_dim=10,
+        n_features=env.observation_space.shape[0],
+        n_outputs=int(env.action_space.n),
+        activation="relu",
+        hidden_nodes=[128, 128],
+        rngs=nnx.Rngs(seed),
+    )
 q_target_net = nnx.clone(q_net)
 replay_buffer = MultiTaskReplayBuffer(
     ReplayBuffer(buffer_size=100_000, discrete_actions=True),
