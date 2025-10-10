@@ -4,14 +4,11 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-from flax import nnx
 from gymnasium.wrappers import TransformObservation
 from jax.typing import ArrayLike
 from tqdm.rich import tqdm
 
-from ...blox.replay_buffer import ReplayBuffer
 from ...logging.logger import LoggerBase
-from ..sac import EntropyControl
 
 
 class TaskSet:
