@@ -44,7 +44,7 @@ seed = 2
 verbose = 2
 # Backbone algorithm to use for SMT: "DDQN", "NDQN"
 backbone = "DDQN"
-context_in_observation = True
+context_in_observation = False
 
 if verbose:
     print(
@@ -108,6 +108,7 @@ result = train_smt(
     mt_def,
     train_st,
     replay_buffer,
+    task_selectables=None if context_in_observation else [q_net],
     b1=170_000,
     b2=30_000,
     learning_starts=0,
