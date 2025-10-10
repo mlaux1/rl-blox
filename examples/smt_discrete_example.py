@@ -125,6 +125,8 @@ mt_env = MultiTaskMountainCar(render_mode="human")
 for task_id in range(len(mt_env)):
     print(f"Evaluating task {task_id}")
     env = mt_env.get_task(task_id)
+    if not context_in_observation:
+        q_net.select_task(task_id)
     done = False
     infos = {}
     obs, _ = env.reset()
