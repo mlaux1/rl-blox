@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 
+from rl_blox.algorithm.active_mt import train_active_mt
 from rl_blox.algorithm.mrq import train_mrq
 from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
 from rl_blox.blox.embedding.task_embedding import create_mt_mrq_state
@@ -39,6 +40,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 seed = 2
 verbose = 2
+task_scheduling = "AMT"  # "AMT" or "SMT"
 
 if verbose:
     print(
@@ -48,7 +50,7 @@ if verbose:
 logger = AIMLogger()
 logger.define_experiment(
     env_name="Pendulum-v1",
-    algorithm_name="SMT-MT-MR.Q",
+    algorithm_name=f"{task_scheduling}-MT-MR.Q",
     hparams={},
 )
 
@@ -75,18 +77,37 @@ train_st = partial(
     policy_with_encoder_target=policy_with_encoder_target,
 )
 
-result = train_smt(
-    mt_def,
-    train_st,
-    replay_buffer,
-    task_selectables=[state.policy_with_encoder.encoder],
-    b1=110_000,
-    b2=10_000,
-    learning_starts=1_000,
-    scheduling_interval=1,
-    logger=logger,
-    seed=seed,
-)
+if task_scheduling == "SMT":
+    result = train_smt(
+        mt_def,
+        train_st,
+        replay_buffer,
+        task_selectables=[state.policy_with_encoder.encoder],
+        b1=110_000,
+        b2=10_000,
+        learning_starts=1_000,
+        scheduling_interval=1,
+        logger=logger,
+        seed=seed,
+    )
+elif task_scheduling == "AMT":
+    result = train_active_mt(
+        mt_def,
+        train_st,
+        replay_buffer,
+        task_selectables=[state.policy_with_encoder.encoder],
+        task_selector="Monotonic Progress",
+        r_max=2_000,
+        ducb_gamma=0.95,
+        xi=0.002,
+        learning_starts=11 * 200,
+        scheduling_interval=1,
+        total_timesteps=50_000,
+        logger=logger,
+        seed=seed,
+    )
+else:
+    raise ValueError(f"Unknown task scheduler: {task_scheduling}")
 mt_def.close()
 
 # Evaluation
@@ -96,6 +117,7 @@ mt_env = MultiTaskPendulum(render_mode="human")
 for task_id in range(len(mt_env)):
     print(f"Evaluating task {task_id}")
     env = mt_env.get_task(task_id)
+    policy.encoder.select_task(task_id)
     done = False
     infos = {}
     obs, _ = env.reset()

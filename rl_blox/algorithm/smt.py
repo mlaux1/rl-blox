@@ -155,6 +155,10 @@ def train_smt(
     seed : int
         Seed for random number generation.
 
+    task_selectables : list, optional
+        When a task is selected, these objects will be informed about the task
+        index.
+
     logger : LoggerBase, optional
         Experiment logger.
 

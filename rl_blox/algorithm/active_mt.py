@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 from tqdm.rich import tqdm
 
+from ..blox.multitask import TaskSelectionMixin
 from ..blox.mapb import DUCB
 from ..blox.replay_buffer import MultiTaskReplayBuffer
 from ..logging.logger import LoggerBase
@@ -17,13 +18,14 @@ class TaskSelector:
         self.tasks = tasks
         self.waiting_for_reward = False
 
-    def select(self):
+    def select(self) -> int:
         assert (
             not self.waiting_for_reward
         ), "You have to provide a reward for the last target"
         self.waiting_for_reward = True
+        return 0
 
-    def feedback(self, reward):
+    def feedback(self, reward: float):
         assert self.waiting_for_reward, "Cannot assign reward to any target"
         self.waiting_for_reward = False
 
@@ -153,6 +155,7 @@ def train_active_mt(
     scheduling_interval: int = 1,
     learning_starts: int = 5_000,
     seed: int = 0,
+    task_selectables: list[TaskSelectionMixin] | None = None,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
 ) -> tuple:
@@ -218,6 +221,10 @@ def train_active_mt(
     seed : int
         Seed for random number generation.
 
+    task_selectables : list, optional
+        When a task is selected, these objects will be informed about the task
+        index.
+
     logger : LoggerBase, optional
         Experiment logger.
 
@@ -268,6 +275,9 @@ def train_active_mt(
             env, buffer_length=scheduling_interval
         )
         replay_buffer.select_task(task_id)
+        if task_selectables is not None:
+            for ts in task_selectables:
+                ts.select_task(task_id)
 
         result_st = train_st(
             env=env_with_stats,
