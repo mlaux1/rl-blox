@@ -6,6 +6,7 @@ import numpy as np
 from flax import nnx
 from gymnasium.wrappers import RecordEpisodeStatistics
 
+from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.multi_task.uniform_task_sampling import (
     TaskSet,
     train_uts,
@@ -18,7 +19,7 @@ from rl_blox.logging.logger import AIMLogger, LoggerList
 env_name = "Pendulum-v1"
 seed = 42
 verbose = 1
-base_algorithm = "SAC"
+backbone_algorithm = "DDPG"
 
 train_contexts = jnp.linspace(5, 15, 3)[:, jnp.newaxis]
 train_envs = [
@@ -45,26 +46,53 @@ hparams_algorithm = dict(
 logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name=f"UTS-{base_algorithm}",
+    algorithm_name=f"UTS-{backbone_algorithm}",
     hparams=hparams_models | hparams_algorithm,
 )
 
-sac_state = create_sac_state(train_set.get_task_env(0), **hparams_models)
+match backbone_algorithm:
+    case "SAC":
+        sac_state = create_sac_state(
+            train_set.get_task_env(0), **hparams_models
+        )
 
-q_target = nnx.clone(sac_state.q)
-replay_buffer = ReplayBuffer(buffer_size=11_000)
-entropy_control = EntropyControl(train_set.get_task_env(0), 0.2, True, 1e-3)
+        q_target = nnx.clone(sac_state.q)
+        replay_buffer = ReplayBuffer(buffer_size=11_000)
+        entropy_control = EntropyControl(
+            train_set.get_task_env(0), 0.2, True, 1e-3
+        )
 
-train_st = partial(
-    train_sac,
-    policy=sac_state.policy,
-    policy_optimizer=sac_state.policy_optimizer,
-    q=sac_state.q,
-    q_target=q_target,
-    q_optimizer=sac_state.q_optimizer,
-    entropy_control=entropy_control,
-    replay_buffer=replay_buffer,
-)
+        train_st = partial(
+            train_sac,
+            policy=sac_state.policy,
+            policy_optimizer=sac_state.policy_optimizer,
+            q=sac_state.q,
+            q_target=q_target,
+            q_optimizer=sac_state.q_optimizer,
+            entropy_control=entropy_control,
+            replay_buffer=replay_buffer,
+        )
+    case "DDPG":
+        state = create_ddpg_state(train_set.get_task_env(0), seed=seed)
+        policy_target = nnx.clone(state.policy)
+        q_target = nnx.clone(state.q)
+        replay_buffer = ReplayBuffer(buffer_size=11_000)
+
+        train_st = partial(
+            train_ddpg,
+            policy=state.policy,
+            policy_target=policy_target,
+            policy_optimizer=state.policy_optimizer,
+            q=state.q,
+            q_optimizer=state.q_optimizer,
+            q_target=q_target,
+            replay_buffer=replay_buffer,
+        )
+    case _:
+        raise ValueError(
+            f"Unsupported backbone algorithm: {backbone_algorithm}"
+        )
+
 
 uts_result = train_uts(
     train_set,
@@ -75,8 +103,13 @@ uts_result = train_uts(
 
 policy, _, q, _, _, _, _, _ = uts_result
 
-test_contexts = jnp.linspace(5, 15, 11)[:, jnp.newaxis]
+test_contexts = jnp.linspace(0, 20, 21)[:, jnp.newaxis]
 test_envs = [
+    RecordEpisodeStatistics(gym.make(env_name, g=0.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=1.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=2.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=3.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=4.0, render_mode="human")),
     RecordEpisodeStatistics(gym.make(env_name, g=5.0, render_mode="human")),
     RecordEpisodeStatistics(gym.make(env_name, g=6.0, render_mode="human")),
     RecordEpisodeStatistics(gym.make(env_name, g=7.0, render_mode="human")),
@@ -88,6 +121,11 @@ test_envs = [
     RecordEpisodeStatistics(gym.make(env_name, g=13.0, render_mode="human")),
     RecordEpisodeStatistics(gym.make(env_name, g=14.0, render_mode="human")),
     RecordEpisodeStatistics(gym.make(env_name, g=15.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=16.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=17.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=18.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=19.0, render_mode="human")),
+    RecordEpisodeStatistics(gym.make(env_name, g=20.0, render_mode="human")),
 ]
 test_set = TaskSet(test_contexts, test_envs)
 
@@ -97,7 +135,10 @@ for i in range(len(test_envs)):
     done = False
     obs, _ = env.reset()
     while not done:
-        action = np.asarray(policy(jnp.asarray(obs))[0])
+        if backbone_algorithm == "SAC":
+            action = np.asarray(policy(jnp.asarray(obs))[0])
+        else:
+            action = np.asarray(policy(jnp.asarray(obs)))
         next_obs, reward, termination, truncation, info = env.step(action)
         ep_return += reward
         done = termination or truncation
