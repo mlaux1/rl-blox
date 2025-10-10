@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 from tqdm.rich import tqdm
 
+from ..blox.multitask import TaskSelectionMixin
 from ..blox.replay_buffer import MultiTaskReplayBuffer
 from ..logging.logger import LoggerBase
 
@@ -90,6 +91,7 @@ def train_smt(
     n_average: int = 3,
     learning_starts: int = 5_000,
     seed: int = 0,
+    task_selectables: list[TaskSelectionMixin] | None = None,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
 ) -> tuple:
@@ -153,6 +155,10 @@ def train_smt(
     seed : int
         Seed for random number generation.
 
+    task_selectables : list, optional
+        When a task is selected, these objects will be informed about the task
+        index.
+
     logger : LoggerBase, optional
         Experiment logger.
 
@@ -199,6 +205,7 @@ def train_smt(
             mt_def,
             train_st,
             replay_buffer,
+            task_selectables,
             training_steps,
             global_step,
             scheduling_interval,
@@ -220,6 +227,7 @@ def train_smt(
             mt_def,
             train_st,
             replay_buffer,
+            task_selectables,
             unsolvable_pool,
             training_steps,
             global_step,
@@ -244,6 +252,7 @@ def smt_stage1(
     mt_def,
     train_st,
     replay_buffer,
+    task_selectables,
     training_steps,
     global_step,
     scheduling_interval,
@@ -274,6 +283,9 @@ def smt_stage1(
                 env, buffer_length=scheduling_interval
             )
             replay_buffer.select_task(task_id)
+            if task_selectables is not None:
+                for ts in task_selectables:
+                    ts.select_task(task_id)
 
             result_st = train_st(
                 env=env_with_stats,
@@ -389,6 +401,7 @@ def smt_stage2(
     mt_def,
     train_st,
     replay_buffer,
+    task_selectables,
     unsolvable_pool,
     training_steps,
     global_step,
@@ -404,6 +417,9 @@ def smt_stage2(
         for task_id in unsolvable_pool:
             env = mt_def.get_task(task_id)
             replay_buffer.select_task(task_id)
+            if task_selectables is not None:
+                for ts in task_selectables:
+                    ts.select_task(task_id)
 
             env_with_stats = gym.wrappers.RecordEpisodeStatistics(
                 env, buffer_length=scheduling_interval

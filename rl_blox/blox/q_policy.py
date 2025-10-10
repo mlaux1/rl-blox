@@ -26,7 +26,6 @@ def greedy_policy(
     -------
     action : int
         The selected greedy action.
-
     """
-    q_vals = q_net([obs])
+    q_vals = q_net(jnp.array([obs]))
     return jnp.argmax(q_vals)
