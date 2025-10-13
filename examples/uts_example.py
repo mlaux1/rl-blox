@@ -19,7 +19,7 @@ from rl_blox.logging.logger import AIMLogger, LoggerList
 env_name = "Pendulum-v1"
 seed = 42
 verbose = 1
-backbone_algorithm = "DDPG"
+backbone_algorithm = "SAC"
 
 train_contexts = jnp.linspace(5, 15, 3)[:, jnp.newaxis]
 train_envs = [
