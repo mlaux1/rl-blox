@@ -268,7 +268,6 @@ def train_sac(
     q_target: ContinuousClippedDoubleQNet | None = None,
     entropy_control: EntropyControl | None = None,
     logger: LoggerBase | None = None,
-    max_episodes: int | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
 ) -> tuple[
@@ -374,9 +373,6 @@ def train_sac(
 
     logger : LoggerBase, optional
         Experiment logger.
-
-    max_episodes : int, optional
-        Number of maximum training episodes.
 
     global_step : int, optional
         Global step to start training from. If not set, will start from 0.
@@ -500,7 +496,6 @@ def train_sac(
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
 
-    training_eps = 0
     accumulated_reward = 0.0
 
     for global_step in trange(
@@ -585,38 +580,16 @@ def train_sac(
                 )
                 logger.stop_episode(steps_per_episode)
             episode_idx += 1
+
             if total_episodes is not None and episode_idx >= total_episodes:
                 break
+
             if logger is not None:
                 logger.start_new_episode()
             obs, _ = env.reset()
             steps_per_episode = 0
             accumulated_reward = 0.0
 
-            training_eps += 1
-            if max_episodes is not None and training_eps >= max_episodes:
-                return namedtuple(
-                    "SACResult",
-                    [
-                        "policy",
-                        "policy_optimizer",
-                        "q",
-                        "q_target",
-                        "q_optimizer",
-                        "entropy_control",
-                        "replay_buffer",
-                        "steps_trained",
-                    ],
-                )(
-                    policy,
-                    policy_optimizer,
-                    q,
-                    q_target,
-                    q_optimizer,
-                    entropy_control,
-                    replay_buffer,
-                    global_step + 1,
-                )
         else:
             obs = next_obs
 

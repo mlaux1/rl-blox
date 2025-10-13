@@ -138,7 +138,7 @@ def train_uts(
             env,
             seed=seed + global_step,
             total_timesteps=total_timesteps,
-            max_episodes=episodes_per_task,
+            total_episodes=episodes_per_task,
             learning_starts=exploring_starts,
             progress_bar=False,
             logger=logger,
@@ -147,7 +147,9 @@ def train_uts(
 
         _, _, _, _, _, _, _, new_global_step = st_result
 
-        progress.update(new_global_step - global_step)
+        it_steps = new_global_step - global_step
+
+        progress.update(it_steps)
         global_step = new_global_step
 
     return st_result

@@ -196,7 +196,6 @@ def train_ddpg(
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     tau: float = 0.005,
-    max_episodes: int | None = None,
     batch_size: int = 256,
     gradient_steps: int = 1,
     exploration_noise: float = 0.1,
@@ -476,8 +475,6 @@ def train_ddpg(
                 logger.start_new_episode()
 
             training_eps += 1
-            if max_episodes is not None and training_eps >= max_episodes:
-                break
 
             obs, _ = env.reset()
             steps_per_episode = 0
