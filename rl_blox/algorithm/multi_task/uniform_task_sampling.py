@@ -91,8 +91,42 @@ def train_uts(
     progress_bar: bool = True,
     logger: LoggerBase = None,
 ) -> tuple:
+    """Uniform task sampling.
+
+    A basic task scheduling method for multi-task reinforcement learning. Given
+    a set of tasks, it uniformly samples a task on which a given backbone
+    algorithm is trained on for one episode.
+
+    Parameters
+    ----------
+
+    envs : TaskSet
+        The set of tasks available for training.
+
+    train_st : Callable
+        The training step of the backbone algorithm.
+
+    total_timesteps : int
+        The number of total environment steps to train for.
+
+    episodes_per_task : int
+        The number of episodes to train the policy on the scheduled task for.
+
+    seed : int
+        The random seed.
+
+    exploring_starts : int
+        The number of random exploration steps to be performed at the beginning
+        of training.
+
+    progress_par : bool
+        Flag to enable/disable the tqdm progress bar.
+
+    logger : Logger
+        Experiment logger.
+
+    """
     global_step = 0
-    episodes_so_far = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
     task_sampler = PrioritisedTaskSampler(envs)
@@ -111,10 +145,9 @@ def train_uts(
             global_step=global_step,
         )
 
-        print(f"{global_step=}")
-        _, _, _, _, _, _, _, global_step = st_result
+        _, _, _, _, _, _, _, new_global_step = st_result
 
-        episodes_so_far += episodes_per_task
-        progress.update(200)
+        progress.update(new_global_step - global_step)
+        global_step = new_global_step
 
     return st_result
