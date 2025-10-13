@@ -33,6 +33,8 @@ Algorithm Interface
    sac.train_sac
    pets.train_pets
    cmaes.train_cmaes
+   smt.train_smt
+   active_mt.train_active_mt
 
 Functional Blox
 ---------------

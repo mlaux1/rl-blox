@@ -91,30 +91,30 @@ def train_uts(
     progress_bar: bool = True,
     logger: LoggerBase = None,
 ) -> tuple:
-    steps_so_far = 0
+    global_step = 0
     episodes_so_far = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
     task_sampler = PrioritisedTaskSampler(envs)
 
-    while steps_so_far < total_timesteps:
+    while global_step < total_timesteps:
         key, skey = jax.random.split(key)
         env, context = task_sampler.sample(skey)
         st_result = train_st(
             env,
-            seed=seed + steps_so_far,
-            total_timesteps=total_timesteps - steps_so_far,
+            seed=seed + global_step,
+            total_timesteps=total_timesteps,
             max_episodes=episodes_per_task,
-            learning_starts=exploring_starts - steps_so_far,
+            learning_starts=exploring_starts,
             progress_bar=False,
             logger=logger,
-            step_offset=steps_so_far + 1,
+            global_step=global_step,
         )
 
-        _, _, _, _, _, _, _, ep_steps = st_result
+        print(f"{global_step=}")
+        _, _, _, _, _, _, _, global_step = st_result
 
-        steps_so_far += ep_steps
         episodes_so_far += episodes_per_task
-        progress.update(ep_steps)
+        progress.update(200)
 
     return st_result

@@ -34,8 +34,7 @@ dependencies = [
     "tfp-nightly[jax]",
     "chex",
     "tqdm",
-    "flax",
-    "orbax-checkpoint",
+    "flax<0.12",
 ]
 
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -50,7 +49,7 @@ dev = [
     "isort",
     "pytest-cov",
 ]
-logging = ["aim"]
+logging = ["aim", "orbax-checkpoint"]
 examples = ["gymnasium[classic-control,toy-text,mujoco]", "matplotlib"]
 doc = [
     "sphinx",
