@@ -309,6 +309,8 @@ def train_ddpg(
         Optimizer for Q network.
     replay_buffer : ReplayBuffer
         Replay buffer.
+    global_step : int
+        The global step at which training was terminated.
 
     Notes
     -----
@@ -466,8 +468,10 @@ def train_ddpg(
                 )
                 logger.stop_episode(steps_per_episode)
             episode_idx += 1
+
             if total_episodes is not None and episode_idx >= total_episodes:
                 break
+
             if logger is not None:
                 logger.start_new_episode()
 

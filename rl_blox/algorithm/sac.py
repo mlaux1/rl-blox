@@ -400,8 +400,8 @@ def train_sac(
         State of entropy tuning.
     replay_buffer : ReplayBuffer
         Replay buffer.
-    steps_trained : int
-        Number of steps the policy was trained for.
+    global_step : int
+        The global step at which training was terminated.
 
     Notes
     -----
