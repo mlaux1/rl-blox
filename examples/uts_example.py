@@ -7,11 +7,8 @@ from flax import nnx
 from gymnasium.wrappers import RecordEpisodeStatistics
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
-from rl_blox.algorithm.multi_task.uniform_task_sampling import (
-    TaskSet,
-    train_uts,
-)
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
+from rl_blox.algorithm.uniform_task_sampling import TaskSet, train_uts
 from rl_blox.blox.replay_buffer import ReplayBuffer
 from rl_blox.logging.checkpointer import OrbaxCheckpointer
 from rl_blox.logging.logger import AIMLogger, LoggerList

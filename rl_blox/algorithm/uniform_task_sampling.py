@@ -8,7 +8,7 @@ from gymnasium.wrappers import TransformObservation
 from jax.typing import ArrayLike
 from tqdm.rich import tqdm
 
-from ...logging.logger import LoggerBase
+from ..logging.logger import LoggerBase
 
 
 class TaskSet:
