@@ -138,7 +138,7 @@ class ModelBasedEncoder(nnx.Module):
 
         Parameters
         ----------
-        zs : array, shape (n_samples, n_state_features)
+        zs : array, shape (n_samples, zs_dim)
             State representation.
 
         action : array, shape (n_samples, n_action_features)

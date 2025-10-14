@@ -15,7 +15,7 @@ env = gym.wrappers.RecordEpisodeStatistics(env)
 hparams_models = dict(
     policy_hidden_nodes=[128, 128],
     policy_learning_rate=3e-4,
-    q_hidden_nodes=[512, 512],
+    q_hidden_nodes=[256, 256],
     q_learning_rate=1e-3,
     seed=seed,
 )
@@ -32,11 +32,13 @@ if verbose:
         "stdout. Run 'aim up' to analyze the progress."
     )
 checkpointer = OrbaxCheckpointer("/tmp/rl-blox/sac_example/", verbose=verbose)
-logger = LoggerList([
-    AIMLogger(),
-    # uncomment to store checkpoints
-    # checkpointer,
-])
+logger = LoggerList(
+    [
+        AIMLogger(),
+        # uncomment to store checkpoints
+        # checkpointer,
+    ]
+)
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="SAC",
@@ -55,7 +57,7 @@ sac_result = train_sac(
     **hparams_algorithm,
 )
 env.close()
-policy, _, q, _, _, _, _ = sac_result
+policy, _, q, _, _, _, _, _ = sac_result
 # uncomment to save final policy
 # checkpointer.save_model("/tmp/rl-blox/sac_example/final_policy", policy)
 

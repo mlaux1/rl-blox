@@ -278,6 +278,7 @@ def train_sac(
     nnx.Optimizer,
     EntropyControl,
     ReplayBuffer,
+    int,
 ]:
     r"""Soft actor-critic (SAC).
 
@@ -395,6 +396,8 @@ def train_sac(
         State of entropy tuning.
     replay_buffer : ReplayBuffer
         Replay buffer.
+    global_step : int
+        The global step at which training was terminated.
 
     Notes
     -----
@@ -492,6 +495,7 @@ def train_sac(
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
+
     accumulated_reward = 0.0
 
     for global_step in trange(
@@ -500,7 +504,7 @@ def train_sac(
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
-            key, action_key = jax.random.split(key, 2)
+            key, action_key = jax.random.split(key)
             action = np.asarray(
                 _sample_action(policy, jnp.asarray(obs), action_key)
             )
@@ -520,7 +524,7 @@ def train_sac(
         if global_step >= learning_starts:
             batch = replay_buffer.sample_batch(batch_size, rng)
 
-            key, action_key = jax.random.split(key, 2)
+            key, action_key = jax.random.split(key)
             q_loss_value, q_mean = train_step(
                 q_optimizer,
                 q,
@@ -537,7 +541,7 @@ def train_sac(
             if global_step % policy_delay == 0:
                 # compensate for delay by doing 'policy_frequency' updates
                 for _ in range(policy_delay):
-                    key, action_key = jax.random.split(key, 2)
+                    key, action_key = jax.random.split(key)
                     policy_loss_value = sac_update_actor(
                         policy,
                         policy_optimizer,
@@ -549,9 +553,9 @@ def train_sac(
                     stats["policy loss"] = policy_loss_value
                     updated_modules["policy"] = policy
 
-                    key, action_key = jax.random.split(key, 2)
+                    key, action_key = jax.random.split(key)
                     exploration_loss_value = entropy_control.update(
-                        policy, batch.observation, key
+                        policy, batch.observation, action_key
                     )
                     if autotune:
                         stats["alpha"] = float(
@@ -565,24 +569,27 @@ def train_sac(
 
             if logger is not None:
                 for k, v in stats.items():
-                    logger.record_stat(k, v, step=global_step + 1)
+                    logger.record_stat(k, v, step=global_step)
                 for k, v in updated_modules.items():
-                    logger.record_epoch(k, v, step=global_step + 1)
+                    logger.record_epoch(k, v, step=global_step)
 
         if termination or truncation:
             if logger is not None:
                 logger.record_stat(
-                    "return", accumulated_reward, step=global_step + 1
+                    "return", accumulated_reward, step=global_step
                 )
                 logger.stop_episode(steps_per_episode)
             episode_idx += 1
+
             if total_episodes is not None and episode_idx >= total_episodes:
                 break
+
             if logger is not None:
                 logger.start_new_episode()
             obs, _ = env.reset()
             steps_per_episode = 0
             accumulated_reward = 0.0
+
         else:
             obs = next_obs
 
@@ -596,6 +603,7 @@ def train_sac(
             "q_optimizer",
             "entropy_control",
             "replay_buffer",
+            "steps_trained",
         ],
     )(
         policy,
@@ -605,6 +613,7 @@ def train_sac(
         q_optimizer,
         entropy_control,
         replay_buffer,
+        global_step + 1,
     )
 
 
