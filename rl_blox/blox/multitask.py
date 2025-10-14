@@ -1,4 +1,10 @@
+from abc import ABCMeta, abstractmethod
+
+import gymnasium as gym
+import jax
+import jax.numpy as jnp
 import numpy as np
+from gymnasium.wrappers import TransformObservation
 from numpy.typing import ArrayLike
 
 from ..blox.mapb import DUCB
@@ -117,3 +123,138 @@ class RoundRobinSelector(TaskSelector):
 
     def feedback(self, reward: float):
         super().feedback(reward)
+
+
+class TaskSet:
+    """A collection of tasks (environments)."""
+
+    def __init__(
+        self, contexts: list[ArrayLike], envs: list[gym.Env], context_aware=True
+    ):
+        assert len(contexts) == len(envs)
+        self.contexts = contexts
+        self.task_envs = envs
+        self.context_aware = context_aware
+
+        if context_aware:
+            for i in range(len(contexts)):
+                assert isinstance(
+                    self.task_envs[i].observation_space, gym.spaces.Box
+                )
+                new_low = np.concatenate(
+                    [self.task_envs[i].observation_space.low, contexts[0]]
+                )
+                new_high = np.concatenate(
+                    [
+                        self.task_envs[i].observation_space.high,
+                        contexts[-1],
+                    ]
+                )
+                new_obs_space = gym.spaces.Box(low=new_low, high=new_high)
+                ctx_i = np.asarray(self.contexts[i])
+                self.task_envs[i] = TransformObservation(
+                    self.task_envs[i],
+                    lambda obs, ctx=ctx_i: np.concatenate([obs, ctx]),
+                    new_obs_space,
+                )
+
+    def get_context(self, task_id: int) -> jnp.ndarray:
+        assert 0 <= task_id < len(self.contexts)
+        return self.contexts[task_id]
+
+    def get_task_env(self, task_id: int) -> gym.Env:
+        assert 0 <= task_id < len(self.contexts)
+        return self.task_envs[task_id]
+
+    def get_task_and_context(self, task_id: int) -> tuple[gym.Env, jnp.ndarray]:
+        assert 0 <= task_id < len(self.contexts)
+        return self.task_envs[task_id], self.contexts[task_id]
+
+    def __len__(self) -> int:
+        return len(self.contexts)
+
+
+class PrioritisedTaskSampler:
+    """A sampler that returns envs from a TaskSet given priorities."""
+
+    def __init__(
+        self,
+        task_set: TaskSet,
+        priorities: ArrayLike | None = None,
+    ):
+        self.task_set = task_set
+        self.priorities = priorities
+
+    def sample(self, key) -> tuple[gym.Env, jnp.ndarray]:
+        env_id = jax.random.choice(
+            key, jnp.arange(len(self.task_set)), p=self.priorities
+        ).item()
+        return self.task_set.get_task_and_context(env_id)
+
+    def update_priorities(self, priorities) -> None:
+        self.priorities = priorities
+
+
+class ContextInObservationWrapper(gym.Wrapper, gym.utils.RecordConstructorArgs):
+    """Wrapper to add context to the observation of the environment."""
+
+    def __init__(self, env: gym.Env, context: ArrayLike):
+        gym.utils.RecordConstructorArgs.__init__(self, context=context)
+        gym.Wrapper.__init__(self, env)
+        self.context = context
+        self._observation_space = gym.spaces.Box(
+            low=np.concatenate(
+                (self.context, env.observation_space.low), axis=0
+            ),
+            high=np.concatenate(
+                (self.context, env.observation_space.high), axis=0
+            ),
+            dtype=env.observation_space.dtype,
+        )
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return np.concatenate((self.context, obs), axis=0), info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        return (
+            np.concatenate((self.context, obs), axis=0),
+            reward,
+            terminated,
+            truncated,
+            info,
+        )
+
+
+class ContextualMultiTaskDefinition(metaclass=ABCMeta):
+    """Defines a multi-task environment."""
+
+    def __init__(self, contexts: ArrayLike, context_in_observation: bool):
+        self.contexts = contexts
+        self.context_in_observation = context_in_observation
+
+    def get_task(self, task_id: int) -> gym.Env:
+        """Returns the task environment for the given task ID."""
+        assert 0 <= task_id < len(self.contexts)
+        context = self.contexts[task_id]
+        st_env = self._get_env(context)
+        if self.context_in_observation:
+            return ContextInObservationWrapper(st_env, context=context)
+        else:
+            return st_env
+
+    @abstractmethod
+    def _get_env(self, context: ArrayLike) -> gym.Env:
+        """Returns the base environment without context."""
+
+    @abstractmethod
+    def get_solved_threshold(self, task_id: int) -> float:
+        """Performance threshold for a task to be considered solved (>=)."""
+
+    @abstractmethod
+    def get_unsolvable_threshold(self, task_id: int) -> float:
+        """Performance threshold for a task to be considered unsolvable (<=)."""
+
+    def __len__(self) -> int:
+        return len(self.contexts)

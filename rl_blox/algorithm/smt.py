@@ -1,82 +1,15 @@
 import copy
 import warnings
-from abc import ABCMeta, abstractmethod
 from collections import deque
 from collections.abc import Callable
 
 import gymnasium as gym
 import numpy as np
-from numpy.typing import ArrayLike
 from tqdm.rich import tqdm
 
-from ..blox.multitask import TaskSelectionMixin
+from ..blox.multitask import ContextualMultiTaskDefinition, TaskSelectionMixin
 from ..blox.replay_buffer import MultiTaskReplayBuffer
 from ..logging.logger import LoggerBase
-
-
-class ContextInObservationWrapper(gym.Wrapper, gym.utils.RecordConstructorArgs):
-    """Wrapper to add context to the observation of the environment."""
-
-    def __init__(self, env: gym.Env, context: ArrayLike):
-        gym.utils.RecordConstructorArgs.__init__(self, context=context)
-        gym.Wrapper.__init__(self, env)
-        self.context = context
-        self._observation_space = gym.spaces.Box(
-            low=np.concatenate(
-                (self.context, env.observation_space.low), axis=0
-            ),
-            high=np.concatenate(
-                (self.context, env.observation_space.high), axis=0
-            ),
-            dtype=env.observation_space.dtype,
-        )
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        return np.concatenate((self.context, obs), axis=0), info
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        return (
-            np.concatenate((self.context, obs), axis=0),
-            reward,
-            terminated,
-            truncated,
-            info,
-        )
-
-
-class ContextualMultiTaskDefinition(metaclass=ABCMeta):
-    """Defines a multi-task environment."""
-
-    def __init__(self, contexts: ArrayLike, context_in_observation: bool):
-        self.contexts = contexts
-        self.context_in_observation = context_in_observation
-
-    def get_task(self, task_id: int) -> gym.Env:
-        """Returns the task environment for the given task ID."""
-        assert 0 <= task_id < len(self.contexts)
-        context = self.contexts[task_id]
-        st_env = self._get_env(context)
-        if self.context_in_observation:
-            return ContextInObservationWrapper(st_env, context=context)
-        else:
-            return st_env
-
-    @abstractmethod
-    def _get_env(self, context: ArrayLike) -> gym.Env:
-        """Returns the base environment without context."""
-
-    @abstractmethod
-    def get_solved_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered solved (>=)."""
-
-    @abstractmethod
-    def get_unsolvable_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered unsolvable (<=)."""
-
-    def __len__(self) -> int:
-        return len(self.contexts)
 
 
 def train_smt(

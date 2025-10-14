@@ -5,7 +5,8 @@ import jax.numpy as jnp
 from gymnasium.wrappers import RecordEpisodeStatistics
 
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
-from rl_blox.algorithm.uniform_task_sampling import TaskSet, train_uts
+from rl_blox.algorithm.uniform_task_sampling import train_uts
+from rl_blox.blox.multitask import TaskSet
 
 
 def test_uts():

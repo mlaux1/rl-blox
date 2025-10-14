@@ -5,7 +5,8 @@ import numpy as np
 from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
-from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
+from rl_blox.algorithm.smt import train_smt
+from rl_blox.blox.multitask import ContextualMultiTaskDefinition
 from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 
 
