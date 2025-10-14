@@ -298,6 +298,7 @@ def train_mrq(
     the_bins: jnp.ndarray,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
+    total_episodes: int | None = None,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     target_delay: int = 250,
@@ -314,9 +315,11 @@ def train_mrq(
     reward_weight: float = 0.1,
     done_weight: float = 0.1,
     activation_weight: float = 1e-5,
+    replay_buffer: SubtrajectoryReplayBufferPER | None = None,
     policy_with_encoder_target: DeterministicPolicyWithEncoder | None = None,
     q_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
+    global_step: int = 0,
     progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
@@ -375,6 +378,11 @@ def train_mrq(
     total_timesteps : int, optional
         Number of steps to execute in the environment.
 
+    total_episodes : int, optional
+        Total episodes for training. This is an alternative termination
+        criterion for training. Set it to None to use ``total_timesteps`` or
+        set it to a positive integer to overwrite the step criterion.
+
     buffer_size : int, optional
         Size of the replay buffer.
 
@@ -428,6 +436,9 @@ def train_mrq(
     activation_weight : float, optional
         Weight for the activation regularization in the policy training.
 
+    replay_buffer : SubtrajectoryReplayBufferPER, optional
+        Episodic replay buffer for the MR.Q algorithm.
+
     policy_with_encoder_target : DeterministicPolicyWithEncoder, optional
         Target policy and encoder for the MR.Q algorithm.
 
@@ -436,6 +447,9 @@ def train_mrq(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    global_step : int, optional
+        Global step to start training from. If not set, will start from 0.
 
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
@@ -517,10 +531,11 @@ def train_mrq(
         env.action_space, gym.spaces.Box
     ), "only continuous action space is supported"
 
-    replay_buffer = SubtrajectoryReplayBufferPER(
-        buffer_size,
-        horizon=max(encoder_horizon, q_horizon),
-    )
+    if replay_buffer is None:
+        replay_buffer = SubtrajectoryReplayBufferPER(
+            buffer_size,
+            horizon=max(encoder_horizon, q_horizon),
+        )
 
     if policy_with_encoder_target is None:
         policy_with_encoder_target = nnx.clone(policy_with_encoder)
@@ -538,7 +553,7 @@ def train_mrq(
         policy_with_encoder_target,
     )
 
-    epoch = 0
+    epoch = max(0, global_step - learning_starts)
 
     _update_encoder = nnx.cached_partial(
         update_model_based_encoder,
@@ -568,14 +583,20 @@ def train_mrq(
 
     reward_scale = 1.0
     target_reward_scale = 0.0
+    if len(replay_buffer) > 0:
+        reward_scale = replay_buffer.reward_scale()
+        target_reward_scale = reward_scale
 
+    episode_idx = 0
     if logger is not None:
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
     accumulated_reward = 0.0
 
-    for global_step in trange(total_timesteps, disable=not progress_bar):
+    for global_step in trange(
+        global_step, total_timesteps, disable=not progress_bar
+    ):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
@@ -679,10 +700,12 @@ def train_mrq(
                     "return", accumulated_reward, step=global_step + 1
                 )
                 logger.stop_episode(steps_per_episode)
+            episode_idx += 1
+            if total_episodes is not None and episode_idx >= total_episodes:
+                break
+            if logger is not None:
                 logger.start_new_episode()
-
             obs, _ = env.reset()
-
             steps_per_episode = 0
             accumulated_reward = 0.0
         else:

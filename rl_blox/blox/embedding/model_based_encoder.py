@@ -407,7 +407,7 @@ def model_based_encoder_loss(
         -1, *batch.next_observation.shape[2:]
     )
     flat_next_zs = jax.lax.stop_gradient(
-        encoder_target.zs(flat_next_observation)
+        encoder_target.encode_zs(flat_next_observation)
     )
     next_zs = flat_next_zs.reshape(
         list(batch.next_observation.shape[:2]) + [-1]

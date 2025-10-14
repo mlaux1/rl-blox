@@ -415,6 +415,7 @@ def train_td7(
     critic_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
+    total_episodes: int | None = None,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     target_delay: int = 250,
@@ -434,6 +435,7 @@ def train_td7(
     actor_target: ActorSALE | None = None,
     critic_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
+    global_step: int = 0,
     progress_bar: bool = True,
 ) -> tuple[
     nnx.Module,
@@ -494,6 +496,11 @@ def train_td7(
 
     total_timesteps : int, optional
         Number of steps to execute in the environment.
+
+    total_episodes : int, optional
+        Total episodes for training. This is an alternative termination
+        criterion for training. Set it to None to use ``total_timesteps`` or
+        set it to a positive integer to overwrite the step criterion.
 
     buffer_size : int, optional
         Size of the replay buffer.
@@ -564,6 +571,12 @@ def train_td7(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    global_step : int, optional
+        Global step to start training from. If not set, will start from 0.
+
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
 
     Returns
     -------
@@ -669,8 +682,9 @@ def train_td7(
         env.action_space, target_policy_noise, noise_clip
     )
 
-    epoch = 0
+    epoch = max(0, global_step - learning_starts)
 
+    episode_idx = 0
     if logger is not None:
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
@@ -700,7 +714,9 @@ def train_td7(
     value_clipping_state = ValueClippingState()
     checkpoint_state = CheckpointState()
 
-    for global_step in trange(total_timesteps, disable=not progress_bar):
+    for global_step in trange(
+        global_step, total_timesteps, disable=not progress_bar
+    ):
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
@@ -797,10 +813,12 @@ def train_td7(
                     "return", accumulated_reward, step=global_step + 1
                 )
                 logger.stop_episode(steps_per_episode)
+            episode_idx += 1
+            if total_episodes is not None and episode_idx >= total_episodes:
+                break
+            if logger is not None:
                 logger.start_new_episode()
-
             obs, _ = env.reset()
-
             steps_per_episode = 0
             accumulated_reward = 0.0
         else:

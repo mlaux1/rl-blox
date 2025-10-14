@@ -24,12 +24,15 @@ def train_nature_dqn(
     optimizer: nnx.Optimizer,
     batch_size: int = 64,
     total_timesteps: int = 1e4,
+    total_episodes: int | None = None,
     gamma: float = 0.99,
     update_frequency: int = 4,
     target_update_frequency: int = 1000,
+    learning_starts: int = 0,
     q_target_net: MLP | None = None,
     seed: int = 1,
     logger: LoggerBase | None = None,
+    global_step: int = 0,
     progress_bar: bool = True,
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
@@ -66,14 +69,23 @@ def train_nature_dqn(
         The number of time steps after which the target net is updated.
     total_timesteps : int
         The number of environment sets to train for.
+    total_episodes : int, optional
+        Total episodes for training. This is an alternative termination
+        criterion for training. Set it to None to use ``total_timesteps`` or
+        set it to a positive integer to overwrite the step criterion.
     gamma : float
         The discount factor.
+    learning_starts : int
+        Learning starts after this number of random steps was taken in the
+        environment.
     q_target_net : MLP, optional
         The target Q-network. Only needed when continuing prior training.
     seed : int
         The random seed, which can be set to reproduce results.
     logger : LoggerBase, optional
         Experiment Logger.
+    global_step : int, optional
+        Global step to start training from. If not set, will start from 0.
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
 
@@ -119,8 +131,8 @@ def train_nature_dqn(
     episode = 1
     accumulated_reward = 0.0
 
-    for step in trange(total_timesteps, disable=not progress_bar):
-        if epsilon_rolls[step] < epsilon[step]:
+    for step in trange(global_step, total_timesteps, disable=not progress_bar):
+        if step < learning_starts or epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
             action = greedy_policy(q_net, obs)
@@ -163,6 +175,8 @@ def train_nature_dqn(
                 )
             obs, _ = env.reset()
             accumulated_reward = 0.0
+            if total_episodes is not None and episode >= total_episodes:
+                break
             episode += 1
         else:
             obs = next_obs
