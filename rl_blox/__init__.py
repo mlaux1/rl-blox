@@ -12,4 +12,4 @@ if flax.__version__.startswith("0.10."):
 
     nnx.Optimizer.update = flax_0_11_style_update
 
-__version__ = "0.5.3"
+__version__ = "0.5.4"
