@@ -6,29 +6,38 @@ import gymnasium as gym
 from tqdm.rich import trange
 from collections import namedtuple
 
-from rl_blox.blox.function_approximator.mlp import MLP
 
 @nnx.jit
 def select_action_deterministic(
-    actor: MLP,
+    actor: nnx.Module,
     obs: jax.Array,
     key: jax.Array
 ) -> tuple[jax.Array, jax.Array]:
-    """Select an action using the actor's policy in a deterministic way
+    """
+    Select an action using the actor's policy in a deterministic way.
 
-    Args:
-        actor (MLP): Actor MLP
-        obs (jax.Array): Observation
-        key (jax.Array): Key. Used for sampling the action
+    Parameters
+    ----------
+    actor : MLP
+        The actor network.
+    obs : jax.Array
+        Last observation.
+    key : jax.Array
+        Random key. Used for action sampling.
 
-    Returns:
-        tuple[jax.Array, jax.Array]: Selected action and it's probability
+    Returns
+    -------
+    action : jax.Array
+        Selected action.
+    logp : jax.Array
+        Log-probability of the selected action.
     """
     logits = actor(obs)
     probs = jax.nn.softmax(logits)
     action = jax.random.categorical(key, logits)
     logp = jnp.log(probs[action])
     return namedtuple('SelectedAction', ['action', 'logp'])(action, logp)
+
 
 @jax.jit
 def compute_gae(
@@ -38,17 +47,28 @@ def compute_gae(
     gamma: float=0.99,
     lam: float=0.95
 ) -> tuple[jax.Array, jax.Array]:
-    """Compute Generalized Advantage Estimation
+    """
+    Compute Generalized Advantage Estimation (GAE).
 
-    Args:
-        rewards (jax.Array): Rewards
-        values (jax.Array): Values
-        dones (jax.Array): Dones
-        gamma (float, optional): Gamma. Defaults to 0.99.
-        lam (float, optional): Lambda. Defaults to 0.95.
+    Parameters
+    ----------
+    rewards : jax.Array
+        Array of rewards per step.
+    values : jax.Array
+        Array of predicted values per step.
+    dones : jax.Array
+        Flags indicating episode termination per step.
+    gamma : float, optional
+        Discount factor for rewards.
+    lam : float, optional
+        Smoothing factor for bias-variance trade-off.
 
-    Returns:
-        tuple[jax.Array, jax.Array]: Advantages and returns per step
+    Returns
+    -------
+    - advantages : jax.Array
+        Advantage estimates per step.
+    - returns : jax.Array
+        Computed returns per step.
     """
     def step(carry, inputs):
         gae, next_value = carry
@@ -66,10 +86,11 @@ def compute_gae(
     returns = advantages + values
     return namedtuple('GAE', ['advantages', 'returns'])(advantages, returns)
 
+
 @nnx.jit
 def ppo_loss(
-    actor: MLP,
-    critic: MLP,
+    actor: nnx.Module,
+    critic: nnx.Module,
     old_logps: jax.Array,
     observations: jax.Array,
     actions: jax.Array,
@@ -77,20 +98,32 @@ def ppo_loss(
     returns: jax.Array,
     clip: float=0.2
 ) -> jax.Array:
-    """Calculates the PPO loss
+    """
+    Calculate the PPO loss.
 
-    Args:
-        actor (MLP): Actor
-        critic (MLP): Critic
-        old_logps (jax.Array): Log probabilites of the actions calculated during collecting trajectories
-        states (jax.Array): Observations
-        actions (jax.Array): Actions
-        advs (jax.Array): Advantages
-        returns (jax.Array): Returns
-        clip (float, optional): Clip values. Defaults to 0.2.
+    Parameters
+    ----------
+    actor : nnx.Module
+        The actor network.
+    critic : nnx.Module
+        The critic network.
+    old_logps : jax.Array
+        Log probabilities of actions calculated during rollout.
+    observations : jax.Array
+        Batch of observations.
+    actions : jax.Array
+        Actions taken in each observation.
+    advantages : jax.Array
+        Estimated advantages for each action.
+    returns : jax.Array
+        Computed returns.
+    clip : float, optional
+        Clipping range for the PPO objective.
 
-    Returns:
-        jax.Array: PPO loss for batch
+    Returns
+    -------
+    loss : jax.Array
+        The computed PPO loss for the batch.
     """
     logits = actor(observations)
     probs = jax.nn.softmax(logits)
@@ -107,6 +140,7 @@ def ppo_loss(
     entropy = -jnp.mean(jnp.sum(probs * jnp.log(probs + 1e-8), axis=-1))
     return policy_loss + 0.5 * value_loss - 0.01 * entropy
 
+
 def collect_trajectories(
     env: gym.Env,
     actor: nnx.Module,
@@ -114,19 +148,36 @@ def collect_trajectories(
     key: jax.Array,
     batch_size: int=64
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
-    """Runs and collects trajectories until at least batch_size amount
-    of steps are given.
+    """
+    Run and collect trajectories until at least `batch_size` steps are gathered.
 
-    Args:
-        env (gym.Env): Environment
-        actor (nnx.Module): Actor
-        critic (nnx.Module): Critic
-        key (jax.Array): Random key
-        batch_size (int, optional): Minimum amount of steps to run. Defaults to 64.
+    Parameters
+    ----------
+    env : gym.Env
+        The environment to interact with.
+    actor : nnx.Module
+        The actor network.
+    critic : nnx.Module
+        The critic network.
+    key : jax.Array
+        Random key.
+    batch_size : int, optional
+        Minimum number of steps to collect.
 
-    Returns:
-        tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]: 
-        actions, logps, observations, rewards, dones, values
+    Returns
+    -------
+    - observations : jax.Array
+        Array of observations.
+    - actions : jax.Array
+        Actions taken per step.
+    - logps : jax.Array
+        Log probabilities of selected actions.
+    - rewards : jax.Array
+        Array of rewards per step.
+    - dones : jax.Array
+        Flags indicating episode termination per step.
+    - values : jax.Array
+        Array of predicted values per step.
     """
     actions, logps, observations, rewards, dones, values = [], [], [], [], [], []
     
@@ -159,6 +210,7 @@ def collect_trajectories(
         jnp.array(dones, dtype=jnp.float32).flatten(),
         jnp.stack(values).flatten())
 
+
 def train(
         env: gym.Env,
         actor: nnx.Module,
@@ -170,22 +222,40 @@ def train(
         seed: int=1,
         progress_bar: bool=True
     ) -> tuple[nnx.Module, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
-    """Train a PPO agent
+    """
+    Train a PPO agent.
 
-    Args:
-        env (gym.Env): Environment
-        actor (nnx.Module): Actor
-        critic (nnx.Module): Critic
-        optimizer_actor (nnx.Optimizer): Actor optimizer
-        optimizer_critic (nnx.Optimizer): Critic optimizer
-        episodes (int, optional): Episode count. Defaults to 1000.
-        batch_size (int, optional): Batch size. Defaults to 64.
-        seed (int, optional): Seed. Defaults to 1.
-        progress_bar (bool, optional): Display progress bar. Defaults to True.
+    Parameters
+    ----------
+    env : gym.Env
+        The training environment.
+    actor : nnx.Module
+        The actor network.
+    critic : nnx.Module
+        The critic network.
+    optimizer_actor : nnx.Optimizer
+        Optimizer for the actor network.
+    optimizer_critic : nnx.Optimizer
+        Optimizer for the critic network.
+    episodes : int, optional
+        Number of training episodes.
+    batch_size : int, optional
+        Batch size per update.
+    seed : int, optional
+        Random seed for reproducibility.
+    progress_bar : bool, optional
+        Display a progress bar during training.
 
-    Returns:
-        tuple[nnx.Module, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
-        Trained actor, critic, actor optimizer and critic optimizer
+    Returns
+    -------
+    - actor : nnx.Module
+        Trained actor network.
+    - critic : nnx.Module
+        Trained critic network.
+    - optimizer_actor : nnx.Optimizer
+        Updated actor optimizer.
+    - optimizer_critic : nnx.Optimizer
+        Updated critic optimizer.
     """
     key = jax.random.key(seed)
     env.reset(seed=seed)
