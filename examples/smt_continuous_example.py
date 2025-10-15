@@ -63,6 +63,8 @@ logger.define_experiment(
 mt_def = MultiTaskPendulum()
 
 env = mt_def.get_task(0)
+print(env.observation_space)
+print(env.action_space)
 if backbone == "DDPG":
     state = create_ddpg_state(env, seed=seed)
     policy_target = nnx.clone(state.policy)
@@ -163,7 +165,7 @@ result = train_smt(
     mt_def,
     train_st,
     replay_buffer,
-    b1=110_000,
+    b1=11_000,
     b2=10_000,
     learning_starts=1_000,
     scheduling_interval=1,

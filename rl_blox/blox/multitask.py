@@ -129,11 +129,13 @@ class TaskSet:
     """A collection of tasks (environments)."""
 
     def __init__(
-        self, contexts: list[ArrayLike], envs: list[gym.Env], context_aware=True
+        self,
+        contexts: list[ArrayLike],
+        task_envs: list[ArrayLike],
+        context_aware=True,
     ):
-        assert len(contexts) == len(envs)
         self.contexts = contexts
-        self.task_envs = envs
+        self.task_envs = task_envs
         self.context_aware = context_aware
 
         if context_aware:
@@ -195,43 +197,13 @@ class PrioritisedTaskSampler:
         self.priorities = priorities
 
 
-class ContextInObservationWrapper(gym.Wrapper, gym.utils.RecordConstructorArgs):
-    """Wrapper to add context to the observation of the environment."""
-
-    def __init__(self, env: gym.Env, context: ArrayLike):
-        gym.utils.RecordConstructorArgs.__init__(self, context=context)
-        gym.Wrapper.__init__(self, env)
-        self.context = context
-        self._observation_space = gym.spaces.Box(
-            low=np.concatenate(
-                (self.context, env.observation_space.low), axis=0
-            ),
-            high=np.concatenate(
-                (self.context, env.observation_space.high), axis=0
-            ),
-            dtype=env.observation_space.dtype,
-        )
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        return np.concatenate((self.context, obs), axis=0), info
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        return (
-            np.concatenate((self.context, obs), axis=0),
-            reward,
-            terminated,
-            truncated,
-            info,
-        )
-
-
 class ContextualMultiTaskDefinition(metaclass=ABCMeta):
     """Defines a multi-task environment."""
 
     def __init__(self, contexts: ArrayLike, context_in_observation: bool):
         self.contexts = contexts
+        self.context_high = jnp.max(contexts, axis=0)
+        self.context_low = jnp.min(contexts, axis=0)
         self.context_in_observation = context_in_observation
 
     def get_task(self, task_id: int) -> gym.Env:
@@ -240,7 +212,21 @@ class ContextualMultiTaskDefinition(metaclass=ABCMeta):
         context = self.contexts[task_id]
         st_env = self._get_env(context)
         if self.context_in_observation:
-            return ContextInObservationWrapper(st_env, context=context)
+            new_obs_space = gym.spaces.Box(
+                low=np.concatenate(
+                    (self.context_low, st_env.observation_space.low), axis=0
+                ),
+                high=np.concatenate(
+                    (self.context_high, st_env.observation_space.high), axis=0
+                ),
+                dtype=st_env.observation_space.dtype,
+            )
+
+            return TransformObservation(
+                st_env,
+                lambda obs, ctx=context: np.concatenate((context, obs)),
+                new_obs_space,
+            )
         else:
             return st_env
 
