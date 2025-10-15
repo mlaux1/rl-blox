@@ -45,7 +45,7 @@ def compute_gae(
     values: jnp.ndarray,
     dones: jnp.ndarray,
     gamma: float=0.99,
-    lam: float=0.95
+    lmbda: float=0.95
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Compute Generalized Advantage Estimation (GAE).
@@ -60,7 +60,7 @@ def compute_gae(
         Flags indicating episode termination per step.
     gamma : float, optional
         Discount factor for rewards.
-    lam : float, optional
+    lmbda : float, optional
         Smoothing factor for bias-variance trade-off.
 
     Returns
@@ -70,15 +70,15 @@ def compute_gae(
     - returns : jnp.ndarray
         Computed returns per step.
     """
-    def step(carry, inputs):
+    def calc_advantage_per_step(carry, inputs):
         gae, next_value = carry
         reward, value, done = inputs
         delta = reward + gamma * next_value * (1 - done) - value
-        gae = delta + gamma * lam * (1 - done) * gae
+        gae = delta + gamma * lmbda * (1 - done) * gae
         return (gae, value), gae
 
     _, advantages = jax.lax.scan(
-        step,
+        calc_advantage_per_step,
         (0.0, 0.0),
         (rewards[::-1], values[::-1], dones[::-1])
     )
