@@ -2,24 +2,38 @@ from functools import partial
 
 import gymnasium as gym
 import jax.numpy as jnp
+import numpy as np
 from gymnasium.wrappers import RecordEpisodeStatistics
 
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
 from rl_blox.algorithm.uniform_task_sampling import train_uts
-from rl_blox.blox.multitask import TaskSet
+from rl_blox.blox.multitask import DiscreteTaskSet
+
+
+class MultiTaskPendulum(DiscreteTaskSet):
+    def __init__(self, render_mode=None):
+        super().__init__(
+            contexts=np.linspace(5, 15, 11)[:, np.newaxis],
+            context_aware=True,
+        )
+        self.env = gym.make("Pendulum-v1", render_mode=render_mode)
+
+    def _get_env(self, context):
+        self.env.unwrapped.g = context[0]
+        return self.env
+
+    def get_solved_threshold(self, task_id: int) -> float:
+        return -100.0
+
+    def get_unsolvable_threshold(self, task_id: int) -> float:
+        return -1000.0
+
+    def close(self):
+        self.env.close()
 
 
 def test_uts():
     seed = 1
-    env_name = "Pendulum-v1"
-
-    train_contexts = jnp.linspace(5, 15, 2)[:, jnp.newaxis]
-    train_envs = [
-        RecordEpisodeStatistics(gym.make(env_name, g=5)),
-        RecordEpisodeStatistics(gym.make(env_name, g=15)),
-    ]
-
-    train_set = TaskSet(train_contexts, train_envs)
 
     hparams_models = dict(
         q_hidden_nodes=[512, 512],
@@ -35,8 +49,12 @@ def test_uts():
         episodes_per_task=1,
     )
 
-    state = create_sac_state(train_set.get_task_env(0), **hparams_models)
-    entropy_control = EntropyControl(train_set.get_task_env(0), 0.2, True, 1e-3)
+    train_set = MultiTaskPendulum()
+
+    env = train_set.get_task(0)
+
+    state = create_sac_state(env, **hparams_models)
+    entropy_control = EntropyControl(env, 0.2, True, 1e-3)
 
     train_st = partial(
         train_sac,

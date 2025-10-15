@@ -3,12 +3,12 @@ from collections.abc import Callable
 import jax
 from tqdm.rich import tqdm
 
-from ..blox.multitask import PrioritisedTaskSampler, TaskSet
+from ..blox.multitask import DiscreteTaskSet, PrioritisedTaskSampler
 from ..logging.logger import LoggerBase
 
 
 def train_uts(
-    envs: TaskSet,
+    task_set: DiscreteTaskSet,
     train_st: Callable,
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
@@ -26,7 +26,7 @@ def train_uts(
     Parameters
     ----------
 
-    envs : TaskSet
+    task_set : DiscreteTaskSet
         The set of tasks available for training.
 
     train_st : Callable
@@ -55,7 +55,7 @@ def train_uts(
     global_step = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
-    task_sampler = PrioritisedTaskSampler(envs)
+    task_sampler = PrioritisedTaskSampler(task_set)
 
     while global_step < total_timesteps:
         key, skey = jax.random.split(key)

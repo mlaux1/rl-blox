@@ -28,6 +28,59 @@ class TaskSelectionMixin:
         self.task_id = task_id
 
 
+class DiscreteTaskSet(metaclass=ABCMeta):
+    """Defines a discrete set of environments for multi-task RL."""
+
+    def __init__(self, contexts: ArrayLike, context_aware: bool):
+        self.contexts = contexts
+        self.context_high = jnp.max(contexts, axis=0)
+        self.context_low = jnp.min(contexts, axis=0)
+        self.context_aware = context_aware
+
+    def get_task(self, task_id: int) -> gym.Env:
+        """Returns the task environment for the given task ID."""
+        assert 0 <= task_id < len(self.contexts)
+        context = self.contexts[task_id]
+        st_env = self._get_env(context)
+        if self.context_aware:
+            new_obs_space = gym.spaces.Box(
+                low=np.concatenate(
+                    (self.context_low, st_env.observation_space.low), axis=0
+                ),
+                high=np.concatenate(
+                    (self.context_high, st_env.observation_space.high), axis=0
+                ),
+                dtype=st_env.observation_space.dtype,
+            )
+
+            return TransformObservation(
+                st_env,
+                lambda obs, ctx=context: np.concatenate((context, obs)),
+                new_obs_space,
+            )
+        else:
+            return st_env
+
+    def get_context(self, task_id: int) -> np.ndarray:
+        """Returns the task context for the given task ID."""
+        return self.contexts[task_id]
+
+    @abstractmethod
+    def _get_env(self, context: ArrayLike) -> gym.Env:
+        """Returns the base environment without context."""
+
+    @abstractmethod
+    def get_solved_threshold(self, task_id: int) -> float:
+        """Performance threshold for a task to be considered solved (>=)."""
+
+    @abstractmethod
+    def get_unsolvable_threshold(self, task_id: int) -> float:
+        """Performance threshold for a task to be considered unsolvable (<=)."""
+
+    def __len__(self) -> int:
+        return len(self.contexts)
+
+
 class TaskSelector:
     def __init__(self, tasks):
         self.tasks = tasks
@@ -125,63 +178,12 @@ class RoundRobinSelector(TaskSelector):
         super().feedback(reward)
 
 
-class TaskSet:
-    """A collection of tasks (environments)."""
-
-    def __init__(
-        self,
-        contexts: list[ArrayLike],
-        task_envs: list[ArrayLike],
-        context_aware=True,
-    ):
-        self.contexts = contexts
-        self.task_envs = task_envs
-        self.context_aware = context_aware
-
-        if context_aware:
-            for i in range(len(contexts)):
-                assert isinstance(
-                    self.task_envs[i].observation_space, gym.spaces.Box
-                )
-                new_low = np.concatenate(
-                    [self.task_envs[i].observation_space.low, contexts[0]]
-                )
-                new_high = np.concatenate(
-                    [
-                        self.task_envs[i].observation_space.high,
-                        contexts[-1],
-                    ]
-                )
-                new_obs_space = gym.spaces.Box(low=new_low, high=new_high)
-                ctx_i = np.asarray(self.contexts[i])
-                self.task_envs[i] = TransformObservation(
-                    self.task_envs[i],
-                    lambda obs, ctx=ctx_i: np.concatenate([obs, ctx]),
-                    new_obs_space,
-                )
-
-    def get_context(self, task_id: int) -> jnp.ndarray:
-        assert 0 <= task_id < len(self.contexts)
-        return self.contexts[task_id]
-
-    def get_task_env(self, task_id: int) -> gym.Env:
-        assert 0 <= task_id < len(self.contexts)
-        return self.task_envs[task_id]
-
-    def get_task_and_context(self, task_id: int) -> tuple[gym.Env, jnp.ndarray]:
-        assert 0 <= task_id < len(self.contexts)
-        return self.task_envs[task_id], self.contexts[task_id]
-
-    def __len__(self) -> int:
-        return len(self.contexts)
-
-
 class PrioritisedTaskSampler:
     """A sampler that returns envs from a TaskSet given priorities."""
 
     def __init__(
         self,
-        task_set: TaskSet,
+        task_set: DiscreteTaskSet,
         priorities: ArrayLike | None = None,
     ):
         self.task_set = task_set
@@ -191,56 +193,7 @@ class PrioritisedTaskSampler:
         env_id = jax.random.choice(
             key, jnp.arange(len(self.task_set)), p=self.priorities
         ).item()
-        return self.task_set.get_task_and_context(env_id)
+        return self.task_set.get_task(env_id), self.task_set.contexts[env_id]
 
     def update_priorities(self, priorities) -> None:
         self.priorities = priorities
-
-
-class DiscreteTaskSet(metaclass=ABCMeta):
-    """Defines a discrete set of environments for multi-task RL."""
-
-    def __init__(self, contexts: ArrayLike, context_aware: bool):
-        self.contexts = contexts
-        self.context_high = jnp.max(contexts, axis=0)
-        self.context_low = jnp.min(contexts, axis=0)
-        self.context_aware = context_aware
-
-    def get_task(self, task_id: int) -> gym.Env:
-        """Returns the task environment for the given task ID."""
-        assert 0 <= task_id < len(self.contexts)
-        context = self.contexts[task_id]
-        st_env = self._get_env(context)
-        if self.context_aware:
-            new_obs_space = gym.spaces.Box(
-                low=np.concatenate(
-                    (self.context_low, st_env.observation_space.low), axis=0
-                ),
-                high=np.concatenate(
-                    (self.context_high, st_env.observation_space.high), axis=0
-                ),
-                dtype=st_env.observation_space.dtype,
-            )
-
-            return TransformObservation(
-                st_env,
-                lambda obs, ctx=context: np.concatenate((context, obs)),
-                new_obs_space,
-            )
-        else:
-            return st_env
-
-    @abstractmethod
-    def _get_env(self, context: ArrayLike) -> gym.Env:
-        """Returns the base environment without context."""
-
-    @abstractmethod
-    def get_solved_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered solved (>=)."""
-
-    @abstractmethod
-    def get_unsolvable_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered unsolvable (<=)."""
-
-    def __len__(self) -> int:
-        return len(self.contexts)
