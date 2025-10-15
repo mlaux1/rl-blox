@@ -137,7 +137,7 @@ def ppo_loss(
     values = critic(observations)
     value_loss = jnp.mean((returns - values) ** 2)
 
-    entropy = -jnp.mean(jnp.sum(probs * jnp.log(probs + 1e-8), axis=-1))
+    entropy = -jnp.mean(jnp.sum(probs * (logits - jax.scipy.special.logsumexp(logits)), axis=-1))
     return policy_loss + 0.5 * value_loss - 0.01 * entropy
 
 
