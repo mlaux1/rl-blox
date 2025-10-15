@@ -8,10 +8,11 @@ from flax import nnx
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
-from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
+from rl_blox.algorithm.smt import train_smt
 from rl_blox.algorithm.td3 import create_td3_state, train_td3
 from rl_blox.algorithm.td7 import create_td7_state, train_td7
 from rl_blox.blox.embedding.sale import DeterministicSALEPolicy
+from rl_blox.blox.multitask import DiscreteTaskSet
 from rl_blox.blox.replay_buffer import (
     LAP,
     MultiTaskReplayBuffer,
@@ -21,11 +22,11 @@ from rl_blox.blox.replay_buffer import (
 from rl_blox.logging.logger import AIMLogger
 
 
-class MultiTaskPendulum(ContextualMultiTaskDefinition):
+class MultiTaskPendulum(DiscreteTaskSet):
     def __init__(self, render_mode=None):
         super().__init__(
             contexts=np.linspace(5, 15, 11)[:, np.newaxis],
-            context_in_observation=True,
+            context_aware=True,
         )
         self.env = gym.make("Pendulum-v1", render_mode=render_mode)
 
@@ -44,7 +45,7 @@ class MultiTaskPendulum(ContextualMultiTaskDefinition):
 
 
 seed = 2
-verbose = 2
+verbose = False
 # Backbone algorithm to use for SMT: "SAC", "DDPG", "TD3", "TD7", "MR.Q"
 backbone = "SAC"
 
@@ -63,8 +64,6 @@ logger.define_experiment(
 mt_def = MultiTaskPendulum()
 
 env = mt_def.get_task(0)
-print(env.observation_space)
-print(env.action_space)
 if backbone == "DDPG":
     state = create_ddpg_state(env, seed=seed)
     policy_target = nnx.clone(state.policy)
@@ -182,7 +181,9 @@ elif backbone == "TD7":
     policy = DeterministicSALEPolicy(result_st.embedding, result_st.actor)
 else:
     policy = result_st.policy
+
 mt_env = MultiTaskPendulum(render_mode="human")
+
 for task_id in range(len(mt_env)):
     print(f"Evaluating task {task_id}")
     env = mt_env.get_task(task_id)

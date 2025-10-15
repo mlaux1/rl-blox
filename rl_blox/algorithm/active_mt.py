@@ -5,6 +5,7 @@ import numpy as np
 from tqdm.rich import tqdm
 
 from ..blox.multitask import (
+    DiscreteTaskSet,
     DUCBGeneralized,
     RoundRobinSelector,
     TaskSelectionMixin,
@@ -12,7 +13,6 @@ from ..blox.multitask import (
 )
 from ..blox.replay_buffer import MultiTaskReplayBuffer
 from ..logging.logger import LoggerBase
-from .smt import ContextualMultiTaskDefinition
 
 TASK_SELECTORS = {
     "Round Robin": (RoundRobinSelector, {}),
@@ -48,7 +48,7 @@ TASK_SELECTORS = {
 
 
 def train_active_mt(
-    mt_def: ContextualMultiTaskDefinition,
+    mt_def: DiscreteTaskSet,
     train_st: Callable,
     replay_buffer: MultiTaskReplayBuffer,
     r_max: float,

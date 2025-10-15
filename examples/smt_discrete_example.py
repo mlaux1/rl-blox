@@ -3,23 +3,21 @@ from functools import partial
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
-from flax import nnx
 import optax
+from flax import nnx
 
 from rl_blox.algorithm.ddqn import train_ddqn
 from rl_blox.algorithm.nature_dqn import train_nature_dqn
-from rl_blox.algorithm.smt import ContextualMultiTaskDefinition, train_smt
-from rl_blox.blox.function_approximator.mlp import MLP
+from rl_blox.algorithm.smt import train_smt
 from rl_blox.blox.embedding.task_embedding import MTMLPQNetwork
-from rl_blox.blox.replay_buffer import (
-    MultiTaskReplayBuffer,
-    ReplayBuffer,
-)
+from rl_blox.blox.function_approximator.mlp import MLP
+from rl_blox.blox.multitask import DiscreteTaskSet
+from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 from rl_blox.logging.logger import AIMLogger
 
 
-class MultiTaskMountainCar(ContextualMultiTaskDefinition):
-    def __init__(self, render_mode=None, context_in_observation=True):
+class MultiTaskMountainCar(DiscreteTaskSet):
+    def __init__(self, render_mode=None, context_aware=True):
         super().__init__(
             contexts=np.linspace(0, 0.3, 11)[:, np.newaxis],
             context_in_observation=context_in_observation,
@@ -84,9 +82,7 @@ replay_buffer = MultiTaskReplayBuffer(
     ReplayBuffer(buffer_size=100_000, discrete_actions=True),
     len(mt_def),
 )
-optimizer = nnx.Optimizer(
-    q_net, optax.adam(0.003), wrt=nnx.Param
-)
+optimizer = nnx.Optimizer(q_net, optax.adam(0.003), wrt=nnx.Param)
 if backbone == "DDQN":
     train_st = partial(
         train_ddqn,

@@ -9,10 +9,10 @@ from rl_blox.algorithm.active_mt import train_active_mt
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
-from rl_blox.algorithm.smt import ContextualMultiTaskDefinition
 from rl_blox.algorithm.td3 import create_td3_state, train_td3
 from rl_blox.algorithm.td7 import create_td7_state, train_td7
 from rl_blox.blox.embedding.sale import DeterministicSALEPolicy
+from rl_blox.blox.multitask import DiscreteTaskSet
 from rl_blox.blox.replay_buffer import (
     LAP,
     MultiTaskReplayBuffer,
@@ -22,11 +22,11 @@ from rl_blox.blox.replay_buffer import (
 from rl_blox.logging.logger import AIMLogger
 
 
-class MultiTaskPendulum(ContextualMultiTaskDefinition):
+class MultiTaskPendulum(DiscreteTaskSet):
     def __init__(self, render_mode=None):
         super().__init__(
             contexts=np.linspace(5, 15, 11)[:, np.newaxis],
-            context_in_observation=True,
+            context_aware=True,
         )
         self.env = gym.make("Pendulum-v1", render_mode=render_mode)
 

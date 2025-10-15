@@ -197,21 +197,21 @@ class PrioritisedTaskSampler:
         self.priorities = priorities
 
 
-class ContextualMultiTaskDefinition(metaclass=ABCMeta):
-    """Defines a multi-task environment."""
+class DiscreteTaskSet(metaclass=ABCMeta):
+    """Defines a discrete set of environments for multi-task RL."""
 
-    def __init__(self, contexts: ArrayLike, context_in_observation: bool):
+    def __init__(self, contexts: ArrayLike, context_aware: bool):
         self.contexts = contexts
         self.context_high = jnp.max(contexts, axis=0)
         self.context_low = jnp.min(contexts, axis=0)
-        self.context_in_observation = context_in_observation
+        self.context_aware = context_aware
 
     def get_task(self, task_id: int) -> gym.Env:
         """Returns the task environment for the given task ID."""
         assert 0 <= task_id < len(self.contexts)
         context = self.contexts[task_id]
         st_env = self._get_env(context)
-        if self.context_in_observation:
+        if self.context_aware:
             new_obs_space = gym.spaces.Box(
                 low=np.concatenate(
                     (self.context_low, st_env.observation_space.low), axis=0

@@ -6,15 +6,15 @@ from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.smt import train_smt
-from rl_blox.blox.multitask import ContextualMultiTaskDefinition
+from rl_blox.blox.multitask import DiscreteTaskSet
 from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 
 
-class MultiTaskPendulum(ContextualMultiTaskDefinition):
+class MultiTaskPendulum(DiscreteTaskSet):
     def __init__(self, render_mode=None):
         super().__init__(
             contexts=np.linspace(5, 15, 11)[:, np.newaxis],
-            context_in_observation=True,
+            context_aware=True,
         )
         self.env = gym.make("Pendulum-v1", render_mode=render_mode)
 

@@ -9,16 +9,13 @@ from flax import nnx
 from rl_blox.algorithm.active_mt import train_active_mt
 from rl_blox.algorithm.ddqn import train_ddqn
 from rl_blox.algorithm.nature_dqn import train_nature_dqn
-from rl_blox.algorithm.smt import ContextualMultiTaskDefinition
 from rl_blox.blox.function_approximator.mlp import MLP
-from rl_blox.blox.replay_buffer import (
-    MultiTaskReplayBuffer,
-    ReplayBuffer,
-)
+from rl_blox.blox.multitask import DiscreteTaskSet
+from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 from rl_blox.logging.logger import AIMLogger
 
 
-class MultiTaskMountainCar(ContextualMultiTaskDefinition):
+class MultiTaskMountainCar(DiscreteTaskSet):
     def __init__(self, render_mode=None):
         super().__init__(
             contexts=np.linspace(0, 0.3, 11)[:, np.newaxis],

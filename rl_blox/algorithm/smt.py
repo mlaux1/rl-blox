@@ -7,13 +7,13 @@ import gymnasium as gym
 import numpy as np
 from tqdm.rich import tqdm
 
-from ..blox.multitask import ContextualMultiTaskDefinition, TaskSelectionMixin
+from ..blox.multitask import DiscreteTaskSet, TaskSelectionMixin
 from ..blox.replay_buffer import MultiTaskReplayBuffer
 from ..logging.logger import LoggerBase
 
 
 def train_smt(
-    mt_def: ContextualMultiTaskDefinition,
+    mt_def: DiscreteTaskSet,
     train_st: Callable,
     replay_buffer: MultiTaskReplayBuffer,
     b1: int = 17_000_000,
