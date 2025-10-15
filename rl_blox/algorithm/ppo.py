@@ -211,6 +211,63 @@ def collect_trajectories(
         jnp.stack(values).flatten())
 
 
+@nnx.jit
+def calculate_ppo_grads(
+    actor: nnx.Module,
+    critic: nnx.Module,
+    observations: jax.Array,
+    actions: jax.Array,
+    old_logps: jax.Array,
+    rewards: jax.Array,
+    dones: jax.Array,
+    values: jax.Array,
+    key: jax.Array,
+    batch_size: int,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """
+    Calculate gradients for PPO update
+
+    Args:
+        actor : nnx.Module
+            The actor network
+        critic : nnx.Module
+            The critic network
+        observations : jax.Array
+            Array of observations.
+        actions : jax.Array
+            Actions taken per step.
+        old_logps : jax.Array
+            Log probabilities of selected actions.
+        rewards : jax.Array
+            Array of rewards per step.
+        dones : jax.Array
+            Flags indicating episode termination per step.
+        values : jax.Array
+            Array of predicted values per step.
+        key : jax.Array
+            Random key.
+        batch_size : int
+            Batch size per update.
+
+    Returns:
+    - loss_val : jax.Array
+        Calculated loss.
+    - grad_actor : jax.Array
+        Gradients for actor update.
+    - grad_critic : jax.Array
+        Gradients for critic update.
+    """
+    advs, returns = compute_gae(rewards, values, dones)
+    samples = jax.random.choice(key, advs.shape[0], shape=(batch_size,), replace=False)
+
+    loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0,1))
+    (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
+            actor, critic, old_logps[samples], observations[samples],
+            actions[samples], advs[samples], returns[samples])
+        
+    return loss_val, grad_actor, grad_critic
+
+
 def train_ppo(
         env: gym.Env,
         actor: nnx.Module,
@@ -265,14 +322,10 @@ def train_ppo(
         states, actions, old_logps, rewards, dones, values = collect_trajectories(
             env, actor, critic, subkey, batch_size)
 
-        advs, returns = compute_gae(rewards, values, dones)
         key, subkey = jax.random.split(key)
-        samples = jax.random.choice(subkey, advs.shape[0], shape=(batch_size,), replace=False)
-
-        loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0,1))
-        (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
-            actor, critic, old_logps[samples], states[samples],
-            actions[samples], advs[samples], returns[samples])
+        loss_val, grad_actor, grad_critic = calculate_ppo_grads(
+            actor, critic, states, actions, old_logps,
+            rewards, dones, values, batch_size, subkey)
         optimizer_actor.update(actor, grad_actor)
         optimizer_critic.update(critic, grad_critic)
 
