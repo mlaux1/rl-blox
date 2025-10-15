@@ -9,6 +9,7 @@ from typing import Any
 
 from ..blox.gae import compute_gae
 
+
 @nnx.jit
 def select_action_deterministic(
     actor: nnx.Module,
@@ -123,23 +124,23 @@ def collect_trajectories(
 
     Returns
     -------
-    - observations : jnp.ndarray
+    - observation : jnp.ndarray
         Array of observations.
-    - actions : jnp.ndarray
+    - action : jnp.ndarray
         Actions taken per step.
-    - logps : jnp.ndarray
+    - logp : jnp.ndarray
         Log probabilities of selected actions.
-    - rewards : jnp.ndarray
+    - reward : jnp.ndarray
         Array of rewards per step.
-    - terminateds : jnp.ndarray
+    - terminated : jnp.ndarray
         Flags indicating episode termination per step.
-    - next_values : jnp.ndarray
+    - next_value : jnp.ndarray
         Array of predicted values for next steps per step.
     last_observation
         Last observation produced by the environment. Used for running
         an environment over multiple calls of this function.
     """
-    actions, logps, observations, rewards, terminateds, next_values = [], [], [], [], [], []
+    actions, logps, observations, rewards, terminated_arr, next_values = [], [], [], [], [], []
     
     obs, _ = env.reset() if last_observation is None else last_observation, None
     for _ in range(batch_size):
@@ -152,7 +153,7 @@ def collect_trajectories(
         logps.append(logp)
         observations.append(obs)
         rewards.append(reward)
-        terminateds.append(terminated)
+        terminated_arr.append(terminated)
         next_values.append(next_value)
 
         obs = next_obs
@@ -160,75 +161,75 @@ def collect_trajectories(
             obs, _ = env.reset()
             
     return namedtuple('PPO_Trajectory',
-                      ['observations', 'actions', 'logps', 'rewards', 'terminateds', 'next_values', 'last_observation'])(
+                      ['observation', 'action', 'logp', 'reward', 'terminated', 'next_value', 'last_observation'])(
         jnp.stack(observations),
         jnp.stack(actions),
         jnp.stack(logps),
         jnp.array(rewards).flatten(),
-        jnp.array(terminateds, dtype=jnp.float32).flatten(),
+        jnp.array(terminated_arr, dtype=jnp.float32).flatten(),
         jnp.stack(next_values).flatten(),
         obs)
 
 
 @nnx.jit
-def calculate_ppo_grads(
+def update_ppo(
     actor: nnx.Module,
     critic: nnx.Module,
-    observations: jnp.ndarray,
-    actions: jnp.ndarray,
-    old_logps: jnp.ndarray,
-    rewards: jnp.ndarray,
-    terminateds: jnp.ndarray,
-    next_values: jnp.ndarray
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    optimizer_actor: nnx.Optimizer,
+    optimizer_critic: nnx.Optimizer,
+    observation: jnp.ndarray,
+    action: jnp.ndarray,
+    old_logp: jnp.ndarray,
+    reward: jnp.ndarray,
+    terminated: jnp.ndarray,
+    next_value: jnp.ndarray
+) -> jnp.ndarray:
     """
-    Calculate gradients for PPO update
+    Updates the PPO agent
 
     Args:
         actor : nnx.Module
             The actor network
         critic : nnx.Module
             The critic network
-        observations : jnp.ndarray
+        observation : jnp.ndarray
             Array of observations.
-        actions : jnp.ndarray
+        action : jnp.ndarray
             Actions taken per step.
-        old_logps : jnp.ndarray
+        old_logp : jnp.ndarray
             Log probabilities of selected actions.
-        rewards : jnp.ndarray
+        reward : jnp.ndarray
             Array of rewards per step.
-        terminateds : jnp.ndarray
+        terminated : jnp.ndarray
             Flags indicating episode termination per step.
-        next_values : jnp.ndarray
+        next_value : jnp.ndarray
             Array of predicted next_values per step.
 
     Returns:
     - loss_val : jnp.ndarray
         Calculated loss.
-    - grad_actor : jnp.ndarray
-        Gradients for actor update.
-    - grad_critic : jnp.ndarray
-        Gradients for critic update.
     """
-    advs, returns = compute_gae(rewards, critic(observations).flatten(), next_values, terminateds)
+    advs, returns = compute_gae(reward, critic(observation).flatten(), next_value, terminated)
     loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0,1))
     (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
-            actor, critic, old_logps, observations, actions, advs, returns
-    )   
-    return loss_val, grad_actor, grad_critic
+            actor, critic, old_logp, observation, action, advs, returns
+    )
+    optimizer_actor.update(actor, grad_actor)
+    optimizer_critic.update(critic, grad_critic)
+    return loss_val
 
 
 def train_ppo(
-        env: gym.Env,
-        actor: nnx.Module,
-        critic: nnx.Module,
-        optimizer_actor: nnx.Optimizer,
-        optimizer_critic: nnx.Optimizer,
-        episodes: int=1000,
-        batch_size: int=64,
-        seed: int=1,
-        progress_bar: bool=True
-    ) -> tuple[nnx.Module, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
+    env: gym.Env,
+    actor: nnx.Module,
+    critic: nnx.Module,
+    optimizer_actor: nnx.Optimizer,
+    optimizer_critic: nnx.Optimizer,
+    episodes: int=3000,
+    batch_size: int=64,
+    seed: int=1,
+    progress_bar: bool=True
+) -> tuple[nnx.Module, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
     """
     Train a PPO agent.
 
@@ -269,15 +270,14 @@ def train_ppo(
 
     for episode in trange(episodes, disable=not progress_bar):
         key, subkey = jax.random.split(key)
-        observations, actions, logps, rewards, terminateds, next_values, last_observation = collect_trajectories(
+        observation, action, logp, reward, terminated, next_value, last_observation = collect_trajectories(
             env, actor, critic, subkey, batch_size, last_observation)
 
-        loss_val, grad_actor, grad_critic = calculate_ppo_grads(
-            actor, critic, observations, actions, logps, rewards, terminateds, next_values)
-        optimizer_actor.update(actor, grad_actor)
-        optimizer_critic.update(critic, grad_critic)
+        loss_val = update_ppo(
+            actor, critic, optimizer_actor, optimizer_critic,
+            observation, action, logp, reward, terminated, next_value)
 
         if episode % 50 == 0:
-            print(f"Episode {episode}, Loss: {loss_val:.3f}, Return: {sum(rewards)}")
+            print(f"Episode {episode}, Loss: {loss_val:.3f}, Return: {sum(reward)}")
             
     return actor, critic, optimizer_actor, optimizer_critic

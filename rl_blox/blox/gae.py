@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from collections import namedtuple
 
+
 @jax.jit
 def compute_gae(
     rewards: jnp.ndarray,
