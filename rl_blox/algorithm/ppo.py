@@ -40,7 +40,6 @@ def select_action_deterministic(
     return namedtuple('SelectedAction', ['action', 'logp'])(action, logp)
 
 
-@nnx.jit
 def ppo_loss(
     actor: nnx.Module,
     critic: nnx.Module,
