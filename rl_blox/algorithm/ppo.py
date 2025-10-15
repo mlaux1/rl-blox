@@ -5,6 +5,7 @@ import optax
 import gymnasium as gym
 from tqdm.rich import trange
 from collections import namedtuple
+from typing import Any
 
 from ..blox.gae import compute_gae
 
@@ -98,8 +99,9 @@ def collect_trajectories(
     actor: nnx.Module,
     critic: nnx.Module,
     key: jnp.ndarray,
-    batch_size: int=64
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    batch_size: int=64,
+    last_observation=None
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, Any]:
     """
     Run and collect trajectories until at least `batch_size` steps are gathered.
 
@@ -115,6 +117,9 @@ def collect_trajectories(
         Random key.
     batch_size : int, optional
         Minimum number of steps to collect.
+    last_observation
+        Last observation produced by the environment. Used for running
+        an environment over multiple calls of this function.
 
     Returns
     -------
@@ -126,41 +131,43 @@ def collect_trajectories(
         Log probabilities of selected actions.
     - rewards : jnp.ndarray
         Array of rewards per step.
-    - dones : jnp.ndarray
+    - terminateds : jnp.ndarray
         Flags indicating episode termination per step.
-    - values : jnp.ndarray
-        Array of predicted values per step.
+    - next_values : jnp.ndarray
+        Array of predicted values for next steps per step.
+    last_observation
+        Last observation produced by the environment. Used for running
+        an environment over multiple calls of this function.
     """
-    actions, logps, observations, rewards, dones, values = [], [], [], [], [], []
+    actions, logps, observations, rewards, terminateds, next_values = [], [], [], [], [], []
     
-    obs, _ = env.reset()
-    while True:
-        value = critic(obs)
+    obs, _ = env.reset() if last_observation is None else last_observation, None
+    for _ in range(batch_size):
         key, subkey = jax.random.split(key)
         action, logp = select_action_deterministic(actor, obs, subkey)
         next_obs, reward, terminated, truncated, _ = env.step(int(action))
-        done = terminated or truncated
+        next_value = critic(obs)
 
         actions.append(action)
         logps.append(logp)
         observations.append(obs)
         rewards.append(reward)
-        dones.append(done)
-        values.append(value)
+        terminateds.append(terminated)
+        next_values.append(next_value)
 
         obs = next_obs
-        if done:
+        if terminated or truncated:
             obs, _ = env.reset()
-            if len(observations) > batch_size:
-                break
             
-    return namedtuple('PPO_Trajectory', ['observations', 'actions', 'logps', 'rewards', 'dones', 'values'])(
+    return namedtuple('PPO_Trajectory',
+                      ['observations', 'actions', 'logps', 'rewards', 'terminateds', 'next_values', 'last_observation'])(
         jnp.stack(observations),
         jnp.stack(actions),
         jnp.stack(logps),
         jnp.array(rewards).flatten(),
-        jnp.array(dones, dtype=jnp.float32).flatten(),
-        jnp.stack(values).flatten())
+        jnp.array(terminateds, dtype=jnp.float32).flatten(),
+        jnp.stack(next_values).flatten(),
+        obs)
 
 
 @nnx.jit
@@ -171,10 +178,8 @@ def calculate_ppo_grads(
     actions: jnp.ndarray,
     old_logps: jnp.ndarray,
     rewards: jnp.ndarray,
-    dones: jnp.ndarray,
-    values: jnp.ndarray,
-    key: jnp.ndarray,
-    batch_size: int,
+    terminateds: jnp.ndarray,
+    next_values: jnp.ndarray
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Calculate gradients for PPO update
@@ -192,14 +197,10 @@ def calculate_ppo_grads(
             Log probabilities of selected actions.
         rewards : jnp.ndarray
             Array of rewards per step.
-        dones : jnp.ndarray
+        terminateds : jnp.ndarray
             Flags indicating episode termination per step.
-        values : jnp.ndarray
-            Array of predicted values per step.
-        key : jnp.ndarray
-            Random key.
-        batch_size : int
-            Batch size per update.
+        next_values : jnp.ndarray
+            Array of predicted next_values per step.
 
     Returns:
     - loss_val : jnp.ndarray
@@ -209,14 +210,11 @@ def calculate_ppo_grads(
     - grad_critic : jnp.ndarray
         Gradients for critic update.
     """
-    advs, returns = compute_gae(rewards, values, dones)
-    samples = jax.random.choice(key, advs.shape[0], shape=(batch_size,), replace=False)
-
+    advs, returns = compute_gae(rewards, critic(observations).flatten(), next_values, terminateds)
     loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0,1))
     (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
-            actor, critic, old_logps[samples], observations[samples],
-            actions[samples], advs[samples], returns[samples])
-        
+            actor, critic, old_logps, observations, actions, advs, returns
+    )   
     return loss_val, grad_actor, grad_critic
 
 
@@ -267,17 +265,15 @@ def train_ppo(
         Updated critic optimizer.
     """
     key = jax.random.key(seed)
-    env.reset(seed=seed)
+    last_observation, _ = env.reset(seed=seed)
 
     for episode in trange(episodes, disable=not progress_bar):
         key, subkey = jax.random.split(key)
-        states, actions, old_logps, rewards, dones, values = collect_trajectories(
-            env, actor, critic, subkey, batch_size)
+        observations, actions, logps, rewards, terminateds, next_values, last_observation = collect_trajectories(
+            env, actor, critic, subkey, batch_size, last_observation)
 
-        key, subkey = jax.random.split(key)
         loss_val, grad_actor, grad_critic = calculate_ppo_grads(
-            actor, critic, states, actions, old_logps,
-            rewards, dones, values, batch_size, subkey)
+            actor, critic, observations, actions, logps, rewards, terminateds, next_values)
         optimizer_actor.update(actor, grad_actor)
         optimizer_critic.update(critic, grad_critic)
 

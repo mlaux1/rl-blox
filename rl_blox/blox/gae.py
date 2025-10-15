@@ -6,7 +6,8 @@ from collections import namedtuple
 def compute_gae(
     rewards: jnp.ndarray,
     values: jnp.ndarray,
-    dones: jnp.ndarray,
+    next_values: jnp.ndarray,
+    terminateds: jnp.ndarray,
     gamma: float=0.99,
     lmbda: float=0.95
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -19,7 +20,9 @@ def compute_gae(
         Array of rewards per step.
     values : jnp.ndarray
         Array of predicted values per step.
-    dones : jnp.ndarray
+    values : jnp.ndarray
+        Array of predicted next_values per step.
+    terminateds : jnp.ndarray
         Flags indicating episode termination per step.
     gamma : float, optional
         Discount factor for rewards.
@@ -34,16 +37,16 @@ def compute_gae(
         Computed returns per step.
     """
     def calc_advantage_per_step(carry, inputs):
-        gae, next_value = carry
-        reward, value, done = inputs
-        delta = reward + gamma * next_value * (1 - done) - value
-        gae = delta + gamma * lmbda * (1 - done) * gae
-        return (gae, value), gae
+        gae = carry
+        reward, value, next_value, terminated = inputs
+        delta = reward + gamma * next_value * (1 - terminated) - value
+        gae = delta + gamma * lmbda * (1 - terminated) * gae
+        return gae, gae
 
     _, advantages = jax.lax.scan(
         calc_advantage_per_step,
-        (0.0, 0.0),
-        (rewards[::-1], values[::-1], dones[::-1])
+        0.0,
+        (rewards[::-1], values[::-1], next_values[::-1], terminateds[::-1])
     )
     advantages = advantages[::-1]
     returns = advantages + values
