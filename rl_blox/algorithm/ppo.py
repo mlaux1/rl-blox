@@ -10,26 +10,26 @@ from collections import namedtuple
 @nnx.jit
 def select_action_deterministic(
     actor: nnx.Module,
-    obs: jax.Array,
-    key: jax.Array
-) -> tuple[jax.Array, jax.Array]:
+    obs: jnp.ndarray,
+    key: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Select an action using the actor's policy in a deterministic way.
 
     Parameters
     ----------
-    actor : MLP
+    actor : nnx.Module
         The actor network.
-    obs : jax.Array
+    obs : jnp.ndarray
         Last observation.
-    key : jax.Array
+    key : jnp.ndarray
         Random key. Used for action sampling.
 
     Returns
     -------
-    action : jax.Array
+    action : jnp.ndarray
         Selected action.
-    logp : jax.Array
+    logp : jnp.ndarray
         Log-probability of the selected action.
     """
     logits = actor(obs)
@@ -41,22 +41,22 @@ def select_action_deterministic(
 
 @jax.jit
 def compute_gae(
-    rewards: jax.Array,
-    values: jax.Array,
-    dones: jax.Array,
+    rewards: jnp.ndarray,
+    values: jnp.ndarray,
+    dones: jnp.ndarray,
     gamma: float=0.99,
     lam: float=0.95
-) -> tuple[jax.Array, jax.Array]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Compute Generalized Advantage Estimation (GAE).
 
     Parameters
     ----------
-    rewards : jax.Array
+    rewards : jnp.ndarray
         Array of rewards per step.
-    values : jax.Array
+    values : jnp.ndarray
         Array of predicted values per step.
-    dones : jax.Array
+    dones : jnp.ndarray
         Flags indicating episode termination per step.
     gamma : float, optional
         Discount factor for rewards.
@@ -65,9 +65,9 @@ def compute_gae(
 
     Returns
     -------
-    - advantages : jax.Array
+    - advantages : jnp.ndarray
         Advantage estimates per step.
-    - returns : jax.Array
+    - returns : jnp.ndarray
         Computed returns per step.
     """
     def step(carry, inputs):
@@ -91,13 +91,13 @@ def compute_gae(
 def ppo_loss(
     actor: nnx.Module,
     critic: nnx.Module,
-    old_logps: jax.Array,
-    observations: jax.Array,
-    actions: jax.Array,
-    advantages: jax.Array,
-    returns: jax.Array,
+    old_logps: jnp.ndarray,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    advantages: jnp.ndarray,
+    returns: jnp.ndarray,
     clip: float=0.2
-) -> jax.Array:
+) -> jnp.ndarray:
     """
     Calculate the PPO loss.
 
@@ -107,22 +107,22 @@ def ppo_loss(
         The actor network.
     critic : nnx.Module
         The critic network.
-    old_logps : jax.Array
+    old_logps : jnp.ndarray
         Log probabilities of actions calculated during rollout.
-    observations : jax.Array
+    observations : jnp.ndarray
         Batch of observations.
-    actions : jax.Array
+    actions : jnp.ndarray
         Actions taken in each observation.
-    advantages : jax.Array
+    advantages : jnp.ndarray
         Estimated advantages for each action.
-    returns : jax.Array
+    returns : jnp.ndarray
         Computed returns.
     clip : float, optional
         Clipping range for the PPO objective.
 
     Returns
     -------
-    loss : jax.Array
+    loss : jnp.ndarray
         The computed PPO loss for the batch.
     """
     logits = actor(observations)
@@ -145,9 +145,9 @@ def collect_trajectories(
     env: gym.Env,
     actor: nnx.Module,
     critic: nnx.Module,
-    key: jax.Array,
+    key: jnp.ndarray,
     batch_size: int=64
-) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Run and collect trajectories until at least `batch_size` steps are gathered.
 
@@ -159,24 +159,24 @@ def collect_trajectories(
         The actor network.
     critic : nnx.Module
         The critic network.
-    key : jax.Array
+    key : jnp.ndarray
         Random key.
     batch_size : int, optional
         Minimum number of steps to collect.
 
     Returns
     -------
-    - observations : jax.Array
+    - observations : jnp.ndarray
         Array of observations.
-    - actions : jax.Array
+    - actions : jnp.ndarray
         Actions taken per step.
-    - logps : jax.Array
+    - logps : jnp.ndarray
         Log probabilities of selected actions.
-    - rewards : jax.Array
+    - rewards : jnp.ndarray
         Array of rewards per step.
-    - dones : jax.Array
+    - dones : jnp.ndarray
         Flags indicating episode termination per step.
-    - values : jax.Array
+    - values : jnp.ndarray
         Array of predicted values per step.
     """
     actions, logps, observations, rewards, dones, values = [], [], [], [], [], []
@@ -215,15 +215,15 @@ def collect_trajectories(
 def calculate_ppo_grads(
     actor: nnx.Module,
     critic: nnx.Module,
-    observations: jax.Array,
-    actions: jax.Array,
-    old_logps: jax.Array,
-    rewards: jax.Array,
-    dones: jax.Array,
-    values: jax.Array,
-    key: jax.Array,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    old_logps: jnp.ndarray,
+    rewards: jnp.ndarray,
+    dones: jnp.ndarray,
+    values: jnp.ndarray,
+    key: jnp.ndarray,
     batch_size: int,
-) -> tuple[jax.Array, jax.Array, jax.Array]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Calculate gradients for PPO update
 
@@ -232,29 +232,29 @@ def calculate_ppo_grads(
             The actor network
         critic : nnx.Module
             The critic network
-        observations : jax.Array
+        observations : jnp.ndarray
             Array of observations.
-        actions : jax.Array
+        actions : jnp.ndarray
             Actions taken per step.
-        old_logps : jax.Array
+        old_logps : jnp.ndarray
             Log probabilities of selected actions.
-        rewards : jax.Array
+        rewards : jnp.ndarray
             Array of rewards per step.
-        dones : jax.Array
+        dones : jnp.ndarray
             Flags indicating episode termination per step.
-        values : jax.Array
+        values : jnp.ndarray
             Array of predicted values per step.
-        key : jax.Array
+        key : jnp.ndarray
             Random key.
         batch_size : int
             Batch size per update.
 
     Returns:
-    - loss_val : jax.Array
+    - loss_val : jnp.ndarray
         Calculated loss.
-    - grad_actor : jax.Array
+    - grad_actor : jnp.ndarray
         Gradients for actor update.
-    - grad_critic : jax.Array
+    - grad_critic : jnp.ndarray
         Gradients for critic update.
     """
     advs, returns = compute_gae(rewards, values, dones)
