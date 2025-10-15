@@ -211,7 +211,7 @@ def collect_trajectories(
         jnp.stack(values).flatten())
 
 
-def train(
+def train_ppo(
         env: gym.Env,
         actor: nnx.Module,
         critic: nnx.Module,
