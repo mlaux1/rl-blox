@@ -34,12 +34,6 @@ class MultiTaskPendulum(DiscreteTaskSet):
         self.env.unwrapped.g = context[0]
         return self.env
 
-    def get_solved_threshold(self, task_id: int) -> float:
-        return -100.0
-
-    def get_unsolvable_threshold(self, task_id: int) -> float:
-        return -1000.0
-
     def close(self):
         self.env.close()
 

@@ -27,12 +27,6 @@ class MultiTaskMountainCar(DiscreteTaskSet):
         self.env.unwrapped.goal_velocity = context[0]
         return self.env
 
-    def get_solved_threshold(self, task_id: int) -> float:
-        return -110.0
-
-    def get_unsolvable_threshold(self, task_id: int) -> float:
-        return -200.0
-
     def close(self):
         self.env.close()
 

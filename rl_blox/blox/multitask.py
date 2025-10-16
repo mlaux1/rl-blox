@@ -69,14 +69,6 @@ class DiscreteTaskSet(metaclass=ABCMeta):
     def _get_env(self, context: ArrayLike) -> gym.Env:
         """Returns the base environment without context."""
 
-    @abstractmethod
-    def get_solved_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered solved (>=)."""
-
-    @abstractmethod
-    def get_unsolvable_threshold(self, task_id: int) -> float:
-        """Performance threshold for a task to be considered unsolvable (<=)."""
-
     def __len__(self) -> int:
         return len(self.contexts)
 

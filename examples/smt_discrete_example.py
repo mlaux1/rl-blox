@@ -28,12 +28,6 @@ class MultiTaskMountainCar(DiscreteTaskSet):
         self.env.unwrapped.goal_velocity = context[0]
         return self.env
 
-    def get_solved_threshold(self, task_id: int) -> float:
-        return -110.0
-
-    def get_unsolvable_threshold(self, task_id: int) -> float:
-        return -200.0
-
     def close(self):
         self.env.close()
 
@@ -104,6 +98,8 @@ result = train_smt(
     mt_def,
     train_st,
     replay_buffer,
+    solved_threshold=-110.0,
+    unsolvable_threshold=-200.0,
     task_selectables=None if context_in_observation else [q_net],
     b1=170_000,
     b2=30_000,

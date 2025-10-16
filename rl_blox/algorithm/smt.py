@@ -18,6 +18,8 @@ def train_smt(
     replay_buffer: MultiTaskReplayBuffer,
     b1: int = 17_000_000,
     b2: int = 3_000_000,
+    solved_threshold: float = -100.0,
+    unsolvable_threshold: float = -1000.0,
     scheduling_interval: int = 1,
     kappa: float = 0.8,
     K: int = 3,
@@ -140,6 +142,8 @@ def train_smt(
             replay_buffer,
             task_selectables,
             training_steps,
+            solved_threshold,
+            unsolvable_threshold,
             global_step,
             scheduling_interval,
             b1,
@@ -187,6 +191,8 @@ def smt_stage1(
     replay_buffer,
     task_selectables,
     training_steps,
+    solved_threshold,
+    unsolvable_threshold,
     global_step,
     scheduling_interval,
     b1,
@@ -268,13 +274,11 @@ def smt_stage1(
                     step=global_step,
                 )
 
-            M = mt_def.get_solved_threshold(task_id)
-            if avg_training_performances[task_id] >= M:
+            if avg_training_performances[task_id] >= solved_threshold:
                 solved_pool.add(task_id)
                 updated_training_pool.remove(task_id)
             elif training_steps[task_id] >= task_budgets[task_id]:
-                m = mt_def.get_unsolvable_threshold(task_id)
-                if avg_training_performances[task_id] <= m:
+                if avg_training_performances[task_id] <= unsolvable_threshold:
                     unsolvable_pool.add(task_id)
                     updated_training_pool.remove(task_id)
                 else:
