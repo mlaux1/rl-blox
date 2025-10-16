@@ -3,10 +3,30 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
-from rl_blox.algorithm.ddqn import train_ddqn
-from rl_blox.blox.function_approximator.mlp import MLP
+from rl_blox.algorithm.dueling_dqn import train_dueling_dqn
+from rl_blox.blox.dueling_qnet import DuelingQNet
 from rl_blox.blox.replay_buffer import ReplayBuffer
 from rl_blox.logging.logger import AIMLogger
+
+
+"""
+Network architecture as defined in this example:
+
+                 Input (4)
+                 │
+                 [Shared Hidden Layers]
+                 │
+ ┌───────────────┴───────────────┐
+ │                               │
+Advantage Stream             State-Value Stream
+(128→32→2)                   (128→16→1)
+ │                               │
+ └───────────────┬───────────────┘
+                 │
+            Aggregation
+                 │
+            Q-values (2)
+"""
 
 # Set up environment
 env_name = "CartPole-v1"
@@ -17,7 +37,9 @@ env.action_space.seed(seed)
 
 hparams_model = dict(
     activation="relu",
-    hidden_nodes=[128, 128],
+    shared_nodes=[128, 128],
+    advantage_nodes=[64],
+    state_value_nodes=[64],
 )
 hparams_algorithm = dict(
     buffer_size=50_000,
@@ -29,11 +51,11 @@ hparams_algorithm = dict(
 logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name="DDQN",
+    algorithm_name="Dueling_DQN",
     hparams=hparams_model | hparams_algorithm,
 )
 # Initialise the Q-Network
-q_net = MLP(
+q_net = DuelingQNet(
     env.observation_space.shape[0],
     int(env.action_space.n),
     rngs=nnx.Rngs(seed),
@@ -49,7 +71,7 @@ optimizer = nnx.Optimizer(
 )
 
 # Train
-q, _, _ = train_ddqn(
+q, _, _ = train_dueling_dqn(
     q_net,
     env,
     rb,

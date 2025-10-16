@@ -7,7 +7,7 @@ import numpy as np
 from flax import nnx
 from tqdm.rich import trange
 
-from ..blox.function_approximator.mlp import MLP
+from ..blox.dueling_qnet import DuelingQNet
 from ..blox.losses import ddqn_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
@@ -17,8 +17,8 @@ from ..logging.logger import LoggerBase
 from .dqn import train_step_with_loss
 
 
-def train_ddqn(
-    q_net: MLP,
+def train_dueling_dqn(
+    q_net: DuelingQNet,
     env: gymnasium.Env,
     replay_buffer: ReplayBuffer,
     optimizer: nnx.Optimizer,
@@ -29,20 +29,19 @@ def train_ddqn(
     update_frequency: int = 4,
     target_update_frequency: int = 1000,
     learning_starts: int = 0,
-    q_target_net: MLP | None = None,
+    q_target_net: DuelingQNet | None = None,
     seed: int = 1,
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
-) -> tuple[MLP, MLP, nnx.Optimizer]:
-    """Deep Q Learning with Experience Replay
+) -> tuple[DuelingQNet, DuelingQNet, nnx.Optimizer]:
+    """Dueling DQN.
 
-    Implements double DQN as originally described in van Hasselt et al. (2016)
-    [1]_. It uses a neural network to approximate the Q-function and samples
-    minibatches from the replay buffer to calculate updates as well as target
-    networks that are copied regularly from the current Q-network. The only
-    difference to DQN is the calculation of the Q-network's loss, which uses
-    the target network to evaluate the current greedy policy.
+    Implements dueling DQN as originally described in van Wang et al. (2016)
+    [1]_. Dueling DQN splits Q-value estimation into a state-value stream and an
+    advantage stream, then combines them. It is trained with Double DQN–style [2]_
+    target updates, meaning the online network selects actions and the target
+    network evaluates them.
 
     This implementation aims to be as close as possible to the original algorithm
     described in the paper while remaining not overly engineered towards a
@@ -54,7 +53,7 @@ def train_ddqn(
 
     Parameters
     ----------
-    q_net : MLP
+    q_net : DuelingQNet
         The Q-network to be optimised.
     env: gymnasium
         The environment to train the Q-network on.
@@ -79,7 +78,7 @@ def train_ddqn(
         set it to a positive integer to overwrite the step criterion.
     gamma : float
         The discount factor.
-    q_target_net : MLP, optional
+    q_target_net : DuelingQNet, optional
         The target Q-network. Only needed when continuing prior training.
     seed : int
         The random seed, which can be set to reproduce results.
@@ -93,16 +92,19 @@ def train_ddqn(
 
     Returns
     -------
-    q_net : MLP
+    q_net : DuelingQNet
         The trained Q-network.
     optimizer : nnx.Optimizer
         The Q-net optimiser.
-    q_target_net : MLP
+    q_target_net : DuelingQNet
         The current target Q-network (required for continuing training).
 
     References
     ----------
-    .. [1] van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement
+    .. [1] Wang, Z., Schaul, T., Hessel, M., Hado, V. H., Lanctot, M., & Nando,
+       D. F. (2015, November 20). Dueling network architectures for deep
+       reinforcement learning. arXiv.org. https://arxiv.org/abs/1511.06581
+    .. [2] van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement
        Learning with Double Q-Learning. Proceedings of the AAAI Conference on
        Artificial Intelligence, 30(1). https://doi.org/10.1609/aaai.v30i1.10295
     """
