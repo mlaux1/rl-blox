@@ -1,4 +1,4 @@
-from abc import ABCMeta, abstractmethod
+from collections.abc import Callable
 
 import gymnasium as gym
 import jax
@@ -28,46 +28,54 @@ class TaskSelectionMixin:
         self.task_id = task_id
 
 
-class DiscreteTaskSet(metaclass=ABCMeta):
+class DiscreteTaskSet:
     """Defines a discrete set of environments for multi-task RL."""
 
-    def __init__(self, contexts: ArrayLike, context_aware: bool):
+    def __init__(
+        self,
+        base_env: gym.Env,
+        set_context: Callable[[gym.Env], None],
+        contexts: ArrayLike,
+        context_aware: bool,
+    ):
+        self.base_env = base_env
         self.contexts = contexts
-        self.context_high = jnp.max(contexts, axis=0)
-        self.context_low = jnp.min(contexts, axis=0)
+        self.context_high = np.max(contexts, axis=0).ravel()
+        self.context_low = np.min(contexts, axis=0).ravel()
         self.context_aware = context_aware
+        self.set_context = set_context
 
     def get_task(self, task_id: int) -> gym.Env:
         """Returns the task environment for the given task ID."""
         assert 0 <= task_id < len(self.contexts)
-        context = self.contexts[task_id]
-        st_env = self._get_env(context)
+        context = np.asarray(self.contexts[task_id])
+        self.set_context(self.base_env, context)
         if self.context_aware:
             new_obs_space = gym.spaces.Box(
                 low=np.concatenate(
-                    (self.context_low, st_env.observation_space.low), axis=0
+                    (self.context_low, self.base_env.observation_space.low),
+                    axis=0,
                 ),
                 high=np.concatenate(
-                    (self.context_high, st_env.observation_space.high), axis=0
+                    (self.context_high, self.base_env.observation_space.high),
+                    axis=0,
                 ),
-                dtype=st_env.observation_space.dtype,
+                dtype=self.base_env.observation_space.dtype,
             )
 
             return TransformObservation(
-                st_env,
-                lambda obs, ctx=context: np.concatenate((context, obs)),
+                self.base_env,
+                lambda obs, ctx=context: np.concatenate(
+                    (context, np.ravel(obs)), axis=0
+                ),
                 new_obs_space,
             )
         else:
-            return st_env
+            return self.base_env
 
     def get_context(self, task_id: int) -> np.ndarray:
         """Returns the task context for the given task ID."""
         return self.contexts[task_id]
-
-    @abstractmethod
-    def _get_env(self, context: ArrayLike) -> gym.Env:
-        """Returns the base environment without context."""
 
     def __len__(self) -> int:
         return len(self.contexts)

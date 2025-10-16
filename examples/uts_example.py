@@ -19,29 +19,14 @@ verbose = 1
 backbone_algorithm = "SAC"
 
 
-class MultiTaskPendulum(DiscreteTaskSet):
-    def __init__(self, render_mode=None):
-        super().__init__(
-            contexts=np.linspace(0, 20, 21)[:, np.newaxis],
-            context_aware=True,
-        )
-        self.env = gym.make("Pendulum-v1", render_mode=render_mode)
-
-    def _get_env(self, context):
-        self.env.unwrapped.g = context[0]
-        return self.env
-
-    def get_solved_threshold(self, task_id: int) -> float:
-        return -100.0
-
-    def get_unsolvable_threshold(self, task_id: int) -> float:
-        return -1000.0
-
-    def close(self):
-        self.env.close()
+def set_g(env: gym.Env, context):
+    env.unwrapped.g = context
 
 
-train_set = MultiTaskPendulum()
+base_env = gym.make(env_name)
+contexts = np.linspace(0, 20, 21)[:, np.newaxis]
+
+train_set = DiscreteTaskSet(base_env, set_g, contexts, context_aware=True)
 
 hparams_models = dict(
     q_hidden_nodes=[512, 512],
@@ -114,7 +99,10 @@ uts_result = train_uts(
 
 policy, _, q, _, _, _, _, _ = uts_result
 
-test_set = MultiTaskPendulum(render_mode="human")
+base_env = gym.make(env_name, render_mode="human")
+contexts = np.linspace(0, 20, 21)[:, np.newaxis]
+
+test_set = DiscreteTaskSet(base_env, set_g, contexts, context_aware=True)
 
 for i in range(len(test_set)):
     env = test_set.get_task(i)
