@@ -76,16 +76,18 @@ class ModelBasedEncoder(nnx.Module):
        https://openreview.net/forum?id=R1hIXdST22
     """
 
-    zs: LayerNormMLP
+    _zs: LayerNormMLP
     """Maps observations to latent state representations (nonlinear)."""
 
-    za: nnx.Linear
+    _za: nnx.Linear
     """Maps actions to latent action representations (linear)."""
 
-    zsa: LayerNormMLP
+    _zsa: LayerNormMLP
     """Maps zs and za to latent state-action representations (nonlinear)."""
 
-    model: nnx.Linear
+    _dynamic_model: nnx.Linear
+    _reward_model: nnx.Linear
+    _done_model: nnx.Linear
     """Maps zsa to done flag, next latent state (zs), and reward (linear)."""
 
     zs_dim: int
@@ -109,25 +111,31 @@ class ModelBasedEncoder(nnx.Module):
         activation: str,
         rngs: nnx.Rngs,
     ):
-        self.zs = LayerNormMLP(
+        self._zs = LayerNormMLP(
             n_state_features,
             zs_dim,
             hidden_nodes,
             activation,
             rngs=rngs,
         )
-        self.za = nnx.Linear(
+        self._za = nnx.Linear(
             n_action_features, za_dim, rngs=rngs, kernel_init=default_init
         )
-        self.zsa = LayerNormMLP(
+        self._zsa = LayerNormMLP(
             zs_dim + za_dim,
             zsa_dim,
             hidden_nodes,
             activation,
             rngs=rngs,
         )
-        self.model = nnx.Linear(
-            zsa_dim, n_bins + zs_dim + 1, rngs=rngs, kernel_init=default_init
+        self._dynamic_model = nnx.Linear(
+            zsa_dim // 2, zs_dim, rngs=rngs, kernel_init=default_init
+        )
+        self._reward_model = nnx.Linear(
+            zsa_dim // 2, n_bins, rngs=rngs, kernel_init=default_init
+        )
+        self._done_model = nnx.Linear(
+            zsa_dim, 1, rngs=rngs, kernel_init=default_init
         )
         self.zs_dim = zs_dim
         self.activation = getattr(nnx, activation)
@@ -151,8 +159,8 @@ class ModelBasedEncoder(nnx.Module):
         """
         # Difference to original implementation! The original implementation
         # scales actions to [-1, 1]. We do not scale the actions here.
-        za = self.activation(self.za(action))
-        return self.zsa(jnp.concatenate((zs, za), axis=-1))
+        za = self.activation(self._za(action))
+        return self._zsa(jnp.concatenate((zs, za), axis=-1))
 
     def encode_zs(self, observation: jnp.ndarray) -> jnp.ndarray:
         """Encodes the observation into a latent state representation.
@@ -167,7 +175,7 @@ class ModelBasedEncoder(nnx.Module):
         zs : array, shape (n_samples, zs_dim)
             Latent state representation.
         """
-        return self.activation(self.zs_layer_norm(self.zs(observation)))
+        return self.activation(self.zs_layer_norm(self._zs(observation)))
 
     def model_head(
         self, zs: jnp.ndarray, action: jnp.ndarray
@@ -192,11 +200,10 @@ class ModelBasedEncoder(nnx.Module):
             Two-hot encoded reward.
         """
         zsa = self.encode_zsa(zs, action)
-        dzr = self.model(zsa)
-        done = dzr[:, 0]
-        next_zs = dzr[:, 1 : 1 + self.zs_dim]
-        reward = dzr[:, 1 + self.zs_dim :]
-        return done, next_zs, reward
+        done = self._done_model(zsa)
+        next_zs = self._dynamic_model(zsa[..., : zsa.shape[-1] // 2])
+        reward = self._reward_model(zsa[..., zsa.shape[-1] // 2 :])
+        return done.squeeze(), next_zs, reward
 
 
 class DeterministicPolicyWithEncoder(nnx.Module):

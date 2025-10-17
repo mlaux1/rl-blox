@@ -198,7 +198,7 @@ def create_mrq_state(
     encoder_n_bins: int = 65,
     encoder_zs_dim: int = 512,
     encoder_za_dim: int = 256,
-    encoder_zsa_dim: int = 512,
+    encoder_zsa_dim: int = 1_024,
     encoder_hidden_nodes: list[int] | tuple[int] = (512, 512),
     encoder_activation: str = "elu",
     encoder_learning_rate: float = 1e-4,
