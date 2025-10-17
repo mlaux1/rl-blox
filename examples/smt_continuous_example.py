@@ -21,21 +21,17 @@ from rl_blox.blox.replay_buffer import (
 )
 from rl_blox.logging.logger import AIMLogger
 
+env_name = "Pendulum-v1"
 
-class MultiTaskPendulum(DiscreteTaskSet):
-    def __init__(self, render_mode=None):
-        super().__init__(
-            contexts=np.linspace(5, 15, 11)[:, np.newaxis],
-            context_aware=True,
-        )
-        self.env = gym.make("Pendulum-v1", render_mode=render_mode)
 
-    def _get_env(self, context):
-        self.env.unwrapped.g = context[0]
-        return self.env
+def set_context(env: gym.Env, context):
+    env.unwrapped.g = context
 
-    def close(self):
-        self.env.close()
+
+base_env = gym.make(env_name)
+contexts = np.linspace(0, 20, 21)[:, np.newaxis]
+
+train_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
 
 
 seed = 2
@@ -55,16 +51,14 @@ logger.define_experiment(
     hparams={},
 )
 
-mt_def = MultiTaskPendulum()
-
-env = mt_def.get_task(0)
+env = train_set.get_task(0)
 if backbone == "DDPG":
     state = create_ddpg_state(env, seed=seed)
     policy_target = nnx.clone(state.policy)
     q_target = nnx.clone(state.q)
     replay_buffer = MultiTaskReplayBuffer(
         ReplayBuffer(buffer_size=100_000),
-        len(mt_def),
+        len(train_set),
     )
 
     train_st = partial(
@@ -100,7 +94,7 @@ elif backbone == "TD7":
     critic_target = nnx.clone(state.critic)
     replay_buffer = MultiTaskReplayBuffer(
         LAP(buffer_size=100_000),
-        len(mt_def),
+        len(train_set),
     )
 
     train_st = partial(
@@ -141,7 +135,7 @@ else:
     entroy_control = EntropyControl(env, 0.2, True, 1e-3)
     replay_buffer = MultiTaskReplayBuffer(
         ReplayBuffer(buffer_size=100_000),
-        len(mt_def),
+        len(train_set),
     )
 
     train_st = partial(
@@ -155,7 +149,7 @@ else:
     )
 
 result = train_smt(
-    mt_def,
+    train_set,
     train_st,
     replay_buffer,
     solved_threshold=-100.0,
@@ -167,7 +161,6 @@ result = train_smt(
     logger=logger,
     seed=seed,
 )
-mt_def.close()
 
 # Evaluation
 result_st = result[0]
@@ -178,11 +171,12 @@ elif backbone == "TD7":
 else:
     policy = result_st.policy
 
-mt_env = MultiTaskPendulum(render_mode="human")
+base_env = gym.make(env_name, render_mode="human")
+test_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
 
-for task_id in range(len(mt_env)):
+for task_id in range(len(test_set)):
     print(f"Evaluating task {task_id}")
-    env = mt_env.get_task(task_id)
+    env = test_set.get_task(task_id)
     done = False
     infos = {}
     obs, _ = env.reset()

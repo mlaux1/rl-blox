@@ -14,23 +14,17 @@ from rl_blox.blox.multitask import DiscreteTaskSet
 from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 from rl_blox.logging.logger import AIMLogger
 
-
-class MultiTaskMountainCar(DiscreteTaskSet):
-    def __init__(self, render_mode=None):
-        super().__init__(
-            contexts=np.linspace(0, 0.3, 11)[:, np.newaxis],
-            context_in_observation=True,
-        )
-        self.env = gym.make("MountainCar-v0", render_mode=render_mode)
-
-    def _get_env(self, context):
-        self.env.unwrapped.goal_velocity = context[0]
-        return self.env
-
-    def close(self):
-        self.env.close()
+env_name = "MountainCar-v0"
 
 
+def set_context(env, context):
+    env.unwrapped.goal_velocity = context
+
+
+base_env = gym.make(env_name)
+contexts = np.linspace(0, 0.3, 11)[:, np.newaxis]
+
+train_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
 seed = 2
 verbose = 2
 # Backbone algorithm to use for SMT: "DDQN", "NDQN"
@@ -43,14 +37,12 @@ if verbose:
     )
 logger = AIMLogger()
 logger.define_experiment(
-    env_name="MountainCar-v0",
+    env_name=env_name,
     algorithm_name=f"SMT-{backbone}",
     hparams={},
 )
 
-mt_def = MultiTaskMountainCar()
-
-env = mt_def.get_task(0)
+env = train_set.get_task(0)
 q_net = MLP(
     env.observation_space.shape[0],
     int(env.action_space.n),
@@ -61,7 +53,7 @@ q_net = MLP(
 q_target_net = nnx.clone(q_net)
 replay_buffer = MultiTaskReplayBuffer(
     ReplayBuffer(buffer_size=100_000, discrete_actions=True),
-    len(mt_def),
+    len(train_set),
 )
 optimizer = nnx.Optimizer(q_net, optax.adam(0.003), wrt=nnx.Param)
 if backbone == "DDQN":
@@ -82,7 +74,7 @@ else:
     raise NotImplementedError(f"Unknown backbone '{backbone}'")
 
 result = train_active_mt(
-    mt_def,
+    train_set,
     train_st,
     replay_buffer,
     task_selector="Monotonic Progress",
@@ -95,15 +87,16 @@ result = train_active_mt(
     logger=logger,
     seed=seed,
 )
-mt_def.close()
 
 # Evaluation
 result_st = result[0]
 q_net = result_st[0]
-mt_env = MultiTaskMountainCar(render_mode="human")
-for task_id in range(len(mt_env)):
+base_env = gym.make(env_name, render_mode="human")
+test_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
+
+for task_id in range(len(test_set)):
     print(f"Evaluating task {task_id}")
-    env = mt_env.get_task(task_id)
+    env = test_set.get_task(task_id)
     done = False
     infos = {}
     obs, _ = env.reset()
