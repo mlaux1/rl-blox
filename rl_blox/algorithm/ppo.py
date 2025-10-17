@@ -8,6 +8,7 @@ from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.gae import compute_gae
+from ..logging.logger import LoggerBase
 
 
 @nnx.jit
@@ -103,7 +104,9 @@ def collect_trajectories(
     critic: nnx.Module,
     key: jnp.ndarray,
     batch_size: int = 64,
+    logger: LoggerBase | None = None,
     last_observation=None,
+    ongoing_accumulated_reward: float = 0.0,
 ) -> tuple[
     jnp.ndarray,
     jnp.ndarray,
@@ -112,6 +115,8 @@ def collect_trajectories(
     jnp.ndarray,
     jnp.ndarray,
     Any,
+    float,
+    int,
 ]:
     """
     Run and collect trajectories until at least `batch_size` steps are gathered.
@@ -128,9 +133,13 @@ def collect_trajectories(
         Random key.
     batch_size : int, optional
         Minimum number of steps to collect.
-    last_observation
+    logger : LoggerBase, optional
+        Experiment Logger.
+    last_observation : Any, optional
         Last observation produced by the environment. Used for running
         an environment over multiple calls of this function.
+    ongoing_accumulated_reward : float, optional
+        Accumulated award for the ongoing episode
 
     Returns
     -------
@@ -149,6 +158,8 @@ def collect_trajectories(
     last_observation
         Last observation produced by the environment. Used for running
         an environment over multiple calls of this function.
+    ongoing_accumulated_reward : float
+        Accumulated award for the ongoing episode
     """
     actions, logps, observations, rewards, terminated_arr, next_values = (
         [],
@@ -158,13 +169,13 @@ def collect_trajectories(
         [],
         [],
     )
-
     obs, _ = env.reset() if last_observation is None else last_observation, None
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
         action, logp = select_action_deterministic(actor, obs, subkey)
         next_obs, reward, terminated, truncated, _ = env.step(int(action))
         next_value = critic(obs)
+        ongoing_accumulated_reward += reward
 
         actions.append(action)
         logps.append(logp)
@@ -175,7 +186,11 @@ def collect_trajectories(
 
         obs = next_obs
         if terminated or truncated:
+            if logger is not None:
+                logger.record_stat("return", ongoing_accumulated_reward)
+                logger.start_new_episode()
             obs, _ = env.reset()
+            ongoing_accumulated_reward = 0.0
 
     return namedtuple(
         "PPO_Trajectory",
@@ -187,6 +202,7 @@ def collect_trajectories(
             "terminated",
             "next_value",
             "last_observation",
+            "ongoing_accumulated_reward",
         ],
     )(
         jnp.stack(observations),
@@ -196,6 +212,7 @@ def collect_trajectories(
         jnp.array(terminated_arr, dtype=jnp.float32).flatten(),
         jnp.stack(next_values).flatten(),
         obs,
+        ongoing_accumulated_reward,
     )
 
 
@@ -255,9 +272,10 @@ def train_ppo(
     critic: nnx.Module,
     optimizer_actor: nnx.Optimizer,
     optimizer_critic: nnx.Optimizer,
-    episodes: int = 3000,
+    epochs: int = 3000,
     batch_size: int = 64,
     seed: int = 1,
+    logger: LoggerBase | None = None,
     progress_bar: bool = True,
 ) -> tuple[nnx.Module, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
     """
@@ -275,12 +293,14 @@ def train_ppo(
         Optimizer for the actor network.
     optimizer_critic : nnx.Optimizer
         Optimizer for the critic network.
-    episodes : int, optional
-        Number of training episodes.
+    epochs : int, optional
+        Number of training epochs.
     batch_size : int, optional
         Batch size per update.
     seed : int, optional
         Random seed for reproducibility.
+    logger : LoggerBase, optional
+        Experiment Logger.
     progress_bar : bool, optional
         Display a progress bar during training.
 
@@ -298,7 +318,11 @@ def train_ppo(
     key = jax.random.key(seed)
     last_observation, _ = env.reset(seed=seed)
 
-    for episode in trange(episodes, disable=not progress_bar):
+    if logger is not None:
+        logger.start_new_episode()
+    accumulated_reward = 0.0
+
+    for epoch in trange(epochs, disable=not progress_bar):
         key, subkey = jax.random.split(key)
         (
             observation,
@@ -308,8 +332,16 @@ def train_ppo(
             terminated,
             next_value,
             last_observation,
+            accumulated_reward,
         ) = collect_trajectories(
-            env, actor, critic, subkey, batch_size, last_observation
+            env,
+            actor,
+            critic,
+            subkey,
+            batch_size,
+            logger,
+            last_observation,
+            accumulated_reward,
         )
 
         loss_val = update_ppo(
@@ -325,9 +357,7 @@ def train_ppo(
             next_value,
         )
 
-        if episode % 50 == 0:
-            print(
-                f"Episode {episode}, Loss: {loss_val:.3f}, Return: {sum(reward)}"
-            )
+        if logger is not None:
+            logger.record_stat("loss", loss_val)
 
     return actor, critic, optimizer_actor, optimizer_critic
