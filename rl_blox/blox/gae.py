@@ -1,6 +1,7 @@
+from collections import namedtuple
+
 import jax
 import jax.numpy as jnp
-from collections import namedtuple
 
 
 @jax.jit
@@ -9,8 +10,8 @@ def compute_gae(
     values: jnp.ndarray,
     next_values: jnp.ndarray,
     terminateds: jnp.ndarray,
-    gamma: float=0.99,
-    lmbda: float=0.95
+    gamma: float = 0.99,
+    lmbda: float = 0.95,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Compute Generalized Advantage Estimation (GAE).
@@ -37,6 +38,7 @@ def compute_gae(
     - returns : jnp.ndarray
         Computed returns per step.
     """
+
     def calc_advantage_per_step(carry, inputs):
         gae = carry
         reward, value, next_value, terminated = inputs
@@ -47,8 +49,8 @@ def compute_gae(
     _, advantages = jax.lax.scan(
         calc_advantage_per_step,
         0.0,
-        (rewards[::-1], values[::-1], next_values[::-1], terminateds[::-1])
+        (rewards[::-1], values[::-1], next_values[::-1], terminateds[::-1]),
     )
     advantages = advantages[::-1]
     returns = advantages + values
-    return namedtuple('GAE', ['advantages', 'returns'])(advantages, returns)
+    return namedtuple("GAE", ["advantages", "returns"])(advantages, returns)

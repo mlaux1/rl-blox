@@ -1,20 +1,18 @@
+from collections import namedtuple
+from typing import Any
+
+import gymnasium as gym
 import jax
 import jax.numpy as jnp
 from flax import nnx
-import optax
-import gymnasium as gym
 from tqdm.rich import trange
-from collections import namedtuple
-from typing import Any
 
 from ..blox.gae import compute_gae
 
 
 @nnx.jit
 def select_action_deterministic(
-    actor: nnx.Module,
-    obs: jnp.ndarray,
-    key: jnp.ndarray
+    actor: nnx.Module, obs: jnp.ndarray, key: jnp.ndarray
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Select an action using the actor's policy in a deterministic way.
@@ -39,7 +37,7 @@ def select_action_deterministic(
     probs = jax.nn.softmax(logits)
     action = jax.random.categorical(key, logits)
     logp = jnp.log(probs[action])
-    return namedtuple('SelectedAction', ['action', 'logp'])(action, logp)
+    return namedtuple("SelectedAction", ["action", "logp"])(action, logp)
 
 
 def ppo_loss(
@@ -50,7 +48,7 @@ def ppo_loss(
     actions: jnp.ndarray,
     advantages: jnp.ndarray,
     returns: jnp.ndarray,
-    clip: float=0.2
+    clip: float = 0.2,
 ) -> jnp.ndarray:
     """
     Calculate the PPO loss.
@@ -81,17 +79,21 @@ def ppo_loss(
     """
     logits = actor(observations)
     probs = jax.nn.softmax(logits)
-    logps = jnp.log(jnp.take_along_axis(probs, actions[:, None], axis=1).squeeze())
+    logps = jnp.log(
+        jnp.take_along_axis(probs, actions[:, None], axis=1).squeeze()
+    )
 
     ratios = jnp.exp(logps - old_logps)
     surrogate1 = ratios * advantages
-    surrogate2 = jnp.clip(ratios, 1-clip, 1+clip) * advantages
+    surrogate2 = jnp.clip(ratios, 1 - clip, 1 + clip) * advantages
     policy_loss = -jnp.mean(jnp.minimum(surrogate1, surrogate2))
 
     values = critic(observations)
     value_loss = jnp.mean((returns - values) ** 2)
 
-    entropy = -jnp.mean(jnp.sum(probs * (logits - jax.scipy.special.logsumexp(logits)), axis=-1))
+    entropy = -jnp.mean(
+        jnp.sum(probs * (logits - jax.scipy.special.logsumexp(logits)), axis=-1)
+    )
     return policy_loss + 0.5 * value_loss - 0.01 * entropy
 
 
@@ -100,9 +102,17 @@ def collect_trajectories(
     actor: nnx.Module,
     critic: nnx.Module,
     key: jnp.ndarray,
-    batch_size: int=64,
-    last_observation=None
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, Any]:
+    batch_size: int = 64,
+    last_observation=None,
+) -> tuple[
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    Any,
+]:
     """
     Run and collect trajectories until at least `batch_size` steps are gathered.
 
@@ -140,8 +150,15 @@ def collect_trajectories(
         Last observation produced by the environment. Used for running
         an environment over multiple calls of this function.
     """
-    actions, logps, observations, rewards, terminated_arr, next_values = [], [], [], [], [], []
-    
+    actions, logps, observations, rewards, terminated_arr, next_values = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
+
     obs, _ = env.reset() if last_observation is None else last_observation, None
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
@@ -159,16 +176,27 @@ def collect_trajectories(
         obs = next_obs
         if terminated or truncated:
             obs, _ = env.reset()
-            
-    return namedtuple('PPO_Trajectory',
-                      ['observation', 'action', 'logp', 'reward', 'terminated', 'next_value', 'last_observation'])(
+
+    return namedtuple(
+        "PPO_Trajectory",
+        [
+            "observation",
+            "action",
+            "logp",
+            "reward",
+            "terminated",
+            "next_value",
+            "last_observation",
+        ],
+    )(
         jnp.stack(observations),
         jnp.stack(actions),
         jnp.stack(logps),
         jnp.array(rewards).flatten(),
         jnp.array(terminated_arr, dtype=jnp.float32).flatten(),
         jnp.stack(next_values).flatten(),
-        obs)
+        obs,
+    )
 
 
 @nnx.jit
@@ -182,7 +210,7 @@ def update_ppo(
     old_logp: jnp.ndarray,
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
-    next_value: jnp.ndarray
+    next_value: jnp.ndarray,
 ) -> jnp.ndarray:
     """
     Updates the PPO agent
@@ -209,10 +237,12 @@ def update_ppo(
     - loss_val : jnp.ndarray
         Calculated loss.
     """
-    advs, returns = compute_gae(reward, critic(observation).flatten(), next_value, terminated)
-    loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0,1))
+    advs, returns = compute_gae(
+        reward, critic(observation).flatten(), next_value, terminated
+    )
+    loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
     (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
-            actor, critic, old_logp, observation, action, advs, returns
+        actor, critic, old_logp, observation, action, advs, returns
     )
     optimizer_actor.update(actor, grad_actor)
     optimizer_critic.update(critic, grad_critic)
@@ -225,10 +255,10 @@ def train_ppo(
     critic: nnx.Module,
     optimizer_actor: nnx.Optimizer,
     optimizer_critic: nnx.Optimizer,
-    episodes: int=3000,
-    batch_size: int=64,
-    seed: int=1,
-    progress_bar: bool=True
+    episodes: int = 3000,
+    batch_size: int = 64,
+    seed: int = 1,
+    progress_bar: bool = True,
 ) -> tuple[nnx.Module, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
     """
     Train a PPO agent.
@@ -270,14 +300,34 @@ def train_ppo(
 
     for episode in trange(episodes, disable=not progress_bar):
         key, subkey = jax.random.split(key)
-        observation, action, logp, reward, terminated, next_value, last_observation = collect_trajectories(
-            env, actor, critic, subkey, batch_size, last_observation)
+        (
+            observation,
+            action,
+            logp,
+            reward,
+            terminated,
+            next_value,
+            last_observation,
+        ) = collect_trajectories(
+            env, actor, critic, subkey, batch_size, last_observation
+        )
 
         loss_val = update_ppo(
-            actor, critic, optimizer_actor, optimizer_critic,
-            observation, action, logp, reward, terminated, next_value)
+            actor,
+            critic,
+            optimizer_actor,
+            optimizer_critic,
+            observation,
+            action,
+            logp,
+            reward,
+            terminated,
+            next_value,
+        )
 
         if episode % 50 == 0:
-            print(f"Episode {episode}, Loss: {loss_val:.3f}, Return: {sum(reward)}")
-            
+            print(
+                f"Episode {episode}, Loss: {loss_val:.3f}, Return: {sum(reward)}"
+            )
+
     return actor, critic, optimizer_actor, optimizer_critic
