@@ -40,10 +40,22 @@ class DiscreteTaskSet:
     ):
         self.base_env = base_env
         self.contexts = contexts
-        self.context_high = np.max(contexts, axis=0).ravel()
-        self.context_low = np.min(contexts, axis=0).ravel()
         self.context_aware = context_aware
         self.set_context = set_context
+
+        context_high = np.max(contexts, axis=0).ravel()
+        context_low = np.min(contexts, axis=0).ravel()
+        self.contextual_obs_space = gym.spaces.Box(
+            low=np.concatenate(
+                (context_low, self.base_env.observation_space.low),
+                axis=0,
+            ),
+            high=np.concatenate(
+                (context_high, self.base_env.observation_space.high),
+                axis=0,
+            ),
+            dtype=self.base_env.observation_space.dtype,
+        )
 
     def get_task(self, task_id: int) -> gym.Env:
         """Returns the task environment for the given task ID."""
@@ -51,24 +63,12 @@ class DiscreteTaskSet:
         context = np.asarray(self.contexts[task_id])
         self.set_context(self.base_env, context)
         if self.context_aware:
-            new_obs_space = gym.spaces.Box(
-                low=np.concatenate(
-                    (self.context_low, self.base_env.observation_space.low),
-                    axis=0,
-                ),
-                high=np.concatenate(
-                    (self.context_high, self.base_env.observation_space.high),
-                    axis=0,
-                ),
-                dtype=self.base_env.observation_space.dtype,
-            )
-
             return TransformObservation(
                 self.base_env,
                 lambda obs, ctx=context: np.concatenate(
                     (context, np.ravel(obs)), axis=0
                 ),
-                new_obs_space,
+                self.contextual_obs_space,
             )
         else:
             return self.base_env
@@ -176,24 +176,3 @@ class RoundRobinSelector(TaskSelector):
 
     def feedback(self, reward: float):
         super().feedback(reward)
-
-
-class PrioritisedTaskSampler:
-    """A sampler that returns envs from a TaskSet given priorities."""
-
-    def __init__(
-        self,
-        task_set: DiscreteTaskSet,
-        priorities: ArrayLike | None = None,
-    ):
-        self.task_set = task_set
-        self.priorities = priorities
-
-    def sample(self, key) -> tuple[gym.Env, jnp.ndarray]:
-        env_id = jax.random.choice(
-            key, jnp.arange(len(self.task_set)), p=self.priorities
-        ).item()
-        return self.task_set.get_task(env_id), self.task_set.contexts[env_id]
-
-    def update_priorities(self, priorities) -> None:
-        self.priorities = priorities
