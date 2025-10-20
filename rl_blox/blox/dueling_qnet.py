@@ -114,5 +114,5 @@ class DuelingQNet(nnx.Module):
             x = self.activation(layer(x))
         state_value = x
 
-        q_value = jnp.repeat(state_value, self.n_outputs, axis=1) - (advantage - jnp.mean(advantage, 0))
+        q_value = jnp.repeat(state_value, self.n_outputs, axis=1) + (advantage - jnp.mean(advantage, 0))
         return q_value
