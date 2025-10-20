@@ -12,7 +12,7 @@ from ..logging.logger import LoggerBase
 
 
 @nnx.jit
-def select_action_deterministic(
+def select_action_descrete(
     actor: nnx.Module, obs: jnp.ndarray, key: jnp.ndarray
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
@@ -172,7 +172,7 @@ def collect_trajectories(
     obs, _ = env.reset() if last_observation is None else last_observation, None
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
-        action, logp = select_action_deterministic(actor, obs, subkey)
+        action, logp = select_action_descrete(actor, obs, subkey)
         next_obs, reward, terminated, truncated, _ = env.step(int(action))
         next_value = critic(obs)
         ongoing_accumulated_reward += reward
