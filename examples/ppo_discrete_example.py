@@ -6,14 +6,15 @@ from flax import nnx
 from rl_blox.algorithm.ppo import train_ppo
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
-from rl_blox.logging.logger import AIMLogger
+from rl_blox.logging.logger import AIMLogger, StandardLogger, LoggerList
 
 
 env_name = "CartPole-v1"
 seed = 1
+num_envs=10
 test_episodes = 10
 
-env = gym.make(env_name)
+envs = gym.make_vec("CartPole-v1", num_envs=num_envs, vectorization_mode="sync")
 
 hparams_model = {
     "actor_hidden_layers": [64, 64],
@@ -28,8 +29,8 @@ hparams_algorithm = dict(
     seed=seed,
 )
 
-features = env.observation_space.shape[0]
-actions = int(env.action_space.n)
+features = envs.observation_space.shape[1]
+actions = int(envs.single_action_space.n)
 
 actor = MLP(
     features,
@@ -63,7 +64,7 @@ logger.define_experiment(
 )
 
 actor, critic, optimizer_actor, optimizer_critic = train_ppo(
-    env,
+    envs,
     actor,
     critic,
     optimizer_actor,
@@ -72,7 +73,7 @@ actor, critic, optimizer_actor, optimizer_critic = train_ppo(
     logger=logger,
 )
 
-env.close()
+envs.close()
 
 # Evaluation
 

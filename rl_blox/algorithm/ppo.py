@@ -2,6 +2,7 @@ from collections import namedtuple
 from typing import Any
 
 import gymnasium as gym
+import numpy as np
 import jax
 import jax.numpy as jnp
 from flax import nnx
@@ -13,14 +14,14 @@ from ..logging.logger import LoggerBase
 
 
 def collect_trajectories(
-    env: gym.Env,
+    envs: gym.vector.VectorEnv,
     actor: StochasticPolicyBase,
     critic: nnx.Module,
     key: jnp.ndarray,
     batch_size: int = 64,
     logger: LoggerBase | None = None,
-    last_observation=None,
-    ongoing_accumulated_reward: float = 0.0,
+    last_observation = None,
+    global_step: int = 0
 ) -> tuple[
     jnp.ndarray,
     jnp.ndarray,
@@ -29,7 +30,6 @@ def collect_trajectories(
     jnp.ndarray,
     jnp.ndarray,
     Any,
-    float,
     int,
 ]:
     """
@@ -37,8 +37,8 @@ def collect_trajectories(
 
     Parameters
     ----------
-    env : gym.Env
-        The environment to interact with.
+    envs : gym.vector.VectorEnv
+        The vectorized environment to interact with.
     actor : StochasticPolicyBase
         The actor network.
     critic : nnx.Module
@@ -52,8 +52,8 @@ def collect_trajectories(
     last_observation : Any, optional
         Last observation produced by the environment. Used for running
         an environment over multiple calls of this function.
-    ongoing_accumulated_reward : float, optional
-        Accumulated award for the ongoing episode
+    global_step : int, optional
+        Global step count
 
     Returns
     -------
@@ -70,8 +70,8 @@ def collect_trajectories(
     last_observation
         Last observation produced by the environment. Used for running
         an environment over multiple calls of this function.
-    ongoing_accumulated_reward : float
-        Accumulated award for the ongoing episode
+    global_step : int, optional
+        Global step count
     """
     actions, observations, rewards, terminated_arr, next_values = (
         [],
@@ -80,13 +80,12 @@ def collect_trajectories(
         [],
         [],
     )
-    obs, _ = env.reset() if last_observation is None else last_observation, None
+    obs, _ = envs.reset() if last_observation is None else last_observation, None
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
         action = actor.sample(obs, subkey)
-        next_obs, reward, terminated, truncated, _ = env.step(int(action))
+        obs, reward, terminated, truncated, info = envs.step(np.asarray(action))
         next_value = critic(obs)
-        ongoing_accumulated_reward += reward
 
         actions.append(action)
         observations.append(obs)
@@ -94,13 +93,13 @@ def collect_trajectories(
         terminated_arr.append(terminated)
         next_values.append(next_value)
 
-        obs = next_obs
-        if terminated or truncated:
+        if 'episode' in info.keys():
             if logger is not None:
-                logger.record_stat("return", ongoing_accumulated_reward)
-                logger.start_new_episode()
-            obs, _ = env.reset()
-            ongoing_accumulated_reward = 0.0
+                finished_reward_lens = [(r, l) for r, l, f in zip(info['episode']['r'], info['episode']['l'], info['_episode']) if f]
+                for r, l in finished_reward_lens:
+                    global_step += int(l)
+                    logger.record_stat("return", float(r), step=global_step)
+                    logger.start_new_episode()
 
     return namedtuple(
         "PPO_Trajectory",
@@ -111,16 +110,16 @@ def collect_trajectories(
             "terminated",
             "next_value",
             "last_observation",
-            "ongoing_accumulated_reward",
+            "global_step"
         ],
     )(
-        jnp.stack(observations),
-        jnp.stack(actions),
-        jnp.array(rewards).flatten(),
-        jnp.array(terminated_arr, dtype=jnp.float32).flatten(),
-        jnp.stack(next_values).flatten(),
+        jnp.concat(observations),
+        jnp.concat(actions),
+        jnp.concat(rewards),
+        jnp.concat(terminated_arr),
+        jnp.concat(next_values).flatten(),
         obs,
-        ongoing_accumulated_reward,
+        global_step
     )
 
 
@@ -197,8 +196,7 @@ def ppo_loss(
     values = critic(observations)
     value_loss = jnp.mean((returns - values) ** 2)
 
-    entropy = entropy(actor, observations)
-    return policy_loss + 0.5 * value_loss - 0.01 * entropy
+    return policy_loss + 0.5 * value_loss - 0.01 * entropy(actor, observations)
 
 
 @jax.jit
@@ -250,7 +248,7 @@ def update_ppo(
 
 
 def train_ppo(
-    env: gym.Env,
+    envs: gym.vector.VectorEnv,
     actor: StochasticPolicyBase,
     critic: nnx.Module,
     optimizer_actor: nnx.Optimizer,
@@ -266,8 +264,8 @@ def train_ppo(
 
     Parameters
     ----------
-    env : gym.Env
-        The training environment.
+    envs : gym.vector.VectorEnv
+        The vectorized training environment.
     actor : StochasticPolicyBase
         The actor network.
     critic : nnx.Module
@@ -299,12 +297,13 @@ def train_ppo(
         Updated critic optimizer.
     """
     key = jax.random.key(seed)
-    last_observation, _ = env.reset(seed=seed)
+    last_observation, _ = envs.reset(seed=seed)
+    envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
 
     if logger is not None:
         logger.start_new_episode()
-    accumulated_reward = 0.0
 
+    global_step = 0
     for epoch in trange(epochs, disable=not progress_bar):
         key, subkey = jax.random.split(key)
         (
@@ -314,16 +313,16 @@ def train_ppo(
             terminated,
             next_value,
             last_observation,
-            accumulated_reward,
+            global_step
         ) = collect_trajectories(
-            env,
+            envs,
             actor,
             critic,
             subkey,
             batch_size,
             logger,
             last_observation,
-            accumulated_reward,
+            global_step
         )
 
         loss_val = update_ppo(
