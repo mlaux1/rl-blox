@@ -8,63 +8,8 @@ from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.gae import compute_gae
-from ..blox.function_approximator.policy_head import StochasticPolicyBase
+from ..blox.function_approximator.policy_head import StochasticPolicyBase, SoftmaxPolicy
 from ..logging.logger import LoggerBase
-
-
-def ppo_loss(
-    actor: StochasticPolicyBase,
-    critic: nnx.Module,
-    old_logps: jnp.ndarray,
-    observations: jnp.ndarray,
-    actions: jnp.ndarray,
-    advantages: jnp.ndarray,
-    returns: jnp.ndarray,
-    clip: float = 0.2,
-) -> jnp.ndarray:
-    """
-    Calculate the PPO loss.
-
-    Parameters
-    ----------
-    actor : StochasticPolicyBase
-        The actor network.
-    critic : nnx.Module
-        The critic network.
-    old_logps : jnp.ndarray
-        Log probabilities of actions calculated during rollout.
-    observations : jnp.ndarray
-        Batch of observations.
-    actions : jnp.ndarray
-        Actions taken in each observation.
-    advantages : jnp.ndarray
-        Estimated advantages for each action.
-    returns : jnp.ndarray
-        Computed returns.
-    clip : float, optional
-        Clipping range for the PPO objective.
-
-    Returns
-    -------
-    loss : jnp.ndarray
-        The computed PPO loss for the batch.
-    """
-    logps = actor.log_probability(observations, actions)
-    ratios = jnp.exp(logps - old_logps)
-    surrogate1 = ratios * advantages
-    surrogate2 = jnp.clip(ratios, 1 - clip, 1 + clip) * advantages
-    policy_loss = -jnp.mean(jnp.minimum(surrogate1, surrogate2))
-
-    values = critic(observations)
-    value_loss = jnp.mean((returns - values) ** 2)
-
-    logits = actor.logits(observations)
-    probs = jax.nn.softmax(logits)
-    entropy = -jnp.mean(
-        jnp.sum(probs * (logits - jax.scipy.special.logsumexp(logits)), axis=-1)
-    )
-    
-    return policy_loss + 0.5 * value_loss - 0.01 * entropy
 
 
 def collect_trajectories(
@@ -179,6 +124,83 @@ def collect_trajectories(
     )
 
 
+def entropy(actor: StochasticPolicyBase, observations: jnp.ndarray) -> jnp.ndarray:
+    """
+    Calculate the entropy for PPO loss.
+
+    Parameters
+    ----------
+    actor : StochasticPolicyBase
+        The actor network.
+    observations : jnp.ndarray
+        Batch of observations.
+
+    Returns
+    -------
+    entropy : jnp.ndarray
+        The computed entropy.
+    """
+    if type(actor) == SoftmaxPolicy:
+        logits = actor.logits(observations)
+        probs = jax.nn.softmax(logits)
+        entropy = -jnp.mean(
+            jnp.sum(probs * (logits - jax.scipy.special.logsumexp(logits)), axis=-1)
+        )
+    else:
+        raise NotImplementedError("Implemented only for SoftmaxPolicy.")
+    return entropy
+
+
+def ppo_loss(
+    actor: StochasticPolicyBase,
+    critic: nnx.Module,
+    old_logps: jnp.ndarray,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    advantages: jnp.ndarray,
+    returns: jnp.ndarray,
+    clip: float = 0.2,
+) -> jnp.ndarray:
+    """
+    Calculate the PPO loss.
+
+    Parameters
+    ----------
+    actor : StochasticPolicyBase
+        The actor network.
+    critic : nnx.Module
+        The critic network.
+    old_logps : jnp.ndarray
+        Log probabilities of actions calculated during rollout.
+    observations : jnp.ndarray
+        Batch of observations.
+    actions : jnp.ndarray
+        Actions taken in each observation.
+    advantages : jnp.ndarray
+        Estimated advantages for each action.
+    returns : jnp.ndarray
+        Computed returns.
+    clip : float, optional
+        Clipping range for the PPO objective.
+
+    Returns
+    -------
+    loss : jnp.ndarray
+        The computed PPO loss for the batch.
+    """
+    logps = actor.log_probability(observations, actions)
+    ratios = jnp.exp(logps - old_logps)
+    surrogate1 = ratios * advantages
+    surrogate2 = jnp.clip(ratios, 1 - clip, 1 + clip) * advantages
+    policy_loss = -jnp.mean(jnp.minimum(surrogate1, surrogate2))
+
+    values = critic(observations)
+    value_loss = jnp.mean((returns - values) ** 2)
+
+    entropy = entropy(actor, observations)
+    return policy_loss + 0.5 * value_loss - 0.01 * entropy
+
+
 @jax.jit
 def update_ppo(
     actor: StochasticPolicyBase,
@@ -187,7 +209,6 @@ def update_ppo(
     optimizer_critic: nnx.Optimizer,
     observation: jnp.ndarray,
     action: jnp.ndarray,
-    old_logp: jnp.ndarray,
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
     next_value: jnp.ndarray,
@@ -204,8 +225,6 @@ def update_ppo(
             Array of observations.
         action : jnp.ndarray
             Actions taken per step.
-        old_logp : jnp.ndarray
-            Log probabilities of selected actions.
         reward : jnp.ndarray
             Array of rewards per step.
         terminated : jnp.ndarray
@@ -220,9 +239,10 @@ def update_ppo(
     advs, returns = compute_gae(
         reward, critic(observation).flatten(), next_value, terminated
     )
+    logp = actor.log_probability(observation, action)
     loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
     (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
-        actor, critic, old_logp, observation, action, advs, returns
+        actor, critic, logp, observation, action, advs, returns
     )
     optimizer_actor.update(actor, grad_actor)
     optimizer_critic.update(critic, grad_critic)
@@ -313,7 +333,6 @@ def train_ppo(
             optimizer_critic,
             observation,
             action,
-            actor.log_probability(observation, action),
             reward,
             terminated,
             next_value,
