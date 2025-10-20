@@ -210,6 +210,7 @@ def update_ppo(
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
     next_value: jnp.ndarray,
+    epochs: int = 1
 ) -> jnp.ndarray:
     """
     Updates the PPO agent
@@ -229,6 +230,8 @@ def update_ppo(
             Flags indicating episode termination per step.
         next_value : jnp.ndarray
             Array of predicted next_values per step.
+        epochs : int, optional
+            Number of training epochs.
 
     Returns:
     - loss_val : jnp.ndarray
@@ -239,11 +242,25 @@ def update_ppo(
     )
     logp = actor.log_probability(observation, action)
     loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
-    (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
-        actor, critic, logp, observation, action, advs, returns
-    )
-    optimizer_actor.update(actor, grad_actor)
-    optimizer_critic.update(critic, grad_critic)
+    
+    def train_step(i, vals):
+        actor, critic, optimizer_actor, optimizer_critic, _ = vals
+        (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
+            actor, critic, logp, observation, action, advs, returns
+        )
+        optimizer_actor.update(actor, grad_actor)
+        optimizer_critic.update(critic, grad_critic)
+        return actor, critic, optimizer_actor, optimizer_critic, loss_val
+    
+    carry = (actor, critic, optimizer_actor, optimizer_critic, 0.0)
+    (
+        actor,
+        critic,
+        optimizer_actor,
+        optimizer_critic,
+        loss_val
+    ) = jax.lax.fori_loop(0, epochs, train_step, carry)
+    
     return loss_val
 
 
@@ -253,7 +270,8 @@ def train_ppo(
     critic: nnx.Module,
     optimizer_actor: nnx.Optimizer,
     optimizer_critic: nnx.Optimizer,
-    epochs: int = 3000,
+    iterations: int = 3000,
+    epochs: int = 1,
     batch_size: int = 64,
     seed: int = 1,
     logger: LoggerBase | None = None,
@@ -274,8 +292,10 @@ def train_ppo(
         Optimizer for the actor network.
     optimizer_critic : nnx.Optimizer
         Optimizer for the critic network.
+    iterations : int, optional
+        Number of training iterations.
     epochs : int, optional
-        Number of training epochs.
+        Number of training epochs per iteration.
     batch_size : int, optional
         Batch size per update.
     seed : int, optional
@@ -304,7 +324,7 @@ def train_ppo(
         logger.start_new_episode()
 
     global_step = 0
-    for epoch in trange(epochs, disable=not progress_bar):
+    for iteration in trange(iterations, disable=not progress_bar):
         key, subkey = jax.random.split(key)
         (
             observation,
@@ -335,9 +355,10 @@ def train_ppo(
             reward,
             terminated,
             next_value,
+            epochs
         )
 
         if logger is not None:
-            logger.record_stat("loss", loss_val)
+            logger.record_stat("loss", loss_val, step=iteration)
 
     return actor, critic, optimizer_actor, optimizer_critic

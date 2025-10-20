@@ -11,10 +11,7 @@ from rl_blox.logging.logger import AIMLogger, StandardLogger, LoggerList
 
 env_name = "CartPole-v1"
 seed = 1
-num_envs=10
 test_episodes = 10
-
-envs = gym.make_vec("CartPole-v1", num_envs=num_envs, vectorization_mode="sync")
 
 hparams_model = {
     "actor_hidden_layers": [64, 64],
@@ -25,9 +22,13 @@ hparams_model = {
     "critic_learning_rate": 1e-3,
 }
 hparams_algorithm = dict(
-    epochs=3000,
+    num_envs=32,
+    iterations=3000,
+    epochs=1,
     seed=seed,
 )
+
+envs = gym.make_vec("CartPole-v1", num_envs=hparams_algorithm['num_envs'], vectorization_mode="sync")
 
 features = envs.observation_space.shape[1]
 actions = int(envs.single_action_space.n)
