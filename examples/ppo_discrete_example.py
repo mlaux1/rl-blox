@@ -3,11 +3,12 @@ import jax
 import optax
 from flax import nnx
 
-from rl_blox.algorithm.ppo import select_action_deterministic, train_ppo
+from rl_blox.algorithm.ppo import train_ppo
 from rl_blox.blox.function_approximator.mlp import MLP
-from rl_blox.logging.logger import StandardLogger
+from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
+from rl_blox.logging.logger import AIMLogger
 
-# TODO change environment to one with changable cntext. This was chosen for simplicity
+
 env_name = "CartPole-v1"
 seed = 1
 test_episodes = 10
@@ -37,6 +38,7 @@ actor = MLP(
     hparams_model["actor_activation"],
     nnx.Rngs(seed),
 )
+actor = SoftmaxPolicy(actor)
 
 critic = MLP(
     features,
@@ -53,10 +55,10 @@ optimizer_critic = nnx.Optimizer(
     critic, optax.adam(hparams_model["critic_learning_rate"]), wrt=nnx.Param
 )
 
-logger = StandardLogger(verbose=1)
+logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name="DDQN",
+    algorithm_name="PPO",
     hparams=hparams_model | hparams_algorithm,
 )
 
@@ -83,10 +85,7 @@ reward_sum = 0
 
 while finished_episodes < test_episodes:
     key, subkey = jax.random.split(key)
-    (
-        action,
-        _,
-    ) = select_action_deterministic(actor, obs, subkey)
+    action = actor.sample(obs, subkey) 
     next_obs, reward, terminated, truncated, _ = env.step(int(action))
     done = terminated or truncated
     reward_sum += reward

@@ -8,41 +8,12 @@ from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.gae import compute_gae
+from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..logging.logger import LoggerBase
 
 
-@nnx.jit
-def select_action_descrete(
-    actor: nnx.Module, obs: jnp.ndarray, key: jnp.ndarray
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """
-    Select an action using the actor's policy in a deterministic way.
-
-    Parameters
-    ----------
-    actor : nnx.Module
-        The actor network.
-    obs : jnp.ndarray
-        Last observation.
-    key : jnp.ndarray
-        Random key. Used for action sampling.
-
-    Returns
-    -------
-    action : jnp.ndarray
-        Selected action.
-    logp : jnp.ndarray
-        Log-probability of the selected action.
-    """
-    logits = actor(obs)
-    probs = jax.nn.softmax(logits)
-    action = jax.random.categorical(key, logits)
-    logp = jnp.log(probs[action])
-    return namedtuple("SelectedAction", ["action", "logp"])(action, logp)
-
-
 def ppo_loss(
-    actor: nnx.Module,
+    actor: StochasticPolicyBase,
     critic: nnx.Module,
     old_logps: jnp.ndarray,
     observations: jnp.ndarray,
@@ -56,7 +27,7 @@ def ppo_loss(
 
     Parameters
     ----------
-    actor : nnx.Module
+    actor : StochasticPolicyBase
         The actor network.
     critic : nnx.Module
         The critic network.
@@ -78,12 +49,7 @@ def ppo_loss(
     loss : jnp.ndarray
         The computed PPO loss for the batch.
     """
-    logits = actor(observations)
-    probs = jax.nn.softmax(logits)
-    logps = jnp.log(
-        jnp.take_along_axis(probs, actions[:, None], axis=1).squeeze()
-    )
-
+    logps = actor.log_probability(observations, actions)
     ratios = jnp.exp(logps - old_logps)
     surrogate1 = ratios * advantages
     surrogate2 = jnp.clip(ratios, 1 - clip, 1 + clip) * advantages
@@ -92,15 +58,18 @@ def ppo_loss(
     values = critic(observations)
     value_loss = jnp.mean((returns - values) ** 2)
 
+    logits = actor.logits(observations)
+    probs = jax.nn.softmax(logits)
     entropy = -jnp.mean(
         jnp.sum(probs * (logits - jax.scipy.special.logsumexp(logits)), axis=-1)
     )
+    
     return policy_loss + 0.5 * value_loss - 0.01 * entropy
 
 
 def collect_trajectories(
     env: gym.Env,
-    actor: nnx.Module,
+    actor: StochasticPolicyBase,
     critic: nnx.Module,
     key: jnp.ndarray,
     batch_size: int = 64,
@@ -125,7 +94,7 @@ def collect_trajectories(
     ----------
     env : gym.Env
         The environment to interact with.
-    actor : nnx.Module
+    actor : StochasticPolicyBase
         The actor network.
     critic : nnx.Module
         The critic network.
@@ -147,8 +116,6 @@ def collect_trajectories(
         Array of observations.
     - action : jnp.ndarray
         Actions taken per step.
-    - logp : jnp.ndarray
-        Log probabilities of selected actions.
     - reward : jnp.ndarray
         Array of rewards per step.
     - terminated : jnp.ndarray
@@ -161,8 +128,7 @@ def collect_trajectories(
     ongoing_accumulated_reward : float
         Accumulated award for the ongoing episode
     """
-    actions, logps, observations, rewards, terminated_arr, next_values = (
-        [],
+    actions, observations, rewards, terminated_arr, next_values = (
         [],
         [],
         [],
@@ -172,13 +138,12 @@ def collect_trajectories(
     obs, _ = env.reset() if last_observation is None else last_observation, None
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
-        action, logp = select_action_descrete(actor, obs, subkey)
+        action = actor.sample(obs, subkey)
         next_obs, reward, terminated, truncated, _ = env.step(int(action))
         next_value = critic(obs)
         ongoing_accumulated_reward += reward
 
         actions.append(action)
-        logps.append(logp)
         observations.append(obs)
         rewards.append(reward)
         terminated_arr.append(terminated)
@@ -197,7 +162,6 @@ def collect_trajectories(
         [
             "observation",
             "action",
-            "logp",
             "reward",
             "terminated",
             "next_value",
@@ -207,7 +171,6 @@ def collect_trajectories(
     )(
         jnp.stack(observations),
         jnp.stack(actions),
-        jnp.stack(logps),
         jnp.array(rewards).flatten(),
         jnp.array(terminated_arr, dtype=jnp.float32).flatten(),
         jnp.stack(next_values).flatten(),
@@ -216,9 +179,9 @@ def collect_trajectories(
     )
 
 
-@nnx.jit
+@jax.jit
 def update_ppo(
-    actor: nnx.Module,
+    actor: StochasticPolicyBase,
     critic: nnx.Module,
     optimizer_actor: nnx.Optimizer,
     optimizer_critic: nnx.Optimizer,
@@ -233,7 +196,7 @@ def update_ppo(
     Updates the PPO agent
 
     Args:
-        actor : nnx.Module
+        actor : StochasticPolicyBase
             The actor network
         critic : nnx.Module
             The critic network
@@ -268,7 +231,7 @@ def update_ppo(
 
 def train_ppo(
     env: gym.Env,
-    actor: nnx.Module,
+    actor: StochasticPolicyBase,
     critic: nnx.Module,
     optimizer_actor: nnx.Optimizer,
     optimizer_critic: nnx.Optimizer,
@@ -277,7 +240,7 @@ def train_ppo(
     seed: int = 1,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
-) -> tuple[nnx.Module, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
+) -> tuple[StochasticPolicyBase, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
     """
     Train a PPO agent.
 
@@ -285,7 +248,7 @@ def train_ppo(
     ----------
     env : gym.Env
         The training environment.
-    actor : nnx.Module
+    actor : StochasticPolicyBase
         The actor network.
     critic : nnx.Module
         The critic network.
@@ -306,7 +269,7 @@ def train_ppo(
 
     Returns
     -------
-    - actor : nnx.Module
+    - actor : StochasticPolicyBase
         Trained actor network.
     - critic : nnx.Module
         Trained critic network.
@@ -327,7 +290,6 @@ def train_ppo(
         (
             observation,
             action,
-            logp,
             reward,
             terminated,
             next_value,
@@ -351,7 +313,7 @@ def train_ppo(
             optimizer_critic,
             observation,
             action,
-            logp,
+            actor.log_probability(observation, action),
             reward,
             terminated,
             next_value,
