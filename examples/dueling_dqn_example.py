@@ -38,8 +38,8 @@ env.action_space.seed(seed)
 hparams_model = dict(
     activation="relu",
     shared_nodes=[128, 128],
-    advantage_nodes=[64],
-    state_value_nodes=[64],
+    advantage_nodes=[32],
+    state_value_nodes=[16],
 )
 hparams_algorithm = dict(
     buffer_size=50_000,
