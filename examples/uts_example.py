@@ -19,14 +19,14 @@ verbose = 1
 backbone_algorithm = "SAC"
 
 
-def set_context(env: gym.Env, context):
+def set_g(env: gym.Env, context):
     env.unwrapped.g = context
 
 
 base_env = gym.make(env_name)
 contexts = np.linspace(0, 20, 21)[:, np.newaxis]
 
-train_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
+train_set = DiscreteTaskSet(base_env, set_g, contexts, context_aware=True)
 
 hparams_models = dict(
     q_hidden_nodes=[512, 512],
