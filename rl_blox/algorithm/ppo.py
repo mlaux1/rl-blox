@@ -6,10 +6,11 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from flax import nnx
+import tensorflow_probability.substrates.jax as tfp
 from tqdm.rich import trange
 
 from ..blox.gae import compute_gae
-from ..blox.function_approximator.policy_head import StochasticPolicyBase, SoftmaxPolicy
+from ..blox.function_approximator.policy_head import StochasticPolicyBase, SoftmaxPolicy, GaussianPolicy, GaussianTanhPolicy
 from ..logging.logger import LoggerBase
 
 
@@ -141,13 +142,18 @@ def entropy(actor: StochasticPolicyBase, observations: jnp.ndarray) -> jnp.ndarr
     """
     if type(actor) == SoftmaxPolicy:
         logits = actor.logits(observations)
-        probs = jax.nn.softmax(logits)
-        entropy = -jnp.mean(
-            jnp.sum(probs * (logits - jax.scipy.special.logsumexp(logits)), axis=-1)
-        )
+        dist = tfp.distributions.Categorical(logits=logits)
+        entropy = dist.entropy()
     else:
-        raise NotImplementedError("Implemented only for SoftmaxPolicy.")
-    return entropy
+        if type(actor) == GaussianTanhPolicy:
+            mean, std = actor(observations)
+        elif type(actor) == GaussianPolicy:
+            mean, log_var = actor(observations)
+            log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
+            std = jnp.exp(log_std)
+        dist = tfp.distributions.Normal(loc=mean, scale=std)
+        entropy = dist.entropy()
+    return jnp.mean(entropy)
 
 
 def ppo_loss(
