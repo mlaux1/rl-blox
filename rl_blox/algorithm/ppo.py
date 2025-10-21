@@ -74,42 +74,49 @@ def collect_trajectories(
     global_step : int, optional
         Global step count
     """
-    actions, observations, rewards, terminated_arr, next_values = (
-        [],
-        [],
-        [],
-        [],
-        [],
-    )
-
     @nnx.jit
     def sample(policy, observation, subkey):
         return policy.sample(observation, subkey)
 
     @nnx.jit
     def value(value_fn, observation):
-        return value_fn(observation)
+        return value_fn(observation).flatten()
     
+    def add_to_batch(batch, value):
+        return jnp.array(value[None, ...]) if batch == None else jnp.concat([batch, value[None, ...]], axis=0)
+
+    observations, actions, rewards, terminated_arr, next_values = None, None, None, None, None
     obs, _ = envs.reset() if last_observation is None else last_observation, None
+    
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
         action = sample(actor, obs, subkey)
-        obs, reward, terminated, truncated, info = envs.step(np.asarray(action))
-        next_value = value(critic, obs)
+        next_obs, reward, terminated, truncated, info = envs.step(np.asarray(action))
+        
+        observations = add_to_batch(observations, obs)
+        actions = add_to_batch(actions, action)
+        rewards = add_to_batch(rewards, reward)
 
-        actions.append(action)
-        observations.append(obs)
-        rewards.append(reward)
-        terminated_arr.append(terminated)
-        next_values.append(next_value)
-
+        obs = jnp.copy(next_obs)
         if 'episode' in info.keys():
             if logger is not None:
-                finished_reward_lens = [(r, l) for r, l, f in zip(info['episode']['r'], info['episode']['l'], info['_episode']) if f]
-                for r, l in finished_reward_lens:
+                finished_reward_len_obs = [(r, l, o) for r, l, o, f in zip(info['episode']['r'], info['episode']['l'], info['final_obs'], info['_episode']) if f]
+                for i, (r, l, o) in enumerate(finished_reward_len_obs):
                     global_step += int(l)
                     logger.record_stat("return", float(r), step=global_step)
                     logger.start_new_episode()
+                    obs = obs.at[i].set(o)
+
+        next_value = value(critic, obs)
+        terminated_arr = add_to_batch(terminated_arr, terminated)
+        next_values = add_to_batch(next_values, next_value)
+        obs = next_obs
+    
+    def reshape_batch(batch):
+        return jnp.permute_dims(batch, (1, 0)).flatten()
+    
+    def reshape_obs_batch(observations):
+        return jnp.permute_dims(observations, (1, 0, 2)).reshape(-1, envs.observation_space.shape[1])
 
     return namedtuple(
         "PPO_Trajectory",
@@ -123,11 +130,11 @@ def collect_trajectories(
             "global_step"
         ],
     )(
-        jnp.concat(observations),
-        jnp.concat(actions),
-        jnp.concat(rewards),
-        jnp.concat(terminated_arr),
-        jnp.concat(next_values).flatten(),
+        reshape_obs_batch(observations),
+        reshape_batch(actions),
+        reshape_batch(rewards),
+        reshape_batch(terminated_arr),
+        reshape_batch(next_values),
         obs,
         global_step
     )
@@ -334,6 +341,7 @@ def train_ppo(
     key = jax.random.key(seed)
     last_observation, _ = envs.reset(seed=seed)
     envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
+    assert envs.metadata["autoreset_mode"] == gym.vector.AutoresetMode.SAME_STEP, "Vectorized Env has to be instantiated with the SAME_STEP autoreset mode."
 
     if logger is not None:
         logger.start_new_episode()

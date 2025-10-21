@@ -23,12 +23,16 @@ hparams_model = {
 }
 hparams_algorithm = dict(
     num_envs=32,
-    iterations=3000,
+    batch_size=64,
+    iterations=1000,
     epochs=1,
     seed=seed,
 )
 
-envs = gym.make_vec("CartPole-v1", num_envs=hparams_algorithm['num_envs'], vectorization_mode="sync")
+envs = gym.make_vec(env_name,
+                    num_envs=hparams_algorithm['num_envs'],
+                    vectorization_mode="sync",
+                    vector_kwargs={"autoreset_mode": gym.vector.AutoresetMode.SAME_STEP})
 
 features = envs.observation_space.shape[1]
 actions = int(envs.single_action_space.n)
@@ -70,8 +74,10 @@ actor, critic, optimizer_actor, optimizer_critic = train_ppo(
     critic,
     optimizer_actor,
     optimizer_critic,
+    iterations=hparams_algorithm["iterations"],
     epochs=hparams_algorithm["epochs"],
     logger=logger,
+    batch_size=hparams_algorithm["batch_size"]
 )
 
 envs.close()
