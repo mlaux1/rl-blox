@@ -169,6 +169,21 @@ class ModelBasedEncoder(nnx.Module):
         """
         return self.zs(observation)
 
+    def encode_zs_norm(self, observation: jnp.ndarray) -> jnp.ndarray:
+        """Encodes the observation into a normalized latent representation.
+
+        Parameters
+        ----------
+        observation : array, shape (n_samples, n_state_features)
+            Observation representation.
+
+        Returns
+        -------
+        zs : array, shape (n_samples, zs_dim)
+            Latent state representation.
+        """
+        return self.activation(self.zs_layer_norm(self.zs(observation)))
+
     def model_head(
         self, zs: jnp.ndarray, action: jnp.ndarray
     ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -212,7 +227,7 @@ class DeterministicPolicyWithEncoder(nnx.Module):
         self.policy = policy
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        return self.policy(self.encoder.encode_zs(observation))
+        return self.policy(self.encoder.encode_zs_norm(observation))
 
 
 def create_model_based_encoder_and_policy(

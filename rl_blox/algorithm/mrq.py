@@ -112,7 +112,7 @@ def mrq_loss(
         reward, terminated, gamma
     )
 
-    next_zs = jax.lax.stop_gradient(encoder_target.encode_zs(next_observation))
+    next_zs = jax.lax.stop_gradient(encoder_target.encode_zs_norm(next_observation))
     next_zsa = jax.lax.stop_gradient(
         encoder_target.encode_zsa(next_zs, next_action)
     )
@@ -121,7 +121,7 @@ def mrq_loss(
         n_step_return + discount * q_next * target_reward_scale
     ) / reward_scale
 
-    zs = jax.lax.stop_gradient(encoder.encode_zs(observation))
+    zs = jax.lax.stop_gradient(encoder.encode_zs_norm(observation))
     zsa = jax.lax.stop_gradient(encoder.encode_zsa(zs, action))
 
     q1_predicted = q.q1(zsa).squeeze()
