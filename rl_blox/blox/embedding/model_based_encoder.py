@@ -167,7 +167,7 @@ class ModelBasedEncoder(nnx.Module):
         zs : array, shape (n_samples, zs_dim)
             Latent state representation.
         """
-        return self.activation(self.zs_layer_norm(self.zs(observation)))
+        return self.zs(observation)
 
     def model_head(
         self, zs: jnp.ndarray, action: jnp.ndarray
