@@ -81,12 +81,21 @@ def collect_trajectories(
         [],
         [],
     )
+
+    @nnx.jit
+    def sample(policy, observation, subkey):
+        return policy.sample(observation, subkey)
+
+    @nnx.jit
+    def value(value_fn, observation):
+        return value_fn(observation)
+    
     obs, _ = envs.reset() if last_observation is None else last_observation, None
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
-        action = actor.sample(obs, subkey)
+        action = sample(actor, obs, subkey)
         obs, reward, terminated, truncated, info = envs.step(np.asarray(action))
-        next_value = critic(obs)
+        next_value = value(critic, obs)
 
         actions.append(action)
         observations.append(obs)
