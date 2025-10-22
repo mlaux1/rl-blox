@@ -1,13 +1,13 @@
 import gymnasium as gym
 import jax
+import jax.numpy as jnp
 import optax
 from flax import nnx
 
 from rl_blox.algorithm.ppo import train_ppo
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
-from rl_blox.logging.logger import AIMLogger, StandardLogger, LoggerList
-
+from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 env_name = "CartPole-v1"
 seed = 1
@@ -22,17 +22,19 @@ hparams_model = {
     "critic_learning_rate": 1e-3,
 }
 hparams_algorithm = dict(
-    num_envs=32,
+    num_envs=64,
     batch_size=64,
     iterations=1000,
-    epochs=1,
+    epochs=2,
     seed=seed,
 )
 
-envs = gym.make_vec(env_name,
-                    num_envs=hparams_algorithm['num_envs'],
-                    vectorization_mode="sync",
-                    vector_kwargs={"autoreset_mode": gym.vector.AutoresetMode.SAME_STEP})
+envs = gym.make_vec(
+    env_name,
+    num_envs=hparams_algorithm["num_envs"],
+    vectorization_mode="sync",
+    vector_kwargs={"autoreset_mode": gym.vector.AutoresetMode.SAME_STEP},
+)
 
 features = envs.observation_space.shape[1]
 actions = int(envs.single_action_space.n)
@@ -77,7 +79,7 @@ actor, critic, optimizer_actor, optimizer_critic = train_ppo(
     iterations=hparams_algorithm["iterations"],
     epochs=hparams_algorithm["epochs"],
     logger=logger,
-    batch_size=hparams_algorithm["batch_size"]
+    batch_size=hparams_algorithm["batch_size"],
 )
 
 envs.close()
@@ -86,20 +88,10 @@ envs.close()
 
 env = gym.make(env_name, render_mode="human")
 
-key = jax.random.key(seed)
-obs, _ = env.reset()
-finished_episodes = 0
-reward_sum = 0
+obs, _ = env.reset(seed=seed)
 
-while finished_episodes < test_episodes:
-    key, subkey = jax.random.split(key)
-    action = actor.sample(obs, subkey) 
-    next_obs, reward, terminated, truncated, _ = env.step(int(action))
-    done = terminated or truncated
-    reward_sum += reward
-
-    if done:
-        finished_episodes += 1
-        next_obs, _ = env.reset()
-
-print(f"Return: {reward_sum}")
+while True:
+    action = int(jnp.argmax(actor(obs)))
+    obs, reward, terminated, truncated, _ = env.step(int(action))
+    if terminated or truncated:
+        obs, _ = env.reset()
