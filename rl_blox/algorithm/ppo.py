@@ -102,10 +102,7 @@ def collect_trajectories(
         None,
         None,
     )
-    obs, _ = (
-        envs.reset() if last_observation is None else last_observation,
-        None,
-    )
+    obs = envs.reset()[0] if last_observation is None else last_observation
 
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
