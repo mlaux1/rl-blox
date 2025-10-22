@@ -10,15 +10,9 @@ from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
 
 def test_ppo(cart_pole_envs):
     seed = 42
-    envs = gym.make_vec(
-        "CartPole-v1",
-        num_envs=2,
-        vectorization_mode="sync",
-        vector_kwargs={"autoreset_mode": gym.vector.AutoresetMode.SAME_STEP},
-    )
 
-    features = envs.observation_space.shape[1]
-    actions = int(envs.single_action_space.n)
+    features = cart_pole_envs.observation_space.shape[1]
+    actions = int(cart_pole_envs.single_action_space.n)
 
     actor = MLP(
         features,
@@ -41,5 +35,10 @@ def test_ppo(cart_pole_envs):
     optimizer_critic = nnx.Optimizer(critic, optax.rprop(0.0003), wrt=nnx.Param)
 
     actor, critic, optimizer_actor, optimizer_critic = train_ppo(
-        envs, actor, critic, optimizer_actor, optimizer_critic, iterations=5
+        cart_pole_envs,
+        actor,
+        critic,
+        optimizer_actor,
+        optimizer_critic,
+        iterations=5,
     )
