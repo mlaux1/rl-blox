@@ -94,7 +94,7 @@ class ModelBasedEncoder(nnx.Module):
     activation: Callable[[jnp.ndarray], jnp.ndarray]
     """Activation function."""
 
-    zs_layer_norm: nnx.LayerNorm
+    _zs_norm: nnx.LayerNorm
     """Layer normalization for the latent state representation."""
 
     def __init__(
@@ -131,7 +131,7 @@ class ModelBasedEncoder(nnx.Module):
         )
         self.zs_dim = zs_dim
         self.activation = getattr(nnx, activation)
-        self.zs_layer_norm = nnx.LayerNorm(num_features=zs_dim, rngs=rngs)
+        self._zs_norm = nnx.RMSNorm(num_features=zs_dim, rngs=rngs)
 
     def encode_zsa(self, zs: jnp.ndarray, action: jnp.ndarray) -> jnp.ndarray:
         """Encodes the state and action into latent representation.
@@ -182,7 +182,7 @@ class ModelBasedEncoder(nnx.Module):
         zs : array, shape (n_samples, zs_dim)
             Latent state representation.
         """
-        return self.activation(self.zs_layer_norm(self.zs(observation)))
+        return self._zs_norm(self.zs(observation))
 
     def model_head(
         self, zs: jnp.ndarray, action: jnp.ndarray
