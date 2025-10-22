@@ -1,88 +1,14 @@
 from collections.abc import Callable
 
-import gymnasium as gym
 import jax
-import jax.numpy as jnp
-import numpy as np
-from gymnasium.wrappers import TransformObservation
-from jax.typing import ArrayLike
 from tqdm.rich import tqdm
 
+from ..blox.multitask import DiscreteTaskSet
 from ..logging.logger import LoggerBase
 
 
-class TaskSet:
-    """A collection of tasks (environments)."""
-
-    def __init__(
-        self, contexts: list[ArrayLike], envs: list[gym.Env], context_aware=True
-    ):
-        assert len(contexts) == len(envs)
-        self.contexts = contexts
-        self.task_envs = envs
-        self.context_aware = context_aware
-
-        if context_aware:
-            for i in range(len(contexts)):
-                assert isinstance(
-                    self.task_envs[i].observation_space, gym.spaces.Box
-                )
-                new_low = np.concatenate(
-                    [self.task_envs[i].observation_space.low, contexts[0]]
-                )
-                new_high = np.concatenate(
-                    [
-                        self.task_envs[i].observation_space.high,
-                        contexts[-1],
-                    ]
-                )
-                new_obs_space = gym.spaces.Box(low=new_low, high=new_high)
-                ctx_i = np.asarray(self.contexts[i])
-                self.task_envs[i] = TransformObservation(
-                    self.task_envs[i],
-                    lambda obs, ctx=ctx_i: np.concatenate([obs, ctx]),
-                    new_obs_space,
-                )
-
-    def get_context(self, task_id: int) -> jnp.ndarray:
-        assert 0 <= task_id < len(self.contexts)
-        return self.contexts[task_id]
-
-    def get_task_env(self, task_id: int) -> gym.Env:
-        assert 0 <= task_id < len(self.contexts)
-        return self.task_envs[task_id]
-
-    def get_task_and_context(self, task_id: int) -> tuple[gym.Env, jnp.ndarray]:
-        assert 0 <= task_id < len(self.contexts)
-        return self.task_envs[task_id], self.contexts[task_id]
-
-    def __len__(self) -> int:
-        return len(self.contexts)
-
-
-class PrioritisedTaskSampler:
-    """A sampler that returns envs from a TaskSet given priorities."""
-
-    def __init__(
-        self,
-        task_set: TaskSet,
-        priorities: ArrayLike | None = None,
-    ):
-        self.task_set = task_set
-        self.priorities = priorities
-
-    def sample(self, key) -> tuple[gym.Env, jnp.ndarray]:
-        env_id = jax.random.choice(
-            key, jnp.arange(len(self.task_set)), p=self.priorities
-        ).item()
-        return self.task_set.get_task_and_context(env_id)
-
-    def update_priorities(self, priorities) -> None:
-        self.priorities = priorities
-
-
 def train_uts(
-    envs: TaskSet,
+    task_set: DiscreteTaskSet,
     train_st: Callable,
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
@@ -100,7 +26,7 @@ def train_uts(
     Parameters
     ----------
 
-    envs : TaskSet
+    task_set : DiscreteTaskSet
         The set of tasks available for training.
 
     train_st : Callable
@@ -129,11 +55,13 @@ def train_uts(
     global_step = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
-    task_sampler = PrioritisedTaskSampler(envs)
+
+    n_tasks = len(task_set)
 
     while global_step < total_timesteps:
         key, skey = jax.random.split(key)
-        env, context = task_sampler.sample(skey)
+        task_id = jax.random.choice(skey, n_tasks)
+        env = task_set.get_task(task_id)
         st_result = train_st(
             env,
             seed=seed + global_step,
