@@ -221,7 +221,6 @@ def ppo_loss(
     return policy_loss + 0.5 * value_loss - 0.01 * entropy(actor, observations)
 
 
-@jax.jit
 def update_ppo(
     actor: StochasticPolicyBase,
     critic: nnx.Module,
@@ -265,23 +264,12 @@ def update_ppo(
     logp = actor.log_probability(observation, action)
     loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
     
-    def train_step(i, vals):
-        actor, critic, optimizer_actor, optimizer_critic, _ = vals
+    for _ in range(epochs):
         (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
             actor, critic, logp, observation, action, advs, returns
         )
         optimizer_actor.update(actor, grad_actor)
         optimizer_critic.update(critic, grad_critic)
-        return actor, critic, optimizer_actor, optimizer_critic, loss_val
-    
-    carry = (actor, critic, optimizer_actor, optimizer_critic, 0.0)
-    (
-        actor,
-        critic,
-        optimizer_actor,
-        optimizer_critic,
-        loss_val
-    ) = jax.lax.fori_loop(0, epochs, train_step, carry)
     
     return loss_val
 
@@ -345,6 +333,8 @@ def train_ppo(
 
     if logger is not None:
         logger.start_new_episode()
+        
+    update_ppo_jitted = nnx.jit(update_ppo, static_argnames='epochs')
 
     global_step = 0
     for iteration in trange(iterations, disable=not progress_bar):
@@ -368,7 +358,7 @@ def train_ppo(
             global_step
         )
 
-        loss_val = update_ppo(
+        loss_val = update_ppo_jitted(
             actor,
             critic,
             optimizer_actor,
