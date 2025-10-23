@@ -14,12 +14,14 @@ env = gym.wrappers.RecordEpisodeStatistics(env)
 
 hparams_models = dict(
     seed=seed,
+    encoder_activation_in_last_layer=False,
 )
 hparams_algorithm = dict(
     seed=seed,
     total_timesteps=12_000,
     buffer_size=12_000,
     learning_starts=5_000,
+    normalize_targets=True,
 )
 
 if verbose:
