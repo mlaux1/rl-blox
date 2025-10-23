@@ -102,7 +102,7 @@ class ModelBasedEncoder(nnx.Module):
     encoder_activation_in_last_layer: bool
     """Use activation function in last layer of state encoder."""
 
-    _zs_norm: nnx.LayerNorm
+    zs_norm: nnx.LayerNorm
     """Layer normalization for the latent state representation."""
 
     def __init__(
@@ -140,7 +140,7 @@ class ModelBasedEncoder(nnx.Module):
         )
         self.zs_dim = zs_dim
         self.activation = getattr(nnx, activation)
-        self._zs_norm = nnx.LayerNorm(num_features=zs_dim, rngs=rngs)
+        self.zs_norm = nnx.LayerNorm(num_features=zs_dim, rngs=rngs)
         self.encoder_activation_in_last_layer = encoder_activation_in_last_layer
 
     def encode_zsa(self, zs: jnp.ndarray, action: jnp.ndarray) -> jnp.ndarray:
@@ -178,9 +178,9 @@ class ModelBasedEncoder(nnx.Module):
             Latent state representation.
         """
         if self.encoder_activation_in_last_layer:
-            return self.activation(self._zs_norm(self.zs(observation)))
+            return self.activation(self.zs_norm(self.zs(observation)))
         else:
-            return self._zs_norm(self.zs(observation))
+            return self.zs_norm(self.zs(observation))
 
     def model_head(
         self, zs: jnp.ndarray, action: jnp.ndarray
