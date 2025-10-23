@@ -203,6 +203,7 @@ def create_mrq_state(
     encoder_activation: str = "elu",
     encoder_learning_rate: float = 1e-4,
     encoder_weight_decay: float = 1e-4,
+    encoder_activation_in_last_layer: bool = False,
     seed: int = 0,
 ):
     env.action_space.seed(seed)
@@ -220,6 +221,7 @@ def create_mrq_state(
         encoder_zsa_dim=encoder_zsa_dim,
         encoder_hidden_nodes=encoder_hidden_nodes,
         encoder_activation=encoder_activation,
+        encoder_activation_in_last_layer=encoder_activation_in_last_layer,
         rngs=rngs,
     )
     encoder_optimizer = nnx.Optimizer(
@@ -314,6 +316,7 @@ def train_mrq(
     dynamics_weight: float = 1.0,
     reward_weight: float = 0.1,
     done_weight: float = 0.1,
+    normalize_targets: bool = True,
     activation_weight: float = 1e-5,
     replay_buffer: SubtrajectoryReplayBufferPER | None = None,
     policy_with_encoder_target: DeterministicPolicyWithEncoder | None = None,
@@ -432,6 +435,9 @@ def train_mrq(
 
     done_weight : float, optional
         Weight for the done loss in the encoder training.
+
+    normalize_targets : bool, optional
+        Normalize target values for zs.
 
     activation_weight : float, optional
         Weight for the activation regularization in the policy training.
@@ -567,6 +573,7 @@ def train_mrq(
         done_weight,
         target_delay,
         batch_size,
+        normalize_targets,
     )
     _update_critic_and_policy = nnx.cached_partial(
         update_critic_and_policy,

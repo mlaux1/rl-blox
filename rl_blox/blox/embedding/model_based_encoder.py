@@ -65,6 +65,11 @@ class ModelBasedEncoder(nnx.Module):
         Activation function. Has to be the name of a function defined in the
         flax.nnx module.
 
+    encoder_activation_in_last_layer : bool
+        Use activation function after last layer of state encoder. This is the
+        behavior of the original implementation, but it restricts the range
+        of the learned features to [-1, infinity].
+
     rngs : nnx.Rngs
         Random number generator.
 
@@ -94,6 +99,9 @@ class ModelBasedEncoder(nnx.Module):
     activation: Callable[[jnp.ndarray], jnp.ndarray]
     """Activation function."""
 
+    encoder_activation_in_last_layer: bool
+    """Use activation function in last layer of state encoder."""
+
     _zs_norm: nnx.LayerNorm
     """Layer normalization for the latent state representation."""
 
@@ -107,6 +115,7 @@ class ModelBasedEncoder(nnx.Module):
         zsa_dim: int,
         hidden_nodes: list[int],
         activation: str,
+        encoder_activation_in_last_layer: bool,
         rngs: nnx.Rngs,
     ):
         self.zs = LayerNormMLP(
@@ -132,6 +141,7 @@ class ModelBasedEncoder(nnx.Module):
         self.zs_dim = zs_dim
         self.activation = getattr(nnx, activation)
         self._zs_norm = nnx.LayerNorm(num_features=zs_dim, rngs=rngs)
+        self.encoder_activation_in_last_layer = encoder_activation_in_last_layer
 
     def encode_zsa(self, zs: jnp.ndarray, action: jnp.ndarray) -> jnp.ndarray:
         """Encodes the state and action into latent representation.
@@ -167,7 +177,10 @@ class ModelBasedEncoder(nnx.Module):
         zs : array, shape (n_samples, zs_dim)
             Latent state representation.
         """
-        return self._zs_norm(self.zs(observation))
+        if self.encoder_activation_in_last_layer:
+            return self.activation(self._zs_norm(self.zs(observation)))
+        else:
+            return self._zs_norm(self.zs(observation))
 
     def model_head(
         self, zs: jnp.ndarray, action: jnp.ndarray
@@ -227,6 +240,7 @@ def create_model_based_encoder_and_policy(
     encoder_zsa_dim: int = 512,
     encoder_hidden_nodes: list[int] | tuple[int] = (512, 512),
     encoder_activation: str = "elu",
+    encoder_activation_in_last_layer: bool = False,
     rngs: nnx.Rngs | None = None,
 ) -> DeterministicPolicyWithEncoder:
     """Creates a model-based encoder."""
@@ -241,6 +255,7 @@ def create_model_based_encoder_and_policy(
         zsa_dim=encoder_zsa_dim,
         hidden_nodes=encoder_hidden_nodes,
         activation=encoder_activation,
+        encoder_activation_in_last_layer=encoder_activation_in_last_layer,
         rngs=rngs,
     )
     policy_net = LayerNormMLP(
@@ -263,6 +278,7 @@ def create_model_based_encoder_and_policy(
         "done_weight",
         "target_delay",
         "batch_size",
+        "normalize_targets",
     ),
 )
 def update_model_based_encoder(
@@ -276,6 +292,7 @@ def update_model_based_encoder(
     done_weight: float,
     target_delay: int,
     batch_size: int,
+    normalize_targets: bool,
     batches: tuple[jnp.ndarray],
     environment_terminates: bool,
 ) -> jnp.ndarray:
@@ -297,6 +314,7 @@ def update_model_based_encoder(
             reward_weight,
             done_weight,
             environment_terminates,
+            normalize_targets,
         )
         encoder_optimizer.update(encoder, grads)
         return (
@@ -333,6 +351,7 @@ def model_based_encoder_loss(
     reward_weight: float,
     done_weight: float,
     environment_terminates: bool,
+    normalize_targets: bool,
 ) -> tuple[float, tuple[float, float, float, float]]:
     r"""Loss for encoder.
 
@@ -394,6 +413,9 @@ def model_based_encoder_loss(
         Flag that indicates if the environment terminates. If it does not,
         we will not use the done loss component.
 
+    normalize_targets : bool
+        Normalize target values for zs.
+
     Returns
     -------
     loss : float
@@ -406,9 +428,14 @@ def model_based_encoder_loss(
     flat_next_observation = batch.next_observation.reshape(
         -1, *batch.next_observation.shape[2:]
     )
-    flat_next_zs = jax.lax.stop_gradient(
-        encoder_target.encode_zs(flat_next_observation)
-    )
+    if normalize_targets:
+        flat_next_zs = jax.lax.stop_gradient(
+            encoder_target.encode_zs(flat_next_observation)
+        )
+    else:
+        flat_next_zs = jax.lax.stop_gradient(
+            encoder_target.zs(flat_next_observation)
+        )
     next_zs = flat_next_zs.reshape(
         list(batch.next_observation.shape[:2]) + [-1]
     )
