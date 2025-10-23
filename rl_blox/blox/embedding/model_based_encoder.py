@@ -76,7 +76,7 @@ class ModelBasedEncoder(nnx.Module):
        https://openreview.net/forum?id=R1hIXdST22
     """
 
-    _zs: LayerNormMLP
+    zs: LayerNormMLP
     """Maps observations to latent state representations (nonlinear)."""
 
     za: nnx.Linear
@@ -109,7 +109,7 @@ class ModelBasedEncoder(nnx.Module):
         activation: str,
         rngs: nnx.Rngs,
     ):
-        self._zs = LayerNormMLP(
+        self.zs = LayerNormMLP(
             n_state_features,
             zs_dim,
             hidden_nodes,
@@ -154,21 +154,6 @@ class ModelBasedEncoder(nnx.Module):
         za = self.activation(self.za(action))
         return self.zsa(jnp.concatenate((zs, za), axis=-1))
 
-    def zs(self, observation: jnp.ndarray) -> jnp.ndarray:
-        """Encodes the observation into an unnormalized latent state.
-
-        Parameters
-        ----------
-        observation : array, shape (n_samples, n_state_features)
-            Observation representation.
-
-        Returns
-        -------
-        zs : array, shape (n_samples, zs_dim)
-            Latent state representation.
-        """
-        return self._zs(observation)
-
     def encode_zs(self, observation: jnp.ndarray) -> jnp.ndarray:
         """Encodes the observation into a latent state representation.
 
@@ -182,7 +167,7 @@ class ModelBasedEncoder(nnx.Module):
         zs : array, shape (n_samples, zs_dim)
             Latent state representation.
         """
-        return self.activation(self._zs_norm(self._zs(observation)))
+        return self._zs_norm(self.zs(observation))
 
     def model_head(
         self, zs: jnp.ndarray, action: jnp.ndarray
@@ -422,12 +407,12 @@ def model_based_encoder_loss(
         -1, *batch.next_observation.shape[2:]
     )
     flat_next_zs = jax.lax.stop_gradient(
-        encoder_target.zs(flat_next_observation)
+        encoder_target.encode_zs(flat_next_observation)
     )
     next_zs = flat_next_zs.reshape(
         list(batch.next_observation.shape[:2]) + [-1]
     )
-    pred_zs_t = encoder.zs(batch.observation[:, 0])
+    pred_zs_t = encoder.encode_zs(batch.observation[:, 0])
     not_done = 1 - batch.terminated
     # in subtrajectories with termination mask, mask out losses
     # after termination
