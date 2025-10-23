@@ -17,6 +17,18 @@ def cart_pole_env():
 
 
 @pytest.fixture(scope="session")
+def cart_pole_envs():
+    envs = gym.make_vec(
+        "CartPole-v1",
+        num_envs=2,
+        vectorization_mode="sync",
+        vector_kwargs={"autoreset_mode": gym.vector.AutoresetMode.SAME_STEP},
+    )
+    yield envs
+    envs.close()
+
+
+@pytest.fixture(scope="session")
 def inverted_pendulum_env():
     env = gym.make("InvertedPendulum-v5")
     yield env
