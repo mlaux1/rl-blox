@@ -47,6 +47,7 @@ The implementation of this project follows the following principles:
 ### Install via PyPI
 
 The easiest way to install is via PyPI:
+
 ```bash
 pip install rl-blox
 ```
@@ -80,7 +81,7 @@ You can install all optional dependencies (except logging) using `pip install 'r
 
 We currently provide implementations of the following algorithms (ordered from
 SotA to classic RL algorithms):
-MR.Q, TD7, TD3+LAP, PE-TS, SAC, TD3, DDPG, DDQN, DQN, double Q-learning,
+MR.Q, TD7, TD3+LAP, PE-TS, SAC, TD3, PPO, DDPG, DDQN, DQN, double Q-learning,
 CMA-ES, Dyna-Q, actor-critic, REINFORCE, Q-learning, MC.
 
 ## Getting Started
