@@ -1,4 +1,5 @@
 from collections import namedtuple
+from functools import partial
 from typing import Any
 
 import gymnasium as gym
@@ -208,6 +209,7 @@ def ppo_loss(
     )
 
 
+@partial(nnx.jit, static_argnames="epochs")
 def update_ppo(
     actor: StochasticPolicyBase,
     critic: nnx.Module,
@@ -323,8 +325,6 @@ def train_ppo(
     if logger is not None:
         logger.start_new_episode()
 
-    update_ppo_jitted = nnx.jit(update_ppo, static_argnames="epochs")
-
     global_step = 0
     for iteration in trange(iterations, disable=not progress_bar):
         key, subkey = jax.random.split(key)
@@ -347,7 +347,7 @@ def train_ppo(
             global_step,
         )
 
-        loss_val = update_ppo_jitted(
+        loss_val = update_ppo(
             actor,
             critic,
             optimizer_actor,
