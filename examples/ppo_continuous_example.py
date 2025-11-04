@@ -23,10 +23,10 @@ hparams_model = {
     "critic_learning_rate": 1e-3,
 }
 hparams_algorithm = dict(
-    num_envs=64,
+    num_envs=32,
     batch_size=256,
     iterations=300,
-    epochs=1,
+    epochs=10,
     seed=seed,
 )
 
@@ -93,7 +93,7 @@ env = gym.make(env_name, render_mode="human")
 obs, _ = env.reset(seed=seed)
 
 while True:
-    action = np.array(actor(jnp.array(obs)))
+    action = np.array(actor(jnp.array(obs))[0])
     obs, reward, terminated, truncated, _ = env.step(action)
     if terminated or truncated:
         obs, _ = env.reset()
