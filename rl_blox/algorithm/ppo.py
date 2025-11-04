@@ -75,20 +75,9 @@ def collect_trajectories(
         Global step count
     """
 
-    def add_to_batch(batch, value):
-        return (
-            jnp.array(value[None, ...])
-            if batch is None
-            else jnp.concat([batch, value[None, ...]], axis=0)
-        )
-
-    observations, actions, rewards, terminated_arr, next_values = (
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+    observations, actions, rewards, terminated_arr, next_values = [
+        [] for _ in range(5)
+    ]
     obs = envs.reset()[0] if last_observation is None else last_observation
 
     for _ in range(batch_size):
@@ -98,9 +87,9 @@ def collect_trajectories(
             np.asarray(action)
         )
 
-        observations = add_to_batch(observations, obs)
-        actions = add_to_batch(actions, action)
-        rewards = add_to_batch(rewards, reward)
+        observations.append(obs[jnp.newaxis])
+        actions.append(action[jnp.newaxis])
+        rewards.append(reward[jnp.newaxis])
 
         obs = jnp.copy(next_obs)
         if logger is not None and "episode" in info:
@@ -122,8 +111,8 @@ def collect_trajectories(
                 obs = obs.at[i].set(o)
 
         next_value = critic(obs).flatten()
-        terminated_arr = add_to_batch(terminated_arr, terminated)
-        next_values = add_to_batch(next_values, next_value)
+        terminated_arr.append(terminated[jnp.newaxis])
+        next_values.append(next_value[jnp.newaxis])
         obs = next_obs
 
     def reshape_batch(batch):
@@ -133,6 +122,12 @@ def collect_trajectories(
         return jnp.permute_dims(observations, (1, 0, 2)).reshape(
             -1, envs.observation_space.shape[1]
         )
+
+    observations = jnp.concat(observations, axis=0)
+    actions = jnp.concat(actions, axis=0)
+    rewards = jnp.concat(rewards, axis=0)
+    terminated_arr = jnp.concat(terminated_arr, axis=0)
+    next_values = jnp.concat(next_values, axis=0)
 
     return namedtuple(
         "PPO_Trajectory",
