@@ -61,6 +61,7 @@ class MLP(nnx.Module):
 
         self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
 
+    @nnx.jit
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         for layer in self.hidden_layers:
             x = self.activation(layer(x))

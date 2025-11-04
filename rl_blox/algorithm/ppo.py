@@ -74,14 +74,6 @@ def collect_trajectories(
         Global step count
     """
 
-    @nnx.jit
-    def sample(policy, observation, subkey):
-        return policy.sample(observation, subkey)
-
-    @nnx.jit
-    def value(value_fn, observation):
-        return value_fn(observation).flatten()
-
     def add_to_batch(batch, value):
         return (
             jnp.array(value[None, ...])
@@ -100,7 +92,7 @@ def collect_trajectories(
 
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
-        action = sample(actor, obs, subkey)
+        action = actor.sample(obs, subkey)
         next_obs, reward, terminated, truncated, info = envs.step(
             np.asarray(action)
         )
@@ -128,7 +120,7 @@ def collect_trajectories(
                 logger.start_new_episode()
                 obs = obs.at[i].set(o)
 
-        next_value = value(critic, obs)
+        next_value = critic(obs).flatten()
         terminated_arr = add_to_batch(terminated_arr, terminated)
         next_values = add_to_batch(next_values, next_value)
         obs = next_obs

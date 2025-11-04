@@ -166,6 +166,7 @@ class GaussianTanhPolicy(StochasticPolicyBase):
         std = jnp.exp(log_std)
         return mean, std
 
+    @nnx.jit
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from Gaussian distribution."""
         mean, std = self(observation)
@@ -212,6 +213,7 @@ class GaussianPolicy(StochasticPolicyBase):
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
         return self.net(observation)[0]
 
+    @nnx.jit
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         """Sample action from Gaussian distribution."""
         mean, log_var = self.net(observation)
@@ -274,6 +276,7 @@ class SoftmaxPolicy(StochasticPolicyBase):
     def logits(self, observation: jnp.ndarray) -> jnp.ndarray:
         return self.net(observation)
 
+    @nnx.jit
     def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
         return dist.Categorical(logits=self.logits(observation)).sample(
             seed=key,
