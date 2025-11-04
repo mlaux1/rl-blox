@@ -217,29 +217,30 @@ def update_ppo(
     next_value: jnp.ndarray,
     epochs: int = 1,
 ) -> jnp.ndarray:
-    """
-    Updates the PPO agent
+    """Updates the PPO agent.
 
-    Args:
-        actor : StochasticPolicyBase
-            The actor network
-        critic : nnx.Module
-            The critic network
-        observation : jnp.ndarray
-            Array of observations.
-        action : jnp.ndarray
-            Actions taken per step.
-        reward : jnp.ndarray
-            Array of rewards per step.
-        terminated : jnp.ndarray
-            Flags indicating episode termination per step.
-        next_value : jnp.ndarray
-            Array of predicted next_values per step.
-        epochs : int, optional
-            Number of training epochs.
+    Arguments
+    ---------
+    actor : StochasticPolicyBase
+        The actor network
+    critic : nnx.Module
+        The critic network
+    observation : jnp.ndarray
+        Array of observations.
+    action : jnp.ndarray
+        Actions taken per step.
+    reward : jnp.ndarray
+        Array of rewards per step.
+    terminated : jnp.ndarray
+        Flags indicating episode termination per step.
+    next_value : jnp.ndarray
+        Array of predicted next_values per step.
+    epochs : int, optional
+        Number of training epochs.
 
-    Returns:
-    - loss_val : jnp.ndarray
+    Returns
+    -------
+    loss_val : jnp.ndarray
         Calculated loss.
     """
     advs, returns = compute_gae(
