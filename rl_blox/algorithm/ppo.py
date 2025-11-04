@@ -116,12 +116,12 @@ def collect_trajectories(
         obs = next_obs
 
     def reshape_batch(batch):
-        return jnp.permute_dims(batch, (1, 0)).flatten()
-
-    def reshape_obs_batch(observations):
-        return jnp.permute_dims(observations, (1, 0, 2)).reshape(
-            -1, envs.observation_space.shape[1]
-        )
+        step_idx = 0
+        env_idx = 1
+        other_indices = tuple(range(2, batch.ndim))
+        return jnp.permute_dims(
+            batch, (env_idx, step_idx) + other_indices
+        ).reshape(-1, *batch.shape[2:])
 
     observations = jnp.concat(observations, axis=0)
     actions = jnp.concat(actions, axis=0)
@@ -141,11 +141,11 @@ def collect_trajectories(
             "global_step",
         ],
     )(
-        reshape_obs_batch(observations),
+        reshape_batch(observations),
         reshape_batch(actions),
-        reshape_batch(rewards),
-        reshape_batch(terminated_arr),
-        reshape_batch(next_values),
+        reshape_batch(rewards).squeeze(),
+        reshape_batch(terminated_arr).squeeze(),
+        reshape_batch(next_values).squeeze(),
         obs,
         global_step,
     )

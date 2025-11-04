@@ -1,5 +1,4 @@
 import gymnasium as gym
-import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
@@ -7,7 +6,7 @@ from flax import nnx
 from rl_blox.algorithm.ppo import train_ppo
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
-from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
+from rl_blox.logging.logger import AIMLogger
 
 env_name = "CartPole-v1"
 seed = 1
