@@ -56,6 +56,7 @@ class StochasticPolicyBase(nnx.Module):
     * :func:`~StochasticPolicyBase.__call__`
     * :func:`~StochasticPolicyBase.sample`
     * :func:`~StochasticPolicyBase.log_probability`
+    * :func:`~StochasticPolicyBase.entropy`
     """
 
     def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
@@ -103,6 +104,21 @@ class StochasticPolicyBase(nnx.Module):
         raise NotImplementedError(
             "Subclasses must implement log_probability method."
         )
+
+    def entropy(self, observation: jnp.ndarray) -> jnp.ndarray:
+        """Compute entropy of policy for given observation.
+
+        Parameters
+        ----------
+        observation : array
+            Observation.
+
+        Returns
+        -------
+        entropy : array
+            Entropy of policy for given observations.
+        """
+        raise NotImplementedError("Subclasses must implement entropy method.")
 
 
 class GaussianTanhPolicy(StochasticPolicyBase):
@@ -170,6 +186,11 @@ class GaussianTanhPolicy(StochasticPolicyBase):
             action
         )
 
+    def entropy(self, observations: jnp.ndarray) -> jnp.ndarray:
+        """Compute entropy of policy for given observation."""
+        mean, std = self(observations)
+        return dist.Normal(loc=mean, scale=std).entropy()
+
 
 class GaussianPolicy(StochasticPolicyBase):
     """Gaussian policy for continuous action spaces.
@@ -222,6 +243,13 @@ class GaussianPolicy(StochasticPolicyBase):
             action
         )
 
+    def entropy(self, observations: jnp.ndarray) -> jnp.ndarray:
+        """Compute entropy of policy for given observation."""
+        mean, log_var = self(observations)
+        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
+        std = jnp.exp(log_std)
+        return dist.Normal(loc=mean, scale=std).entropy()
+
 
 class SoftmaxPolicy(StochasticPolicyBase):
     r"""Softmax policy for discrete action spaces.
@@ -258,3 +286,8 @@ class SoftmaxPolicy(StochasticPolicyBase):
         return dist.Categorical(logits=self.logits(observation)).log_prob(
             action
         )
+
+    def entropy(self, observations: jnp.ndarray) -> jnp.ndarray:
+        """Compute entropy of policy for given observation."""
+        logits = self.logits(observations)
+        return dist.Categorical(logits=logits).entropy()

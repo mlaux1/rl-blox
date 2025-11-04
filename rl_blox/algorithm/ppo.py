@@ -5,16 +5,10 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tensorflow_probability.substrates.jax.distributions as dist
 from flax import nnx
 from tqdm.rich import trange
 
-from ..blox.function_approximator.policy_head import (
-    GaussianPolicy,
-    GaussianTanhPolicy,
-    SoftmaxPolicy,
-    StochasticPolicyBase,
-)
+from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..blox.gae import compute_gae
 from ..logging.logger import LoggerBase
 
@@ -91,7 +85,7 @@ def collect_trajectories(
     def add_to_batch(batch, value):
         return (
             jnp.array(value[None, ...])
-            if batch == None
+            if batch is None
             else jnp.concat([batch, value[None, ...]], axis=0)
         )
 
@@ -116,23 +110,23 @@ def collect_trajectories(
         rewards = add_to_batch(rewards, reward)
 
         obs = jnp.copy(next_obs)
-        if "episode" in info.keys():
-            if logger is not None:
-                finished_reward_len_obs = [
-                    (r, l, o)
-                    for r, l, o, f in zip(
-                        info["episode"]["r"],
-                        info["episode"]["l"],
-                        info["final_obs"],
-                        info["_episode"],
-                    )
-                    if f
-                ]
-                for i, (r, l, o) in enumerate(finished_reward_len_obs):
-                    global_step += int(l)
-                    logger.record_stat("return", float(r), step=global_step)
-                    logger.start_new_episode()
-                    obs = obs.at[i].set(o)
+        if logger is not None and "episode" in info:
+            finished_reward_len_obs = [
+                (r, l, o)
+                for r, l, o, f in zip(
+                    info["episode"]["r"],
+                    info["episode"]["l"],
+                    info["final_obs"],
+                    info["_episode"],
+                    strict=True,
+                )
+                if f
+            ]
+            for i, (r, l, o) in enumerate(finished_reward_len_obs):
+                global_step += int(l)
+                logger.record_stat("return", float(r), step=global_step)
+                logger.start_new_episode()
+                obs = obs.at[i].set(o)
 
         next_value = value(critic, obs)
         terminated_arr = add_to_batch(terminated_arr, terminated)
@@ -167,38 +161,6 @@ def collect_trajectories(
         obs,
         global_step,
     )
-
-
-def entropy(
-    actor: StochasticPolicyBase, observations: jnp.ndarray
-) -> jnp.ndarray:
-    """
-    Calculate the entropy for PPO loss.
-
-    Parameters
-    ----------
-    actor : StochasticPolicyBase
-        The actor network.
-    observations : jnp.ndarray
-        Batch of observations.
-
-    Returns
-    -------
-    entropy : jnp.ndarray
-        The computed entropy.
-    """
-    if type(actor) == SoftmaxPolicy:
-        logits = actor.logits(observations)
-        entropy = dist.Categorical(logits=logits).entropy()
-    else:
-        if type(actor) == GaussianTanhPolicy:
-            mean, std = actor(observations)
-        elif type(actor) == GaussianPolicy:
-            mean, log_var = actor(observations)
-            log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
-            std = jnp.exp(log_std)
-        entropy = dist.Normal(loc=mean, scale=std).entropy()
-    return jnp.mean(entropy)
 
 
 def ppo_loss(
@@ -247,7 +209,11 @@ def ppo_loss(
     values = critic(observations)
     value_loss = jnp.mean((returns - values) ** 2)
 
-    return policy_loss + 0.5 * value_loss - 0.01 * entropy(actor, observations)
+    return (
+        policy_loss
+        + 0.5 * value_loss
+        - 0.01 * actor.entropy(observations).mean()
+    )
 
 
 def update_ppo(
