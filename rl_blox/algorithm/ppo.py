@@ -80,9 +80,9 @@ def collect_trajectories(
     ]
     obs = envs.reset()[0] if last_observation is None else last_observation
 
-    for _ in range(batch_size):
-        key, subkey = jax.random.split(key)
-        action = actor.sample(obs, subkey)
+    subkeys = jax.random.split(key, batch_size)
+    for i in range(batch_size):
+        action = actor.sample(obs, subkeys[i])
         next_obs, reward, terminated, truncated, info = envs.step(
             np.asarray(action)
         )
