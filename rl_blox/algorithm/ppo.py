@@ -63,15 +63,15 @@ def collect_trajectories(
 
     Returns
     -------
-    - observation : jnp.ndarray
+    observation : jnp.ndarray
         Array of observations.
-    - action : jnp.ndarray
+    action : jnp.ndarray
         Actions taken per step.
-    - reward : jnp.ndarray
+    reward : jnp.ndarray
         Array of rewards per step.
-    - terminated : jnp.ndarray
+    terminated : jnp.ndarray
         Flags indicating episode termination per step.
-    - next_value : jnp.ndarray
+    next_value : jnp.ndarray
         Array of predicted values for next steps per step.
     last_observation
         Last observation produced by the environment. Used for running
