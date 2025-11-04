@@ -304,13 +304,13 @@ def train_ppo(
 
     Returns
     -------
-    - actor : StochasticPolicyBase
+    actor : StochasticPolicyBase
         Trained actor network.
-    - critic : nnx.Module
+    critic : nnx.Module
         Trained critic network.
-    - optimizer_actor : nnx.Optimizer
+    optimizer_actor : nnx.Optimizer
         Updated actor optimizer.
-    - optimizer_critic : nnx.Optimizer
+    optimizer_critic : nnx.Optimizer
         Updated critic optimizer.
     """
     key = jax.random.key(seed)
