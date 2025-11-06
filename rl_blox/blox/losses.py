@@ -846,3 +846,38 @@ def ddqn_loss(
     pred = pred[jnp.arange(len(pred)), action]
 
     return optax.squared_error(pred, target).mean(), pred.mean()
+
+def per_loss(
+    q: nnx.Module,
+    q_target: nnx.Module,
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
+    gamma: float = 0.99,
+    is_ratio: tuple[float] = 1.0,
+) -> tuple[float, tuple[float, jnp.ndarray]]:
+    # TODO: 
+
+    obs, action, reward, next_obs, terminated = batch
+
+    next_q = jax.lax.stop_gradient(q(next_obs))
+    indices = jnp.argmax(next_q, axis=1).reshape(-1, 1)
+    next_q_t = jax.lax.stop_gradient(q_target(next_obs))
+    next_vals = jnp.take_along_axis(next_q_t, indices, axis=1).squeeze()
+
+    target = jnp.array(reward) + (1 - terminated) * gamma * next_vals
+
+    pred = q(obs)
+    pred = pred[jnp.arange(len(pred)), action]
+
+    td_error = jnp.abs(pred - target)
+
+    weighted_loss = is_ratio * (td_error**2)
+
+    return (
+        weighted_loss.mean(),
+        (
+            pred.mean(),
+            td_error.mean(),
+        ),
+    )

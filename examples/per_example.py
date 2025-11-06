@@ -3,9 +3,9 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
-from rl_blox.algorithm.ddqn import train_ddqn
+from rl_blox.algorithm.per import train_per
 from rl_blox.blox.function_approximator.mlp import MLP
-from rl_blox.blox.replay_buffer import ReplayBuffer
+from rl_blox.blox.replay_buffer import PrioritizedReplayBuffer
 from rl_blox.logging.logger import AIMLogger
 
 # Set up environment
@@ -29,7 +29,7 @@ hparams_algorithm = dict(
 logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name="DDQN",
+    algorithm_name="PER",
     hparams=hparams_model | hparams_algorithm,
 )
 # Initialise the Q-Network
@@ -41,7 +41,7 @@ q_net = MLP(
 )
 
 # Initialise the replay buffer
-rb = ReplayBuffer(hparams_algorithm.pop("buffer_size"), discrete_actions=True)
+rb = PrioritizedReplayBuffer(hparams_algorithm.pop("buffer_size"), discrete_actions=True)
 
 # initialise optimiser
 optimizer = nnx.Optimizer(
@@ -49,7 +49,7 @@ optimizer = nnx.Optimizer(
 )
 
 # Train
-q, _, _ = train_ddqn(
+q, _, _ = train_per(
     q_net,
     env,
     rb,

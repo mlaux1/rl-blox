@@ -8,19 +8,19 @@ from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.losses import ddqn_loss
+from ..blox.losses import per_loss
 from ..blox.q_policy import greedy_policy
-from ..blox.replay_buffer import ReplayBuffer
+from ..blox.replay_buffer import PrioritizedReplayBuffer, per_priority
 from ..blox.schedules import linear_schedule
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .dqn import train_step_with_loss
 
 
-def train_ddqn(
+def train_per(
     q_net: MLP,
     env: gymnasium.Env,
-    replay_buffer: ReplayBuffer,
+    replay_buffer: PrioritizedReplayBuffer,
     optimizer: nnx.Optimizer,
     batch_size: int = 64,
     total_timesteps: int = 1e4,
@@ -35,23 +35,8 @@ def train_ddqn(
     global_step: int = 0,
     progress_bar: bool = True,
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
-    """Deep Q Learning with Experience Replay
-
-    Implements double DQN as originally described in van Hasselt et al. (2016)
-    [1]_. It uses a neural network to approximate the Q-function and samples
-    minibatches from the replay buffer to calculate updates as well as target
-    networks that are copied regularly from the current Q-network. The only
-    difference to DQN is the calculation of the Q-network's loss, which uses
-    the target network to evaluate the current greedy policy.
-
-    This implementation aims to be as close as possible to the original algorithm
-    described in the paper while remaining not overly engineered towards a
-    specific environment. For example, this implementation uses the same linear
-    schedule to decrease epsilon from 1.0 to 0.1 over the first ten percent of
-    training steps, but does not impose any architecture on the used Q-net or
-    requires a specific preprocessing of observations as is done in the original
-    paper to solve the Atari use case.
-
+    """
+    TODO:
     Parameters
     ----------
     q_net : MLP
@@ -102,9 +87,7 @@ def train_ddqn(
 
     References
     ----------
-    .. [1] van Hasselt, H., Guez, A., & Silver, D. (2016). Deep Reinforcement
-       Learning with Double Q-Learning. Proceedings of the AAAI Conference on
-       Artificial Intelligence, 30(1). https://doi.org/10.1609/aaai.v30i1.10295
+    .. [1] 
     """
 
     assert isinstance(
@@ -121,7 +104,7 @@ def train_ddqn(
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
 
-    train_step = partial(train_step_with_loss, ddqn_loss)
+    train_step = partial(train_step_with_loss, per_loss)
     train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     # initialise episode
@@ -153,13 +136,19 @@ def train_ddqn(
 
         if step > batch_size:
             if step % update_frequency == 0:
-                transition_batch = replay_buffer.sample_batch(batch_size, rng)
-                q_loss, q_mean = train_step(
-                    optimizer, q_net, q_target_net, transition_batch, gamma
+                # TODO: annealing beta to 0 ... beta*(total_episodes - episode)/total_episodes
+                beta = 0.4
+                transition_batch, is_ratio = replay_buffer.sample_batch(batch_size, rng, beta)
+
+                wighted_loss, (q_mean, abs_td_error) = train_step(
+                    optimizer, q_net, q_target_net, transition_batch, gamma, is_ratio
                 )
                 if logger is not None:
                     logger.record_stat(
-                        "q loss", q_loss, step=step + 1, episode=episode
+                        "weighted loss", wighted_loss, step=step + 1, episode=episode
+                    )
+                    logger.record_stat(
+                        "abs td error", abs_td_error, step=step + 1, episode=episode
                     )
                     logger.record_stat(
                         "q mean", q_mean, step=step + 1, episode=episode
@@ -167,6 +156,17 @@ def train_ddqn(
                     logger.record_epoch(
                         "q", q_net, step=step + 1, episode=episode
                     )
+                    #TODO: beta and is_ratio are not recorded 
+                    logger.record_epoch(
+                        "beta", beta, step=step + 1, episode=episode
+                    )
+                    logger.record_epoch(
+                        "is ratio", is_ratio, step=step + 1, episode=episode
+                    )
+                priority = per_priority(
+                    abs_td_error, alpha=0.6, epsion=1e-6
+                )
+                replay_buffer.update_priority(priority)
 
             if step % target_update_frequency == 0:
                 hard_target_net_update(q_net, q_target_net)
@@ -185,6 +185,6 @@ def train_ddqn(
         else:
             obs = next_obs
 
-    return namedtuple("DDQNResult", ["q_net", "q_target_net", "optimizer"])(
+    return namedtuple("PERResult", ["q_net", "q_target_net", "optimizer"])(
         q_net, q_target_net, optimizer
     )

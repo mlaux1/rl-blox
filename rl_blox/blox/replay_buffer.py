@@ -530,6 +530,31 @@ class LAP(ReplayBuffer):
     def reset_max_priority(self):
         self.priority.reset_max_priority(self.current_len)
 
+class PrioritizedReplayBuffer(LAP):
+    # TODO:
+    def sample_batch(
+        self, batch_size: int, rng: np.random.Generator, beta = 0.4
+    ) -> list[jnp.ndarray]:
+        """Sample a batch of transitions along with their importance ratio.
+        """
+        indices = self.priority.prioritized_sampling(
+            self.current_len, batch_size, rng
+        )
+        
+        importance_ratio = self.compute_importance_ratio(indices, beta)
+        return self.Batch(
+            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+        ), importance_ratio
+
+    def compute_importance_ratio(
+        self, indices: npt.NDArray[int], beta: float,
+        ) -> list[jnp.ndarray]:
+        priority = self.priority.priority[indices]
+        # compute importance-sampling weight wj = (N · P (j))−β / maxi wi
+               
+        is_weight = (self.buffer_size * priority) ** (-beta)
+        is_ratio = is_weight / self.priority.max_priority
+        return is_ratio
 
 class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
     """Replay buffer for sampling batches of subtrajectories with PER or LAP.
@@ -646,6 +671,20 @@ def lap_priority(
     """
     return jnp.maximum(abs_td_error, min_priority) ** alpha
 
+# proportional prioritization
+@partial(jax.jit, static_argnames=["alpha"])
+def per_priority(
+    abs_td_error: jnp.ndarray, alpha: float, epsion: float
+) -> jnp.ndarray:
+    return abs_td_error ** alpha + epsion
+
+# TODO
+# # proportional prioritization
+# @partial(jax.jit, static_argnames=["alpha"])
+# def per_rank_priority(
+#     abs_td_error: jnp.ndarray, alpha: float
+# ) -> jnp.ndarray:
+#     return abs_td_error ** alpha
 
 class MultiTaskReplayBuffer:
     """Replay buffer for discrete set of tasks.
