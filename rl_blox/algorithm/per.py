@@ -111,6 +111,7 @@ def train_per(
     obs, _ = env.reset(seed=seed)
 
     epsilon = linear_schedule(total_timesteps)
+    beta = linear_schedule(total_timesteps, start=0.4, end=1.0, fraction=1.0)
 
     key, subkey = jax.random.split(key)
     epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
@@ -136,9 +137,7 @@ def train_per(
 
         if step > batch_size:
             if step % update_frequency == 0:
-                # TODO: annealing beta to 0 ... beta*(total_episodes - episode)/total_episodes
-                beta = 0.4
-                transition_batch, is_ratio = replay_buffer.sample_batch(batch_size, rng, beta)
+                transition_batch, is_ratio = replay_buffer.sample_batch(batch_size, rng, beta[step])
 
                 wighted_loss, (q_mean, abs_td_error) = train_step(
                     optimizer, q_net, q_target_net, transition_batch, gamma, is_ratio
