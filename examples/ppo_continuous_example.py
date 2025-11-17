@@ -1,14 +1,16 @@
 import gymnasium as gym
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax import nnx
 
 from rl_blox.algorithm.ppo import train_ppo
+from rl_blox.blox.function_approximator.gaussian_mlp import GaussianMLP
 from rl_blox.blox.function_approximator.mlp import MLP
-from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
+from rl_blox.blox.function_approximator.policy_head import GaussianTanhPolicy
 from rl_blox.logging.logger import AIMLogger
 
-env_name = "CartPole-v1"
+env_name = "Pendulum-v1"
 seed = 1
 test_episodes = 10
 
@@ -21,10 +23,10 @@ hparams_model = {
     "critic_learning_rate": 1e-3,
 }
 hparams_algorithm = dict(
-    num_envs=64,
-    batch_size=64,
-    iterations=1000,
-    epochs=2,
+    num_envs=32,
+    batch_size=256,
+    iterations=300,
+    epochs=10,
     seed=seed,
 )
 
@@ -36,16 +38,17 @@ envs = gym.make_vec(
 )
 
 features = envs.observation_space.shape[1]
-actions = int(envs.single_action_space.n)
+n_action_dims = envs.single_action_space.shape[0]
 
-actor = MLP(
+actor = GaussianMLP(
+    True,
     features,
-    actions,
+    n_action_dims,
     hparams_model["actor_hidden_layers"],
     hparams_model["actor_activation"],
     nnx.Rngs(seed),
 )
-actor = SoftmaxPolicy(actor)
+actor = GaussianTanhPolicy(actor, action_space=envs.single_action_space)
 
 critic = MLP(
     features,
@@ -90,7 +93,7 @@ env = gym.make(env_name, render_mode="human")
 obs, _ = env.reset(seed=seed)
 
 while True:
-    action = int(jnp.argmax(actor(obs)))
-    obs, reward, terminated, truncated, _ = env.step(int(action))
+    action = np.array(actor(jnp.array(obs))[0])
+    obs, reward, terminated, truncated, _ = env.step(action)
     if terminated or truncated:
         obs, _ = env.reset()
