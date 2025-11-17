@@ -50,7 +50,7 @@ optimizer = nnx.Optimizer(
 )
 
 # Train
-q, _ = train_dqn(
+result_dict = train_dqn(
     q_net,
     env,
     rb,
@@ -59,6 +59,8 @@ q, _ = train_dqn(
     logger=logger,
 )
 env.close()
+
+q = result_dict.q_net
 
 # Show the final policy
 eval_env = gym.make(env_name, render_mode="human")

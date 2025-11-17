@@ -99,6 +99,10 @@ def train_ddqn(
         The Q-net optimiser.
     q_target_net : MLP
         The current target Q-network (required for continuing training).
+    replay_buffer : ReplayBuffer
+        The replay buffer.
+    global_step : int
+        The global step at which training terminated.
 
     References
     ----------
@@ -185,6 +189,19 @@ def train_ddqn(
         else:
             obs = next_obs
 
-    return namedtuple("DDQNResult", ["q_net", "q_target_net", "optimizer"])(
-        q_net, q_target_net, optimizer
+    return namedtuple(
+        "DDQNResult",
+        [
+            "q_net",
+            "q_target_net",
+            "optimizer",
+            "replay_buffer",
+            "steps_trained",
+        ],
+    )(
+        q_net,
+        q_target_net,
+        optimizer,
+        replay_buffer,
+        global_step + 1,
     )

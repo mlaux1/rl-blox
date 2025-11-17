@@ -98,6 +98,10 @@ def train_nature_dqn(
         The Q-net optimiser.
     q_target_net : MLP
         The current target Q-network (required for continuing training).
+    replay_buffer : ReplayBuffer
+        The replay buffer.
+    global_step : int
+        The global step at which the training was terminated.
 
     References
     ----------
@@ -182,5 +186,12 @@ def train_nature_dqn(
             obs = next_obs
 
     return namedtuple(
-        "NatureDQNResult", ["q_net", "q_target_net", "optimizer"]
-    )(q_net, q_target_net, optimizer)
+        "NatureDQNResult",
+        [
+            "q_net",
+            "q_target_net",
+            "optimizer",
+            "replay_buffer",
+            "steps_trained",
+        ],
+    )(q_net, q_target_net, optimizer, replay_buffer, step)

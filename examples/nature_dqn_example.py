@@ -49,7 +49,7 @@ optimizer = nnx.Optimizer(
 )
 
 # Train
-q, _, _ = train_nature_dqn(
+result_dict = train_nature_dqn(
     q_net,
     env,
     rb,
@@ -58,6 +58,7 @@ q, _, _ = train_nature_dqn(
     logger=logger,
 )
 env.close()
+q = result_dict.q_net
 
 # Show the final policy
 eval_env = gym.make(env_name, render_mode="human")
