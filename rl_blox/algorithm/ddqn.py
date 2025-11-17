@@ -196,7 +196,7 @@ def train_ddqn(
             "q_target_net",
             "optimizer",
             "replay_buffer",
-            "global_step",
+            "steps_trained",
         ],
     )(
         q_net,
