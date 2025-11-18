@@ -79,10 +79,31 @@ You can install all optional dependencies (except logging) using `pip install 'r
 
 ## Algorithm Implementations
 
-We currently provide implementations of the following algorithms (ordered from
-SotA to classic RL algorithms):
-MR.Q, TD7, TD3+LAP, PE-TS, SAC, TD3, PPO, DDPG, DDQN, DQN, double Q-learning,
-CMA-ES, Dyna-Q, actor-critic, REINFORCE, Q-learning, MC.
+We currently provide implementations of the following algorithms:
+
+| Algorithm | Original Paper |
+| --------- | -------------- |
+| Monte Carlo | [link](http://www.incompleteideas.net/book/the-book.html) |
+| Q-learning | [link](https://link.springer.com/article/10.1007/BF00992698) |
+| SARSA | [link](http://www.incompleteideas.net/book/the-book.html) |
+| REINFORCE | [link](https://link.springer.com/article/10.1007/BF00992696) |
+| Actor-Critic | [link](https://proceedings.neurips.cc/paper_files/paper/1999/file/6449f44a102fde848669bdd9eb6b76fa-Paper.pdf) |
+| Dyna-Q | [link](http://incompleteideas.net/papers/sutton-90.pdf) |
+| CMA-ES | [link](https://www.lri.fr/~hansen/cmaartic.pdf) |
+| Double Q-learning | [link](https://proceedings.neurips.cc/paper_files/paper/2010/file/091d584fced301b442654dd8c23b3fc9-Paper.pdf) |
+| DQN | [link](https://arxiv.org/abs/1312.5602) |
+| Nature DQN | [link](https://www.nature.com/articles/nature14236) |
+| DDQN | [link](https://arxiv.org/abs/1509.06461) |
+| DDPG | [link](https://arxiv.org/abs/1509.02971) |
+| PPO | [link](https://arxiv.org/abs/1707.06347) |
+| TD3 | [link](https://arxiv.org/pdf/1802.09477) |
+| SAC | [link](https://arxiv.org/abs/1801.01290) |
+| PETS | [link](https://arxiv.org/abs/1805.12114) |
+| LAP | [link](https://papers.neurips.cc/paper_files/paper/2020/file/a3bf6e4db673b6449c2f7d13ee6ec9c0-Paper.pdf) |
+| TD7 | [link](https://arxiv.org/pdf/2306.02451) |
+| MR.Q |[link](https://arxiv.org/abs/2501.16142) |
+| Active Task Scheduling | [link](https://jmlr.org/papers/volume15/fabisch14a/fabisch14a.pdf) |
+| SMT | [link](https://raw.githubusercontent.com/mlresearch/v235/main/assets/cho24d/cho24d.pdf) |
 
 ## Getting Started
 
@@ -145,7 +166,7 @@ sac_result = train_sac(
     **hparams_algorithm,
 )
 env.close()
-policy, _, q, _, _, _, _ = sac_result
+policy = sac_result.policy
 
 # Do something with the trained policy...
 ```
@@ -175,6 +196,8 @@ The recommended workflow to add a new feature, add documentation, or fix a bug i
 - Open a pull request to the main branch.
 
 It is forbidden to directly push to the main branch.
+
+Please also check out our [contribution guide](https://github.com/mlaux1/rl-blox/blob/main/CONTRIBUTING.md)!
 
 ## Testing
 
