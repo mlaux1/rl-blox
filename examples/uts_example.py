@@ -97,7 +97,7 @@ uts_result = train_uts(
     logger=logger,
 )
 
-policy, _, q, _, _, _, _, _ = uts_result
+policy = uts_result.policy
 
 base_env = gym.make(env_name, render_mode="human")
 contexts = np.linspace(0, 20, 21)[:, np.newaxis]

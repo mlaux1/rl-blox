@@ -104,7 +104,12 @@ result = train_smt(
 
 # Evaluation
 result_st = result[0]
-q_net = result_st[0]
+q_net = result_st.q_net
+
+
+def policy(obs):
+    return int(jnp.argmax(q_net(obs)))
+
 
 base_env = gym.make(env_name, render_mode="human")
 test_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
@@ -118,7 +123,7 @@ for task_id in range(len(test_set)):
     infos = {}
     obs, _ = env.reset()
     while not done:
-        action = int(jnp.argmax(q_net([obs])))
+        action = policy(obs)
         next_obs, reward, termination, truncation, infos = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
