@@ -192,6 +192,6 @@ def train_nature_dqn(
             "q_target_net",
             "optimizer",
             "replay_buffer",
-            "steps_trained",
+            "global_step",
         ],
     )(q_net, q_target_net, optimizer, replay_buffer, step)

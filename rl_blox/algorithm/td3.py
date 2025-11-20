@@ -194,6 +194,7 @@ def train_td3(
     ContinuousClippedDoubleQNet,
     nnx.Optimizer,
     ReplayBuffer,
+    int,
 ]:
     r"""Twin Delayed DDPG (TD3).
 
@@ -276,6 +277,9 @@ def train_td3(
         Target network. Only has to be set if we want to continue training
         from an old state.
 
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
+
     global_step : int, optional
         Global step to start training from. If not set, will start from 0.
 
@@ -305,8 +309,8 @@ def train_td3(
     replay_buffer : ReplayBuffer
         Replay buffer.
 
-    progress_bar : bool, optional
-        Flag to enable/disable the tqdm progressbar.
+    global_step : int
+        The global step at which training was terminated.
 
     Notes
     -----
@@ -496,6 +500,7 @@ def train_td3(
             "q_target",
             "q_optimizer",
             "replay_buffer",
+            "global_step",
         ],
     )(
         policy,
@@ -505,4 +510,5 @@ def train_td3(
         q_target,
         q_optimizer,
         replay_buffer,
+        global_step,
     )
