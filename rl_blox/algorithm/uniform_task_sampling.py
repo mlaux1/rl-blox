@@ -68,16 +68,17 @@ def train_uts(
             total_timesteps=total_timesteps,
             total_episodes=episodes_per_task,
             learning_starts=exploring_starts,
-            progress_bar=False,
+            progress_bar=True,
             logger=logger,
             global_step=global_step,
+            bar=progress,
         )
 
-        _, _, _, _, _, _, _, new_global_step = st_result
+        new_global_step = st_result.global_step
 
-        it_steps = new_global_step - global_step
+        # it_steps = new_global_step - global_step
 
-        progress.update(it_steps)
+        # progress.update(it_steps)
         global_step = new_global_step
 
     return st_result

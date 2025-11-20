@@ -270,6 +270,7 @@ def train_sac(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
+    bar=None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -498,9 +499,14 @@ def train_sac(
 
     accumulated_reward = 0.0
 
-    for global_step in trange(
-        global_step, total_timesteps, disable=not progress_bar
-    ):
+    if bar is None:
+        progress = trange(
+            global_step, total_timesteps, disable=not progress_bar
+        )
+    else:
+        progress = bar
+
+    while global_step < total_timesteps:
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
@@ -593,6 +599,9 @@ def train_sac(
         else:
             obs = next_obs
 
+        progress.update(1)
+        global_step += 1
+
     return namedtuple(
         "SACResult",
         [
@@ -603,7 +612,7 @@ def train_sac(
             "q_optimizer",
             "entropy_control",
             "replay_buffer",
-            "steps_trained",
+            "global_step",
         ],
     )(
         policy,
