@@ -489,6 +489,9 @@ def train_mrq(
     replay_buffer : SubtrajectoryReplayBufferPER
         Episodic replay buffer for the MR.Q algorithm.
 
+    global_step : int
+        The global step at which training was terminated.
+
     Notes
     -----
 
@@ -729,6 +732,7 @@ def train_mrq(
             "q_target",
             "q_optimizer",
             "replay_buffer",
+            "global_setp",
         ],
     )(
         policy_with_encoder,
@@ -739,4 +743,5 @@ def train_mrq(
         q_target,
         q_optimizer,
         replay_buffer,
+        global_step,
     )

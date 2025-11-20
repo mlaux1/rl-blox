@@ -193,5 +193,5 @@ def train_dqn(
             obs = next_obs
 
     return namedtuple(
-        "DQNResult", ["q_net", "optimizer", "replay_buffer", "steps_trained"]
+        "DQNResult", ["q_net", "optimizer", "replay_buffer", "global_step"]
     )(q_net, optimizer, replay_buffer, global_step + 1)
