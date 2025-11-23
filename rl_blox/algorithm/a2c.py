@@ -72,12 +72,13 @@ def a2c_policy_gradient(
 
 
 def train_a2c(
-    env: gym.Env,
+    env: gym.vector.SyncVectorEnv,
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP,
     value_function_optimizer: nnx.Optimizer,
     seed: int = 0,
+    num_envs: int = 1,
     policy_gradient_steps: int = 1,
     value_gradient_steps: int = 1,
     total_timesteps: int = 1_000_000,
@@ -154,15 +155,19 @@ def train_a2c(
         Optimizer for value function.
     """
     key = jax.random.key(seed)
+    obs, _ = env.reset(seed=seed)
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     step = 0
     while step < total_timesteps:
-        key, skey = jax.random.split(key, 2)
-        dataset = sample_trajectories(
-            env, policy, skey, logger, train_after_episode, steps_per_update
-        )
-        step += len(dataset)
-        progress.update(len(dataset))
+        # key, skey = jax.random.split(key, 2)
+        # dataset = sample_trajectories(
+        #     env, policy, skey, logger, train_after_episode, steps_per_update
+        # )
+
+        print(f"Batched observations shape: {obs.shape}")
+        # step += len(dataset)
+        # progress.update(len(dataset))
+        break
 
         observations, actions, next_observations, returns, gamma_discount = (
             dataset.prepare_policy_gradient_dataset(env.action_space, gamma)

@@ -317,10 +317,16 @@ def create_policy_gradient_continuous_state(
     value_network_optimizer: Callable = optax.adamw,
     seed: int = 0,
 ):
-    observation_space: gym.spaces.Box = env.observation_space
+    if hasattr(env, "single_observation_space"):
+        observation_space: gym.spaces.Box = env.single_observation_space
+    else:
+        observation_space: gym.spaces.Box = env.observation_space
     if len(observation_space.shape) > 1:
         raise ValueError("Only flat observation spaces are supported.")
-    action_space: gym.spaces.Box = env.action_space
+    if hasattr(env, "single_action_space"):
+        action_space: gym.spaces.Box = env.single_action_space
+    else:
+        action_space: gym.spaces.Box = env.action_space
     if len(action_space.shape) > 1:
         raise ValueError("Only flat action spaces are supported.")
 
