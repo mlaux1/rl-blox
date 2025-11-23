@@ -56,6 +56,7 @@ from tensordict.tensordict import TensorDict
 from termcolor import colored
 from torchrl.data.replay_buffers import LazyTensorStorage, ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SliceSampler
+from tqdm.rich import trange
 
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision("high")
@@ -714,7 +715,7 @@ class OnlineTrainer:
     def train(self):
         """Train a TD-MPC2 agent."""
         train_metrics, done, eval_next = {}, True, False
-        while self._step <= self.cfg.steps:
+        for self._step in trange(self._step, self.cfg.steps, disable=not self.cfg.progress_bar):
             # Evaluate agent periodically
             if self._step % self.cfg.eval_freq == 0:
                 eval_next = True
@@ -760,8 +761,6 @@ class OnlineTrainer:
                 for _ in range(num_updates):
                     _train_metrics = self.agent.update(self.buffer)
                 train_metrics.update(_train_metrics)
-
-            self._step += 1
 
         self.logger.finish(self.agent)
 
@@ -1747,6 +1746,7 @@ Config = namedtuple(
         "action_dim",
         "episode_length",
         "seed_steps",
+        "progress_bar",
     ],
 )
 
@@ -1808,6 +1808,7 @@ def train_tdmpc2(
     seed=1,
     # speedups
     compile=False,
+    progress_bar=True,
 ) -> TDMPC2:
     """TD-MPC2.
 
@@ -1914,6 +1915,8 @@ def train_tdmpc2(
         Random seed
     compile : bool
         Compile graphs for faster training.
+    progress_bar : bool, optional
+        Flag to enable/disable the tqdm progressbar.
     """
     assert torch.cuda.is_available()
 
@@ -2002,6 +2005,7 @@ def train_tdmpc2(
         action_dim=action_dim,
         episode_length=episode_length,
         seed_steps=seed_steps,
+        progress_bar=progress_bar,
     )
 
     set_seed(seed)
