@@ -4,6 +4,7 @@ from functools import partial
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import tensorflow_probability.substrates.jax.distributions as tfd
 from flax import nnx
 from tqdm.rich import tqdm
 
@@ -158,16 +159,51 @@ def train_a2c(
     obs, _ = env.reset(seed=seed)
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     step = 0
-    while step < total_timesteps:
-        # key, skey = jax.random.split(key, 2)
-        # dataset = sample_trajectories(
-        #     env, policy, skey, logger, train_after_episode, steps_per_update
-        # )
 
-        print(f"Batched observations shape: {obs.shape}")
-        # step += len(dataset)
-        # progress.update(len(dataset))
-        break
+    while step < total_timesteps:
+
+        rollout_data = []
+
+        for _ in range(steps_per_update):
+
+            key, action_key = jax.random.split(key)
+
+            mean_and_log_std = policy(obs)
+            action_mean = mean_and_log_std[..., 0]
+            log_std_param = mean_and_log_std[..., 1]
+
+            action_std = jnp.exp(log_std_param)
+
+            action_distribution = tfd.Normal(loc=action_mean, scale=action_std)
+
+            actions = action_distribution.sample(seed=action_key)
+            log_probs = action_distribution.log_prob(actions)
+
+            values = value_function(obs)
+
+            actions_for_env = jnp.expand_dims(actions, axis=-1)
+            next_obs, rewards, terminations, truncations, infos = env.step(
+                actions_for_env
+            )
+
+            rollout_data.append(
+                (
+                    obs,
+                    actions,
+                    rewards,
+                    values.squeeze(),
+                    log_probs,
+                    terminations,
+                )
+            )
+
+            obs = next_obs
+
+        # Update progress bar and total step count
+        total_steps_collected = num_envs * steps_per_update
+        step += total_steps_collected
+        progress.update(total_steps_collected)
+        break  # For testing purposes
 
         observations, actions, next_observations, returns, gamma_discount = (
             dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
@@ -211,15 +247,16 @@ def train_a2c(
             logger.record_epoch("value_function", value_function)
     progress.close()
 
-    return namedtuple(
-        "ActorCriticResult",
-        [
-            "policy",
-            "policy_optimizer",
-            "value_function",
-            "value_function_optimizer",
-        ],
-    )(policy, policy_optimizer, value_function, value_function_optimizer)
+    # return namedtuple(
+    #     "ActorCriticResult",
+    #     [
+    #         "policy",
+    #         "policy_optimizer",
+    #         "value_function",
+    #         "value_function_optimizer",
+    #     ],
+    # )(policy, policy_optimizer, value_function, value_function_optimizer)
+    return rollout_data  # For testing purposes
 
 
 @partial(nnx.jit, static_argnames=["policy_gradient_steps", "gamma"])
