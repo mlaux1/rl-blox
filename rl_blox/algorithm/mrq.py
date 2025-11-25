@@ -324,6 +324,7 @@ def train_mrq(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
+    bar=None,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -604,9 +605,13 @@ def train_mrq(
     steps_per_episode = 0
     accumulated_reward = 0.0
 
-    for global_step in trange(
-        global_step, total_timesteps, disable=not progress_bar
-    ):
+    step = global_step
+    if bar is None:
+        progress = trange(
+            global_step, total_timesteps, disable=not progress_bar
+        )
+
+    while step < total_timesteps:
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
@@ -647,7 +652,7 @@ def train_mrq(
                     replay_buffer.environment_terminates,
                 )
                 if logger is not None:
-                    log_step = global_step + 1
+                    log_step = step + 1
                     logger.record_stat(
                         "reward scale", reward_scale, step=log_step
                     )
@@ -690,25 +695,21 @@ def train_mrq(
                 lap_priority(max_abs_td_error, lap_min_priority, lap_alpha)
             )
             if logger is not None:
-                logger.record_stat("q loss", q_loss_value, step=global_step + 1)
-                logger.record_stat("q mean", q_mean, step=global_step + 1)
-                logger.record_stat(
-                    "policy loss", policy_loss, step=global_step + 1
-                )
-                logger.record_stat("dpg loss", dpg_loss, step=global_step + 1)
+                logger.record_stat("q loss", q_loss_value, step=step + 1)
+                logger.record_stat("q mean", q_mean, step=step + 1)
+                logger.record_stat("policy loss", policy_loss, step=step + 1)
+                logger.record_stat("dpg loss", dpg_loss, step=step + 1)
                 logger.record_stat(
                     "policy regularization",
                     policy_regularization,
-                    step=global_step + 1,
+                    step=step + 1,
                 )
                 logger.record_epoch("q", q)
                 logger.record_epoch("policy_with_encoder", policy_with_encoder)
 
         if terminated or truncated:
             if logger is not None:
-                logger.record_stat(
-                    "return", accumulated_reward, step=global_step + 1
-                )
+                logger.record_stat("return", accumulated_reward, step=step + 1)
                 logger.stop_episode(steps_per_episode)
             episode_idx += 1
             if total_episodes is not None and episode_idx >= total_episodes:
@@ -720,6 +721,9 @@ def train_mrq(
             accumulated_reward = 0.0
         else:
             obs = next_obs
+
+        progress.update(1)
+        step += 1
 
     return namedtuple(
         "MRQResult",
@@ -743,5 +747,5 @@ def train_mrq(
         q_target,
         q_optimizer,
         replay_buffer,
-        global_step,
+        step,
     )
