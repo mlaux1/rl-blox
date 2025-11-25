@@ -199,6 +199,49 @@ def train_a2c(
 
             obs = next_obs
 
+        # Get the Critic's value prediction for these final states.
+        last_values = value_function(obs).squeeze()
+
+        advantages = []
+        returns = []
+        # last_values: initial R_{t+1} (or V(s_T))
+        next_return = last_values
+
+        for step_data in reversed(rollout_data):
+            # Unpack the data for one step
+            _obs, _actions, rewards, values, _log_probs, terminations = (
+                step_data
+            )
+
+            # Calculate the TD-based return for the Critic
+            # R_t = r_t + gamma * R_{t+1}
+            mask = 1.0 - terminations
+            current_return = rewards + gamma * next_return * mask
+            returns.insert(0, current_return)  # Prepend to the list
+
+            # Calculate the Advantage for the Actor
+            # A_t = R_t - V(s_t)
+            advantage = current_return - values
+            advantages.insert(0, advantage)
+
+            # Update next_return for the previous timestep in the backward loop
+            next_return = current_return
+
+        all_obs = jnp.stack([d[0] for d in rollout_data]).reshape(
+            -1, *env.single_observation_space.shape
+        )
+        all_actions = jnp.stack([d[1] for d in rollout_data]).reshape(
+            -1, *env.single_action_space.shape
+        )
+        all_log_probs = jnp.stack([d[4] for d in rollout_data]).reshape(-1)
+        all_values = jnp.stack([d[3] for d in rollout_data]).reshape(-1)
+
+        all_returns = jnp.stack(returns).reshape(-1)
+        all_advantages = jnp.stack(advantages).reshape(-1)
+
+        print(f"Shape of all_returns: {all_returns.shape}")
+        print(f"Shape of all_advantages: {all_advantages.shape}")
+
         # Update progress bar and total step count
         total_steps_collected = num_envs * steps_per_update
         step += total_steps_collected

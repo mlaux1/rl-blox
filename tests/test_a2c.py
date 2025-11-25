@@ -5,7 +5,7 @@ from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
 
 
 def test_a2c(inverted_pendulum_env):
-    num_envs_for_test = 2
+    num_envs_for_test = 3
     steps_per_update_for_test = 5
     env_name = "InvertedPendulum-v5"
     test_env = gym.vector.SyncVectorEnv(

@@ -2,7 +2,7 @@ import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
 
-from rl_blox.algorithm.actor_critic import train_a2c
+from rl_blox.algorithm.a2c import train_a2c
 from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
@@ -36,13 +36,13 @@ hparams_algorithm = dict(
     num_envs=num_envs,
 )
 
-logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
-logger.define_experiment(
-    env_name=env_name,
-    algorithm_name="A2C",
-    hparams=hparams_model | hparams_algorithm,
-)
-logger.define_checkpoint_frequency("value_function", 10)
+# logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
+# logger.define_experiment(
+#     env_name=env_name,
+#     algorithm_name="A2C",
+#     hparams=hparams_model | hparams_algorithm,
+# )
+# logger.define_checkpoint_frequency("value_function", 10)
 
 ac_state = create_policy_gradient_continuous_state(envs, **hparams_model)
 
@@ -53,7 +53,7 @@ train_a2c(
     ac_state.value_function,
     ac_state.value_function_optimizer,
     **hparams_algorithm,
-    logger=logger,
+    # logger=logger,
 )
 envs.close()
 
