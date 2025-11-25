@@ -856,7 +856,64 @@ def per_loss(
     gamma: float = 0.99,
     is_ratio: tuple[float] = 1.0,
 ) -> tuple[float, tuple[float, jnp.ndarray]]:
-    # TODO: 
+    r"""Prioritized‑Experience‑Replay (PER) loss.
+
+    This is a weighted MSE loss derived from the DDQN objective, where each 
+    TD‑error is scaled by an importance‑sampling weight to correct for bias
+    from prioritized sampling.
+
+    For a mini‑batch, we compute:
+
+    .. math::
+
+        L_i = w_i \cdot \delta_i^2,
+
+    where :math:`w_i` is the importance‑sampling ratio (`is_ratio`) for each
+    transition, and :math:`\delta_i` is the absolute TD‑error. The final loss
+    is the average over the batch.
+
+    Parameters
+    ----------
+    q : nnx.Module
+        Deep Q-network :math:`Q(o, a)`. For a given observation, the neural
+        network predicts the value of each action from the discrete action
+        space.
+    q_target : nnx.Module
+        Target network for ``q``.
+    batch : tuple
+        Mini-batch of transitions. Contains in this order: observations
+        :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
+        observations :math:`o_{i+1}`, termination flags :math:`t_i`.
+    gamma : float, default=0.99
+        Discount factor :math:`\gamma`.
+    is_ratio : tuple, default=1.0  
+        Importance‑sampling weights for the batch.
+
+    Returns
+    -------
+    loss : float
+        The computed loss for the given minibatch.
+
+    q_mean : float
+        Mean of the predicted action values.
+
+
+    Returns
+    -------
+    loss : float  
+        The mean weighted TD‑error squared over the batch.  
+    metrics : tuple (float, float)  
+        - q_mean : float
+            Mean of the predicted action values.
+        - td_err_mean: float
+            Mean absolute TD‑error.
+
+    References
+    ----------
+    .. [1] Schaul, T., Quan, J., Antonoglou, I., Silver, D. (2016). Prioritized
+       Experience Replay. In International Conference on Learning Representations.
+       https://arxiv.org/abs/1511.05952
+    """
 
     obs, action, reward, next_obs, terminated = batch
 

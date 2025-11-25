@@ -22,6 +22,8 @@ def train_per(
     env: gymnasium.Env,
     replay_buffer: PrioritizedReplayBuffer,
     optimizer: nnx.Optimizer,
+    per_alpha: float = 0.6,
+    per_beta: float = 0.4,
     batch_size: int = 64,
     total_timesteps: int = 1e4,
     total_episodes: int | None = None,
@@ -35,18 +37,47 @@ def train_per(
     global_step: int = 0,
     progress_bar: bool = True,
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
-    """
-    TODO:
+    r"""Prioritized Experience Replay
+
+    Prioritized experience replay (PER) has two variants of priority, i.e., 
+    proportional and rank-based prioritization. This implementation uses 
+    the more common proportional variant as described in Schaul et al.(2016)
+    [1]_.
+
+    Transitions are sampled based on their priority, which is computed from
+    their TD‑error. Those with larger errors are replayed more frequently, 
+    in contrast to uniform sampling used in double DQN. New transitions, whose
+    TD‑error is not yet known, are initialized with the maximum priority to
+    ensure they are experienced at least once. When a transition is replayed,
+    its TD‑error is updated accordingly. To correct for the bias introduced by
+    this non‑uniform sampling, importance‑sampling weights are applied to the
+    loss.    
+
+    This implementation aims to be as close as possible to the original algorithm
+    described in the paper while remaining not overly engineered towards a
+    specific environment. For example, this implementation uses the same linear
+    schedule to anneal beta from 0.4 to 1.0, but does not impose any architecture
+    on the used Q-net or requires a specific preprocessing of observations as is
+    done in the original paper to solve the Atari use case.
+
     Parameters
     ----------
     q_net : MLP
         The Q-network to be optimised.
     env: gymnasium
         The environment to train the Q-network on.
-    replay_buffer : ReplayBuffer
-        The replay buffer used for storing collected transitions.
+    replay_buffer : PrioritizedReplayBuffer
+        The replay buffer used for storing collected transitions and it's corresponding priority.
     optimizer : nnx.Optimizer
         The optimiser for the Q-Network.
+    per_alpha: float
+        Initial value of prioritization exponent :math:`\alpha`.
+        In proportional variant, :math:`\alpha` is a contant. In rank-based 
+        variant, :math:`\alpha` decreases to 0.
+    per_beta: float
+        Initial value of importance-sampling correction exponent :math:`\beta`.
+        In proportional variant, :math:`\alpha` anneal to 1. In rank-based 
+        variant, :math:`\alpha` is constant 0.
     update_frequency : int, optional
         The number of time steps after which the Q-net is updated.
     target_update_frequency : int, optional
@@ -75,7 +106,6 @@ def train_per(
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
 
-
     Returns
     -------
     q_net : MLP
@@ -87,7 +117,9 @@ def train_per(
 
     References
     ----------
-    .. [1] 
+    .. [1] Schaul, T., Quan, J., Antonoglou, I., Silver, D. (2016). Prioritized
+       Experience Replay. In International Conference on Learning
+       Representations. https://arxiv.org/abs/1511.05952
     """
 
     assert isinstance(
@@ -111,7 +143,11 @@ def train_per(
     obs, _ = env.reset(seed=seed)
 
     epsilon = linear_schedule(total_timesteps)
-    beta = linear_schedule(total_timesteps, start=0.4, end=1.0, fraction=1.0)
+    beta = linear_schedule(total_timesteps, start=per_beta, end=1.0, fraction=1.0)
+
+    # TODO: rank-based PER
+    # alpha = linear_schedule(total_timesteps, start=0.5, end=0.0, fraction=1.0)
+    # beta = 0.0
 
     key, subkey = jax.random.split(key)
     epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
@@ -155,15 +191,8 @@ def train_per(
                     logger.record_epoch(
                         "q", q_net, step=step + 1, episode=episode
                     )
-                    #TODO: beta and is_ratio are not recorded 
-                    logger.record_epoch(
-                        "beta", beta, step=step + 1, episode=episode
-                    )
-                    logger.record_epoch(
-                        "is ratio", is_ratio, step=step + 1, episode=episode
-                    )
                 priority = per_priority(
-                    abs_td_error, alpha=0.6, epsion=1e-6
+                    abs_td_error, alpha=per_alpha, epsion=1e-6
                 )
                 replay_buffer.update_priority(priority)
 

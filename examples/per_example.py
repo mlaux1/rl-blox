@@ -22,7 +22,7 @@ hparams_model = dict(
 hparams_algorithm = dict(
     buffer_size=50_000,
     total_timesteps=100_000,
-    learning_rate=0.003,
+    learning_rate=0.003/4,  # PER paper uses 1/4 of DDQN learning rate
     seed=seed,
 )
 
