@@ -982,11 +982,11 @@ class TDMPC2(torch.nn.Module):
 
         info = TensorDict(
             {
-                "pi_loss": pi_loss,
-                "pi_grad_norm": pi_grad_norm,
-                "pi_entropy": info["entropy"],
-                "pi_scaled_entropy": info["scaled_entropy"],
-                "pi_scale": self.scale.value,
+                "policy loss": pi_loss,
+                "policy grad norm": pi_grad_norm,
+                "policy entropy": info["entropy"],
+                "policy scaled entropy": info["scaled_entropy"],
+                "policy scale": self.scale.value,
             }
         )
         return info
@@ -1111,11 +1111,11 @@ class TDMPC2(torch.nn.Module):
         self.model.eval()
         info = TensorDict(
             {
-                "consistency_loss": consistency_loss,
-                "reward_loss": reward_loss,
-                "value_loss": value_loss,
-                "total_loss": total_loss,
-                "grad_norm": grad_norm,
+                "consistency loss": consistency_loss,
+                "reward loss": reward_loss,
+                "q loss": value_loss,
+                "total loss": total_loss,
+                "grad norm": grad_norm,
             }
         )
         info.update(pi_info)
