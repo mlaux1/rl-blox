@@ -413,7 +413,7 @@ def make_dir(dir_path):
 def print_run(cfg):
     """
     Pretty-printing of current run information.
-    Logger calls this method at initialization.
+    CustomLogger calls this method at initialization.
     """
     prefix, color, attrs = "  ", "green", ["bold"]
 
@@ -442,7 +442,7 @@ def print_run(cfg):
     print(div)
 
 
-class Logger:
+class CustomLogger:
     """Primary logging object. Logs either locally or using wandb."""
     def __init__(self, cfg, seed):
         self._log_dir = make_dir(cfg.work_dir)
@@ -655,12 +655,12 @@ class Buffer:
 class OnlineTrainer:
     """Trainer class for single-task online TD-MPC2 training."""
 
-    def __init__(self, cfg, env, agent, buffer, logger, blox_logger : LoggerBase | None = None):
+    def __init__(self, cfg, env, agent, buffer, custom_logger, blox_logger : LoggerBase | None = None):
         self.cfg = cfg
         self.env = env
         self.agent = agent
         self.buffer = buffer
-        self.logger = logger
+        self.custom_logger = custom_logger
         self.blox_logger = blox_logger
         print("Architecture:", self.agent.model)
         self._step = 0
@@ -729,7 +729,7 @@ class OnlineTrainer:
                 if eval_next:
                     eval_metrics = self.eval()
                     eval_metrics.update(self.common_metrics())
-                    self.logger.log(eval_metrics, "eval") # TODO: log with blox_logger?
+                    self.custom_logger.log(eval_metrics, "eval") # TODO: log with blox_logger?
                     eval_next = False
 
                 if self._step > 0:
@@ -742,7 +742,7 @@ class OnlineTrainer:
                         episode_success=info["success"],
                     )
                     train_metrics.update(self.common_metrics())
-                    self.logger.log(train_metrics, "train")
+                    self.custom_logger.log(train_metrics, "train")
                     if self.blox_logger is not None:
                         self.blox_logger.record_stat("return", value=episode_reward)
                         self.blox_logger.record_stat("success", value=episode_success)
@@ -780,7 +780,7 @@ class OnlineTrainer:
 
             steps_in_episode += 1
 
-        self.logger.finish(self.agent)
+        self.custom_logger.finish(self.agent)
 
         # End last (potentially partial) episode # TODO: necessary?
         if self.blox_logger is not None:
@@ -2045,7 +2045,7 @@ def train_tdmpc2(
         env=env,
         agent=TDMPC2(cfg),
         buffer=Buffer(cfg),
-        logger=Logger(cfg, seed),
+        custom_logger=CustomLogger(cfg, seed),
         blox_logger=blox_logger,
     )
     trainer.train()
