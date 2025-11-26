@@ -31,8 +31,6 @@ hparams = dict(
     temperature=0.5,
     # architecture
     model_size=1,  # 1, 5, 19, 48, 317
-    # logging
-    save_csv=True,
     # misc
     seed=seed,
     # speedups

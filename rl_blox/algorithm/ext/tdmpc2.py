@@ -410,85 +410,6 @@ def make_dir(dir_path):
     return dir_path
 
 
-def print_run(cfg):
-    """
-    Pretty-printing of current run information.
-    CustomLogger calls this method at initialization.
-    """
-    prefix, color, attrs = "  ", "green", ["bold"]
-
-    def _limstr(s, maxlen=36):
-        return str(s[:maxlen]) + "..." if len(str(s)) > maxlen else s
-
-    def _pprint(k, v):
-        print(
-            prefix + colored(f'{k.capitalize()+":":<15}', color, attrs=attrs),
-            _limstr(v),
-        )
-
-    observations = ", ".join([str(v) for v in cfg.obs_shape.values()])
-    kvs = [
-        ("task", cfg.task_title),
-        ("steps", f"{int(cfg.steps):,}"),
-        ("observations", observations),
-        ("actions", cfg.action_dim),
-        ("experiment", cfg.exp_name),
-    ]
-    w = np.max([len(_limstr(str(kv[1]))) for kv in kvs]) + 25
-    div = "-" * w
-    print(div)
-    for k, v in kvs:
-        _pprint(k, v)
-    print(div)
-
-
-class CustomLogger:
-    """Primary logging object. Logs either locally or using wandb."""
-    def __init__(self, cfg, seed):
-        self._log_dir = make_dir(cfg.work_dir)
-        self._model_dir = make_dir(self._log_dir / "models")
-        self._save_csv = cfg.save_csv
-        self._seed = seed
-        self._eval = []
-        print_run(cfg)
-
-    @property
-    def model_dir(self):
-        return self._model_dir
-
-    def finish(self, agent=None):
-        print(colored(f"Failed to save model: {agent}", "red"))
-
-    def _format(self, key, value, ty):
-        if ty == "int":
-            return f'{colored(key+":", "blue")} {int(value):,}'
-        elif ty == "float":
-            return f'{colored(key+":", "blue")} {value:.01f}'
-        elif ty == "time":
-            value = str(datetime.timedelta(seconds=int(value)))
-            return f'{colored(key+":", "blue")} {value}'
-        else:
-            raise f"invalid log format type: {ty}"
-
-    def _print(self, d, category):
-        category = colored(category, CAT_TO_COLOR[category])
-        pieces = [f" {category:<14}"]
-        for k, disp_k, ty in CONSOLE_FORMAT:
-            if k in d:
-                pieces.append(f"{self._format(disp_k, d[k], ty):<22}")
-        print("   ".join(pieces))
-
-    def log(self, d, category="train"):
-        assert category in CAT_TO_COLOR, f"invalid category: {category}"
-        if category == "eval" and self._save_csv:
-            keys = ["step", "episode_reward"]
-            self._eval.append(np.array([d[keys[0]], d[keys[1]]]))
-            pd.DataFrame(np.array(self._eval)).to_csv(
-                self._log_dir / "eval.csv", header=keys, index=None
-            )
-        self._print(d, category)
-
-
 class TensorWrapper(gym.Wrapper):
     """
     Wrapper for converting numpy arrays to torch tensors.
@@ -655,12 +576,11 @@ class Buffer:
 class OnlineTrainer:
     """Trainer class for single-task online TD-MPC2 training."""
 
-    def __init__(self, cfg, env, agent, buffer, custom_logger, logger : LoggerBase | None = None):
+    def __init__(self, cfg, env, agent, buffer, logger : LoggerBase | None = None):
         self.cfg = cfg
         self.env = env
         self.agent = agent
         self.buffer = buffer
-        self.custom_logger = custom_logger
         self.logger = logger
         print("Architecture:", self.agent.model)
         self._step = 0
@@ -729,7 +649,7 @@ class OnlineTrainer:
                 if eval_next:
                     eval_metrics = self.eval()
                     eval_metrics.update(self.common_metrics())
-                    self.custom_logger.log(eval_metrics, "eval") # TODO: log with logger?
+                    # TODO: log? evaluate at all?
                     eval_next = False
 
                 if self._step > 0:
@@ -737,12 +657,6 @@ class OnlineTrainer:
                             [td["reward"] for td in self._tds[1:]]
                         ).sum()
                     episode_success = info["success"]
-                    train_metrics.update(
-                        episode_reward=episode_reward,
-                        episode_success=info["success"],
-                    )
-                    train_metrics.update(self.common_metrics())
-                    self.custom_logger.log(train_metrics, "train")
                     if self.logger is not None:
                         self.logger.record_stat("return", value=episode_reward)
                         self.logger.record_stat("success", value=episode_success)
@@ -779,8 +693,6 @@ class OnlineTrainer:
                 train_metrics.update(_train_metrics)
 
             steps_in_episode += 1
-
-        self.custom_logger.finish(self.agent)
 
         # End last (potentially partial) episode # TODO: necessary?
         if self.logger is not None:
@@ -1757,7 +1669,6 @@ Config = namedtuple(
         "num_q",
         "dropout",
         "simnorm_dim",
-        "save_csv",
         "compile",
         # internal configuration
         "obs_shape",
@@ -1824,14 +1735,12 @@ def train_tdmpc2(
     num_q=5,
     dropout=0.01,
     simnorm_dim=8,
-    # logging
-    save_csv=True,
     # misc
     seed=1,
     # speedups
     compile=False,
     progress_bar=True,
-    logger: LoggerBase | None = None
+    logger: LoggerBase | None = None,
 ) -> TDMPC2:
     """TD-MPC2.
 
@@ -1932,8 +1841,6 @@ def train_tdmpc2(
         Dropout probability for Q-functions.
     simnorm_dim : int
         Number of dimensions for simplicial normalization in encoder.
-    save_csv : bool
-        Save results to csv.
     seed : int
         Random seed
     compile : bool
@@ -2020,7 +1927,6 @@ def train_tdmpc2(
         num_q=num_q,
         dropout=dropout,
         simnorm_dim=simnorm_dim,
-        save_csv=save_csv,
         compile=compile,
         obs_shape=obs_shape,
         tasks=tasks,
@@ -2045,7 +1951,6 @@ def train_tdmpc2(
         env=env,
         agent=TDMPC2(cfg),
         buffer=Buffer(cfg),
-        custom_logger=CustomLogger(cfg, seed),
         logger=logger,
     )
     trainer.train()
