@@ -54,7 +54,7 @@ logger.define_experiment(
 agent = train_tdmpc2(
     env=env,
     task=env_name,
-    blox_logger=logger,
+    logger=logger,
     **hparams,
 )
 env.close()
