@@ -637,7 +637,7 @@ class OnlineTrainer:
 
     def train(self):
         """Train a TD-MPC2 agent."""
-        train_metrics, done, eval_next = {}, True, False
+        done, eval_next = True, False
         steps_in_episode = 0
         for self._step in trange(self._step, self.cfg.steps, disable=not self.cfg.progress_bar):
             # Evaluate agent periodically
@@ -688,9 +688,11 @@ class OnlineTrainer:
                     print("Pretraining agent on seed data...")
                 else:
                     num_updates = 1
-                for _ in range(num_updates):
-                    _train_metrics = self.agent.update(self.buffer)
-                train_metrics.update(_train_metrics)
+                for i in range(num_updates):
+                    metrics = self.agent.update(self.buffer)
+                    if i == num_updates - 1:
+                        for k, v in metrics.items():
+                            self.logger.record_stat(k, v)
 
             steps_in_episode += 1
 
