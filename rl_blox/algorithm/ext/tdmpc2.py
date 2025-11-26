@@ -29,6 +29,8 @@
 import os
 from collections import namedtuple
 
+from rl_blox.logging.logger import LoggerBase
+
 os.environ["MUJOCO_GL"] = os.getenv("MUJOCO_GL", "egl")
 os.environ["LAZY_LEGACY_OP"] = "0"
 os.environ["TORCHDYNAMO_INLINE_INBUILT_NN_MODULES"] = "1"
@@ -653,12 +655,13 @@ class Buffer:
 class OnlineTrainer:
     """Trainer class for single-task online TD-MPC2 training."""
 
-    def __init__(self, cfg, env, agent, buffer, logger):
+    def __init__(self, cfg, env, agent, buffer, logger, blox_logger : LoggerBase | None = None):
         self.cfg = cfg
         self.env = env
         self.agent = agent
         self.buffer = buffer
         self.logger = logger
+        self.blox_logger = blox_logger
         print("Architecture:", self.agent.model)
         self._step = 0
         self._ep_idx = 0
@@ -715,6 +718,7 @@ class OnlineTrainer:
     def train(self):
         """Train a TD-MPC2 agent."""
         train_metrics, done, eval_next = {}, True, False
+        steps_in_episode = 0
         for self._step in trange(self._step, self.cfg.steps, disable=not self.cfg.progress_bar):
             # Evaluate agent periodically
             if self._step % self.cfg.eval_freq == 0:
@@ -725,19 +729,31 @@ class OnlineTrainer:
                 if eval_next:
                     eval_metrics = self.eval()
                     eval_metrics.update(self.common_metrics())
-                    self.logger.log(eval_metrics, "eval")
+                    self.logger.log(eval_metrics, "eval") # TODO: log with blox_logger?
                     eval_next = False
 
                 if self._step > 0:
-                    train_metrics.update(
-                        episode_reward=torch.tensor(
+                    episode_reward = torch.tensor(
                             [td["reward"] for td in self._tds[1:]]
-                        ).sum(),
+                        ).sum()
+                    episode_success = info["success"]
+                    train_metrics.update(
+                        episode_reward=episode_reward,
                         episode_success=info["success"],
                     )
                     train_metrics.update(self.common_metrics())
                     self.logger.log(train_metrics, "train")
+                    if self.blox_logger is not None:
+                        self.blox_logger.record_stat("return", value=episode_reward)
+                        self.blox_logger.record_stat("success", value=episode_success)
+                        self.blox_logger.stop_episode(steps_in_episode)
+
+                    steps_in_episode = 0
+
                     self._ep_idx = self.buffer.add(torch.cat(self._tds))
+
+                if self.blox_logger is not None:
+                    self.blox_logger.start_new_episode()
 
                 obs = self.env.reset()
                 self._tds = [self.to_td(obs)]
@@ -762,7 +778,13 @@ class OnlineTrainer:
                     _train_metrics = self.agent.update(self.buffer)
                 train_metrics.update(_train_metrics)
 
+            steps_in_episode += 1
+
         self.logger.finish(self.agent)
+
+        # End last (potentially partial) episode # TODO: necessary?
+        if self.blox_logger is not None:
+            self.blox_logger.stop_episode(steps_in_episode)
 
 
 class TDMPC2(torch.nn.Module):
@@ -1809,6 +1831,7 @@ def train_tdmpc2(
     # speedups
     compile=False,
     progress_bar=True,
+    blox_logger: LoggerBase | None = None
 ) -> TDMPC2:
     """TD-MPC2.
 
@@ -1917,6 +1940,8 @@ def train_tdmpc2(
         Compile graphs for faster training.
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
+    blox_logger : LoggerBase, optional
+        Experiment logger.
     """
     assert torch.cuda.is_available()
 
@@ -2021,6 +2046,7 @@ def train_tdmpc2(
         agent=TDMPC2(cfg),
         buffer=Buffer(cfg),
         logger=Logger(cfg, seed),
+        blox_logger=blox_logger,
     )
     trainer.train()
     print("\nTraining completed successfully")

@@ -2,10 +2,12 @@ import gymnasium as gym
 import torch
 
 from rl_blox.algorithm.ext.tdmpc2 import train_tdmpc2
+from rl_blox.logging.logger import AIMLogger
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
 seed = 1
+verbose = 2
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(seed)
 
@@ -37,10 +39,23 @@ hparams = dict(
     compile=False,
 )
 
+if verbose:
+    print(
+        "This example uses the AIM logger. You will not see any output on "
+        "stdout. Run 'aim up' to analyze the progress."
+    )
+logger = AIMLogger()
+logger.define_experiment(
+    env_name=env_name,
+    algorithm_name="TD-MPC2",
+    hparams=hparams,
+)
+
 agent = train_tdmpc2(
     env=env,
     task=env_name,
-    **hparams
+    blox_logger=logger,
+    **hparams,
 )
 env.close()
 
