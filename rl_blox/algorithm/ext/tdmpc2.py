@@ -3,6 +3,7 @@
 # Dependencies:
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 # pip install torchrl tensordict termcolor
+# pip install array-api-compat # for gymnasium.wrappers.NumpyToTorch
 
 # MIT License
 #
@@ -47,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
+from gymnasium.wrappers import NumpyToTorch
 import numpy as np
 import pandas as pd
 import torch
@@ -410,48 +412,38 @@ def make_dir(dir_path):
     return dir_path
 
 
-class TensorWrapper(gym.Wrapper):
+class DefaultSuccessInfoWrapper(gym.Wrapper):
     """
-    Wrapper for converting numpy arrays to torch tensors.
+    Gym environment wrapper for filling the info["success"] field with a default value if missing.
     """
 
     def __init__(self, env):
         super().__init__(env)
 
-    def rand_act(self):
-        return torch.from_numpy(self.action_space.sample().astype(np.float32))
-
-    def _try_f32_tensor(self, x):
-        if isinstance(x, np.ndarray):
-            x = torch.from_numpy(x)
-            if x.dtype == torch.float64:
-                x = x.float()
-        return x
-
-    def _obs_to_tensor(self, obs):
-        if isinstance(obs, dict):
-            for k in obs.keys():
-                obs[k] = self._try_f32_tensor(obs[k])
-        else:
-            obs = self._try_f32_tensor(obs)
-        return obs
-
-    def reset(self, task_idx=None):
-        return self._obs_to_tensor(self.env.reset()[0])
-
     def step(self, action):
-        obs, reward, termination, truncation, info = self.env.step(
-            action.numpy()
-        )
+        obs, reward, termination, truncation, info = self.env.step(action)
         info = defaultdict(float, info)
         info["success"] = float(info["success"])
-        return (
-            self._obs_to_tensor(obs),
-            torch.tensor(reward, dtype=torch.float32),
-            termination,
-            truncation,
-            info,
-        )
+        return obs, reward, termination, truncation, info
+
+
+class NumpyToTorchSpaces(gym.Wrapper):
+    """
+    Gym environment wrapper for
+      (1) obtaining the reward
+      (2) sampling the env.action_space
+    as torch tensors.
+    """
+
+    def __init__(self, env):
+        super().__init__(env)
+
+    def sample_action_space(self):
+        return torch.tensor(self.action_space.sample())
+
+    def step(self, action):
+        obs, reward, termination, truncation, info = self.env.step(action)
+        return obs, torch.tensor(reward, dtype=torch.float32), termination, truncation, info
 
 
 class Buffer:
@@ -599,7 +591,7 @@ class OnlineTrainer:
         """Evaluate a TD-MPC2 agent."""
         ep_rewards, ep_successes = [], []
         for i in range(self.cfg.eval_episodes):
-            obs = self.env.reset()
+            obs, _ = self.env.reset()
             done, ep_reward, t = False, 0, 0
             while not done:
                 torch.compiler.cudagraph_mark_step_begin()
@@ -624,7 +616,7 @@ class OnlineTrainer:
         else:
             obs = obs.unsqueeze(0).cpu()
         if action is None:
-            action = torch.full_like(self.env.rand_act(), float("nan"))
+            action = torch.full_like(self.env.sample_action_space(), float("nan"))
         if reward is None:
             reward = torch.tensor(float("nan"))
         td = TensorDict(
@@ -669,14 +661,14 @@ class OnlineTrainer:
                 if self.logger is not None:
                     self.logger.start_new_episode()
 
-                obs = self.env.reset()
+                obs, _ = self.env.reset()
                 self._tds = [self.to_td(obs)]
 
             # Collect experience
             if self._step > self.cfg.seed_steps:
                 action = self.agent.act(obs, t0=len(self._tds) == 1)
             else:
-                action = self.env.rand_act()
+                action = self.env.sample_action_space()
             obs, reward, termination, truncation, info = self.env.step(action)
             done = termination or truncation
             self._tds.append(self.to_td(obs, action, reward))
@@ -1944,7 +1936,9 @@ def train_tdmpc2(
     set_seed(seed)
 
     gym.logger.min_level = 40
-    env = TensorWrapper(env)
+    env = DefaultSuccessInfoWrapper(env)
+    env = NumpyToTorch(env)
+    env = NumpyToTorchSpaces(env)
 
     print(colored("Work dir:", "yellow", attrs=["bold"]), work_dir)
 
