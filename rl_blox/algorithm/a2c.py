@@ -1,4 +1,3 @@
-from collections import namedtuple
 from functools import partial
 
 import gymnasium as gym
@@ -70,6 +69,56 @@ def a2c_policy_gradient(
     return nnx.value_and_grad(
         stochastic_policy_gradient_pseudo_loss, argnums=3
     )(observations, actions, weights, policy)
+
+
+def collect_rollout(
+    env: gym.vector.SyncVectorEnv,
+    policy: StochasticPolicyBase,
+    value_function: nnx.Module,
+    key: jnp.ndarray,
+    steps_per_update: int,
+    start_obs: jnp.ndarray,
+) -> tuple[list, jnp.ndarray, jnp.ndarray]:
+    """Collects a rollout of experience using the current policy."""
+
+    rollout_data = []
+    obs = start_obs
+
+    for _ in range(steps_per_update):
+        key, action_key = jax.random.split(key)
+
+        mean_and_log_std = policy(obs)
+        action_mean = mean_and_log_std[..., 0]
+        log_std_param = mean_and_log_std[..., 1]
+        action_std = jnp.exp(log_std_param)
+
+        action_distribution = tfd.Normal(loc=action_mean, scale=action_std)
+        actions = action_distribution.sample(seed=action_key)
+        log_probs = action_distribution.log_prob(actions)
+
+        values = value_function(obs).squeeze()
+
+        actions_for_env = jnp.expand_dims(actions, axis=-1)
+        next_obs, rewards, terminations, truncations, infos = env.step(
+            actions_for_env
+        )
+
+        rollout_data.append(
+            (
+                obs,
+                actions,
+                rewards,
+                values,
+                log_probs,
+                terminations,
+            )
+        )
+
+        obs = next_obs
+
+    last_values = value_function(obs).squeeze()
+
+    return rollout_data, obs, last_values
 
 
 def train_a2c(
@@ -162,45 +211,10 @@ def train_a2c(
 
     while step < total_timesteps:
 
-        rollout_data = []
-
-        for _ in range(steps_per_update):
-
-            key, action_key = jax.random.split(key)
-
-            mean_and_log_std = policy(obs)
-            action_mean = mean_and_log_std[..., 0]
-            log_std_param = mean_and_log_std[..., 1]
-
-            action_std = jnp.exp(log_std_param)
-
-            action_distribution = tfd.Normal(loc=action_mean, scale=action_std)
-
-            actions = action_distribution.sample(seed=action_key)
-            log_probs = action_distribution.log_prob(actions)
-
-            values = value_function(obs)
-
-            actions_for_env = jnp.expand_dims(actions, axis=-1)
-            next_obs, rewards, terminations, truncations, infos = env.step(
-                actions_for_env
-            )
-
-            rollout_data.append(
-                (
-                    obs,
-                    actions,
-                    rewards,
-                    values.squeeze(),
-                    log_probs,
-                    terminations,
-                )
-            )
-
-            obs = next_obs
-
-        # Get the Critic's value prediction for these final states.
-        last_values = value_function(obs).squeeze()
+        key, rollout_key = jax.random.split(key)
+        rollout_data, obs, last_values = collect_rollout(
+            env, policy, value_function, rollout_key, steps_per_update, obs
+        )
 
         advantages = []
         returns = []
