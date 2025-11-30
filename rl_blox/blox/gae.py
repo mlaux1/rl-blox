@@ -39,6 +39,10 @@ def compute_gae(
         Computed returns per step.
     """
 
+    all_next_values = jnp.concatenate(
+        [values[1:], jnp.expand_dims(next_values, axis=0)], axis=0
+    )
+
     def calc_advantage_per_step(carry, inputs):
         gae = carry
         reward, value, next_value, terminated = inputs
@@ -46,10 +50,12 @@ def compute_gae(
         gae = delta + gamma * lmbda * (1 - terminated) * gae
         return gae, gae
 
+    initial_gae = jnp.zeros_like(next_values)
+
     _, advantages = jax.lax.scan(
         calc_advantage_per_step,
-        0.0,
-        (rewards[::-1], values[::-1], next_values[::-1], terminateds[::-1]),
+        initial_gae,
+        (rewards[::-1], values[::-1], all_next_values[::-1], terminateds[::-1]),
     )
     advantages = advantages[::-1]
     returns = advantages + values

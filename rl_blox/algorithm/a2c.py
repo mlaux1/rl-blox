@@ -9,6 +9,7 @@ from tqdm.rich import tqdm
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
+from ..blox.gae import compute_gae
 from ..blox.losses import stochastic_policy_gradient_pseudo_loss
 from ..logging.logger import LoggerBase
 from .reinforce import sample_trajectories, train_value_function
@@ -129,12 +130,12 @@ def train_a2c(
     value_function_optimizer: nnx.Optimizer,
     seed: int = 0,
     num_envs: int = 1,
-    policy_gradient_steps: int = 1,
-    value_gradient_steps: int = 1,
     total_timesteps: int = 1_000_000,
-    gamma: float = 1.0,
     steps_per_update: int = 1_000,
-    train_after_episode: bool = False,
+    gamma: float = 0.99,
+    lmbda: float = 0.95,
+    value_loss_coef: float = 0.5,
+    entropy_coef: float = 0.01,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
 ) -> tuple[StochasticPolicyBase, nnx.Optimizer, nnx.Module, nnx.Optimizer]:
@@ -216,43 +217,31 @@ def train_a2c(
             env, policy, value_function, rollout_key, steps_per_update, obs
         )
 
-        advantages = []
-        returns = []
-        # last_values: initial R_{t+1} (or V(s_T))
-        next_return = last_values
+        rollout_obs = [d[0] for d in rollout_data]
+        rollout_actions = [d[1] for d in rollout_data]
+        rollout_rewards = [d[2] for d in rollout_data]
+        rollout_values = [d[3] for d in rollout_data]
+        rollout_log_probs = [d[4] for d in rollout_data]
+        rollout_terminations = [d[5] for d in rollout_data]
 
-        for step_data in reversed(rollout_data):
-            # Unpack the data for one step
-            _obs, _actions, rewards, values, _log_probs, terminations = (
-                step_data
-            )
-
-            # Calculate the TD-based return for the Critic
-            # R_t = r_t + gamma * R_{t+1}
-            mask = 1.0 - terminations
-            current_return = rewards + gamma * next_return * mask
-            returns.insert(0, current_return)  # Prepend to the list
-
-            # Calculate the Advantage for the Actor
-            # A_t = R_t - V(s_t)
-            advantage = current_return - values
-            advantages.insert(0, advantage)
-
-            # Update next_return for the previous timestep in the backward loop
-            next_return = current_return
-
-        all_obs = jnp.stack([d[0] for d in rollout_data]).reshape(
-            -1, *env.single_observation_space.shape
+        advantages, returns = compute_gae(
+            rewards=jnp.array(rollout_rewards),
+            values=jnp.array(rollout_values),
+            next_values=last_values,
+            terminateds=jnp.array(rollout_terminations),
+            gamma=gamma,
+            lmbda=lmbda,
         )
-        all_actions = jnp.stack([d[1] for d in rollout_data]).reshape(
-            -1, *env.single_action_space.shape
-        )
-        all_log_probs = jnp.stack([d[4] for d in rollout_data]).reshape(-1)
-        all_values = jnp.stack([d[3] for d in rollout_data]).reshape(-1)
 
-        all_returns = jnp.stack(returns).reshape(-1)
-        all_advantages = jnp.stack(advantages).reshape(-1)
+        all_obs = jnp.concatenate(rollout_obs)
+        all_actions = jnp.concatenate(rollout_actions)
+        all_log_probs = jnp.concatenate(rollout_log_probs)
+        all_advantages = advantages.flatten()
+        all_returns = returns.flatten()
 
+        print(f"all_obs: {all_obs}")
+        print(f"all_actions: {all_actions}")
+        print(f"all_log_probs: {all_log_probs}")
         print(f"Shape of all_returns: {all_returns.shape}")
         print(f"Shape of all_advantages: {all_advantages.shape}")
 
