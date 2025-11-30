@@ -1,3 +1,4 @@
+from collections import namedtuple
 from functools import partial
 
 import gymnasium as gym
@@ -112,6 +113,7 @@ def collect_rollout(
                 values,
                 log_probs,
                 terminations,
+                infos,
             )
         )
 
@@ -207,15 +209,43 @@ def train_a2c(
     """
     key = jax.random.key(seed)
     obs, _ = env.reset(seed=seed)
+
+    env = gym.wrappers.vector.RecordEpisodeStatistics(env)
+
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     step = 0
 
     while step < total_timesteps:
 
+        total_steps_collected = num_envs * steps_per_update
+
         key, rollout_key = jax.random.split(key)
         rollout_data, obs, last_values = collect_rollout(
             env, policy, value_function, rollout_key, steps_per_update, obs
         )
+
+        for data_step in rollout_data:
+            infos = data_step[6]
+
+            if "episode" in infos:
+                finished_envs_mask = infos["_episode"]
+
+                finished_returns = infos["episode"]["r"][finished_envs_mask]
+                finished_lengths = infos["episode"]["l"][finished_envs_mask]
+
+                for i in range(len(finished_returns)):
+                    ep_return = finished_returns[i]
+                    ep_length = finished_lengths[i]
+                    current_log_step = step + total_steps_collected
+                    print(
+                        f"Step {current_log_step}: "
+                        f"Ep. Return={ep_return:.2f}, "
+                        f"Length={ep_length}"
+                    )
+                    if logger is not None:
+                        logger.record_stat(
+                            "episodic_return", ep_return, current_log_step
+                        )
 
         rollout_obs = [d[0] for d in rollout_data]
         rollout_actions = [d[1] for d in rollout_data]
@@ -239,70 +269,48 @@ def train_a2c(
         all_advantages = advantages.flatten()
         all_returns = returns.flatten()
 
-        print(f"all_obs: {all_obs}")
-        print(f"all_actions: {all_actions}")
-        print(f"all_log_probs: {all_log_probs}")
-        print(f"Shape of all_returns: {all_returns.shape}")
-        print(f"Shape of all_advantages: {all_advantages.shape}")
+        # print(f"all_obs: {all_obs}")
+        # print(f"all_actions: {all_actions}")
+        # print(f"all_log_probs: {all_log_probs}")
+        # print(f"Shape of all_returns: {all_returns.shape}")
+        # print(f"Shape of all_advantages: {all_advantages.shape}")
 
-        # Update progress bar and total step count
-        total_steps_collected = num_envs * steps_per_update
+        def actor_loss_fn(p: StochasticPolicyBase):
+            mean_and_log_std = p(all_obs)
+            action_mean, log_std_param = (
+                mean_and_log_std[..., 0],
+                mean_and_log_std[..., 1],
+            )
+            action_std = jnp.exp(log_std_param)
+            dist = tfd.Normal(loc=action_mean, scale=action_std)
+            log_probs_new = dist.log_prob(all_actions)
+            entropy = dist.entropy().mean()
+            policy_gradient_loss = -(log_probs_new * all_advantages).mean()
+            return policy_gradient_loss - entropy_coef * entropy
+
+        def critic_loss_fn(vf: nnx.Module):
+            values_pred = vf(all_obs).squeeze()
+            return jnp.mean((all_returns - values_pred) ** 2)
+
+        p_loss, p_grad = nnx.value_and_grad(actor_loss_fn)(policy)
+        v_loss, v_grad = nnx.value_and_grad(critic_loss_fn)(value_function)
+
+        policy_optimizer.update(policy, p_grad)
+        value_function_optimizer.update(value_function, v_grad)
+
         step += total_steps_collected
         progress.update(total_steps_collected)
-        break  # For testing purposes
 
-        observations, actions, next_observations, returns, gamma_discount = (
-            dataset.prepare_policy_gradient_dataset(env.action_space, gamma)
-        )
-        rewards = jnp.hstack(
-            [
-                jnp.hstack([r for _, _, _, r in episode])
-                for episode in dataset.episodes
-            ]
-        )
-
-        p_loss = train_policy_a2c(
-            policy,
-            policy_optimizer,
-            policy_gradient_steps,
-            value_function,
-            observations,
-            actions,
-            next_observations,
-            rewards,
-            gamma_discount,
-            gamma,
-        )
-        if logger is not None:
-            logger.record_stat(
-                "policy loss", p_loss, episode=logger.n_episodes - 1
-            )
-            logger.record_epoch("policy", policy)
-
-        v_loss = train_value_function(
-            value_function,
-            value_function_optimizer,
-            value_gradient_steps,
-            observations,
-            returns,
-        )
-        if logger is not None:
-            logger.record_stat(
-                "value function loss", v_loss, episode=logger.n_episodes - 1
-            )
-            logger.record_epoch("value_function", value_function)
     progress.close()
-
-    # return namedtuple(
-    #     "ActorCriticResult",
-    #     [
-    #         "policy",
-    #         "policy_optimizer",
-    #         "value_function",
-    #         "value_function_optimizer",
-    #     ],
-    # )(policy, policy_optimizer, value_function, value_function_optimizer)
-    return rollout_data  # For testing purposes
+    return namedtuple(
+        "A2CResult",
+        [
+            "policy",
+            "policy_optimizer",
+            "value_function",
+            "value_function_optimizer",
+        ],
+    )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
 @partial(nnx.jit, static_argnames=["policy_gradient_steps", "gamma"])
