@@ -3,9 +3,15 @@ from collections import namedtuple
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import numpy as np
 import tensorflow_probability.substrates.jax.distributions as tfd
 from flax import nnx
 from tqdm.rich import tqdm
+
+from rl_blox.blox.function_approximator.policy_head import (
+    GaussianPolicy,
+    SoftmaxPolicy,
+)
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
@@ -29,20 +35,36 @@ def collect_rollout(
     for _ in range(steps_per_update):
         key, action_key = jax.random.split(key)
 
-        mean_and_log_std = policy(obs)
-        action_mean = mean_and_log_std[..., 0]
-        log_std_param = mean_and_log_std[..., 1]
-        action_std = jnp.exp(log_std_param)
+        if isinstance(policy, GaussianPolicy):
+            mean_and_log_std = policy(obs)
+            action_mean = mean_and_log_std[..., 0]
+            log_std_param = mean_and_log_std[..., 1]
+            action_std = jnp.exp(log_std_param)
 
-        action_distribution = tfd.Normal(loc=action_mean, scale=action_std)
-        actions = action_distribution.sample(seed=action_key)
-        log_probs = action_distribution.log_prob(actions)
+            action_distribution = tfd.Normal(loc=action_mean, scale=action_std)
+            actions = action_distribution.sample(seed=action_key)
+            log_probs = action_distribution.log_prob(actions)
+
+            values = value_function(obs).squeeze()
+
+            actions_for_env = jnp.expand_dims(actions, axis=-1)
+
+        elif isinstance(policy, SoftmaxPolicy):
+            logits = policy(obs)
+            action_distribution = tfd.Categorical(logits=logits)
+            actions = action_distribution.sample(seed=action_key)
+            log_probs = action_distribution.log_prob(actions)
+            actions_for_env = actions
+
+        else:
+            raise NotImplementedError(
+                f"Policy type {type(policy)} not supported."
+            )
 
         values = value_function(obs).squeeze()
-
-        actions_for_env = jnp.expand_dims(actions, axis=-1)
+        numpy_actions = np.asarray(actions_for_env)
         next_obs, rewards, terminations, truncations, infos = env.step(
-            actions_for_env
+            numpy_actions
         )
 
         rollout_data.append(
@@ -213,22 +235,26 @@ def train_a2c(
             all_advantages.std() + 1e-8
         )
 
-        # print(f"all_obs: {all_obs}")
-        # print(f"all_actions: {all_actions}")
-        # print(f"all_log_probs: {all_log_probs}")
-        # print(f"Shape of all_returns: {all_returns.shape}")
-        # print(f"Shape of all_advantages: {all_advantages.shape}")
-
         def actor_loss_fn(p: StochasticPolicyBase):
-            mean_and_log_std = p(all_obs)
-            action_mean, log_std_param = (
-                mean_and_log_std[..., 0],
-                mean_and_log_std[..., 1],
-            )
-            action_std = jnp.exp(log_std_param)
-            dist = tfd.Normal(loc=action_mean, scale=action_std)
+            if isinstance(p, GaussianPolicy):
+                mean_and_log_std = p(all_obs)
+                action_mean, log_std_param = (
+                    mean_and_log_std[..., 0],
+                    mean_and_log_std[..., 1],
+                )
+                action_std = jnp.exp(log_std_param)
+                dist = tfd.Normal(loc=action_mean, scale=action_std)
+            elif isinstance(p, SoftmaxPolicy):
+                logits = p(all_obs)
+                dist = tfd.Categorical(logits=logits)
+            else:
+                raise NotImplementedError(
+                    f"Policy type {type(p)} not supported."
+                )
+
             log_probs_new = dist.log_prob(all_actions)
             entropy = dist.entropy().mean()
+
             policy_gradient_loss = -(log_probs_new * all_advantages).mean()
             return policy_gradient_loss - entropy_coef * entropy
 
