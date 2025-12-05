@@ -5,7 +5,7 @@ import gymnasium
 import jax
 import numpy as np
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.losses import nature_dqn_loss
@@ -34,6 +34,7 @@ def train_nature_dqn(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
+    bar: tqdm = None,
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
@@ -88,7 +89,8 @@ def train_nature_dqn(
         Global step to start training from. If not set, will start from 0.
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
-
+    bar : tqdm, optional
+        The progress bar to be used.
 
     Returns
     -------
@@ -117,6 +119,13 @@ def train_nature_dqn(
     key = jax.random.key(seed)
     rng = np.random.default_rng(seed)
 
+    if bar is None:
+        progress = trange(
+            global_step, total_timesteps, disable=not progress_bar
+        )
+    else:
+        progress = bar
+
     # intialise the target network
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
@@ -124,7 +133,7 @@ def train_nature_dqn(
     train_step = partial(train_step_with_loss, nature_dqn_loss)
     train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
-    # initialise episode
+    # initialise environment
     obs, _ = env.reset(seed=seed)
 
     epsilon = linear_schedule(total_timesteps)
@@ -135,7 +144,9 @@ def train_nature_dqn(
     episode = 1
     accumulated_reward = 0.0
 
-    for step in trange(global_step, total_timesteps, disable=not progress_bar):
+    step = global_step
+
+    while step < total_timesteps:
         if step < learning_starts or epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
@@ -184,6 +195,9 @@ def train_nature_dqn(
             episode += 1
         else:
             obs = next_obs
+
+        progress.update()
+        step += 1
 
     return namedtuple(
         "NatureDQNResult",

@@ -5,7 +5,7 @@ import gymnasium
 import jax
 import numpy as np
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.losses import dqn_loss
@@ -60,6 +60,7 @@ def train_dqn(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
+    bar: tqdm = None,
 ) -> tuple[MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
@@ -100,6 +101,8 @@ def train_dqn(
         Global step to start training from. 0 if not set explicitly.
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
+    bar : tqdm, optional
+        The progress bar to use.
 
 
     Returns
@@ -144,8 +147,17 @@ def train_dqn(
     episode = 1
     accumulated_reward = 0.0
 
-    for global_step in trange(total_timesteps, disable=not progress_bar):
-        if epsilon_rolls[global_step] < epsilon[global_step]:
+    if bar is None:
+        progress = trange(
+            global_step, total_timesteps, disable=not progress_bar
+        )
+    else:
+        progress = bar
+
+    step = global_step
+
+    while step < total_timesteps:
+        if epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
             action = greedy_policy(q_net, obs)
@@ -161,21 +173,19 @@ def train_dqn(
         )
 
         # sample minibatch from replay buffer
-        if global_step > batch_size:
+        if step > batch_size:
             transition_batch = replay_buffer.sample_batch(batch_size, rng)
             q_loss, q_mean = train_step(
                 optimizer, q_net, transition_batch, gamma
             )
             if logger is not None:
                 logger.record_stat(
-                    "q loss", q_loss, step=global_step + 1, episode=episode
+                    "q loss", q_loss, step=step + 1, episode=episode
                 )
                 logger.record_stat(
-                    "q mean", q_mean, step=global_step + 1, episode=episode
+                    "q mean", q_mean, step=step + 1, episode=episode
                 )
-                logger.record_epoch(
-                    "q", q_net, step=global_step + 1, episode=episode
-                )
+                logger.record_epoch("q", q_net, step=step + 1, episode=episode)
 
         # housekeeping
         if terminated or truncated:
@@ -183,7 +193,7 @@ def train_dqn(
                 logger.record_stat(
                     "return",
                     accumulated_reward,
-                    step=global_step + 1,
+                    step=step + 1,
                     episode=episode,
                 )
             obs, _ = env.reset()
@@ -192,6 +202,9 @@ def train_dqn(
         else:
             obs = next_obs
 
+        progress.update()
+        step += 1
+
     return namedtuple(
         "DQNResult", ["q_net", "optimizer", "replay_buffer", "global_step"]
-    )(q_net, optimizer, replay_buffer, global_step + 1)
+    )(q_net, optimizer, replay_buffer, step + 1)

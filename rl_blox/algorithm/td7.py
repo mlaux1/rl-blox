@@ -8,7 +8,7 @@ import jax.random
 import numpy as np
 import optax
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.checkpointing import (
     CheckpointState,
@@ -437,6 +437,7 @@ def train_td7(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
+    bar: tqdm = None,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -449,6 +450,7 @@ def train_td7(
     nnx.Module,
     nnx.Optimizer,
     LAP,
+    int,
 ]:
     r"""TD7.
 
@@ -578,6 +580,9 @@ def train_td7(
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
 
+    bar : tqdm, optional
+        The progressbar to be used.
+
     Returns
     -------
     embedding : SALE
@@ -613,6 +618,9 @@ def train_td7(
 
     replay_buffer : LAP
         Replay buffer.
+
+    global_step : int
+        The time step at which training ended.
 
     Notes
     -----
@@ -714,10 +722,13 @@ def train_td7(
     value_clipping_state = ValueClippingState()
     checkpoint_state = CheckpointState()
 
-    for global_step in trange(
-        global_step, total_timesteps, disable=not progress_bar
-    ):
-        if global_step < learning_starts:
+    if bar is None:
+        bar = trange(global_step, total_timesteps, disable=not progress_bar)
+
+    step = global_step
+
+    while step < total_timesteps:
+        if step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
@@ -761,14 +772,14 @@ def train_td7(
                     }
                     if logger is not None:
                         for k, v in epochs.items():
-                            logger.record_epoch(k, v, step=global_step + 1)
+                            logger.record_epoch(k, v, step=step + 1)
                 if logger is not None:
                     for k, v in checkpoint_state.__dict__.items():
-                        logger.record_stat(k, v, step=global_step + 1)
+                        logger.record_stat(k, v, step=step + 1)
 
             if logger is not None and training_steps > 0:
                 logger.record_stat(
-                    "training steps", training_steps, step=global_step + 1
+                    "training steps", training_steps, step=step + 1
                 )
             for delayed_train_step_idx in range(1, training_steps + 1):
                 epoch += 1
@@ -797,10 +808,7 @@ def train_td7(
                 )
                 if logger is not None:
                     log_step = (
-                        global_step
-                        + 1
-                        - training_steps
-                        + delayed_train_step_idx
+                        step + 1 - training_steps + delayed_train_step_idx
                     )
                     for k, v in metrics.items():
                         logger.record_stat(k, v, step=log_step)
@@ -809,20 +817,24 @@ def train_td7(
 
         if termination or truncated:
             if logger is not None:
-                logger.record_stat(
-                    "return", accumulated_reward, step=global_step + 1
-                )
+                logger.record_stat("return", accumulated_reward, step=step + 1)
                 logger.stop_episode(steps_per_episode)
             episode_idx += 1
+
             if total_episodes is not None and episode_idx >= total_episodes:
                 break
+
             if logger is not None:
                 logger.start_new_episode()
+
             obs, _ = env.reset()
             steps_per_episode = 0
             accumulated_reward = 0.0
         else:
             obs = next_obs
+
+        bar.update()
+        step += 1
 
     return namedtuple(
         "TD7Result",
@@ -838,6 +850,7 @@ def train_td7(
             "critic_target",
             "critic_optimizer",
             "replay_buffer",
+            "global_step",
         ],
     )(
         embedding,
@@ -851,6 +864,7 @@ def train_td7(
         critic_target,
         critic_optimizer,
         replay_buffer,
+        step,
     )
 
 

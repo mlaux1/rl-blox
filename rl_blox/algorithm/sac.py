@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
@@ -270,7 +270,7 @@ def train_sac(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
-    bar=None,
+    bar: tqdm = None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -380,6 +380,9 @@ def train_sac(
 
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
+
+    bar : tqdm, optional
+        The progress bar to be used
 
     Returns
     -------
@@ -506,8 +509,10 @@ def train_sac(
     else:
         progress = bar
 
-    while global_step < total_timesteps:
-        if global_step < learning_starts:
+    step = global_step
+
+    while step < total_timesteps:
+        if step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key)
@@ -544,7 +549,7 @@ def train_sac(
             stats = {"q loss": q_loss_value, "q mean": q_mean}
             updated_modules = {"q": q}
 
-            if global_step % policy_delay == 0:
+            if step % policy_delay == 0:
                 # compensate for delay by doing 'policy_frequency' updates
                 for _ in range(policy_delay):
                     key, action_key = jax.random.split(key)
@@ -569,21 +574,19 @@ def train_sac(
                         )
                         stats["alpha loss"] = exploration_loss_value
 
-            if global_step % target_network_delay == 0:
+            if step % target_network_delay == 0:
                 soft_target_net_update(q, q_target, tau)
                 updated_modules["q_target"] = q_target
 
             if logger is not None:
                 for k, v in stats.items():
-                    logger.record_stat(k, v, step=global_step)
+                    logger.record_stat(k, v, step=step)
                 for k, v in updated_modules.items():
-                    logger.record_epoch(k, v, step=global_step)
+                    logger.record_epoch(k, v, step=step)
 
         if termination or truncation:
             if logger is not None:
-                logger.record_stat(
-                    "return", accumulated_reward, step=global_step
-                )
+                logger.record_stat("return", accumulated_reward, step=step)
                 logger.stop_episode(steps_per_episode)
             episode_idx += 1
 
@@ -599,8 +602,8 @@ def train_sac(
         else:
             obs = next_obs
 
-        progress.update(1)
-        global_step += 1
+        progress.update()
+        step += 1
 
     return namedtuple(
         "SACResult",
@@ -622,7 +625,7 @@ def train_sac(
         q_optimizer,
         entropy_control,
         replay_buffer,
-        global_step + 1,
+        step,
     )
 
 
