@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.losses import td3_lap_loss
@@ -44,6 +44,8 @@ def train_td3_lap(
     q_target: ContinuousClippedDoubleQNet | None = None,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
+    global_step: int = 0,
+    bar: tqdm = None,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -133,6 +135,12 @@ def train_td3_lap(
     logger : LoggerBase, optional
         Experiment logger.
 
+    bar : tqdm, optional
+        The progress bar to be used.
+
+    global_step : int, optional
+        The global time step from which to start training from.
+
     Returns
     -------
     policy : nnx.Module
@@ -219,8 +227,13 @@ def train_td3_lap(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in trange(total_timesteps, disable=not progress_bar):
-        if global_step < learning_starts:
+    if bar is None:
+        bar = trange(global_step, total_timesteps, disable=not progress_bar)
+
+    step = global_step
+
+    while step < total_timesteps:
+        if step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
@@ -283,11 +296,11 @@ def train_td3_lap(
 
                 if logger is not None:
                     for k, v in stats.items():
-                        logger.record_stat(k, v, step=global_step + 1)
+                        logger.record_stat(k, v, step=step + 1)
                     for k, v in updated_modules.items():
-                        logger.record_epoch(k, v, step=global_step + 1)
+                        logger.record_epoch(k, v, step=step + 1)
 
-        if global_step % 250 == 0:  # hardcoded
+        if step % 250 == 0:  # hardcoded
             replay_buffer.reset_max_priority()
 
         if termination or truncated:
@@ -296,7 +309,7 @@ def train_td3_lap(
                     logger.record_stat(
                         "return",
                         float(info["episode"]["r"]),
-                        step=global_step + 1,
+                        step=step + 1,
                     )
                 logger.stop_episode(steps_per_episode)
                 logger.start_new_episode()
@@ -316,6 +329,7 @@ def train_td3_lap(
             "q_target",
             "q_optimizer",
             "replay_buffer",
+            "global_step",
         ],
     )(
         policy,
@@ -325,4 +339,5 @@ def train_td3_lap(
         q_target,
         q_optimizer,
         replay_buffer,
+        step,
     )

@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.mlp import MLP
@@ -186,6 +186,7 @@ def train_td3(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
+    bar: tqdm = None,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -285,6 +286,9 @@ def train_td3(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    bar : tqdm, optional
+        The progress bar to be used.
 
     Returns
     -------
@@ -408,9 +412,12 @@ def train_td3(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in trange(
-        global_step, total_timesteps, disable=not progress_bar
-    ):
+    if bar is None:
+        bar = trange(global_step, total_timesteps, disable=not progress_bar)
+
+    step = global_step
+
+    while step < total_timesteps:
         if global_step < learning_starts:
             action = env.action_space.sample()
         else:
@@ -431,7 +438,7 @@ def train_td3(
             termination=termination,
         )
 
-        if global_step >= learning_starts:
+        if step >= learning_starts:
             for _ in range(gradient_steps):
                 batch = replay_buffer.sample_batch(batch_size, rng)
 
@@ -469,15 +476,13 @@ def train_td3(
 
                 if logger is not None:
                     for k, v in stats.items():
-                        logger.record_stat(k, v, step=global_step + 1)
+                        logger.record_stat(k, v, step=step + 1)
                     for k, v in updated_modules.items():
-                        logger.record_epoch(k, v, step=global_step + 1)
+                        logger.record_epoch(k, v, step=step + 1)
 
         if termination or truncated:
             if logger is not None:
-                logger.record_stat(
-                    "return", accumulated_reward, step=global_step + 1
-                )
+                logger.record_stat("return", accumulated_reward, step=step + 1)
                 logger.stop_episode(steps_per_episode)
             episode_idx += 1
             if total_episodes is not None and episode_idx >= total_episodes:
@@ -489,6 +494,9 @@ def train_td3(
             accumulated_reward = 0.0
         else:
             obs = next_obs
+
+        bar.update()
+        step += 1
 
     return namedtuple(
         "TD3Result",
@@ -510,5 +518,5 @@ def train_td3(
         q_target,
         q_optimizer,
         replay_buffer,
-        global_step,
+        step,
     )
