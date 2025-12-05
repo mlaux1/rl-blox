@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
@@ -270,7 +270,7 @@ def train_sac(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
-    bar=None,
+    bar: tqdm = None,
 ) -> tuple[
     nnx.Module,
     nnx.Optimizer,
@@ -380,6 +380,9 @@ def train_sac(
 
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
+
+    bar : tqdm, optional
+        The progress bar to be used
 
     Returns
     -------
@@ -599,7 +602,7 @@ def train_sac(
         else:
             obs = next_obs
 
-        progress.update(1)
+        progress.update()
         step += 1
 
     return namedtuple(

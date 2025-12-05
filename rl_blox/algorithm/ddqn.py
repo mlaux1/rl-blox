@@ -5,7 +5,7 @@ import gymnasium
 import jax
 import numpy as np
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.losses import ddqn_loss
@@ -34,7 +34,7 @@ def train_ddqn(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
-    bar=None,
+    bar: tqdm = None,
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
@@ -90,7 +90,8 @@ def train_ddqn(
         Global step to start training from. If not set, will start from 0.
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
-
+    bar : tqdm, optional
+        The progress bar to be used.
 
     Returns
     -------
@@ -199,7 +200,7 @@ def train_ddqn(
         else:
             obs = next_obs
 
-        progress.update(1)
+        progress.update()
         step += 1
 
     return namedtuple(
