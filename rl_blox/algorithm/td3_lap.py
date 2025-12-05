@@ -54,6 +54,7 @@ def train_td3_lap(
     ContinuousClippedDoubleQNet,
     nnx.Optimizer,
     LAP,
+    int,
 ]:
     r"""TD3 with Loss-Adjusted Prioritized Experience Replay (LAP).
 
@@ -164,8 +165,8 @@ def train_td3_lap(
     replay_buffer : ReplayBuffer
         Replay buffer.
 
-    progress_bar : bool, optional
-        Flag to enable/disable the tqdm progressbar.
+    global_step : int
+        The time step at which training ended.
 
     Notes
     -----
@@ -318,6 +319,9 @@ def train_td3_lap(
             steps_per_episode = 0
         else:
             obs = next_obs
+
+        bar.update()
+        step += 1
 
     return namedtuple(
         "TD3LAPResult",
