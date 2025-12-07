@@ -52,6 +52,9 @@ def compute_gae(
 
     initial_gae = jnp.zeros_like(next_values)
 
+    if initial_gae.ndim == 0:
+        initial_gae = jnp.expand_dims(initial_gae, axis=0)
+
     _, advantages = jax.lax.scan(
         calc_advantage_per_step,
         initial_gae,
