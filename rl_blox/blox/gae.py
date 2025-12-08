@@ -50,14 +50,9 @@ def compute_gae(
         gae = delta + gamma * lmbda * (1 - terminated) * gae
         return gae, gae
 
-    initial_gae = jnp.zeros_like(next_values)
-
-    if initial_gae.ndim == 0:
-        initial_gae = jnp.expand_dims(initial_gae, axis=0)
-
     _, advantages = jax.lax.scan(
         calc_advantage_per_step,
-        initial_gae,
+        0.0,
         (rewards[::-1], values[::-1], all_next_values[::-1], terminateds[::-1]),
     )
     advantages = advantages[::-1]
