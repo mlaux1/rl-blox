@@ -5,7 +5,7 @@ import gymnasium
 import jax
 import numpy as np
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.losses import ddqn_loss
@@ -34,6 +34,7 @@ def train_ddqn(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
+    bar: tqdm = None,
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
     """Deep Q Learning with Experience Replay
 
@@ -89,7 +90,8 @@ def train_ddqn(
         Global step to start training from. If not set, will start from 0.
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
-
+    bar : tqdm, optional
+        The progress bar to be used.
 
     Returns
     -------
@@ -121,6 +123,13 @@ def train_ddqn(
     if logger is not None:
         logger.start_new_episode()
 
+    if bar is None:
+        progress = trange(
+            global_step, total_timesteps, disable=not progress_bar
+        )
+    else:
+        progress = bar
+
     # intialise the target network
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
@@ -139,7 +148,9 @@ def train_ddqn(
     episode = 1
     accumulated_reward = 0.0
 
-    for step in trange(global_step, total_timesteps, disable=not progress_bar):
+    step = global_step
+
+    while step < total_timesteps:
         if step < learning_starts or epsilon_rolls[step] < epsilon[step]:
             action = env.action_space.sample()
         else:
@@ -189,6 +200,9 @@ def train_ddqn(
         else:
             obs = next_obs
 
+        progress.update()
+        step += 1
+
     return namedtuple(
         "DDQNResult",
         [
@@ -203,5 +217,5 @@ def train_ddqn(
         q_target_net,
         optimizer,
         replay_buffer,
-        global_step + 1,
+        step,
     )
