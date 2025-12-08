@@ -23,6 +23,7 @@ Algorithm Interface
    dqn.train_dqn
    ddqn.train_ddqn
    nature_dqn.train_nature_dqn
+   per.train_ddqn_per
    reinforce.train_reinforce
    actor_critic.train_ac
    ddpg.train_ddpg
@@ -116,6 +117,7 @@ Functional Blox
    losses.dqn_loss
    losses.nature_dqn_loss
    losses.ddqn_loss
+   losses.ddqn_per_loss
    preprocessing.make_two_hot_bins
    preprocessing.two_hot_encoding
    preprocessing.two_hot_decoding
