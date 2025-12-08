@@ -6,17 +6,9 @@ from rl_blox.algorithm.a2c import train_a2c
 from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
-# env_name = "Pendulum-v1"
-# env_name = "HalfCheetah-v4"
 env_name = "InvertedPendulum-v5"
-num_envs = 8
 seed = 42
-total_timesteps_for_test = 900_000
-# Parallelization
-envs = gym.vector.SyncVectorEnv(
-    [lambda: gym.make(env_name) for _ in range(num_envs)]
-)
-# env.reset(seed=seed)
+num_envs = 4
 
 hparams_model = dict(
     policy_shared_head=True,
@@ -26,29 +18,27 @@ hparams_model = dict(
     value_network_learning_rate=1e-2,
     seed=seed,
 )
+
 hparams_algorithm = dict(
-    total_timesteps=total_timesteps_for_test,
+    policy_gradient_steps=5,
+    value_gradient_steps=5,
+    total_timesteps=500_000,
     gamma=0.99,
-    steps_per_update=5_000,
-    # train_after_episode=False,
+    gae_lambda=0.95,
+    steps_per_update=500,
+    log_frequency=5_000,
     seed=seed,
-    num_envs=num_envs,
-    lmbda=0.95,
-    value_loss_coef=0.5,
-    entropy_coef=0.01,
 )
 
-# logger = StandardLogger(verbose=2)
+
+def make_env():
+    return gym.make(env_name)
+
+
+envs = gym.vector.SyncVectorEnv([make_env for _ in range(num_envs)])
+envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
+
 logger = None
-
-
-# logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
-# logger.define_experiment(
-#     env_name=env_name,
-#     algorithm_name="A2C",
-#     hparams=hparams_model | hparams_algorithm,
-# )
-# logger.define_checkpoint_frequency("value_function", 10)
 
 ac_state = create_policy_gradient_continuous_state(envs, **hparams_model)
 
@@ -63,20 +53,20 @@ train_a2c(
 )
 envs.close()
 
-# Evaluation
-# Using only one environment for evaluation and rendering
-# env = gym.make(env_name, render_mode="human")
-# env = gym.wrappers.RecordEpisodeStatistics(env)
-# while True:
-#     done = False
-#     infos = {}
-#     obs, _ = env.reset()
-#     while not done:
-#         action = np.asarray(ac_state.policy(jnp.asarray(obs)))
-#         next_obs, reward, termination, truncation, infos = env.step(action)
-#         done = termination or truncation
-#         obs = np.asarray(next_obs)
-#     if "final_info" in infos:
-#         for info in infos["final_info"]:
-#             print(f"episodic_return={info['episode']['r']}")
-#             break
+eval_env = gym.make(env_name, render_mode="human")
+eval_env = gym.wrappers.RecordEpisodeStatistics(eval_env)
+
+while True:
+    done = False
+    infos = {}
+    obs, _ = eval_env.reset()
+    while not done:
+        action = np.asarray(ac_state.policy(jnp.asarray(obs)))
+        next_obs, reward, termination, truncation, infos = eval_env.step(action)
+        done = termination or truncation
+        obs = np.asarray(next_obs)
+    if "final_info" in infos:
+        for info in infos["final_info"]:
+            print(f"episodic_return={info['episode']['r']}")
+            break
+eval_env.close()

@@ -1,114 +1,167 @@
-from collections import namedtuple
+from collections import deque, namedtuple
+from functools import partial
+from typing import Any
 
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tensorflow_probability.substrates.jax.distributions as tfd
 from flax import nnx
 from tqdm.rich import tqdm
-
-from rl_blox.blox.function_approximator.policy_head import (
-    GaussianPolicy,
-    SoftmaxPolicy,
-)
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..blox.gae import compute_gae
+from ..blox.losses import stochastic_policy_gradient_pseudo_loss
 from ..logging.logger import LoggerBase
+from .reinforce import train_value_function
 
 
-def collect_rollout(
-    env: gym.vector.SyncVectorEnv,
+class BatchDataset(
+    namedtuple(
+        "BatchDataset",
+        ["obs", "actions", "rewards", "terminations", "truncations"],
+    )
+):
+    """Container for a batch of data from vectorized environments.
+
+    Attributes
+    ----------
+    obs : jnp.ndarray
+        Observations of shape (Time, Num_Envs, *Obs_Shape).
+    actions : jnp.ndarray
+        Actions of shape (Time, Num_Envs, *Action_Shape).
+    rewards : jnp.ndarray
+        Rewards of shape (Time, Num_Envs).
+    terminations : jnp.ndarray
+        Termination flags of shape (Time, Num_Envs).
+    truncations : jnp.ndarray
+        Truncation flags of shape (Time, Num_Envs).
+    """
+
+    pass
+
+
+def collect_trajectories(
+    envs: gym.vector.VectorEnv,
     policy: StochasticPolicyBase,
-    value_function: nnx.Module,
     key: jnp.ndarray,
+    last_observation: jnp.ndarray,
     steps_per_update: int,
-    start_obs: jnp.ndarray,
-) -> tuple[list, jnp.ndarray, jnp.ndarray]:
-    """Collects a rollout of experience using the current policy."""
+    logger: LoggerBase | None = None,
+    global_step: int = 0,
+) -> tuple[BatchDataset, jnp.ndarray, int, list[float]]:
+    """
+    Collects a batch of trajectories from vectorized environments.
 
-    rollout_data = []
-    obs = start_obs
+    Parameters
+    ----------
+    envs : gym.vector.VectorEnv
+        Vectorized environment.
+    policy : StochasticPolicyBase
+        Policy used for sampling actions.
+    key : jnp.ndarray
+        JAX random key for action sampling.
+    last_observation : jnp.ndarray
+        The observation from the previous step (or reset) to start rolling out from.
+        Shape: (Num_Envs, Obs_Dim).
+    steps_per_update : int
+        Number of steps to run per environment. Total samples collected will be
+        steps_per_update * num_envs.
+    logger : LoggerBase | None, optional
+        Logger to record episodic returns.
+    global_step : int, optional
+        Current global step count for logging alignment.
+
+    Returns
+    -------
+    dataset : BatchDataset
+        The collected batch of data, organized by time and environment index.
+    last_observation : jnp.ndarray
+        The final observation after the rollout, used for bootstrapping value estimates.
+    global_step : int
+        The updated global step count.
+    episodic_returns : list[float]
+        A list of returns for all episodes that finished during this collection window.
+    """
+    obs_list, act_list, rew_list, term_list, trunc_list = [], [], [], [], []
+    episodic_returns = []
+
+    obs = last_observation
+    num_envs = envs.num_envs
+
+    rng = key
 
     for _ in range(steps_per_update):
-        key, action_key = jax.random.split(key)
+        rng, subkey = jax.random.split(rng)
 
-        if isinstance(policy, GaussianPolicy):
-            mean_and_log_std = policy(obs)
-            action_mean = mean_and_log_std[..., 0]
-            log_std_param = mean_and_log_std[..., 1]
-            action_std = jnp.exp(log_std_param)
+        action = np.array(policy.sample(obs, subkey))
 
-            action_distribution = tfd.Normal(loc=action_mean, scale=action_std)
-            actions = action_distribution.sample(seed=action_key)
-            log_probs = action_distribution.log_prob(actions)
+        next_obs, reward, terminated, truncated, infos = envs.step(action)
 
-            values = value_function(obs).squeeze()
+        if "episode" in infos and "_episode" in infos:
+            finished_mask = infos["_episode"]
+            if np.any(finished_mask):
+                new_returns = infos["episode"]["r"][finished_mask]
+                episodic_returns.extend(new_returns)
 
-            actions_for_env = jnp.expand_dims(actions, axis=-1)
+                if logger is not None:
+                    for ret in new_returns:
+                        logger.record_stat("return", ret, step=global_step)
+                        logger.start_new_episode()
 
-        elif isinstance(policy, SoftmaxPolicy):
-            logits = policy(obs)
-            action_distribution = tfd.Categorical(logits=logits)
-            actions = action_distribution.sample(seed=action_key)
-            log_probs = action_distribution.log_prob(actions)
-            actions_for_env = actions
+        elif "final_info" in infos:
+            for info in infos["final_info"]:
+                if info and "episode" in info:
+                    ret = info["episode"]["r"]
+                    episodic_returns.append(ret)
+                    if logger is not None:
+                        logger.record_stat("return", ret, step=global_step)
+                        logger.start_new_episode()
 
-        else:
-            raise NotImplementedError(
-                f"Policy type {type(policy)} not supported."
-            )
-
-        values = value_function(obs).squeeze()
-        numpy_actions = np.asarray(actions_for_env)
-        next_obs, rewards, terminations, truncations, infos = env.step(
-            numpy_actions
-        )
-
-        rollout_data.append(
-            (
-                obs,
-                actions,
-                rewards,
-                values,
-                log_probs,
-                terminations,
-                infos,
-            )
-        )
+        obs_list.append(obs)
+        act_list.append(action)
+        rew_list.append(reward)
+        term_list.append(terminated)
+        trunc_list.append(truncated)
 
         obs = next_obs
+        global_step += num_envs
 
-    last_values = value_function(obs).squeeze()
+    dataset = BatchDataset(
+        obs=jnp.array(np.stack(obs_list)),
+        actions=jnp.array(np.stack(act_list)),
+        rewards=jnp.array(np.stack(rew_list)),
+        terminations=jnp.array(np.stack(term_list)),
+        truncations=jnp.array(np.stack(trunc_list)),
+    )
 
-    return rollout_data, obs, last_values
+    return dataset, jnp.array(obs), global_step, episodic_returns
 
 
 def train_a2c(
-    env: gym.vector.SyncVectorEnv,
+    envs: gym.vector.VectorEnv,
     policy: StochasticPolicyBase,
     policy_optimizer: nnx.Optimizer,
     value_function: MLP,
     value_function_optimizer: nnx.Optimizer,
     seed: int = 0,
-    num_envs: int = 1,
+    policy_gradient_steps: int = 1,
+    value_gradient_steps: int = 1,
     total_timesteps: int = 1_000_000,
-    steps_per_update: int = 1_000,
     gamma: float = 0.99,
-    lmbda: float = 0.95,
-    value_loss_coef: float = 0.5,
-    entropy_coef: float = 0.01,
+    gae_lambda: float = 0.95,
+    steps_per_update: int = 5,
+    log_frequency: int = 20_000,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
 ) -> tuple[StochasticPolicyBase, nnx.Optimizer, nnx.Module, nnx.Optimizer]:
-    """Train with actor-critic.
+    """Train Advantage Actor-Critic (A2C) with Vectorized Environments.
 
     Parameters
     ----------
-    env : gym.Env
-        Environment.
+    env : gym.vector.VectorEnv
+        The vectorized environment.
 
     policy : nnx.Module
         Probabilistic policy network. Maps observations to probability
@@ -117,39 +170,38 @@ def train_a2c(
     policy_optimizer : nnx.Optimizer
         Optimizer for policy network.
 
-    value_function : nnx.Module or None, optional
-        Policy network. Maps observations to expected returns.
+    value_function : nnx.Module
+        Value network. Maps observations to expected returns.
 
-    value_function_optimizer : nnx.Optimizer or None, optional
+    value_function_optimizer : nnx.Optimizer
         Optimizer for value function network.
 
     seed : int, optional
         Seed for random number generation.
 
     policy_gradient_steps : int, optional
-        Number of gradient descent steps for the policy network.
+        Number of gradient descent steps per data batch for the policy.
 
     value_gradient_steps : int, optional
-        Number of gradient descent steps for the value network.
+        Number of gradient descent steps per data batch for the value function.
 
-    total_timesteps
-        Total timesteps of the experiments.
+    total_timesteps : int
+        Total environment steps to train for (across all environments).
 
     gamma : float, optional
         Discount factor for rewards.
 
+    gae_lambda : float, optional
+        Smoothing factor for GAE (bias-variance trade-off).
+
     steps_per_update : int, optional
-        Number of samples to collect before updating the policy. Alternatively
-        you can train after each episode.
+        Number of steps to collect per environment before performing an update
+        (n-step lookahead).
 
-    train_after_episode : bool, optional
-        Train after each episode. Alternatively you can train after collecting
-        a certain number of samples.
+    log_frequency : int, optional
+        Frequency (in timesteps) to print stats to stdout.
 
-    key : jnp.ndarray, optional
-        Pseudo random number generator key for action sampling.
-
-    logger : logger.LoggerBase, optional
+    logger : LoggerBase, optional
         Experiment logger.
 
     progress_bar : bool, optional
@@ -169,109 +221,84 @@ def train_a2c(
     value_function_optimizer : nnx.Optimizer
         Optimizer for value function.
     """
-    key = jax.random.key(seed)
-    obs, _ = env.reset(seed=seed)
 
-    env = gym.wrappers.vector.RecordEpisodeStatistics(env)
+    key = jax.random.key(seed)
+
+    last_obs, _ = envs.reset(seed=seed)
+    last_obs = jnp.array(last_obs)
+
+    global_step = 0
+    last_log_step = 0
+    return_buffer = deque(maxlen=100)
+
+    p_loss, v_loss = 0.0, 0.0
 
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
-    step = 0
 
-    while step < total_timesteps:
+    while global_step < total_timesteps:
+        key, col_key = jax.random.split(key)
 
-        total_steps_collected = num_envs * steps_per_update
-
-        key, rollout_key = jax.random.split(key)
-        rollout_data, obs, last_values = collect_rollout(
-            env, policy, value_function, rollout_key, steps_per_update, obs
+        dataset, last_obs, global_step, episodic_returns = collect_trajectories(
+            envs,
+            policy,
+            col_key,
+            last_obs,
+            steps_per_update,
+            logger,
+            global_step,
         )
 
-        for data_step in rollout_data:
-            infos = data_step[6]
+        return_buffer.extend(episodic_returns)
+        steps_collected = steps_per_update * envs.num_envs
+        progress.update(steps_collected)
 
-            if "episode" in infos:
-                finished_envs_mask = infos["_episode"]
-
-                finished_returns = infos["episode"]["r"][finished_envs_mask]
-                finished_lengths = infos["episode"]["l"][finished_envs_mask]
-
-                for i in range(len(finished_returns)):
-                    ep_return = finished_returns[i]
-                    ep_length = finished_lengths[i]
-                    current_log_step = step + total_steps_collected
-                    print(
-                        f"Step {current_log_step}: "
-                        f"Ep. Return={ep_return:.2f}, "
-                        f"Length={ep_length}"
-                    )
-                    if logger is not None:
-                        logger.record_stat(
-                            "episodic_return", ep_return, current_log_step
-                        )
-
-        rollout_obs = [d[0] for d in rollout_data]
-        rollout_actions = [d[1] for d in rollout_data]
-        rollout_rewards = [d[2] for d in rollout_data]
-        rollout_values = [d[3] for d in rollout_data]
-        rollout_log_probs = [d[4] for d in rollout_data]
-        rollout_terminations = [d[5] for d in rollout_data]
-
-        advantages, returns = compute_gae(
-            rewards=jnp.array(rollout_rewards),
-            values=jnp.array(rollout_values),
-            next_values=last_values,
-            terminateds=jnp.array(rollout_terminations),
-            gamma=gamma,
-            lmbda=lmbda,
+        observations, actions, advantages, returns = prepare_a2c_batch(
+            dataset,
+            value_function,
+            last_obs,
+            envs.single_action_space,
+            gamma,
+            gae_lambda,
         )
 
-        all_obs = jnp.concatenate(rollout_obs)
-        all_actions = jnp.concatenate(rollout_actions)
-        all_log_probs = jnp.concatenate(rollout_log_probs)
-        all_advantages = advantages.flatten()
-        all_returns = returns.flatten()
-
-        all_advantages = (all_advantages - all_advantages.mean()) / (
-            all_advantages.std() + 1e-8
+        p_loss = train_policy_a2c(
+            policy,
+            policy_optimizer,
+            policy_gradient_steps,
+            observations,
+            actions,
+            advantages,
         )
 
-        def actor_loss_fn(p: StochasticPolicyBase):
-            if isinstance(p, GaussianPolicy):
-                mean_and_log_std = p(all_obs)
-                action_mean, log_std_param = (
-                    mean_and_log_std[..., 0],
-                    mean_and_log_std[..., 1],
-                )
-                action_std = jnp.exp(log_std_param)
-                dist = tfd.Normal(loc=action_mean, scale=action_std)
-            elif isinstance(p, SoftmaxPolicy):
-                logits = p(all_obs)
-                dist = tfd.Categorical(logits=logits)
-            else:
-                raise NotImplementedError(
-                    f"Policy type {type(p)} not supported."
-                )
+        v_loss = train_value_function(
+            value_function,
+            value_function_optimizer,
+            value_gradient_steps,
+            observations,
+            returns,
+        )
 
-            log_probs_new = dist.log_prob(all_actions)
-            entropy = dist.entropy().mean()
+        if logger is not None:
+            logger.record_stat("policy_loss", p_loss, step=global_step)
+            logger.record_stat("value_loss", v_loss, step=global_step)
+            if global_step % (steps_collected * 10) == 0:
+                logger.record_epoch("policy", policy)
+                logger.record_epoch("value_function", value_function)
 
-            policy_gradient_loss = -(log_probs_new * all_advantages).mean()
-            return policy_gradient_loss - entropy_coef * entropy
-
-        def critic_loss_fn(vf: nnx.Module):
-            values_pred = vf(all_obs).squeeze()
-            return jnp.mean((all_returns - values_pred) ** 2)
-
-        p_loss, p_grad = nnx.value_and_grad(actor_loss_fn)(policy)
-        v_loss, v_grad = nnx.value_and_grad(critic_loss_fn)(value_function)
-
-        policy_optimizer.update(policy, p_grad)
-        value_function_optimizer.update(value_function, v_grad)
-
-        step += total_steps_collected
-        progress.update(total_steps_collected)
+        if (global_step - last_log_step) >= log_frequency:
+            avg_return = (
+                np.mean(return_buffer) if len(return_buffer) > 0 else 0.0
+            )
+            tqdm.write(
+                f"Step: {global_step} | "
+                f"Avg Return (last 100): {avg_return:.2f} | "
+                f"P_Loss: {p_loss:.3f} | "
+                f"V_Loss: {v_loss:.3f}"
+            )
+            last_log_step = global_step
 
     progress.close()
+
     return namedtuple(
         "A2CResult",
         [
@@ -281,3 +308,82 @@ def train_a2c(
             "value_function_optimizer",
         ],
     )(policy, policy_optimizer, value_function, value_function_optimizer)
+
+
+def prepare_a2c_batch(
+    dataset: BatchDataset,
+    value_function: nnx.Module,
+    last_observation: jnp.ndarray,
+    action_space: gym.spaces.Space,
+    gamma: float,
+    lmbda: float,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Computes GAE for vectorized data and flattens dimensions.
+    """
+    T, N = dataset.obs.shape[:2]
+    flat_obs = dataset.obs.reshape(-1, *dataset.obs.shape[2:])
+
+    values = value_function(flat_obs).squeeze()
+    values = values.reshape(T, N)
+
+    next_values_bootstrap = value_function(last_observation).squeeze()
+    if next_values_bootstrap.ndim == 0:
+        next_values_bootstrap = jnp.expand_dims(next_values_bootstrap, 0)
+
+    def get_gae_for_env(rewards, vals, next_val, terms):
+        return compute_gae(rewards, vals, next_val, terms, gamma, lmbda)
+
+    gae_result = jax.vmap(get_gae_for_env, in_axes=(1, 1, 0, 1))(
+        dataset.rewards, values, next_values_bootstrap, dataset.terminations
+    )
+
+    advantages = gae_result.advantages.T
+    returns = gae_result.returns.T
+
+    flat_observations = flat_obs
+    flat_actions = dataset.actions.reshape(-1, *dataset.actions.shape[2:])
+    flat_advantages = advantages.reshape(-1)
+    flat_returns = returns.reshape(-1)
+
+    if isinstance(action_space, gym.spaces.Discrete):
+        flat_actions -= action_space.start
+
+    return flat_observations, flat_actions, flat_advantages, flat_returns
+
+
+def a2c_policy_gradient(
+    policy: StochasticPolicyBase,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+    advantages: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """A2C policy gradient loss."""
+    return nnx.value_and_grad(
+        stochastic_policy_gradient_pseudo_loss, argnums=3
+    )(observations, actions, advantages, policy)
+
+
+@partial(nnx.jit, static_argnames=["policy_gradient_steps"])
+def train_policy_a2c(
+    policy,
+    policy_optimizer,
+    policy_gradient_steps,
+    observations,
+    actions,
+    advantages,
+):
+    adv_mean = jnp.mean(advantages)
+    adv_std = jnp.std(advantages) + 1e-8
+    normalized_advantages = (advantages - adv_mean) / adv_std
+
+    p_loss = 0.0
+    for _ in range(policy_gradient_steps):
+        p_loss, p_grad = a2c_policy_gradient(
+            policy,
+            observations,
+            actions,
+            normalized_advantages,
+        )
+        policy_optimizer.update(policy, p_grad)
+    return p_loss
