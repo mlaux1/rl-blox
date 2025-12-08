@@ -847,7 +847,7 @@ def ddqn_loss(
 
     return optax.squared_error(pred, target).mean(), pred.mean()
 
-def per_loss(
+def ddqn_per_loss(
     q: nnx.Module,
     q_target: nnx.Module,
     batch: tuple[
@@ -868,7 +868,7 @@ def per_loss(
 
         L_i = w_i \cdot \delta_i^2,
 
-    where :math:`w_i` is the importance‑sampling ratio (`is_ratio`) for each
+    where :math:`w_i` is the importance‑sampling ratio (``is_ratio``) for each
     transition, and :math:`\delta_i` is the absolute TD‑error. The final loss
     is the average over the batch.
 
@@ -888,15 +888,6 @@ def per_loss(
         Discount factor :math:`\gamma`.
     is_ratio : tuple, default=1.0  
         Importance‑sampling weights for the batch.
-
-    Returns
-    -------
-    loss : float
-        The computed loss for the given minibatch.
-
-    q_mean : float
-        Mean of the predicted action values.
-
 
     Returns
     -------

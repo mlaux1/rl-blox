@@ -8,7 +8,7 @@ from flax import nnx
 from tqdm.rich import trange
 
 from ..blox.function_approximator.mlp import MLP
-from ..blox.losses import per_loss
+from ..blox.losses import ddqn_per_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import PrioritizedReplayBuffer, per_priority
 from ..blox.schedules import linear_schedule
@@ -17,7 +17,7 @@ from ..logging.logger import LoggerBase
 from .dqn import train_step_with_loss
 
 
-def train_per(
+def train_ddqn_per(
     q_net: MLP,
     env: gymnasium.Env,
     replay_buffer: PrioritizedReplayBuffer,
@@ -136,7 +136,7 @@ def train_per(
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
 
-    train_step = partial(train_step_with_loss, per_loss)
+    train_step = partial(train_step_with_loss, ddqn_per_loss)
     train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     # initialise episode
@@ -175,12 +175,12 @@ def train_per(
             if step % update_frequency == 0:
                 transition_batch, is_ratio = replay_buffer.sample_batch(batch_size, rng, beta[step])
 
-                wighted_loss, (q_mean, abs_td_error) = train_step(
+                weighted_loss, (q_mean, abs_td_error) = train_step(
                     optimizer, q_net, q_target_net, transition_batch, gamma, is_ratio
                 )
                 if logger is not None:
                     logger.record_stat(
-                        "weighted loss", wighted_loss, step=step + 1, episode=episode
+                        "weighted loss", weighted_loss, step=step + 1, episode=episode
                     )
                     logger.record_stat(
                         "abs td error", abs_td_error, step=step + 1, episode=episode
