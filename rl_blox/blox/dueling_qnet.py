@@ -13,6 +13,23 @@ class DuelingQNet(nnx.Module):
     value and the other the action advantages. The two streams are combined to
     aggregates Q-values as Q = V + (A − mean(A)).
 
+    Network architecture as defined in the example:
+
+                    Input (4)
+                        │
+                [Shared Hidden Layers]
+                        │
+        ┌───────────────┴───────────────┐
+        │                               │
+    Advantage Stream             State-Value Stream
+    (128→32→2)                      (128→16→1)
+        │                               │
+        └───────────────┬───────────────┘
+                        │
+                    Aggregation
+                        │
+                    Q-values (2)
+
     Parameters
     ----------
     n_features : int

@@ -9,25 +9,6 @@ from rl_blox.blox.replay_buffer import ReplayBuffer
 from rl_blox.logging.logger import AIMLogger
 
 
-"""
-Network architecture as defined in this example:
-
-                 Input (4)
-                 │
-                 [Shared Hidden Layers]
-                 │
- ┌───────────────┴───────────────┐
- │                               │
-Advantage Stream             State-Value Stream
-(128→32→2)                   (128→16→1)
- │                               │
- └───────────────┬───────────────┘
-                 │
-            Aggregation
-                 │
-            Q-values (2)
-"""
-
 # Set up environment
 env_name = "CartPole-v1"
 env = gym.make(env_name)
