@@ -613,6 +613,8 @@ def train_mrq(
         progress = trange(
             global_step, total_timesteps, disable=not progress_bar
         )
+    else:
+        progress = bar
 
     while step < total_timesteps:
         if global_step < learning_starts:
@@ -739,7 +741,7 @@ def train_mrq(
             "q_target",
             "q_optimizer",
             "replay_buffer",
-            "global_setp",
+            "global_step",
         ],
     )(
         policy_with_encoder,
