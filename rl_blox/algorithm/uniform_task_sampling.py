@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 import jax
+from gymnasium.vector import VectorEnv
 from tqdm.rich import tqdm
 
 from ..blox.multitask import DiscreteTaskSet
@@ -8,7 +9,7 @@ from ..logging.logger import LoggerBase
 
 
 def train_uts(
-    task_set: DiscreteTaskSet,
+    task_set: DiscreteTaskSet | VectorEnv,
     train_st: Callable,
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
@@ -56,12 +57,20 @@ def train_uts(
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
 
-    n_tasks = len(task_set)
+    if isinstance(task_set, VectorEnv):
+        n_tasks = task_set.num_envs
+    else:
+        n_tasks = len(task_set)
 
     while global_step < total_timesteps:
         key, skey = jax.random.split(key)
         task_id = jax.random.choice(skey, n_tasks)
-        env = task_set.get_task(task_id)
+
+        if isinstance(task_set, VectorEnv):
+            env = task_set.envs[task_id]
+        else:
+            env = task_set.get_task(task_id)
+
         st_result = train_st(
             env,
             seed=seed + global_step,
