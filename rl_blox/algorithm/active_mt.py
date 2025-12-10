@@ -174,7 +174,9 @@ def train_active_mt(
 
         env = mt_def.get_task(task_id)
         env_with_stats = gym.wrappers.RecordEpisodeStatistics(
-            env, buffer_length=scheduling_interval
+            env,
+            buffer_length=scheduling_interval,
+            stats_key="amt_episode",
         )
         replay_buffer.select_task(task_id)
         if task_selectables is not None:
