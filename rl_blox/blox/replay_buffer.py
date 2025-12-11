@@ -586,6 +586,11 @@ class PrioritizedReplayBuffer(LAP):
             Importance sampling ratio corresponding to the samples in batch.    
         
         """
+
+        # TODO: Using stratified prioritized sampling or the prioritized sampling 
+        #       implementation in PriorityBuffer class makes almost no difference
+        #       in training. Consider removing prioritized_sampling_stratified()
+        #       and merging PrioritizedReplayBuffer class with LAP class.
         indices = self.prioritized_sampling_stratified(
             self.current_len, batch_size, rng
         )
@@ -601,6 +606,15 @@ class PrioritizedReplayBuffer(LAP):
         self, indices: npt.NDArray[int], beta: float,
         ) -> list[jnp.ndarray]:
         r"""Compute importance ratio importance ratio.
+        
+        The probability of sampling a transition i is
+        math::
+            P(i)
+            =
+            \frac{|\delta_i|^{\alpha} + \epsilon}
+            {\sum_j |\delta_j|^{\alpha} + \epsilon}, with the priority
+        math::
+            p(i) = |\delta_i|^{\alpha} + \epsilon.
         
         Compute importance sampling weight :math:`w_i`:
 
@@ -624,13 +638,15 @@ class PrioritizedReplayBuffer(LAP):
 
         Returns
         -------
-        is_ratio : array
+        normalized_weights : array
             A batch of importance sampling ratio.       
         """
         priority = self.priority.priority[indices]
-        is_weight = (self.current_len * priority) ** (-beta)
-        is_ratio = is_weight / np.max(is_weight)
-        return is_ratio
+        sum_probability = np.cumsum(priority)[-1]
+        is_weight = (self.current_len * priority / sum_probability) ** (-beta)
+
+        normalized_weights = is_weight / np.max(is_weight)
+        return normalized_weights
 
 class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
     """Replay buffer for sampling batches of subtrajectories with PER or LAP.
