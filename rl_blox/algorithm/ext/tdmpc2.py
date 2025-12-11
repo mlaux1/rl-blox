@@ -430,9 +430,10 @@ class DefaultSuccessInfoWrapper(gym.Wrapper):
 class NumpyToTorchSpaces(gym.Wrapper):
     """
     Gym environment wrapper for
-      (1) obtaining the reward
-      (2) sampling the env.action_space
-    as torch tensors.
+      (1) sampling the env.action_space
+      (2) stepping the environment
+      (3) resetting the environment
+    with torch float32 tensors as result types.
     """
 
     def __init__(self, env):
@@ -443,7 +444,11 @@ class NumpyToTorchSpaces(gym.Wrapper):
 
     def step(self, action):
         obs, reward, termination, truncation, info = self.env.step(action)
-        return obs, torch.tensor(reward, dtype=torch.float32), termination, truncation, info
+        return torch.tensor(obs, dtype=torch.float32), torch.tensor(reward, dtype=torch.float32), termination, truncation, info
+
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
+        obs, info = self.env.reset(seed=seed, options=options)
+        return torch.tensor(obs, dtype=torch.float32), info
 
 
 class Buffer:
