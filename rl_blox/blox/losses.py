@@ -846,3 +846,86 @@ def ddqn_loss(
     pred = pred[jnp.arange(len(pred)), action]
 
     return optax.squared_error(pred, target).mean(), pred.mean()
+
+def ddqn_per_loss(
+    q: nnx.Module,
+    q_target: nnx.Module,
+    batch: tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ],
+    gamma: float = 0.99,
+    is_ratio: tuple[float] = 1.0,
+) -> tuple[float, tuple[float, jnp.ndarray]]:
+    r"""Prioritized‑Experience‑Replay (PER) loss.
+
+    This is a weighted MSE loss derived from the DDQN objective, where each 
+    TD‑error is scaled by an importance‑sampling weight to correct for bias
+    from prioritized sampling.
+
+    For a mini‑batch, we compute:
+
+    .. math::
+
+        L_i = w_i \cdot \delta_i^2,
+
+    where :math:`w_i` is the importance‑sampling ratio (``is_ratio``) for each
+    transition, and :math:`\delta_i` is the absolute TD‑error. The final loss
+    is the average over the batch.
+
+    Parameters
+    ----------
+    q : nnx.Module
+        Deep Q-network :math:`Q(o, a)`. For a given observation, the neural
+        network predicts the value of each action from the discrete action
+        space.
+    q_target : nnx.Module
+        Target network for ``q``.
+    batch : tuple
+        Mini-batch of transitions. Contains in this order: observations
+        :math:`o_i`, actions :math:`a_i`, rewards :math:`r_i`, next
+        observations :math:`o_{i+1}`, termination flags :math:`t_i`.
+    gamma : float, default=0.99
+        Discount factor :math:`\gamma`.
+    is_ratio : tuple, default=1.0  
+        Importance‑sampling weights for the batch.
+
+    Returns
+    -------
+    loss : float  
+        The mean weighted TD‑error squared over the batch.  
+    metrics : tuple (float, float)  
+        - q_mean : float
+            Mean of the predicted action values.
+        - td_err_mean: float
+            Mean absolute TD‑error.
+
+    References
+    ----------
+    .. [1] Schaul, T., Quan, J., Antonoglou, I., Silver, D. (2016). Prioritized
+       Experience Replay. In International Conference on Learning Representations.
+       https://arxiv.org/abs/1511.05952
+    """
+
+    obs, action, reward, next_obs, terminated = batch
+
+    next_q = jax.lax.stop_gradient(q(next_obs))
+    indices = jnp.argmax(next_q, axis=1).reshape(-1, 1)
+    next_q_t = jax.lax.stop_gradient(q_target(next_obs))
+    next_vals = jnp.take_along_axis(next_q_t, indices, axis=1).squeeze()
+
+    target = jnp.array(reward) + (1 - terminated) * gamma * next_vals
+
+    pred = q(obs)
+    pred = pred[jnp.arange(len(pred)), action]
+
+    td_error = jnp.abs(pred - target)
+
+    weighted_loss = is_ratio * (td_error**2)
+
+    return (
+        weighted_loss.mean(),
+        (
+            pred.mean(),
+            td_error.mean(),
+        ),
+    )

@@ -530,6 +530,123 @@ class LAP(ReplayBuffer):
     def reset_max_priority(self):
         self.priority.reset_max_priority(self.current_len)
 
+class PrioritizedReplayBuffer(LAP):
+    def prioritized_sampling_stratified(
+        self,
+        current_len: int,
+        batch_size: int,
+        rng: np.random.Generator,
+        mask: npt.NDArray[int] | None = None,
+    ) -> npt.NDArray[int]:
+        """Sample indices using stratified sampling over the cumulative priority sum.
+
+        Divide [0, sum_probability] into batch_size segments and sample one point per segment
+        """
+        priority = self.priority.priority[:current_len]
+        if mask is not None:
+            priority = priority * mask[:current_len]
+        probabilities = np.cumsum(priority)
+
+        # stratified sampling: divide [0, sum_probability] into batch_size segments
+        segment = probabilities[-1] / batch_size
+
+        # sample one uniform value per segment
+        random_points = rng.uniform(
+            low=np.arange(batch_size) * segment,
+            high=(np.arange(batch_size) + 1) * segment,
+            size=batch_size
+        )
+
+        self.sampled_indices = np.searchsorted(probabilities, random_points)
+        return self.sampled_indices
+
+    def sample_batch(
+        self, batch_size: int, rng: np.random.Generator, beta: float = 0.4
+    ) -> list[jnp.ndarray]:
+        """Sample a batch of transitions along with their importance ratio.
+
+        Parameters
+        ----------
+        batch_size : int
+            Size of the sampled batch.
+
+        rng : np.random.Generator
+            Random number generator.
+
+        beta: float
+            Importance-sampling correction exponent.
+
+        Returns
+        -------
+        batch : Batch
+            Named tuple with order defined by keys. Content is also accessible
+            via names, e.g., ``batch.observation``.
+
+        importance_ratio : array
+            Importance sampling ratio corresponding to the samples in batch.    
+        
+        """
+
+        # TODO: Using stratified prioritized sampling or the prioritized sampling 
+        #       implementation in PriorityBuffer class makes almost no difference
+        #       in training. Consider removing prioritized_sampling_stratified()
+        #       and merging PrioritizedReplayBuffer class with LAP class.
+        indices = self.prioritized_sampling_stratified(
+            self.current_len, batch_size, rng
+        )
+        # indices = self.priority.prioritized_sampling(
+        #     self.current_len, batch_size, rng
+        # )
+        importance_ratio = self.compute_importance_ratio(indices, beta)
+        return self.Batch(
+            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+        ), importance_ratio
+
+    def compute_importance_ratio(
+        self, indices: npt.NDArray[int], beta: float,
+        ) -> list[jnp.ndarray]:
+        r"""Compute importance ratio importance ratio.
+        
+        The probability of sampling a transition i is
+        math::
+            P(i)
+            =
+            \frac{|\delta_i|^{\alpha} + \epsilon}
+            {\sum_j |\delta_j|^{\alpha} + \epsilon}, with the priority
+        math::
+            p(i) = |\delta_i|^{\alpha} + \epsilon.
+        
+        Compute importance sampling weight :math:`w_i`:
+
+        math::
+            w_i
+            =
+            \left( \frac{1}{N \, P(i)} \right)^{\beta},
+
+        then normalize it with max is-weight :math:`\max w_i` in the batch.
+
+        Parameters
+        ----------
+        batch_size : int
+            Size of the sampled batch.
+
+        rng : np.random.Generator
+            Random number generator.
+
+        beta: float
+            Importance-sampling correction exponent.
+
+        Returns
+        -------
+        normalized_weights : array
+            A batch of importance sampling ratio.       
+        """
+        priority = self.priority.priority[indices]
+        sum_probability = np.cumsum(priority)[-1]
+        is_weight = (self.current_len * priority / sum_probability) ** (-beta)
+
+        normalized_weights = is_weight / np.max(is_weight)
+        return normalized_weights
 
 class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
     """Replay buffer for sampling batches of subtrajectories with PER or LAP.
@@ -646,6 +763,57 @@ def lap_priority(
     """
     return jnp.maximum(abs_td_error, min_priority) ** alpha
 
+@partial(jax.jit, static_argnames=["alpha"])
+def per_priority(
+    abs_td_error: jnp.ndarray, alpha: float, epsion: float
+) -> jnp.ndarray:
+    r"""Compute sample priority for PER.
+
+    Prioritized experience replay (PER) [2]_ has two variants of priority, i.e., proportional
+    and rank-based prioritization. This implementation uses the more common proportional variant
+    as defined in [1]_:
+
+    .. math::
+
+        p(i)
+        =
+        |\delta_i|^{\alpha} + \epsilon.
+
+    Parameters
+    ----------
+    abs_td_error : array
+        A batch of :math:`|\delta_i|`.
+
+    alpha : float
+        Prioritization exponent :math:`\alpha`.
+
+    epsilon : float
+        Small constant :math:`\epsilon` to ensure probability is non-zero.
+
+    Returns
+    -------
+    p : array
+        A batch of priorities :math:`p(i)`.
+
+    References
+    ----------
+    .. [1] Fujimoto, S., Meger, D., Precup, D. (2020). An Equivalence between
+       Loss Functions and Non-Uniform Sampling in Experience Replay. In
+       Advances in Neural Information Processing Systems 33.
+       https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
+
+    .. [2] Schaul, T., Quan, J., Antonoglou, I., Silver, D. (2016). Prioritized
+       Experience Replay. In International Conference on Learning
+       Representations. https://arxiv.org/abs/1511.05952
+    """
+    return abs_td_error ** alpha + epsion
+
+# TODO: rank-based prioritization
+# @partial(jax.jit, static_argnames=["alpha"])
+# def per_rank_priority(
+#     abs_td_error: jnp.ndarray, alpha: float
+# ) -> jnp.ndarray:
+#     return None
 
 class MultiTaskReplayBuffer:
     """Replay buffer for discrete set of tasks.

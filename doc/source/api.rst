@@ -23,6 +23,7 @@ Algorithm Interface
    dqn.train_dqn
    ddqn.train_ddqn
    nature_dqn.train_nature_dqn
+   per.train_ddqn_per
    reinforce.train_reinforce
    actor_critic.train_ac
    ddpg.train_ddpg
@@ -116,12 +117,14 @@ Functional Blox
    losses.dqn_loss
    losses.nature_dqn_loss
    losses.ddqn_loss
+   losses.ddqn_per_loss
    preprocessing.make_two_hot_bins
    preprocessing.two_hot_encoding
    preprocessing.two_hot_decoding
    preprocessing.two_hot_cross_entropy_loss
    function_approximator.norm.avg_l1_norm
    replay_buffer.lap_priority
+   replay_buffer.per_priority
    return_estimates.discounted_n_step_return
 
 Data Blox
@@ -139,6 +142,7 @@ Data Blox
    checkpointing.CheckpointState
    replay_buffer.ReplayBuffer
    replay_buffer.LAP
+   replay_buffer.PrioritizedReplayBuffer
    function_approximator.mlp.MLP
    function_approximator.layer_norm_mlp.LayerNormMLP
    function_approximator.gaussian_mlp.GaussianMLP
