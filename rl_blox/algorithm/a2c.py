@@ -110,15 +110,6 @@ def collect_trajectories(
                         logger.record_stat("return", ret, step=global_step)
                         logger.start_new_episode()
 
-        elif "final_info" in infos:
-            for info in infos["final_info"]:
-                if info and "episode" in info:
-                    ret = info["episode"]["r"]
-                    episodic_returns.append(ret)
-                    if logger is not None:
-                        logger.record_stat("return", ret, step=global_step)
-                        logger.start_new_episode()
-
         obs_list.append(obs)
         act_list.append(action)
         rew_list.append(reward)
@@ -285,7 +276,10 @@ def train_a2c(
                 logger.record_epoch("policy", policy)
                 logger.record_epoch("value_function", value_function)
 
-        if (global_step - last_log_step) >= log_frequency:
+        if (
+            log_frequency is not None
+            and (global_step - last_log_step) >= log_frequency
+        ):
             avg_return = (
                 np.mean(return_buffer) if len(return_buffer) > 0 else 0.0
             )

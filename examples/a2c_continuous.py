@@ -26,7 +26,7 @@ hparams_algorithm = dict(
     gamma=0.99,
     gae_lambda=0.95,
     steps_per_update=500,
-    log_frequency=5_000,
+    log_frequency=None,
     seed=seed,
 )
 
@@ -38,7 +38,14 @@ def make_env():
 envs = gym.vector.SyncVectorEnv([make_env for _ in range(num_envs)])
 envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
 
-logger = None
+logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
+logger.define_experiment(
+    env_name=env_name,
+    algorithm_name="A2C",
+    hparams=hparams_model | hparams_algorithm,
+)
+logger.define_checkpoint_frequency("policy", 10)
+logger.define_checkpoint_frequency("value_function", 10)
 
 ac_state = create_policy_gradient_continuous_state(envs, **hparams_model)
 
