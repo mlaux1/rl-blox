@@ -350,14 +350,15 @@ def prepare_a2c_batch(
     values = values.reshape(T, N)
 
     next_values_bootstrap = value_function(last_observation).squeeze()
-    if next_values_bootstrap.ndim == 0:
-        next_values_bootstrap = jnp.expand_dims(next_values_bootstrap, 0)
+    bootstrap_expanded = jnp.expand_dims(next_values_bootstrap, 0)
+
+    all_next_values = jnp.concatenate([values[1:], bootstrap_expanded], axis=0)
 
     def get_gae_for_env(rewards, vals, next_val, terms):
         return compute_gae(rewards, vals, next_val, terms, gamma, lmbda)
 
-    gae_result = jax.vmap(get_gae_for_env, in_axes=(1, 1, 0, 1))(
-        dataset.rewards, values, next_values_bootstrap, dataset.terminations
+    gae_result = jax.vmap(get_gae_for_env, in_axes=(1, 1, 1, 1))(
+        dataset.rewards, values, all_next_values, dataset.terminations
     )
 
     advantages = gae_result.advantages.T
