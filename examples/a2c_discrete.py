@@ -4,33 +4,39 @@ import numpy as np
 
 from rl_blox.algorithm.a2c import train_a2c
 from rl_blox.algorithm.reinforce import create_policy_gradient_discrete_state
+from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 env_name = "CartPole-v1"
-num_envs = 8
 seed = 42
-total_timesteps_for_test = 50_000
-
-envs = gym.vector.SyncVectorEnv(
-    [lambda: gym.make(env_name) for _ in range(num_envs)]
-)
+num_envs = 4
 
 hparams_model = dict(
     policy_hidden_nodes=[64, 64],
-    policy_learning_rate=1.5e-2,
-    value_network_hidden_nodes=[64, 64],
-    value_network_learning_rate=2.5e-5,
+    policy_learning_rate=3e-4,
+    value_network_hidden_nodes=[256, 256],
+    value_network_learning_rate=1e-2,
     seed=seed,
 )
+
 hparams_algorithm = dict(
-    total_timesteps=total_timesteps_for_test,
+    policy_gradient_steps=20,
+    value_gradient_steps=20,
+    total_timesteps=100_000,
     gamma=0.99,
-    steps_per_update=128,
-    num_envs=num_envs,
-    lmbda=0.95,
-    value_loss_coef=0.5,
-    entropy_coef=0.01,
+    gae_lambda=0.95,
+    steps_per_update=1_000,
+    log_frequency=5_000,
     seed=seed,
 )
+
+
+def make_env():
+    return gym.make(env_name)
+
+
+envs = gym.vector.SyncVectorEnv([make_env for _ in range(num_envs)])
+
+envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
 
 logger = None
 
@@ -47,14 +53,20 @@ train_a2c(
 )
 envs.close()
 
-# eval_env = gym.make(env_name, render_mode="human")
-# while True:
-#     done = False
-#     obs, _ = eval_env.reset()
-#     while not done:
-#         logits = ac_state.policy(jnp.asarray(obs))
-#         action = np.asarray(jnp.argmax(logits, axis=-1))
+eval_env = gym.make(env_name, render_mode="human")
+eval_env = gym.wrappers.RecordEpisodeStatistics(eval_env)
 
-#         next_obs, reward, termination, truncation, _ = eval_env.step(action)
-#         done = termination or truncation
-#         obs = np.asarray(next_obs)
+while True:
+    done = False
+    infos = {}
+    obs, _ = eval_env.reset()
+    while not done:
+        action = np.argmax(np.asarray(ac_state.policy(jnp.asarray(obs))))
+        next_obs, reward, termination, truncation, infos = eval_env.step(action)
+        done = termination or truncation
+        obs = np.asarray(next_obs)
+    if "final_info" in infos:
+        for info in infos["final_info"]:
+            print(f"episodic_return={info['episode']['r']}")
+            break
+eval_env.close()
