@@ -23,7 +23,8 @@ class BatchDataset(
         ["obs", "actions", "rewards", "terminations", "truncations"],
     )
 ):
-    """Container for a batch of data from vectorized environments.
+    """
+    Container for a batch of data from vectorized environments.
 
     Attributes
     ----------
@@ -147,7 +148,8 @@ def train_a2c(
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
 ) -> tuple[StochasticPolicyBase, nnx.Optimizer, nnx.Module, nnx.Optimizer]:
-    """Train Advantage Actor-Critic (A2C) with Vectorized Environments.
+    """
+    Train Advantage Actor-Critic (A2C) with Vectorized Environments.
 
     Parameters
     ----------
@@ -314,6 +316,32 @@ def prepare_a2c_batch(
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Computes GAE for vectorized data and flattens dimensions.
+
+    Parameters
+    ----------
+    dataset : BatchDataset
+        The batch of experience collected from `collect_trajectories`.
+    value_function : nnx.Module
+        The critic network to estimate values.
+    last_observation : jnp.ndarray
+        The observation at the end of the batch used for bootstrapping.
+    action_space : gym.spaces.Space
+        The action space.
+    gamma : float
+        Discount factor.
+    lmbda : float
+        GAE smoothing parameter.
+
+    Returns
+    -------
+    observations : jnp.ndarray
+        Flattened observations (Time * Num_Envs, Features).
+    actions : jnp.ndarray
+        Flattened actions (Time * Num_Envs, Action_Dim).
+    advantages : jnp.ndarray
+        Flattened advantage estimates (Time * Num_Envs,).
+    returns : jnp.ndarray
+        Flattened return targets (Time * Num_Envs,).
     """
     T, N = dataset.obs.shape[:2]
     flat_obs = dataset.obs.reshape(-1, *dataset.obs.shape[2:])
@@ -352,7 +380,27 @@ def a2c_policy_gradient(
     actions: jnp.ndarray,
     advantages: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """A2C policy gradient loss."""
+    """
+    A2C policy gradient loss.
+
+    Parameters
+    ----------
+    policy
+        Probabilistic policy network.
+    observations
+        Batch of observations.
+    actions
+        Batch of actions taken.
+    advantages
+        Advantage estimates.
+
+    Returns
+    -------
+    loss
+        A2C policy gradient pseudo loss.
+    grad
+        Gradients for the policy parameters.
+    """
     return nnx.value_and_grad(
         stochastic_policy_gradient_pseudo_loss, argnums=3
     )(observations, actions, advantages, policy)
