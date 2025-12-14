@@ -22,6 +22,7 @@ Algorithm Interface
    dynaq.train_dynaq
    dqn.train_dqn
    ddqn.train_ddqn
+   dueling_dqn.train_dueling_dqn
    nature_dqn.train_nature_dqn
    per.train_ddqn_per
    reinforce.train_reinforce
@@ -152,6 +153,7 @@ Data Blox
    function_approximator.policy_head.GaussianPolicy
    function_approximator.policy_head.SoftmaxPolicy
    double_qnet.ContinuousClippedDoubleQNet
+   dueling_qnet.DuelingQNet
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
 
