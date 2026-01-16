@@ -1,6 +1,7 @@
 from functools import partial
 
 import gymnasium as gym
+import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
@@ -157,11 +158,10 @@ result = train_active_mt(
     xi=0.002,
     learning_starts=11 * 200,
     scheduling_interval=1,
-    total_timesteps=50_000,
+    total_timesteps=5_000,
     logger=logger,
     seed=seed,
 )
-
 
 # Evaluation
 result_st = result[0]

@@ -30,10 +30,8 @@ from .td3 import make_sample_target_actions
 
 @partial(
     nnx.jit,
-    static_argnames=(
-        "gamma",
-        "activation_weight",
-    ),
+    static_argnames=("gamma", "activation_weight"),
+    donate_argnames=("q", "q_optimizer", "policy", "policy_optimizer"),
 )
 def update_critic_and_policy(
     q: ContinuousClippedDoubleQNet,
