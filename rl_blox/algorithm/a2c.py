@@ -16,31 +16,10 @@ from ..blox.losses import stochastic_policy_gradient_pseudo_loss
 from ..logging.logger import LoggerBase
 from .reinforce import train_value_function
 
-
-class BatchDataset(
-    namedtuple(
-        "BatchDataset",
-        ["obs", "actions", "rewards", "terminations", "truncations"],
-    )
-):
-    """
-    Container for a batch of data from vectorized environments.
-
-    Attributes
-    ----------
-    obs : jnp.ndarray
-        Observations of shape (Time, Num_Envs, *Obs_Shape).
-    actions : jnp.ndarray
-        Actions of shape (Time, Num_Envs, *Action_Shape).
-    rewards : jnp.ndarray
-        Rewards of shape (Time, Num_Envs).
-    terminations : jnp.ndarray
-        Termination flags of shape (Time, Num_Envs).
-    truncations : jnp.ndarray
-        Truncation flags of shape (Time, Num_Envs).
-    """
-
-    pass
+BatchDataset = namedtuple(
+    "BatchDataset",
+    ["obs", "actions", "rewards", "terminations", "truncations"],
+)
 
 
 def collect_trajectories(
@@ -77,7 +56,12 @@ def collect_trajectories(
     Returns
     -------
     dataset : BatchDataset
-        The collected batch of data, organized by time and environment index.
+        The collected batch of data. Contains:
+        - obs: Observations (Time, Num_Envs, *Obs_Shape)
+        - actions: Actions (Time, Num_Envs, *Action_Shape)
+        - rewards: Rewards (Time, Num_Envs)
+        - terminations: Termination flags (Time, Num_Envs)
+        - truncations: Truncation flags (Time, Num_Envs)
     last_observation : jnp.ndarray
         The final observation after the rollout, used for bootstrapping value estimates.
     global_step : int
