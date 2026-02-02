@@ -1,6 +1,5 @@
-from collections import deque, namedtuple
+from collections import namedtuple
 from functools import partial
-from typing import Any
 
 import gymnasium as gym
 import jax
@@ -13,13 +12,9 @@ from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..blox.gae import compute_gae
 from ..blox.losses import stochastic_policy_gradient_pseudo_loss
+from ..blox.replay_buffer import ReplayBuffer
 from ..logging.logger import LoggerBase
 from .reinforce import train_value_function
-
-BatchDataset = namedtuple(
-    "BatchDataset",
-    ["obs", "actions", "rewards", "terminations", "truncations"],
-)
 
 
 def collect_trajectories(
@@ -30,7 +25,7 @@ def collect_trajectories(
     steps_per_update: int,
     logger: LoggerBase | None = None,
     global_step: int = 0,
-) -> tuple[BatchDataset, jnp.ndarray, int, list[float]]:
+) -> tuple[ReplayBuffer, jnp.ndarray, int, list[float]]:
     """
     Collects a batch of trajectories from vectorized environments.
 
@@ -55,13 +50,9 @@ def collect_trajectories(
 
     Returns
     -------
-    dataset : BatchDataset
-        The collected batch of data. Contains:
-        - obs: Observations (Time, Num_Envs, *Obs_Shape)
-        - actions: Actions (Time, Num_Envs, *Action_Shape)
-        - rewards: Rewards (Time, Num_Envs)
-        - terminations: Termination flags (Time, Num_Envs)
-        - truncations: Truncation flags (Time, Num_Envs)
+    rollout_buffer : ReplayBuffer
+        The replay buffer containing the batch of data.
+        Keys: 'obs', 'actions', 'rewards', 'terminations', 'truncations'.
     last_observation : jnp.ndarray
         The final observation after the rollout, used for bootstrapping value estimates.
     global_step : int
@@ -69,12 +60,16 @@ def collect_trajectories(
     episodic_returns : list[float]
         A list of returns for all episodes that finished during this collection window.
     """
-    obs_list, act_list, rew_list, term_list, trunc_list = [], [], [], [], []
     episodic_returns = []
+
+    rollout_buffer = ReplayBuffer(
+        buffer_size=steps_per_update,
+        keys=["obs", "actions", "rewards", "terminations", "truncations"],
+        dtypes=[float, float, float, int, int],
+    )
 
     obs = last_observation
     num_envs = envs.num_envs
-
     rng = key
 
     for _ in range(steps_per_update):
@@ -95,24 +90,18 @@ def collect_trajectories(
                         logger.record_stat("return", ret, step=global_step)
                         logger.start_new_episode()
 
-        obs_list.append(obs)
-        act_list.append(action)
-        rew_list.append(reward)
-        term_list.append(terminated)
-        trunc_list.append(truncated)
+        rollout_buffer.add_sample(
+            obs=obs,
+            actions=action,
+            rewards=reward,
+            terminations=terminated,
+            truncations=truncated,
+        )
 
         obs = next_obs
         global_step += num_envs
 
-    dataset = BatchDataset(
-        obs=jnp.array(np.stack(obs_list)),
-        actions=jnp.array(np.stack(act_list)),
-        rewards=jnp.array(np.stack(rew_list)),
-        terminations=jnp.array(np.stack(term_list)),
-        truncations=jnp.array(np.stack(trunc_list)),
-    )
-
-    return dataset, jnp.array(obs), global_step, episodic_returns
+    return rollout_buffer, jnp.array(obs), global_step, episodic_returns
 
 
 def train_a2c(
@@ -206,7 +195,10 @@ def train_a2c(
 
     global_step = 0
     last_log_step = 0
-    return_buffer = deque(maxlen=100)
+
+    return_buffer = ReplayBuffer(
+        buffer_size=100, keys=["episode_return"], dtypes=[float]
+    )
 
     p_loss, v_loss = 0.0, 0.0
 
@@ -215,22 +207,26 @@ def train_a2c(
     while global_step < total_timesteps:
         key, col_key = jax.random.split(key)
 
-        dataset, last_obs, global_step, episodic_returns = collect_trajectories(
-            envs,
-            policy,
-            col_key,
-            last_obs,
-            steps_per_update,
-            logger,
-            global_step,
+        rollout_buffer, last_obs, global_step, episodic_returns = (
+            collect_trajectories(
+                envs,
+                policy,
+                col_key,
+                last_obs,
+                steps_per_update,
+                logger,
+                global_step,
+            )
         )
 
-        return_buffer.extend(episodic_returns)
+        for ret in episodic_returns:
+            return_buffer.add_sample(**{"episode_return": ret})
+
         steps_collected = steps_per_update * envs.num_envs
         progress.update(steps_collected)
 
         observations, actions, advantages, returns = prepare_a2c_batch(
-            dataset,
+            rollout_buffer,
             value_function,
             last_obs,
             envs.single_action_space,
@@ -266,9 +262,13 @@ def train_a2c(
             log_frequency is not None
             and (global_step - last_log_step) >= log_frequency
         ):
-            avg_return = (
-                np.mean(return_buffer) if len(return_buffer) > 0 else 0.0
-            )
+            if len(return_buffer) > 0:
+                avg_return = np.mean(
+                    return_buffer.buffer["episode_return"][: len(return_buffer)]
+                )
+            else:
+                avg_return = 0.0
+
             tqdm.write(
                 f"Step: {global_step} | "
                 f"Avg Return (last 100): {avg_return:.2f} | "
@@ -291,7 +291,7 @@ def train_a2c(
 
 
 def prepare_a2c_batch(
-    dataset: BatchDataset,
+    rollout_buffer: ReplayBuffer,
     value_function: nnx.Module,
     last_observation: jnp.ndarray,
     action_space: gym.spaces.Space,
@@ -303,8 +303,8 @@ def prepare_a2c_batch(
 
     Parameters
     ----------
-    dataset : BatchDataset
-        The batch of experience collected from `collect_trajectories`.
+    rollout_buffer : ReplayBuffer
+        The buffer containing the batch of experience.
     value_function : nnx.Module
         The critic network to estimate values.
     last_observation : jnp.ndarray
@@ -327,8 +327,14 @@ def prepare_a2c_batch(
     returns : jnp.ndarray
         Flattened return targets (Time * Num_Envs,).
     """
-    T, N = dataset.obs.shape[:2]
-    flat_obs = dataset.obs.reshape(-1, *dataset.obs.shape[2:])
+    obs = jnp.asarray(rollout_buffer.buffer["obs"])
+    actions = jnp.asarray(rollout_buffer.buffer["actions"])
+    rewards = jnp.asarray(rollout_buffer.buffer["rewards"])
+    terminations = jnp.asarray(rollout_buffer.buffer["terminations"])
+
+    T, N = obs.shape[:2]
+
+    flat_obs = obs.reshape(-1, *obs.shape[2:])
 
     values = value_function(flat_obs).squeeze()
     values = values.reshape(T, N)
@@ -342,14 +348,14 @@ def prepare_a2c_batch(
         return compute_gae(rewards, vals, next_val, terms, gamma, lmbda)
 
     gae_result = jax.vmap(get_gae_for_env, in_axes=(1, 1, 1, 1))(
-        dataset.rewards, values, all_next_values, dataset.terminations
+        rewards, values, all_next_values, terminations
     )
 
     advantages = gae_result.advantages.T
     returns = gae_result.returns.T
 
     flat_observations = flat_obs
-    flat_actions = dataset.actions.reshape(-1, *dataset.actions.shape[2:])
+    flat_actions = actions.reshape(-1, *actions.shape[2:])
     flat_advantages = advantages.reshape(-1)
     flat_returns = returns.reshape(-1)
 
