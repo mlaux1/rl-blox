@@ -676,7 +676,9 @@ class MultiTaskReplayBuffer:
             self.selected_task = task_id
         else:
             raise ValueError(
-                f"Invalid task id: {task_id}. Must be in [0, {len(self.buffers) - 1}]."
+                f"Invalid task id: {task_id}. Must be in [0, {
+                    len(self.buffers) - 1
+                }]."
             )
 
     def add_sample(self, *args, **kwargs):
@@ -695,9 +697,8 @@ class MultiTaskReplayBuffer:
         else:
             raise ValueError("No rng provided.")
 
-        self.sampled_task_idx = int(
-            rng.choice(list(self.active_buffers), size=1)
-        )
+        self.sampled_task_idx = rng.choice(list(self.active_buffers), size=1)[0]
+
         return self.buffers[self.sampled_task_idx].sample_batch(
             *args, rng=rng, **kwargs
         )
