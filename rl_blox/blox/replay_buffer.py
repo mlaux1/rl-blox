@@ -676,9 +676,8 @@ class MultiTaskReplayBuffer:
             self.selected_task = task_id
         else:
             raise ValueError(
-                f"Invalid task id: {task_id}. Must be in [0, {
-                    len(self.buffers) - 1
-                }]."
+                f"Invalid task id: {task_id}. "
+                f"Must be in [0, {len(self.buffers) - 1}]."
             )
 
     def add_sample(self, *args, **kwargs):
