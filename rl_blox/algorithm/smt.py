@@ -221,8 +221,7 @@ def smt_stage1(
     unsolvable_pool = set()
     avg_training_performances = np.full(n_tasks, -np.finfo(float).max)
     training_performances = [deque(maxlen=n_average) for _ in range(n_tasks)]
-    task_budgets = np.zeros(n_tasks)
-    task_budgets[list(training_pool)] = kappa * b_total
+    task_budgets = np.full(n_tasks, kappa * b_total)
 
     while global_step < b1:
         updated_training_pool = copy.deepcopy(training_pool)
@@ -324,7 +323,7 @@ def smt_stage1(
             updated_training_pool.add(worst)
             main_pool.remove(worst)
             # Set its budget to kappa * B (B: remaining total budget)
-            # task_budgets[worst] = kappa * (b_total - global_step)
+            task_budgets[worst] = kappa * (b_total - global_step)
 
             if logger is not None:
                 logger.record_stat("worst task", worst, step=global_step)
