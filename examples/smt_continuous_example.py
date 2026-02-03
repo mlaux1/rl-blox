@@ -25,7 +25,7 @@ env_name = "Pendulum-v1"
 
 
 def set_context(env: gym.Env, context):
-    env.unwrapped.g = context
+    env.unwrapped.g = context[0]
 
 
 base_env = gym.make(env_name)
@@ -76,7 +76,7 @@ elif backbone == "TD3":
     policy_target = nnx.clone(state.policy)
     replay_buffer = MultiTaskReplayBuffer(
         ReplayBuffer(buffer_size=100_000),
-        len(mt_def),
+        len(train_set),
     )
 
     train_st = partial(
@@ -114,7 +114,7 @@ elif backbone == "MR.Q":
     policy_with_encoder_target = nnx.clone(state.policy_with_encoder)
     replay_buffer = MultiTaskReplayBuffer(
         SubtrajectoryReplayBufferPER(buffer_size=100_000, horizon=5),
-        len(mt_def),
+        len(train_set),
     )
 
     train_st = partial(
