@@ -18,7 +18,7 @@ env_name = "MountainCar-v0"
 
 
 def set_context(env, context):
-    env.unwrapped.goal_velocity = context
+    env.unwrapped.goal_velocity = context[0]
 
 
 base_env = gym.make(env_name)
@@ -83,7 +83,7 @@ result = train_active_mt(
     xi=1e-5,
     learning_starts=0,
     scheduling_interval=5,
-    total_timesteps=10_000,
+    total_timesteps=200_000,
     logger=logger,
     seed=seed,
 )

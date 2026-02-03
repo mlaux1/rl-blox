@@ -18,8 +18,8 @@ hparams_models = dict(
 )
 hparams_algorithm = dict(
     seed=seed,
-    total_timesteps=120_000,
-    buffer_size=10_000,
+    total_timesteps=12_000,
+    buffer_size=12_000,
     learning_starts=5_000,
     normalize_targets=True,
 )
