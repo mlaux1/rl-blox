@@ -639,7 +639,7 @@ class OnlineTrainer:
         for self._step in trange(self._step, self.cfg.steps, disable=not self.cfg.progress_bar):
             # Evaluate agent periodically
             if self._step % self.cfg.eval_freq == 0:
-                eval_next = True
+                eval_next = False # FIXME: originally True
 
             # Reset environment
             if done:
