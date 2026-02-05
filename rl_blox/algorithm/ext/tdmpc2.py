@@ -31,6 +31,7 @@ import os
 from collections import namedtuple
 
 from rl_blox.logging.logger import LoggerBase
+from rl_blox.logging.timer import Timer
 
 os.environ["MUJOCO_GL"] = os.getenv("MUJOCO_GL", "egl")
 os.environ["LAZY_LEGACY_OP"] = "0"
@@ -573,12 +574,13 @@ class Buffer:
 class OnlineTrainer:
     """Trainer class for single-task online TD-MPC2 training."""
 
-    def __init__(self, cfg, env, agent, buffer, logger : LoggerBase | None = None):
+    def __init__(self, cfg, env, agent, buffer, logger : LoggerBase | None = None, timer: Timer = Timer()):
         self.cfg = cfg
         self.env = env
         self.agent = agent
         self.buffer = buffer
         self.logger = logger
+        self.timer = timer
         print("Architecture:", self.agent.model)
         self._step = 0
         self._ep_idx = 0
@@ -636,6 +638,8 @@ class OnlineTrainer:
         """Train a TD-MPC2 agent."""
         done, eval_next = True, False
         steps_in_episode = 0
+        self.timer.start("training")
+        self.timer.start("seed_acquisition")
         for self._step in trange(self._step, self.cfg.steps, disable=not self.cfg.progress_bar):
             # Evaluate agent periodically
             if self._step % self.cfg.eval_freq == 0:
@@ -644,10 +648,12 @@ class OnlineTrainer:
             # Reset environment
             if done:
                 if eval_next:
+                    self.timer.start("eval")
                     eval_metrics = self.eval()
                     eval_metrics.update(self.common_metrics())
                     # TODO: log? evaluate at all?
                     eval_next = False
+                    self.timer.stop("eval")
 
                 if self._step > 0:
                     episode_reward = torch.tensor(
@@ -671,10 +677,16 @@ class OnlineTrainer:
 
             # Collect experience
             if self._step > self.cfg.seed_steps:
+                self.timer.start("agent_act")
                 action = self.agent.act(obs, t0=len(self._tds) == 1)
+                self.timer.stop("agent_act")
             else:
+                self.timer.start("env_sample_action_space")
                 action = self.env.sample_action_space()
+                self.timer.stop("env_sample_action_space")
+            self.timer.start("env_step")
             obs, reward, termination, truncation, info = self.env.step(action)
+            self.timer.stop("env_step")
             done = termination or truncation
             self._tds.append(self.to_td(obs, action, reward))
 
@@ -682,11 +694,14 @@ class OnlineTrainer:
             if self._step >= self.cfg.seed_steps:
                 if self._step == self.cfg.seed_steps:
                     num_updates = self.cfg.seed_steps
+                    self.timer.stop("seed_acquisition")
                     print("Pretraining agent on seed data...")
                 else:
                     num_updates = 1
                 for i in range(num_updates):
+                    self.timer.start("agent_update")
                     metrics = self.agent.update(self.buffer)
+                    self.timer.stop("agent_update")
                     if i == num_updates - 1:
                         for k, v in metrics.items():
                             self.logger.record_stat(k, v)
@@ -695,6 +710,8 @@ class OnlineTrainer:
 
         # End last (potentially partial) episode # TODO: necessary?
         if self.logger is not None:
+            self.timer.stop("training")
+            self.timer.log(self.logger)
             self.logger.stop_episode(steps_in_episode)
 
 
@@ -1740,6 +1757,7 @@ def train_tdmpc2(
     compile=False,
     progress_bar=True,
     logger: LoggerBase | None = None,
+    timer: Timer = Timer(),
 ) -> TDMPC2:
     """TD-MPC2.
 
@@ -1953,6 +1971,7 @@ def train_tdmpc2(
         agent=TDMPC2(cfg),
         buffer=Buffer(cfg),
         logger=logger,
+        timer=timer,
     )
     trainer.train()
     print("\nTraining completed successfully")
