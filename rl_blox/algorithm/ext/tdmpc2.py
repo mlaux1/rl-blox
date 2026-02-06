@@ -689,6 +689,7 @@ class OnlineTrainer:
             self.timer.stop("env_step")
             done = termination or truncation
             self._tds.append(self.to_td(obs, action, reward))
+            steps_in_episode += 1
 
             # Update agent
             if self._step >= self.cfg.seed_steps:
@@ -705,8 +706,6 @@ class OnlineTrainer:
                     if i == num_updates - 1:
                         for k, v in metrics.items():
                             self.logger.record_stat(k, v)
-
-            steps_in_episode += 1
 
         # End last (potentially partial) episode # TODO: necessary?
         if self.logger is not None:
