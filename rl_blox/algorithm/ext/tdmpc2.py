@@ -638,9 +638,10 @@ class OnlineTrainer:
         """Train a TD-MPC2 agent."""
         done, eval_next = True, False
         steps_in_episode = 0
+        progress = trange(self._step, self.cfg.steps, disable=not self.cfg.progress_bar)
         self.timer.start("training")
         self.timer.start("seed_acquisition")
-        for self._step in trange(self._step, self.cfg.steps, disable=not self.cfg.progress_bar):
+        for self._step in np.arange(self._step, self.cfg.steps + 1):
             # Evaluate agent periodically
             if self._step % self.cfg.eval_freq == 0:
                 eval_next = False # FIXME: originally True
@@ -703,6 +704,7 @@ class OnlineTrainer:
                     self.timer.start("agent_update")
                     metrics = self.agent.update(self.buffer)
                     self.timer.stop("agent_update")
+                    progress.update() # 1 update = 1 step, just not necessarily synchronously
                     if i == num_updates - 1:
                         for k, v in metrics.items():
                             self.logger.record_stat(k, v)
