@@ -532,7 +532,7 @@ def train_sac(
             termination=termination,
         )
 
-        if global_step >= learning_starts:
+        if step >= learning_starts:
             batch = replay_buffer.sample_batch(batch_size, rng)
 
             key, action_key = jax.random.split(key)

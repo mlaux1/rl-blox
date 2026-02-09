@@ -253,7 +253,7 @@ def train_td3_lap(
             termination=termination,
         )
 
-        if global_step >= learning_starts:
+        if step >= learning_starts:
             for _ in range(gradient_steps):
                 batch = replay_buffer.sample_batch(batch_size, rng)
 
