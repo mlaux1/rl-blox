@@ -634,7 +634,7 @@ def train_mrq(
             truncated=truncated,
         )
 
-        if global_step >= learning_starts:
+        if step >= learning_starts:
             epoch += 1
             if epoch % target_delay == 0:
                 hard_target_net_update(
