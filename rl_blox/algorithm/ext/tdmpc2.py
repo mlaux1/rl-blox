@@ -506,12 +506,11 @@ def make_agent_cfg(
     if model_size is not None:
         if model_size not in MODEL_SIZE:
             raise ValueError(f"Invalid model size {model_size}. Must be one of {list(MODEL_SIZE.keys())}")
-        for k, v in MODEL_SIZE[model_size].items(): # TODO: Remove because this line does nothing!
-            enc_dim = MODEL_SIZE[model_size]["enc_dim"]
-            mlp_dim = MODEL_SIZE[model_size]["mlp_dim"]
-            latent_dim = MODEL_SIZE[model_size]["latent_dim"]
-            num_enc_layers = MODEL_SIZE[model_size]["num_enc_layers"]
-            num_q = MODEL_SIZE[model_size]["num_q"]
+        enc_dim = MODEL_SIZE[model_size]["enc_dim"]
+        mlp_dim = MODEL_SIZE[model_size]["mlp_dim"]
+        latent_dim = MODEL_SIZE[model_size]["latent_dim"]
+        num_enc_layers = MODEL_SIZE[model_size]["num_enc_layers"]
+        num_q = MODEL_SIZE[model_size]["num_q"]
     return AgentConfig(
         obs=obs,
         batch_size=batch_size,
