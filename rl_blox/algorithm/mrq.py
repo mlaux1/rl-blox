@@ -615,7 +615,7 @@ def train_mrq(
         progress = bar
 
     while step < total_timesteps:
-        if global_step < learning_starts:
+        if step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
