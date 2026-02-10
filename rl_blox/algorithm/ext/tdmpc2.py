@@ -28,7 +28,7 @@
 # SOFTWARE.
 
 import os
-from collections import namedtuple
+from recordclass import recordclass
 
 from rl_blox.logging.logger import LoggerBase
 from rl_blox.logging.timer import Timer
@@ -242,6 +242,359 @@ CAT_TO_COLOR = {
     "eval": "green",
 }
 
+AgentConfig = recordclass(
+    "AgentConfig",
+    [
+        "task",
+        "obs",
+        "batch_size",
+        "reward_coef",
+        "value_coef",
+        "consistency_coef",
+        "rho",
+        "lr",
+        "enc_lr_scale",
+        "grad_clip_norm",
+        "tau",
+        "discount_denom",
+        "discount_min",
+        "discount_max",
+        "mpc",
+        "iterations",
+        "num_samples",
+        "num_elites",
+        "num_pi_trajs",
+        "horizon",
+        "min_std",
+        "max_std",
+        "temperature",
+        "log_std_min",
+        "log_std_max",
+        "entropy_coef",
+        "num_bins",
+        "vmin",
+        "vmax",
+        "model_size",
+        "num_enc_layers",
+        "enc_dim",
+        "num_channels",
+        "mlp_dim",
+        "latent_dim",
+        "num_q",
+        "dropout",
+        "simnorm_dim",
+        "compile",
+        "tasks",
+        "bin_size",
+        "action_dim",
+        "episode_length",
+        "obs_shape",
+    ]
+)
+
+TrainingConfig = recordclass(
+    "TrainingConfig",
+    [
+        "eval_episodes",
+        "eval_freq",
+        "steps",
+        "buffer_size",
+        "seed_steps",
+        "progress_bar",
+    ]
+)
+
+FullTrainingConfig = recordclass(
+    "FullTrainingConfig",
+    [ # Fields are specified explicitly to prevent auto code inspection false positives
+        "task",
+        "obs",
+        "batch_size",
+        "reward_coef",
+        "value_coef",
+        "consistency_coef",
+        "rho",
+        "lr",
+        "enc_lr_scale",
+        "grad_clip_norm",
+        "tau",
+        "discount_denom",
+        "discount_min",
+        "discount_max",
+        "mpc",
+        "iterations",
+        "num_samples",
+        "num_elites",
+        "num_pi_trajs",
+        "horizon",
+        "min_std",
+        "max_std",
+        "temperature",
+        "log_std_min",
+        "log_std_max",
+        "entropy_coef",
+        "num_bins",
+        "vmin",
+        "vmax",
+        "model_size",
+        "num_enc_layers",
+        "enc_dim",
+        "num_channels",
+        "mlp_dim",
+        "latent_dim",
+        "num_q",
+        "dropout",
+        "simnorm_dim",
+        "compile",
+        "tasks",
+        "bin_size",
+        "action_dim",
+        "episode_length",
+        "obs_shape",
+        "eval_episodes",
+        "eval_freq",
+        "steps",
+        "buffer_size",
+        "seed_steps",
+        "progress_bar",
+    ]
+)
+
+def make_agent_cfg(
+        task: str,
+        obs: str ="state",
+        # training
+        batch_size: int =256,
+        reward_coef=0.1,
+        value_coef=0.1,
+        consistency_coef=20,
+        rho=0.5,
+        lr: float=3e-4,
+        enc_lr_scale=0.3,
+        grad_clip_norm=20,
+        tau=0.01,
+        discount_denom=5,
+        discount_min=0.95,
+        discount_max=0.995,
+        # planning
+        mpc: bool =True,
+        iterations: int =6,
+        num_samples: int =512,
+        num_elites: int =64,
+        num_pi_trajs: int =24,
+        horizon: int =3,
+        min_std: float =0.05,
+        max_std: float =2,
+        temperature: float=0.5,
+        # actor
+        log_std_min: float=-10,
+        log_std_max: float=2,
+        entropy_coef: float=1e-4,
+        # critic
+        num_bins: int =101,
+        vmin: float=-10,
+        vmax: float=+10,
+        # architecture
+        model_size: int=5,  # 1, 5, 19, 48, 317
+        num_enc_layers: int=2,
+        enc_dim: int=256,
+        num_channels: int=32,
+        mlp_dim: int=512,
+        latent_dim: int=512,
+        num_q: int=5,
+        dropout: float=0.01,
+        simnorm_dim: int=8,
+        # speedups
+        compile: bool=False,
+) -> AgentConfig:
+    """Create the agent-specific configuration for TD-MPC2.
+
+    Parameters
+    ----------
+    task : str
+        Task name.
+    obs : str in ["state", "rgb"]
+        Observation type.
+    batch_size : int
+        TODO
+    reward_coef
+        TODO
+    value_coef
+        TODO
+    consistency_coef
+        TODO
+    rho
+        TODO
+    lr : float
+        Learning rate.
+    enc_lr_scale : float
+        Scaling for the encoder learning rate.
+    grad_clip_norm : float
+        Clip the gradients during backpropagation.
+    tau
+        For Polyak averaging. Determines the interpolation factor between
+        the current parameters of the target network and the parameters of the
+        main network.
+    discount_denom
+        TODO
+    discount_min
+        TODO
+    discount_max
+        TODO
+    mpc
+        TODO
+    iterations : int
+        Number of iterations to optimize plan. We add 2 iterations for large
+        action spaces (>= 20 dimensions).
+    num_samples : int
+        Number of samples for MPC planning.
+    num_elites : int
+        Number of samples to use for update of search distribution in planning.
+    num_pi_trajs : int
+        Number of samples generated with policy.
+    horizon : int
+        Planning horizon.
+    min_std : float
+        TODO
+    max_std : float
+        TODO
+    temperature : float
+        Temperature for planning with MPPI.
+    log_std_min : float
+        Minimum of log std for actor.
+    log_std_max : float
+        Maximum of log std for actor.
+    entropy_coef : float
+        Entropy coefficient for policy update.
+    num_bins : int
+        TODO
+    vmin : float
+        TODO
+    vmax : float
+        TODO
+    model_size : int
+        Model size, must be either one of [1, 5, 19, 48, 317] or None.
+        If none, use values for num_enc_layers, enc_dim, num_channels, mlp_dim,
+        latent_dim, and num_q to define model architecture.
+    num_enc_layers : int
+        Number of layers in encoder.
+    enc_dim : int
+        Number of nodes in encoder layers.
+    num_channels : int
+        Number of channels for convolutional encoder with raw image
+        observations.
+    mlp_dim : int
+        Number of hidden nodes in dynamics model, reward model, policy, and Q
+        network.
+    latent_dim : int
+        Dimensions of latent space to which the encoder projects.
+    num_q : int
+        Number of networks in the ensemble of Q-functions.
+    dropout : float
+        Dropout probability for Q-functions.
+    simnorm_dim : int
+        Number of dimensions for simplicial normalization in encoder.
+    compile : bool
+        Compile graphs for faster training.
+
+    Returns
+    -------
+    AgentConfiguration
+        The agent-specific configuration for TD-MPC2.
+    """
+    # Model size
+    if model_size is not None:
+        if model_size not in MODEL_SIZE:
+            raise ValueError(f"Invalid model size {model_size}. Must be one of {list(MODEL_SIZE.keys())}")
+        for k, v in MODEL_SIZE[model_size].items(): # TODO: Remove because this line does nothing!
+            enc_dim = MODEL_SIZE[model_size]["enc_dim"]
+            mlp_dim = MODEL_SIZE[model_size]["mlp_dim"]
+            latent_dim = MODEL_SIZE[model_size]["latent_dim"]
+            num_enc_layers = MODEL_SIZE[model_size]["num_enc_layers"]
+            num_q = MODEL_SIZE[model_size]["num_q"]
+    return AgentConfig(
+        obs=obs,
+        batch_size=batch_size,
+        reward_coef=reward_coef,
+        value_coef=value_coef,
+        consistency_coef=consistency_coef,
+        rho=rho,
+        lr=lr,
+        enc_lr_scale=enc_lr_scale,
+        grad_clip_norm=grad_clip_norm,
+        tau=tau,
+        discount_denom=discount_denom,
+        discount_min=discount_min,
+        discount_max=discount_max,
+        mpc=mpc,
+        iterations=iterations,
+        num_samples=num_samples,
+        num_elites=num_elites,
+        num_pi_trajs=num_pi_trajs,
+        horizon=horizon,
+        min_std=min_std,
+        max_std=max_std,
+        temperature=temperature,
+        log_std_min=log_std_min,
+        log_std_max=log_std_max,
+        entropy_coef=entropy_coef,
+        num_bins=num_bins,
+        vmin=vmin,
+        vmax=vmax,
+        model_size=model_size,
+        num_enc_layers=num_enc_layers,
+        enc_dim=enc_dim,
+        num_channels=num_channels,
+        mlp_dim=mlp_dim,
+        latent_dim=latent_dim,
+        num_q=num_q,
+        dropout=dropout,
+        simnorm_dim=simnorm_dim,
+        compile=compile,
+        tasks=TASK_SET.get(task, [task]),
+        bin_size=None, # Set during training
+        action_dim=None, # Set during training
+        episode_length=None, # Set during training
+        obs_shape=None, # Set during training
+    )
+
+def make_training_cfg(
+        # eval
+        eval_episodes=10,
+        eval_freq=50_000,
+        steps=10_000_000,
+        # training
+        buffer_size=1_000_000,
+        progress_bar=True,
+) -> TrainingConfig:
+    """Create the training-specific configuration for TD-MPC2.
+
+    Parameters
+    ----------
+    eval_episodes : int
+        Number of evaluation episodes.
+    eval_freq : int
+        Evaluate every eval_freq steps.
+    steps : int
+        Number of training steps in environment steps
+    buffer_size : int
+        Size of the replay buffer.
+    progress_bar : bool, optional
+        Enable the tqdm progressbar? Enabled by default.
+
+    Returns
+    -------
+    TrainingConfiguration
+        The training-specific configuration for TD-MPC2.
+    """
+    return TrainingConfig(
+        eval_episodes=eval_episodes,
+        eval_freq=eval_freq,
+        steps=steps,
+        buffer_size=buffer_size,
+        seed_steps=None, # None -> heuristic
+        progress_bar=progress_bar,
+    )
 
 def soft_ce(pred, target, vmin, vmax, bin_size, num_bins):
     """Computes the cross entropy loss between predictions and soft targets."""
@@ -458,7 +811,7 @@ class Buffer:
     Uses CUDA memory if available, and CPU memory otherwise.
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: FullTrainingConfig):
         self.cfg = cfg
         self._device = torch.device("cuda:0")
         self._capacity = min(cfg.buffer_size, cfg.steps)
@@ -715,7 +1068,6 @@ class OnlineTrainer:
             self.timer.log(self.logger)
             self.logger.stop_episode(steps_in_episode)
 
-
 class TDMPC2(torch.nn.Module):
     """
     TD-MPC2 agent. Implements training + inference.
@@ -723,7 +1075,7 @@ class TDMPC2(torch.nn.Module):
     and supports both state and pixel observations.
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: AgentConfig):
         super().__init__()
         self.cfg = cfg
         self.device = torch.device("cuda:0")
@@ -1167,7 +1519,7 @@ class WorldModel(nn.Module):
     * a Q-function ensemble that predicts the value of a given action
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: AgentConfig):
         super().__init__()
         self.cfg = cfg
         self._encoder = enc(cfg)
@@ -1455,7 +1807,7 @@ class SimNorm(nn.Module):
     Adapted from https://arxiv.org/abs/2204.00616.
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: AgentConfig):
         super().__init__()
         self.dim = cfg.simnorm_dim
 
@@ -1542,7 +1894,7 @@ def conv(in_shape, num_channels, act=None):
     return nn.Sequential(*layers)
 
 
-def enc(cfg, out={}):
+def enc(cfg: AgentConfig, out={}):
     """
     Returns a dictionary of encoders for each observation in the dict.
     """
@@ -1639,124 +1991,11 @@ def zero_(params):
     for p in params:
         p.data.fill_(0)
 
-
-Config = namedtuple(
-    "Config",
-    [
-        "task",
-        "obs",
-        "eval_episodes",
-        "eval_freq",
-        "steps",
-        "batch_size",
-        "reward_coef",
-        "value_coef",
-        "consistency_coef",
-        "rho",
-        "lr",
-        "enc_lr_scale",
-        "grad_clip_norm",
-        "tau",
-        "discount_denom",
-        "discount_min",
-        "discount_max",
-        "buffer_size",
-        "exp_name",
-        "mpc",
-        "iterations",
-        "num_samples",
-        "num_elites",
-        "num_pi_trajs",
-        "horizon",
-        "min_std",
-        "max_std",
-        "temperature",
-        "log_std_min",
-        "log_std_max",
-        "entropy_coef",
-        "num_bins",
-        "vmin",
-        "vmax",
-        "model_size",
-        "num_enc_layers",
-        "enc_dim",
-        "num_channels",
-        "mlp_dim",
-        "latent_dim",
-        "num_q",
-        "dropout",
-        "simnorm_dim",
-        "compile",
-        # internal configuration
-        "obs_shape",
-        "tasks",
-        "work_dir",
-        "task_title",
-        "bin_size",
-        "action_dim",
-        "episode_length",
-        "seed_steps",
-        "progress_bar",
-    ],
-)
-
-
 def train_tdmpc2(
-    env,
-    task,
-    obs="state",
-    # eval
-    eval_episodes=10,
-    eval_freq=50_000,
-    steps=10_000_000,
-    # training
-    batch_size=256,
-    reward_coef=0.1,
-    value_coef=0.1,
-    consistency_coef=20,
-    rho=0.5,
-    lr=3e-4,
-    enc_lr_scale=0.3,
-    grad_clip_norm=20,
-    tau=0.01,
-    discount_denom=5,
-    discount_min=0.95,
-    discount_max=0.995,
-    buffer_size=1_000_000,
-    exp_name="default",
-    # planning
-    mpc=True,
-    iterations=6,
-    num_samples=512,
-    num_elites=64,
-    num_pi_trajs=24,
-    horizon=3,
-    min_std=0.05,
-    max_std=2,
-    temperature=0.5,
-    # actor
-    log_std_min=-10,
-    log_std_max=2,
-    entropy_coef=1e-4,
-    # critic
-    num_bins=101,
-    vmin=-10,
-    vmax=+10,
-    # architecture
-    model_size=5,  # 1, 5, 19, 48, 317
-    num_enc_layers=2,
-    enc_dim=256,
-    num_channels=32,
-    mlp_dim=512,
-    latent_dim=512,
-    num_q=5,
-    dropout=0.01,
-    simnorm_dim=8,
-    # misc
-    seed=1,
-    # speedups
-    compile=False,
-    progress_bar=True,
+    env: gym.Env,
+    agent_cfg: AgentConfig,
+    training_cfg: TrainingConfig,
+    rng_seed: int=1,
     logger: LoggerBase | None = None,
     timer: Timer = Timer(),
 ) -> TDMPC2:
@@ -1766,211 +2005,51 @@ def train_tdmpc2(
     ----------
     env : gymnasium.Env
         Training environment.
-    task : str
-        Task name.
-    obs : str in ["state", "rgb"]
-        Observation type.
-    eval_episodes : int
-        Number of evaluation episodes.
-    eval_freq : int
-        Evaluate every eval_freq steps.
-    steps : int
-        Number of training / environment steps
-    batch_size : int
-        Batch size.
-    reward_coef
-        TODO
-    value_coef
-        TODO
-    consistency_coef
-        TODO
-    rho
-        TODO
-    lr
-        Learning rate.
-    enc_lr_scale
-        Scaling for encoder learning rate.
-    grad_clip_norm
-        Clip the gradients during backpropagation.
-    tau
-        For Polyak averaging. Determines the interpolation factor between
-        the current parameters of the target network and the parameters of the
-        main network.
-    discount_denom
-        TODO
-    discount_min
-        TODO
-    discount_max
-        TODO
-    buffer_size : int
-        Size of the replay buffer.
-    exp_name : str
-        Name of the experiment.
-    mpc : bool
-        TODO
-    iterations : int
-        Number of iterations to optimize plan. We add 2 iterations for large
-        action spaces (>= 20 dimensions).
-    num_samples : int
-        Number of samples for MPC planning.
-    num_elites : int
-        Number of samples to use for update of search distribution in planning.
-    num_pi_trajs : int
-        Number of samples generated with policy.
-    horizon : int
-        Planning horizon.
-    min_std : float
-        TODO
-    max_std : float
-        TODO
-    temperature : float
-        Temperature for planning with MPPI.
-    log_std_min : float
-        Minimum of log std for actor.
-    log_std_max : float
-        Maximum of log std for actor.
-    entropy_coef : float
-        Entropy coefficient for policy update.
-    num_bins : float
-        TODO
-    vmin : float
-        TODO
-    vmax : float
-        TODO
-    model_size : int
-        Model size, must be one of [1, 5, 19, 48, 317]. If none, use values for
-        num_enc_layers, enc_dim, num_channels, and mlp_dim, latent_dim, and
-        num_q to define model architecture.
-    num_enc_layers : int
-        Number of layers in encoder.
-    enc_dim : int
-        Number of nodes in encoder layers.
-    num_channels : int
-        Number of channels for convolutional encoder with raw image
-        observations.
-    mlp_dim : int
-        Number of hidden nodes in dynamics model, reward model, policy, and Q
-        network.
-    latent_dim : int
-        Dimensions of latent space to which the encoder projects.
-    num_q : int
-        Number of networks in the ensemble of Q-functions.
-    dropout : float
-        Dropout probability for Q-functions.
-    simnorm_dim : int
-        Number of dimensions for simplicial normalization in encoder.
-    seed : int
-        Random seed
-    compile : bool
-        Compile graphs for faster training.
-    progress_bar : bool, optional
-        Flag to enable/disable the tqdm progressbar.
+    agent_cfg : AgentConfig
+        Agent-specific configuration
+    training_cfg : TrainingConfig
+        Training-specific configuration
+    rng_seed : int
+        Seed used for all RNGs.
     logger : LoggerBase, optional
         Experiment logger.
+    timer : Timer
+        Timer to profile select parts of the training process, logs to logger.
     """
     assert torch.cuda.is_available()
 
     # Check parameters, compute defaults, and create configuration object
-    assert steps > 0, "Must train for at least 1 step."
+    assert training_cfg.steps > 0, "Must train for at least 1 step."
 
     try:  # Dict
-        obs_shape = {
+        agent_cfg.obs_shape = {
             k: v.shape for k, v in env.observation_space.spaces.items()
         }
     except:  # Box
-        obs_shape = {obs: env.observation_space.shape}
-    tasks = TASK_SET.get(task, [task])
-    work_dir = Path(".") / "logs" / task / str(seed) / exp_name
-    task_title = task.replace("-", " ").title()
+        agent_cfg.obs_shape = {agent_cfg.obs: env.observation_space.shape}
     # Bin size for discrete regression
-    bin_size = (vmax - vmin) / (num_bins - 1)
-    # Model size
-    if model_size is not None:
-        if model_size not in MODEL_SIZE:
-            raise ValueError(f"Invalid model size {model_size}. "
-                             f"Must be one of {list(MODEL_SIZE.keys())}")
-        for k, v in MODEL_SIZE[model_size].items():
-            enc_dim = MODEL_SIZE[model_size]["enc_dim"]
-            mlp_dim = MODEL_SIZE[model_size]["mlp_dim"]
-            latent_dim = MODEL_SIZE[model_size]["latent_dim"]
-            num_enc_layers = MODEL_SIZE[model_size]["num_enc_layers"]
-            num_q = MODEL_SIZE[model_size]["num_q"]
-    action_dim = env.action_space.shape[0]
-    episode_length = env.spec.max_episode_steps
-    seed_steps = max(1000, 5 * episode_length)
+    agent_cfg.bin_size = (agent_cfg.vmax - agent_cfg.vmin) / (agent_cfg.num_bins - 1)
+    agent_cfg.action_dim = env.action_space.shape[0]
+    agent_cfg.episode_length = env.spec.max_episode_steps
+    if training_cfg.seed_steps is None:
+         training_cfg.seed_steps = 1000 # TODO max(1000, 5 * episode_length)
     # Heuristic for large action spaces
-    iterations += 2 * int(action_dim >= 20)
+    agent_cfg.iterations += 2 * int(agent_cfg.action_dim >= 20)
 
-    cfg = Config(
-        task=task,
-        obs=obs,
-        eval_episodes=eval_episodes,
-        eval_freq=eval_freq,
-        steps=steps,
-        batch_size=batch_size,
-        reward_coef=reward_coef,
-        value_coef=value_coef,
-        consistency_coef=consistency_coef,
-        rho=rho,
-        lr=lr,
-        enc_lr_scale=enc_lr_scale,
-        grad_clip_norm=grad_clip_norm,
-        tau=tau,
-        discount_denom=discount_denom,
-        discount_min=discount_min,
-        discount_max=discount_max,
-        buffer_size=buffer_size,
-        exp_name=exp_name,
-        mpc=mpc,
-        iterations=iterations,
-        num_samples=num_samples,
-        num_elites=num_elites,
-        num_pi_trajs=num_pi_trajs,
-        horizon=horizon,
-        min_std=min_std,
-        max_std=max_std,
-        temperature=temperature,
-        log_std_min=log_std_min,
-        log_std_max=log_std_max,
-        entropy_coef=entropy_coef,
-        num_bins=num_bins,
-        vmin=vmin,
-        vmax=vmax,
-        model_size=model_size,
-        num_enc_layers=num_enc_layers,
-        enc_dim=enc_dim,
-        num_channels=num_channels,
-        mlp_dim=mlp_dim,
-        latent_dim=latent_dim,
-        num_q=num_q,
-        dropout=dropout,
-        simnorm_dim=simnorm_dim,
-        compile=compile,
-        obs_shape=obs_shape,
-        tasks=tasks,
-        work_dir=work_dir,
-        task_title=task_title,
-        bin_size=bin_size,
-        action_dim=action_dim,
-        episode_length=episode_length,
-        seed_steps=seed_steps,
-        progress_bar=progress_bar,
-    )
-
-    set_seed(seed)
+    set_rng_seed(rng_seed)
 
     gym.logger.min_level = 40
     env = DefaultSuccessInfoWrapper(env)
     env = NumpyToTorch(env)
     env = NumpyToTorchSpaces(env)
 
-    print(colored("Work dir:", "yellow", attrs=["bold"]), work_dir)
+    full_cfg = FullTrainingConfig(*agent_cfg, *training_cfg)
 
     trainer = OnlineTrainer(
-        cfg=cfg,
+        cfg=full_cfg,
         env=env,
-        agent=TDMPC2(cfg),
-        buffer=Buffer(cfg),
+        agent=TDMPC2(agent_cfg),
+        buffer=Buffer(full_cfg),
         logger=logger,
         timer=timer,
     )
@@ -1979,7 +2058,7 @@ def train_tdmpc2(
     return trainer.agent
 
 
-def set_seed(seed):
+def set_rng_seed(seed):
     """Set seed for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
