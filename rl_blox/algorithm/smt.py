@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 import gymnasium as gym
 import numpy as np
+from gymnasium.vector import VectorEnv
 from tqdm.rich import tqdm
 
 from ..blox.multitask import DiscreteTaskSet, TaskSelectionMixin
@@ -13,7 +14,7 @@ from ..logging.logger import LoggerBase
 
 
 def train_smt(
-    mt_def: DiscreteTaskSet,
+    task_set: DiscreteTaskSet | VectorEnv,
     train_st: Callable,
     replay_buffer: MultiTaskReplayBuffer,
     b1: int = 17_000_000,
@@ -39,7 +40,7 @@ def train_smt(
 
     Parameters
     ----------
-    mt_def
+    task_set
         The multi-task environment definition.
 
     train_st : callable
@@ -129,15 +130,19 @@ def train_smt(
        https://icml.cc/virtual/2024/poster/33388
     """
     rng = np.random.default_rng(seed)
+    if isinstance(task_set, VectorEnv):
+        n_tasks = task_set.num_envs
+    else:
+        n_tasks = len(task_set)
 
     b_total = b1 + b2
     global_step = 0
-    training_steps = np.zeros(len(mt_def), dtype=int)
+    training_steps = np.zeros(n_tasks, dtype=int)
     progress = tqdm(total=b_total, disable=not progress_bar)
 
     avg_training_performances, global_step, result_st, unsolvable_pool = (
         smt_stage1(
-            mt_def,
+            task_set,
             train_st,
             replay_buffer,
             task_selectables,
@@ -161,7 +166,7 @@ def train_smt(
 
     if len(unsolvable_pool) > 0:
         result_st = smt_stage2(
-            mt_def,
+            task_set,
             train_st,
             replay_buffer,
             task_selectables,
@@ -186,7 +191,7 @@ def train_smt(
 
 
 def smt_stage1(
-    mt_def,
+    task_set,
     train_st,
     replay_buffer,
     task_selectables,
@@ -206,7 +211,10 @@ def smt_stage1(
     rng,
     progress,
 ):
-    n_tasks = len(mt_def)
+    if isinstance(task_set, VectorEnv):
+        n_tasks = task_set.num_envs
+    else:
+        n_tasks = len(task_set)
     training_pool = set(rng.choice(n_tasks, size=K, replace=False))
     main_pool = set(range(n_tasks)) - training_pool
     solved_pool = set()
@@ -214,10 +222,14 @@ def smt_stage1(
     avg_training_performances = np.full(n_tasks, -np.finfo(float).max)
     training_performances = [deque(maxlen=n_average) for _ in range(n_tasks)]
     task_budgets = np.full(n_tasks, kappa * b_total)
+
     while global_step < b1:
         updated_training_pool = copy.deepcopy(training_pool)
         for task_id in training_pool:
-            env = mt_def.get_task(task_id)
+            if isinstance(task_set, VectorEnv):
+                env = task_set.envs[task_id]
+            else:
+                env = task_set.get_task(task_id)
             env_with_stats = gym.wrappers.RecordEpisodeStatistics(
                 env, buffer_length=scheduling_interval
             )
@@ -335,7 +347,7 @@ def smt_stage1(
 
 
 def smt_stage2(
-    mt_def,
+    task_set,
     train_st,
     replay_buffer,
     task_selectables,
@@ -352,7 +364,10 @@ def smt_stage2(
     """SMT will iterate over the unsolvable tasks in stage 2."""
     while global_step < b_total:
         for task_id in unsolvable_pool:
-            env = mt_def.get_task(task_id)
+            if isinstance(task_set, VectorEnv):
+                env = task_set.envs[task_id]
+            else:
+                env = task_set.get_task(task_id)
             replay_buffer.select_task(task_id)
             if task_selectables is not None:
                 for ts in task_selectables:

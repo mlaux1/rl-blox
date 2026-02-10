@@ -48,7 +48,7 @@ TASK_SELECTORS = {
 
 
 def train_active_mt(
-    mt_def: DiscreteTaskSet,
+    task_set: DiscreteTaskSet | gym.vector.VectorEnv,
     train_st: Callable,
     replay_buffer: MultiTaskReplayBuffer,
     r_max: float,
@@ -150,7 +150,11 @@ def train_active_mt(
        https://jmlr.org/papers/v15/fabisch14a.html
     """
     global_step = 0
-    training_steps = np.zeros(len(mt_def), dtype=int)
+    if isinstance(task_set, gym.vector.VectorEnv):
+        n_tasks = task_set.num_envs
+    else:
+        n_tasks = len(task_set)
+    training_steps = np.zeros(n_tasks, dtype=int)
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
 
     if isinstance(task_selector, str):
@@ -165,16 +169,22 @@ def train_active_mt(
             "zeta": xi,
         }
         hparams.update(selector_kwargs)
-        task_selector = selector_class(tasks=np.arange(len(mt_def)), **hparams)
+        task_selector = selector_class(tasks=np.arange(n_tasks), **hparams)
 
     while global_step < total_timesteps:
         task_id = task_selector.select()
         if logger is not None:
             logger.record_stat("task_id", task_id, step=global_step)
 
-        env = mt_def.get_task(task_id)
+        if isinstance(task_set, gym.vector.VectorEnv):
+            env = task_set.envs[task_id]
+        else:
+            env = task_set.get_task(task_id)
+
         env_with_stats = gym.wrappers.RecordEpisodeStatistics(
-            env, buffer_length=scheduling_interval
+            env,
+            buffer_length=scheduling_interval,
+            stats_key="amt_episode",
         )
         replay_buffer.select_task(task_id)
         if task_selectables is not None:

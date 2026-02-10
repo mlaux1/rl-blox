@@ -20,7 +20,7 @@ backbone_algorithm = "SAC"
 
 
 def set_g(env: gym.Env, context):
-    env.unwrapped.g = context
+    env.unwrapped.g = context[0]
 
 
 base_env = gym.make(env_name)

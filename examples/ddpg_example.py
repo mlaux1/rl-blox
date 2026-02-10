@@ -41,7 +41,7 @@ logger.define_experiment(
 
 ddpg_state = create_ddpg_state(env, **hparams_models)
 
-policy, _, _, q, _, _, _ = train_ddpg(
+result = train_ddpg(
     env,
     ddpg_state.policy,
     ddpg_state.policy_optimizer,
@@ -51,6 +51,9 @@ policy, _, _, q, _, _, _ = train_ddpg(
     **hparams_algorithm,
 )
 env.close()
+
+policy = result.policy
+q = result.q
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")

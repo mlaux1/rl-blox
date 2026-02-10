@@ -15,7 +15,7 @@ def test_smt():
     env_name = "Pendulum-v1"
 
     def set_context(env: gym.Env, context):
-        env.unwrapped.g = context
+        env.unwrapped.g = context[0]
 
     base_env = gym.make(env_name)
     contexts = np.linspace(0, 20, 21)[:, np.newaxis]

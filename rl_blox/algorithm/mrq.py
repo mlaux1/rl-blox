@@ -30,10 +30,8 @@ from .td3 import make_sample_target_actions
 
 @partial(
     nnx.jit,
-    static_argnames=(
-        "gamma",
-        "activation_weight",
-    ),
+    static_argnames=("gamma", "activation_weight"),
+    #    donate_argnames=("q", "q_optimizer", "policy", "policy_optimizer"),
 )
 def update_critic_and_policy(
     q: ContinuousClippedDoubleQNet,
@@ -613,9 +611,11 @@ def train_mrq(
         progress = trange(
             global_step, total_timesteps, disable=not progress_bar
         )
+    else:
+        progress = bar
 
     while step < total_timesteps:
-        if global_step < learning_starts:
+        if step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
@@ -634,7 +634,7 @@ def train_mrq(
             truncated=truncated,
         )
 
-        if global_step >= learning_starts:
+        if step >= learning_starts:
             epoch += 1
             if epoch % target_delay == 0:
                 hard_target_net_update(
@@ -739,7 +739,7 @@ def train_mrq(
             "q_target",
             "q_optimizer",
             "replay_buffer",
-            "global_setp",
+            "global_step",
         ],
     )(
         policy_with_encoder,

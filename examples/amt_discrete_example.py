@@ -18,7 +18,7 @@ env_name = "MountainCar-v0"
 
 
 def set_context(env, context):
-    env.unwrapped.goal_velocity = context
+    env.unwrapped.goal_velocity = context[0]
 
 
 base_env = gym.make(env_name)

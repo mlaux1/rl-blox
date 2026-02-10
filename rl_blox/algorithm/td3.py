@@ -418,7 +418,7 @@ def train_td3(
     step = global_step
 
     while step < total_timesteps:
-        if global_step < learning_starts:
+        if step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
@@ -458,7 +458,7 @@ def train_td3(
                 stats = {"q loss": q_loss_value, "q mean": q_mean}
                 updated_modules = {"q": q}
 
-                if global_step % policy_delay == 0:
+                if step % policy_delay == 0:
                     policy_loss_value = ddpg_update_actor(
                         policy, policy_optimizer, q, batch.observation
                     )

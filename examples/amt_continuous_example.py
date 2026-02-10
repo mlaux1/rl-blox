@@ -25,7 +25,7 @@ env_name = "Pendulum-v1"
 
 
 def set_context(env: gym.Env, context):
-    env.unwrapped.g = context
+    env.unwrapped.g = context[0]
 
 
 base_env = gym.make(env_name)
@@ -161,7 +161,6 @@ result = train_active_mt(
     logger=logger,
     seed=seed,
 )
-
 
 # Evaluation
 result_st = result[0]
