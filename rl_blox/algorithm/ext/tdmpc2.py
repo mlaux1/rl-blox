@@ -66,6 +66,7 @@ from tqdm.rich import trange
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision("high")
 
+AGENT_CHECKPOINTING_ID = "agent"
 
 MODEL_SIZE = {  # parameters (M)
     1: {
@@ -1060,6 +1061,7 @@ class OnlineTrainer:
                     if i == num_updates - 1:
                         for k, v in metrics.items():
                             self.logger.record_stat(k, v)
+                self.logger.record_epoch(AGENT_CHECKPOINTING_ID, self.agent, step=self._step)
 
         # End last (potentially partial) episode # TODO: necessary?
         if self.logger is not None:
