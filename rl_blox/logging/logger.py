@@ -82,10 +82,10 @@ class LoggerBase(abc.ABC):
             Value that should be recorded.
 
         episode : int, optional
-            Episode which we record the statistic.
+            Episode for which we record the statistic.
 
         step : int, optional
-            Step at which we record the statistic.
+            Step at which we record the statistic, 1-based.
 
         t : float, optional
             Wallclock time, measured with time.time().

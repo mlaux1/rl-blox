@@ -9,3 +9,4 @@ tqdm
 flax
 matplotlib
 pre-commit
+recordclass
