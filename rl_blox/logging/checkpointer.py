@@ -265,3 +265,40 @@ class OrbaxCheckpointer(CheckpointerBase):
         state = nnx.state(model)
         self.checkpointer.save(path, state)
         self.checkpointer.wait_until_finished()
+
+
+class CustomCheckpointer(CheckpointerBase):
+    """Checkpoint networks with a custom save function injected on construction.
+
+    This logger saves checkpoints to disk. When the verbosity level
+    is > 0, it will also print on stdout.
+
+    Parameters
+    ----------
+    checkpoint_dir : str, optional
+        Directory in which we store checkpoints.
+
+        .. warning::
+
+            This directory will be created if it does not exist.
+
+    verbose : int, optional
+        Verbosity level.
+    """
+
+    def __init__(self, save_func, checkpoint_dir="/tmp/rl-blox/", verbose=0):
+        super(CustomCheckpointer, self).__init__(checkpoint_dir, verbose)
+        self.save_func = save_func
+
+    def save_model(self, path: str, model: Any):
+        """Save model with Orbax.
+
+        Parameters
+        ----------
+        path : str
+            Full path to model.
+
+        model : Any
+            Function approximator to be stored.
+        """
+        self.save_func(path, model)
