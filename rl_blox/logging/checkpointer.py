@@ -1,5 +1,6 @@
 import os
 import time
+from abc import ABC, abstractmethod
 from typing import Any
 
 import orbax.checkpoint as ocp
@@ -9,11 +10,12 @@ from flax import nnx
 from .logger import LoggerBase
 
 
-class OrbaxCheckpointer(LoggerBase):
-    """Checkpoint networks with Orbax.
+class CheckpointerBase(LoggerBase, ABC):
+    """Base class to checkpoint networks.
 
-    This logger saves checkpoints to disk with Orbax. When the verbosity level
-    is > 0, it will also print on stdout.
+    This logger saves checkpoints to disk with a subclass-specified save_model() method,
+    allowing for different model types / storage types.
+    When the verbosity level is > 0, it will also print on stdout.
 
     Parameters
     ----------
@@ -38,7 +40,6 @@ class OrbaxCheckpointer(LoggerBase):
     lpad_keys: int
     epoch: dict[str, int]
     last_checkpoint_step: dict[str, int]
-    checkpointer: ocp.StandardCheckpointer | None
     checkpoint_frequencies: dict[str, int]
     checkpoint_path: dict[str, list[str]]
 
@@ -54,7 +55,6 @@ class OrbaxCheckpointer(LoggerBase):
         self.lpad_keys = 0
         self.epoch = {}
         self.last_step = {}
-        self.checkpointer = ocp.StandardCheckpointer()
         self.checkpoint_frequencies = {}
         self.checkpoint_path = {}
 
@@ -85,10 +85,10 @@ class OrbaxCheckpointer(LoggerBase):
         self.n_steps += total_steps
 
     def define_experiment(
-        self,
-        env_name: str | None = None,
-        algorithm_name: str | None = None,
-        hparams: dict | None = None,
+            self,
+            env_name: str | None = None,
+            algorithm_name: str | None = None,
+            hparams: dict | None = None,
     ):
         """Define the experiment.
 
@@ -108,14 +108,14 @@ class OrbaxCheckpointer(LoggerBase):
         self.start_time = time.time()
 
     def record_stat(
-        self,
-        key: str,
-        value: Any,
-        episode: int | None = None,
-        step: int | None = None,
-        t: float | None = None,
-        verbose: int | None = None,
-        format_str: str = "{0:.3f}",
+            self,
+            key: str,
+            value: Any,
+            episode: int | None = None,
+            step: int | None = None,
+            t: float | None = None,
+            verbose: int | None = None,
+            format_str: str = "{0:.3f}",
     ):
         """Does nothing."""
 
@@ -136,12 +136,12 @@ class OrbaxCheckpointer(LoggerBase):
         self.last_step[key] = 0
 
     def record_epoch(
-        self,
-        key: str,
-        value: Any,
-        episode: int | None = None,
-        step: int | None = None,
-        t: float | None = None,
+            self,
+            key: str,
+            value: Any,
+            episode: int | None = None,
+            step: int | None = None,
+            t: float | None = None,
     ):
         """Record training epoch of function approximator.
 
@@ -186,10 +186,10 @@ class OrbaxCheckpointer(LoggerBase):
             # check if the step counter wrapped around as we cannot rely on
             # x % y == 0 because of delayed updates (e.g., for the policy)
             if (
-                self.last_step[key] % self.checkpoint_frequencies[key]
-                > step % self.checkpoint_frequencies[key]
+                    self.last_step[key] % self.checkpoint_frequencies[key]
+                    > step % self.checkpoint_frequencies[key]
             ) or (
-                (step - self.last_step[key]) >= self.checkpoint_frequencies[key]
+                    (step - self.last_step[key]) >= self.checkpoint_frequencies[key]
             ):
                 self._save_checkpoint(key, value, step)
 
@@ -210,6 +210,46 @@ class OrbaxCheckpointer(LoggerBase):
                 f"[{self.env_name}|{self.algorithm_name}] {key}: "
                 f"checkpoint saved at {checkpoint_path}"
             )
+
+    @abstractmethod
+    def save_model(self, path: str, model: Any):
+        """Save a model.
+
+        Parameters
+        ----------
+        path : str
+            Full path to model.
+
+        model : Any
+            Function approximator to be stored.
+            Type depends on implementation.
+        """
+
+
+class OrbaxCheckpointer(CheckpointerBase):
+    """Checkpoint networks with Orbax.
+
+    This logger saves checkpoints to disk with Orbax. When the verbosity level
+    is > 0, it will also print on stdout.
+
+    Parameters
+    ----------
+    checkpoint_dir : str, optional
+        Directory in which we store checkpoints.
+
+        .. warning::
+
+            This directory will be created if it does not exist.
+
+    verbose : int, optional
+        Verbosity level.
+    """
+
+    checkpointer: ocp.StandardCheckpointer | None
+
+    def __init__(self, checkpoint_dir="/tmp/rl-blox/", verbose=0):
+        super(OrbaxCheckpointer, self).__init__(checkpoint_dir, verbose)
+        self.checkpointer = ocp.StandardCheckpointer()
 
     def save_model(self, path: str, model: nnx.Module):
         """Save model with Orbax.
