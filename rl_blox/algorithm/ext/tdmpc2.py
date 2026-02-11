@@ -364,47 +364,63 @@ FullTrainingConfig = recordclass(
 def make_agent_cfg(
         task: str,
         obs: str ="state",
-        # training
-        batch_size: int =256,
+        # Planning
+        horizon: int =3,
+        iterations: int =6,
+        num_samples: int =512,
+        num_pi_trajs: int =24,
+        num_elites: int =64,
+        min_std: float =0.05,
+        max_std: float =2,
+        temperature: float=0.5,
+        # momentun: No
+        # Policy prior
+        log_std_min: float=-10,
+        log_std_max: float=2,
+        # Replay buffer (Nothing)
+        # capacity: 1_000_000
+        # sampling: uniform
+        # Architecture
+        model_size: int=5,  # 1, 5, 19, 48, 317
+        enc_dim: int=256,
+        num_enc_layers: int=2, # additional
+        mlp_dim: int=512,
+        latent_dim: int=512,
+        # task embedding dim: 96
+        # task embedding norm: 1
+        # activation: layernorm + mish
+        dropout: float=0.01,
+        num_q: int=5,
+        num_bins: int = 101,
+        simnorm_dim: int = 8,
+        # simnorm temperature (tau): 1
+        # Optimization
+        # update to data ratio: 1
+        batch_size: int = 256,
+        consistency_coef=20,
         reward_coef=0.1,
         value_coef=0.1,
-        consistency_coef=20,
-        rho=0.5,
-        lr: float=3e-4,
+        rho=0.5, # lambda in the paper
+        # q function momentum coef: 0.99
+        entropy_coef: float = 1e-4,
+        # policy prior loss norm: Moving (5%,95%) percentiles
+        # optimizer: Adam
+        lr: float = 3e-4,
         enc_lr_scale=0.3,
         grad_clip_norm=20,
+        num_channels: int=32,
+        # training
         tau=0.01,
         discount_denom=5,
         discount_min=0.95,
         discount_max=0.995,
         # planning
         mpc: bool =True,
-        iterations: int =6,
-        num_samples: int =512,
-        num_elites: int =64,
-        num_pi_trajs: int =24,
-        horizon: int =3,
-        min_std: float =0.05,
-        max_std: float =2,
-        temperature: float=0.5,
         # actor
-        log_std_min: float=-10,
-        log_std_max: float=2,
-        entropy_coef: float=1e-4,
         # critic
-        num_bins: int =101,
         vmin: float=-10,
         vmax: float=+10,
         # architecture
-        model_size: int=5,  # 1, 5, 19, 48, 317
-        num_enc_layers: int=2,
-        enc_dim: int=256,
-        num_channels: int=32,
-        mlp_dim: int=512,
-        latent_dim: int=512,
-        num_q: int=5,
-        dropout: float=0.01,
-        simnorm_dim: int=8,
         # speedups
         compile: bool=False,
 ) -> AgentConfig:
