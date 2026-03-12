@@ -2008,6 +2008,44 @@ def zero_(params):
     for p in params:
         p.data.fill_(0)
 
+def complete_config(
+    env: gym.Env,
+    agent_cfg: AgentConfig,
+    training_cfg: TrainingConfig,
+) -> (AgentConfig, TrainingConfig):
+    """Fill in some configuration values that are based on others.
+
+    TODO: Document which config fields are set here and which other fields they depend on.
+
+    Parameters
+    ----------
+    env : gym.Env
+    agent_cfg : AgentConfig
+        The potentially incomplete agent-specific configuration.
+    training_cfg : TrainingConfig
+        The potentially incomplete training-specific configuration.
+
+    Returns
+    -------
+        Both completed parts of the configuration.
+
+    """
+    try:  # Dict
+        agent_cfg.obs_shape = {
+            k: v.shape for k, v in env.observation_space.spaces.items()
+        }
+    except:  # Box
+        agent_cfg.obs_shape = {agent_cfg.obs: env.observation_space.shape}
+    # Bin size for discrete regression
+    agent_cfg.bin_size = (agent_cfg.vmax - agent_cfg.vmin) / (agent_cfg.num_bins - 1)
+    agent_cfg.action_dim = env.action_space.shape[0]
+    agent_cfg.episode_length = env.spec.max_episode_steps
+    if training_cfg.seed_steps is None:
+        training_cfg.seed_steps = max(1000, 5 * agent_cfg.episode_length)
+    # Heuristic for large action spaces
+    agent_cfg.iterations += 2 * int(agent_cfg.action_dim >= 20)
+    return agent_cfg, training_cfg
+
 def train_tdmpc2(
     env: gym.Env,
     agent_cfg: AgentConfig,
@@ -2038,20 +2076,7 @@ def train_tdmpc2(
     # Check parameters, compute defaults, and create configuration object
     assert training_cfg.steps > 0, "Must train for at least 1 step."
 
-    try:  # Dict
-        agent_cfg.obs_shape = {
-            k: v.shape for k, v in env.observation_space.spaces.items()
-        }
-    except:  # Box
-        agent_cfg.obs_shape = {agent_cfg.obs: env.observation_space.shape}
-    # Bin size for discrete regression
-    agent_cfg.bin_size = (agent_cfg.vmax - agent_cfg.vmin) / (agent_cfg.num_bins - 1)
-    agent_cfg.action_dim = env.action_space.shape[0]
-    agent_cfg.episode_length = env.spec.max_episode_steps
-    if training_cfg.seed_steps is None:
-         training_cfg.seed_steps = 1000 # TODO max(1000, 5 * episode_length)
-    # Heuristic for large action spaces
-    agent_cfg.iterations += 2 * int(agent_cfg.action_dim >= 20)
+    agent_cfg, training_cfg = complete_config(env, agent_cfg, training_cfg)
 
     set_rng_seed(rng_seed)
 
