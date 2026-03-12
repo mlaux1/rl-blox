@@ -47,7 +47,12 @@ class Timer:
     def _stop_deepest_task(self, task: str, stop_time: float):
         deepest_active_task = self._deepest_active_task()
         if task != deepest_active_task:
-            raise RuntimeError("Programming error: Predicted deepest active task does not match actual value")
+            raise RuntimeError(
+                f'Programming error: '
+                f'Predicted deepest active task "{task}" does not match actual '
+                f'value: "{deepest_active_task}". '
+                f'Did you forget to stop "{deepest_active_task}"?'
+            )
         duration = stop_time - self._start_time(task)
         self._add_time(self._show_active_tasks(), duration)
         self.active_tasks_and_starts.pop(-1)
@@ -59,10 +64,13 @@ class Timer:
 
     def stop(self, task: str):
         stop_time = time.time()
-        if task == "training":
-            print("training stopped")
+        if task == 'training':
+            print('training stopped')
         if not self.is_task_active(task):
-            msg = f"Inactive task '{task}' stopped. Hierarchy was '{self._show_active_tasks()}'"
+            msg = (
+                f'Inactive task "{task}" stopped. '
+                f'Hierarchy was "{self._show_active_tasks()}"'
+            )
             self.warnings.append(msg)
             return
         tasks_to_stop = self._active_tasks_below(task)
@@ -74,8 +82,8 @@ class Timer:
         if logger is None:
             return
         for task, duration in self.time_table.items():
-            statistic_key = "duration:" + task
+            statistic_key = 'duration:' + task
             logger.record_stat(statistic_key, duration)
         warnings_txt = "\n".join(self.warnings)
-        print("timer_warnings: ")
+        print('timer_warnings: ')
         print(warnings_txt)
