@@ -3,15 +3,6 @@ import time
 from rl_blox.logging.logger import LoggerBase
 
 
-def intercalate(a: str, bs: list[str]) -> str:
-    result = ""
-    for i, b in enumerate(bs):
-        result = result + b
-        if i < len(bs)-1:
-            result = result + a
-    return result
-
-
 class Timer:
     time_table: dict[str, float]
     active_tasks_and_starts: list[tuple[str, float]]
@@ -26,7 +17,7 @@ class Timer:
         return list(map(lambda tas: tas[0], self.active_tasks_and_starts))
 
     def _show_active_tasks(self) -> str:
-        return intercalate("/", self._active_tasks())
+        return "/".join(self._active_tasks())
 
     def is_task_active(self, task: str) -> bool:
         return task in map(lambda tas: tas[0], self.active_tasks_and_starts)
@@ -85,6 +76,6 @@ class Timer:
         for task, duration in self.time_table.items():
             statistic_key = "duration:" + task
             logger.record_stat(statistic_key, duration)
-        warnings_txt = intercalate("\n", self.warnings)
+        warnings_txt = "\n".join(self.warnings)
         print("timer_warnings: ")
         print(warnings_txt)
