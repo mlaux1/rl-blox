@@ -10,3 +10,8 @@ flax
 matplotlib
 pre-commit
 recordclass
+torch
+torchrl
+tensordict
+array-api-compat
+termcolor
