@@ -433,15 +433,22 @@ def make_agent_cfg(
     obs : str in ["state", "rgb"]
         Observation type.
     batch_size : int
-        TODO
+        Number of trajectories (of length 'horizon') to sample from the
+        replay buffer during an agent update.
     reward_coef
-        TODO
+        Weight of the reward loss term in the total model loss.
     value_coef
-        TODO
+        Weight of the value loss term in the total model loss.
     consistency_coef
-        TODO
+        Weight of the consistency loss term in the total model loss.
+        The consistency loss term ensures that the learned latent forward
+        dynamics are consistent with the encoding of the true successor
+        states (which come from the observation of actual dynamics of the
+        environment).
     rho
-        TODO
+        ~Discount factor in loss calculations; lambda in the paper. It is a
+        "constant coefficient that weighs temporally farther time steps less"
+        in loss calculations. Should be in (0, 1].
     lr : float
         Learning rate.
     enc_lr_scale : float
@@ -453,13 +460,18 @@ def make_agent_cfg(
         the current parameters of the target network and the parameters of the
         main network.
     discount_denom
-        TODO
+        Denominator in the heuristic for the discount factor, which changes
+        in response to the episode length, within the bounds of
+        [discount_min,discount_max].
     discount_min
-        TODO
+        Minimum value for the discount factor in its heuristic.
     discount_max
-        TODO
+        Maximum value for the discount factor in its heuristic.
     mpc
-        TODO
+        Whether to use MPC planning (via MPPI) for inference, resorting to
+        the learned policy only to determine the terminal value past the
+        planning horizon. If False, MPC is bypassed and the learned policy
+        determines the next action directly.
     iterations : int
         Number of iterations to optimize plan. We add 2 iterations for large
         action spaces (>= 20 dimensions).
@@ -472,9 +484,11 @@ def make_agent_cfg(
     horizon : int
         Planning horizon.
     min_std : float
-        TODO
+        Minimum standard deviation for the Gaussian distribution used in
+        trajectory sampling for MPPI.
     max_std : float
-        TODO
+        Maximum standard deviation for the Gaussian distribution used in
+        trajectory sampling for MPPI.
     temperature : float
         Temperature for planning with MPPI.
     log_std_min : float
@@ -484,11 +498,14 @@ def make_agent_cfg(
     entropy_coef : float
         Entropy coefficient for policy update.
     num_bins : int
-        TODO
+        Numbers of bins to be used for two-hot encoding (effectively,
+        this concerns reward and return.)
     vmin : float
-        TODO
+        Natural logarithm of the expected minimum value to be represented by
+        two-hot encoding (effectively, this concerns reward and return.)
     vmax : float
-        TODO
+        Natural logarithm of the expected maximum value to be represented by
+        two-hot encoding (effectively, this concerns reward and return.)
     model_size : int
         Model size, must be either one of [1, 5, 19, 48, 317] or None.
         If none, use values for num_enc_layers, enc_dim, num_channels, mlp_dim,
@@ -2054,7 +2071,8 @@ def train_tdmpc2(
     logger: LoggerBase | None = None,
     timer: Timer = Timer(),
 ) -> TDMPC2:
-    """TD-MPC2.
+    """Temporal Difference Learning for Model Predictive Control 2 (TD-MPC2).
+    See [1]_.
 
     Parameters
     ----------
@@ -2070,6 +2088,19 @@ def train_tdmpc2(
         Experiment logger.
     timer : Timer
         Timer to profile select parts of the training process, logs to logger.
+
+    See Also
+    --------
+    make_agent_config :
+        Create the agent-specific configuration; with doc.
+    make_training_config :
+        Create the training-specific configuration; with doc.
+
+    References
+    ----------
+    .. [1] Hansen, N., Su, H., & Wang, X. (2024). TD-MPC2: Scalable, Robust
+       World Models for Continuous Control (arXiv:2310.16828).
+       https://doi.org/10.48550/arXiv.2310.16828
     """
     assert torch.cuda.is_available()
 
