@@ -1,7 +1,9 @@
 import os
 import pickle
+import pytest
 
 import gymnasium as gym
+import jax.numpy as jnp
 import numpy as np
 from numpy.testing import assert_array_almost_equal
 
@@ -50,7 +52,7 @@ def test_pickle_replay_buffer():
             os.remove(filename)
 
 
-def test_episodic_replay_buffer():
+def test_subtrajectory_replay_buffer():
     buffer = SubtrajectoryReplayBuffer(buffer_size=10_000, horizon=5)
 
     n_steps = 2_000
@@ -88,3 +90,57 @@ def test_episodic_replay_buffer():
     assert batch.observation.shape[2] == 3
 
     assert np.count_nonzero(buffer.mask_) == n_steps - n_episodes * 5
+
+def add(buffer, obs, next_obs, term, trunc):
+    buffer.add_sample(
+        observation=float(obs),
+        action=12,
+        reward=7,
+        next_observation=float(next_obs),
+        terminated=term,
+        truncated=trunc,
+    )
+
+@pytest.fixture
+def strb_for_masking():
+    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3)
+    for i in range(4):
+        add(buf, obs=i, next_obs=i+1, term=False, trunc=False)
+    return buf
+
+def test_subtrajectory_replay_buffer_no_end(strb_for_masking):
+    buf = strb_for_masking
+    add(buf, obs=4, next_obs=5, term=False, trunc=False)
+    assert (buf.current_len == 5)
+    assert (buf.mask_ == jnp.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0])).all()
+
+def test_subtrajectory_replay_buffer_termination(strb_for_masking):
+    buf = strb_for_masking
+    add(buf, obs=4, next_obs=5, term=True, trunc=False)
+    assert (buf.current_len == 6)
+    assert (buf.mask_ == jnp.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0])).all()
+
+def test_subtrajectory_replay_buffer_truncation(strb_for_masking):
+    buf = strb_for_masking
+    add(buf, obs=4, next_obs=5, term=False, trunc=True)
+    assert (buf.current_len == 6)
+    assert (buf.mask_ == jnp.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0])).all()
+
+def test_subtrajectory_replay_buffer_respects_episode_boundaries_on_termination(strb_for_masking):
+    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3)
+    for i in range(4): # all non-negative
+        add(buf, obs=i, next_obs=i+1, term=False, trunc=False)
+    add(buf, obs=4, next_obs=5, term=True, trunc=False) # still non-negative
+
+    for i in range(-4, 0): # next episode, all negative
+        add(buf, obs=i, next_obs=i-1, term=False, trunc=False)
+
+    obs_subseqs, *_ = buf.sample_batch(
+        batch_size=100,
+        horizon=3,
+        include_intermediate=True,
+        rng=np.random.default_rng(0),
+    )
+    for obs_subseq in obs_subseqs:
+        assert (obs_subseq >= 0).all() or (obs_subseq <= 0).all()
+
