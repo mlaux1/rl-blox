@@ -236,8 +236,8 @@ class SubtrajectoryReplayBuffer:
             self.environment_terminates = True
 
         self.mask_[self.insert_idx] = 0
-        if self.episode_timesteps > self.horizon:
-            self.mask_[(self.insert_idx - self.horizon) % self.buffer_size] = 1
+        if self.episode_timesteps >= self.horizon:
+            self.mask_[(self.insert_idx - self.horizon + 1) % self.buffer_size] = 1
 
         inserted_at = [self.insert_idx]
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
