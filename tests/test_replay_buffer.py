@@ -112,19 +112,33 @@ def test_subtrajectory_replay_buffer_no_end(strb_for_masking):
     buf = strb_for_masking
     add(buf, obs=4, next_obs=5, term=False, trunc=False)
     assert (buf.current_len == 5)
-    assert (buf.mask_ == jnp.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0])).all()
+    assert (buf.mask_ == jnp.array([1, 1, 1, 0, 0, 0, 0, 0, 0, 0])).all()
 
 def test_subtrajectory_replay_buffer_termination(strb_for_masking):
     buf = strb_for_masking
     add(buf, obs=4, next_obs=5, term=True, trunc=False)
     assert (buf.current_len == 6)
-    assert (buf.mask_ == jnp.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0])).all()
+    assert (buf.mask_ == jnp.array([1, 1, 1, 0, 0, 0, 0, 0, 0, 0])).all()
 
 def test_subtrajectory_replay_buffer_truncation(strb_for_masking):
     buf = strb_for_masking
     add(buf, obs=4, next_obs=5, term=False, trunc=True)
     assert (buf.current_len == 6)
     assert (buf.mask_ == jnp.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0])).all()
+
+def test_subtrajectory_replay_buffer_has_horizon_as_min_episode_len():
+    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3)
+    for i in range(3):
+        add(buf, obs=i, next_obs=i+1, term=False, trunc=False)
+    assert buf.mask_.any()
+    # ensure subtrajectories can be generated from a minimum-length episode
+    # otherwise an error will be thrown
+    _ = buf.sample_batch(
+        batch_size=1,
+        horizon=3,
+        include_intermediate=True,
+        rng=np.random.default_rng(0),
+    )
 
 def test_subtrajectory_replay_buffer_respects_episode_boundaries_on_termination(strb_for_masking):
     buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3)
@@ -144,3 +158,26 @@ def test_subtrajectory_replay_buffer_respects_episode_boundaries_on_termination(
     for obs_subseq in obs_subseqs:
         assert (obs_subseq >= 0).all() or (obs_subseq <= 0).all()
 
+def test_subtrajectory_replay_buffer_may_produce_termination_transitions(strb_for_masking):
+    buf = strb_for_masking
+    add(buf, obs=4, next_obs=5, term=True, trunc=False)
+
+    _, _, _, _, terminated, _ = buf.sample_batch(
+        batch_size=100,
+        horizon=3,
+        include_intermediate=True,
+        rng=np.random.default_rng(0),
+    )
+    assert terminated.any()
+
+def test_subtrajectory_replay_buffer_may_not_produce_truncation_transitions(strb_for_masking):
+    buf = strb_for_masking
+    add(buf, obs=4, next_obs=5, term=False, trunc=True)
+
+    _, _, _, _, _, truncated = buf.sample_batch(
+        batch_size=100,
+        horizon=3,
+        include_intermediate=True,
+        rng=np.random.default_rng(0),
+    )
+    assert not truncated.any()
