@@ -252,7 +252,7 @@ class SubtrajectoryReplayBuffer:
                 "next_observation"
             ]
 
-            self.mask_[self.insert_idx % self.buffer_size] = 0
+            self.mask_[self.insert_idx] = 0
             past_idx = (
                 self.insert_idx
                 - np.arange(min(self.episode_timesteps, self.horizon))
