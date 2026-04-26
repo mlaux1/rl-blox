@@ -159,6 +159,20 @@ class SubtrajectoryReplayBuffer:
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
+
+    legacy_mode : bool, optional
+        If True, termination and truncation are handled the way the original
+        MRQ implementation of this replay buffer did, which may be considered
+        incorrect. If False, our fixes are included. These fixes are:
+        - No subtrajectories will be generated that include transitions from
+          more than one episode. Previously, this was possible for
+          subtrajectories that would start close to the end of a terminated
+          episode.
+        - There is no delay in added transitions for being eligible to be
+          sampled any more. Originally, the most recently added transition
+          would in general not be part of the sample_batch() return value.
+        Note that if legacy_mode is True, add_sample() returns a list[int].
+        If legacy_mode is False, add_sample() returns just an int.
     """
 
     def __init__(
@@ -168,6 +182,7 @@ class SubtrajectoryReplayBuffer:
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
+        legacy_mode: bool = False,
     ):
         assert buffer_size > 0
         assert horizon > 0
@@ -212,13 +227,35 @@ class SubtrajectoryReplayBuffer:
         self.environment_terminates = False
         self.horizon = horizon
         self.mask_ = np.zeros(self.buffer_size, dtype=int)
+        self._legacy_mode = legacy_mode
 
-    def add_sample(self, **sample) -> int:
+    def add_sample(self, **sample) -> int | list[int]:
         """Add transition sample to the replay buffer.
 
         Note that the individual arguments have to be passed as keyword
         arguments with keys matching the ones passed to the constructor or
         the default keys respectively.
+
+        Returns
+        -------
+        int | list[int]
+            Index in the buffer at which the sample was inserted.
+            Note that if legacy_mode was set to True on construction,
+            this is a list of indices (multiple samples may be inserted).
+        """
+        if self._legacy_mode:
+            return self._add_sample_legacy(**sample)
+        else:
+            return self._add_sample(**sample)
+
+
+    def _add_sample(self, **sample) -> int:
+        """Add transition sample to the replay buffer.
+
+        Notes
+        -----
+        This is the updated version of _add_sample(). See documentation
+        for __init__(): legacy_mode.
         """
         if self.current_len == 0:
             for k, v in sample.items():
@@ -244,6 +281,64 @@ class SubtrajectoryReplayBuffer:
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
 
         if sample["terminated"] or sample["truncated"]:
+            self.episode_timesteps = 0
+
+        return inserted_at
+
+    def _add_sample_legacy(self, **sample) -> list[int]:
+        """Add transition sample to the replay buffer.
+
+        Notes
+        -----
+        This is the legacy version of _add_sample(). See documentation
+        for __init__() -> legacy_mode.
+        """
+        if self.current_len == 0:
+            for k, v in sample.items():
+                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
+                self.buffer[k] = np.empty(
+                    (self.buffer_size,) + np.asarray(v).shape,
+                    dtype=self.buffer[k].dtype,
+                )
+        for k, v in sample.items():
+            self.buffer[k][self.insert_idx] = v
+
+        self.current_len = min(self.current_len + 1, self.buffer_size)
+        self.episode_timesteps += 1
+        if sample["terminated"]:
+            self.environment_terminates = True
+
+        self.mask_[self.insert_idx] = 0
+        if self.episode_timesteps > self.horizon:
+            self.mask_[(self.insert_idx - self.horizon) % self.buffer_size] = 1
+
+        inserted_at = [self.insert_idx]
+        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+
+        if sample["terminated"] or sample["truncated"]:
+            for k in self.buffer:
+                if k == "reward":
+                    self.buffer[k][self.insert_idx] = 0.0
+                else:
+                    self.buffer[k][self.insert_idx] = sample[k]
+            self.buffer["observation"][self.insert_idx] = sample[
+                "next_observation"
+            ]
+
+            self.mask_[self.insert_idx % self.buffer_size] = 0
+            past_idx = (
+                self.insert_idx
+                - np.arange(min(self.episode_timesteps, self.horizon))
+                - 1
+            ) % self.buffer_size
+            self.mask_[past_idx] = (
+                0 if sample["truncated"] else 1
+            )  # mask out truncated subtrajectories
+
+            inserted_at += [self.insert_idx]
+            self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+            self.current_len = min(self.current_len + 1, self.buffer_size)
+
             self.episode_timesteps = 0
 
         return inserted_at
@@ -651,6 +746,9 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
+
+    legacy_mode : bool, optional
+        See documentation for SubtrajectoryReplayBuffer.__init__(): legacy_mode.
     """
 
     priority: PriorityBuffer
@@ -662,8 +760,11 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
+        legacy_mode: bool = False,
     ):
-        super().__init__(buffer_size, horizon, keys, dtypes, discrete_actions)
+        super().__init__(
+            buffer_size, horizon, keys, dtypes, discrete_actions, legacy_mode
+        )
         self.priority = PriorityBuffer(buffer_size)
 
     def add_sample(self, **sample):
