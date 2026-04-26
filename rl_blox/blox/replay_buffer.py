@@ -213,7 +213,7 @@ class SubtrajectoryReplayBuffer:
         self.horizon = horizon
         self.mask_ = np.zeros(self.buffer_size, dtype=int)
 
-    def add_sample(self, **sample) -> list[int]:
+    def add_sample(self, **sample) -> int:
         """Add transition sample to the replay buffer.
 
         Note that the individual arguments have to be passed as keyword
@@ -236,36 +236,14 @@ class SubtrajectoryReplayBuffer:
             self.environment_terminates = True
 
         self.mask_[self.insert_idx] = 0
-        if self.episode_timesteps >= self.horizon:
+        if self.episode_timesteps >= self.horizon and not sample["truncated"]:
+            # mask in the index that the new subtrajectory starts with
             self.mask_[(self.insert_idx - self.horizon + 1) % self.buffer_size] = 1
 
-        inserted_at = [self.insert_idx]
+        inserted_at = self.insert_idx
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
 
         if sample["terminated"] or sample["truncated"]:
-            for k in self.buffer:
-                if k == "reward":
-                    self.buffer[k][self.insert_idx] = 0.0
-                else:
-                    self.buffer[k][self.insert_idx] = sample[k]
-            self.buffer["observation"][self.insert_idx] = sample[
-                "next_observation"
-            ]
-
-            self.mask_[self.insert_idx] = 0
-            past_idx = (
-                self.insert_idx
-                - np.arange(min(self.episode_timesteps, self.horizon))
-                - 1
-            ) % self.buffer_size
-
-            if sample["truncated"]:
-                self.mask_[past_idx] = 0
-
-            inserted_at += [self.insert_idx]
-            self.insert_idx = (self.insert_idx + 1) % self.buffer_size
-            self.current_len = min(self.current_len + 1, self.buffer_size)
-
             self.episode_timesteps = 0
 
         return inserted_at
@@ -370,7 +348,7 @@ class PriorityBuffer:
         self.priority = np.empty(buffer_size, dtype=float)
         self.sampled_indices = np.empty(0, dtype=int)
 
-    def initialize_priority(self, insert_idx: npt.NDArray[int]):
+    def initialize_priority(self, insert_idx: int):
         """Initialize the priority of the next inserted sample."""
         self.priority[insert_idx] = self.max_priority
 
