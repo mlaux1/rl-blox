@@ -258,7 +258,7 @@ class SubtrajectoryReplayBuffer:
                 - np.arange(min(self.episode_timesteps, self.horizon))
                 - 1
             ) % self.buffer_size
-            # mask out truncated subtrajectories
+
             if sample["truncated"]:
                 self.mask_[past_idx] = 0
 
