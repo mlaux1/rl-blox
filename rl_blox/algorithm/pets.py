@@ -673,7 +673,7 @@ def _init_mpc_optimizer_cem(
         )
     )
     if n_elite is None:
-        n_elite = math.floor(0.1 * n_samples)
+        n_elite = math.ceil(0.1 * n_samples)
     _update_search_distribution = jax.jit(
         partial(
             cem_update,
