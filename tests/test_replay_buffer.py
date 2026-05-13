@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from numpy.testing import assert_array_almost_equal
 
-from rl_blox.blox.replay_buffer import ReplayBuffer, SubtrajectoryReplayBuffer
+from rl_blox.blox.replay_buffer import ReplayBuffer, SubtrajectoryReplayBuffer, dilate_right
 
 
 def test_pickle_replay_buffer():
@@ -100,6 +100,30 @@ def add(buffer, obs, next_obs, term, trunc):
         terminated=term,
         truncated=trunc,
     )
+
+@pytest.fixture
+def mask():
+    return np.array([0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0])
+
+
+def test_dilate_right_0(mask):
+    assert (dilate_right(mask, 0) == mask).all()
+
+
+def test_dilate_right_1(mask):
+    target = np.array([0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1])
+    assert (dilate_right(mask, 1) == target).all()
+
+
+def test_dilate_right_2(mask):
+    target = np.array([1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1])
+    assert (dilate_right(mask, 2) == target).all()
+
+
+def test_dilate_right_3(mask):
+    target = np.array([1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
+    assert (dilate_right(mask, 3) == target).all()
+
 
 @pytest.fixture
 def empty_strb():

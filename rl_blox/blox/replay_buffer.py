@@ -134,6 +134,13 @@ class ReplayBuffer:
         self.Batch = namedtuple("Batch", self.buffer)
 
 
+def dilate_right(a, n):
+    for _ in range(n):
+        a_shifted_right = np.concatenate([a[-1:], a[:-1]])
+        a = np.bitwise_or(a, a_shifted_right)
+    return a
+
+
 class SubtrajectoryReplayBuffer:
     """Replay buffer for sampling batches of subtrajectories.
 
@@ -375,7 +382,7 @@ class SubtrajectoryReplayBuffer:
         assert batch_size > 0
         assert horizon > 0
 
-        indices = self._sample_idx(batch_size, rng)
+        indices = self._sample_idx(batch_size, horizon, rng)
         # TODO % self.current_len or % self.buffer_size?
         # - maybe self.buffer_size is possible because of the mask?
         indices = (
@@ -405,10 +412,20 @@ class SubtrajectoryReplayBuffer:
 
         return batch
 
+    def _mask_for_horizon(self, horizon: int):
+        if self._legacy_mode:
+            return self.mask_
+        assert horizon >= 1 and horizon <= self.horizon
+        if horizon == self.horizon:
+            return self.mask_
+        difference = self.horizon - horizon
+        return dilate_right(self.mask_, difference)
+
     def _sample_idx(
-        self, batch_size: int, rng: np.random.Generator
+        self, batch_size: int, horizon: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
-        nz = np.nonzero(self.mask_)[0]
+        mask = self._mask_for_horizon(horizon)
+        nz = np.nonzero(mask)[0]
         indices = rng.integers(0, len(nz), size=batch_size)
         return nz[indices]
 
@@ -778,10 +795,11 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         self.priority.initialize_priority(inserted_at)
 
     def _sample_idx(
-        self, batch_size: int, rng: np.random.Generator
+        self, batch_size: int, horizon: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
+        mask = self._mask_for_horizon(horizon)
         return self.priority.prioritized_sampling(
-            self.current_len, batch_size, rng, self.mask_
+            self.current_len, batch_size, rng, mask
         )
 
     def update_priority(self, priority):
