@@ -135,6 +135,17 @@ class ReplayBuffer:
 
 
 def dilate_right(a, n):
+    """Given a mask 'a' of 0s and 1s, return a mask that is created from 'a'
+    by setting all n values to the right of every 1 in 'a' to 1 too. Wrap
+    around at the end.
+
+    Examples
+    --------
+    a=[0, 1, 0, 0, 1, 0]
+    - n=0 -> [0, 1, 0, 0, 1, 0]
+    - n=1 -> [0, 1, 1, 0, 1, 1]
+    - n=2 -> [1, 1, 1, 1, 1, 1]
+    """
     for _ in range(n):
         a_shifted_right = np.concatenate([a[-1:], a[:-1]])
         a = np.bitwise_or(a, a_shifted_right)
@@ -150,7 +161,8 @@ class SubtrajectoryReplayBuffer:
         Maximum size of the buffer.
 
     horizon : int, optional
-        Maximum length of the horizon.
+        Maximum length of the horizon. During sampling, a shorter horizon may
+        be specified.
 
     keys : list[str], optional
         Names of the quantities that should be stored in the replay buffer.
@@ -181,6 +193,18 @@ class SubtrajectoryReplayBuffer:
           specified on construction, the mask of allowed start indices for
           sample subtrajectories will be extended to the right by the
           difference.
+        
+        For MRQ, subtrajectories that start in one episode and end in the next
+        are expected and required for best performance, for two reasons:
+        1. MRQ benefits from having all transitions up to the last transition of
+        an episode as the first transition in a subtrajectory. For the last
+        horizon-1 transitions this is achieved by sampling subtrajectories that
+        end in next episode.
+        2. These trans-episode trajectories do not corrupt the learning process
+        because MRQ discounts rewards of transitions following a termination
+        transition, effectively ignoring the second episode in two-episode
+        subtrajectories.
+
         Note that if mrq_mode is True, add_sample() returns a list[int].
         If mrq_mode is False, add_sample() returns just an int.
     """
@@ -236,6 +260,9 @@ class SubtrajectoryReplayBuffer:
         # track if there are any terminal transitions in the buffer
         self.environment_terminates = False
         self.horizon = horizon
+        # mask that is 1 at an index if that index in the buffer can be the
+        # first index of a subtrajectory to be sampled with sample_batch
+        # if that is called with horizon==self.horizon, or 0 otherwise.
         self.mask_ = np.zeros(self.buffer_size, dtype=int)
         self._mrq_mode = mrq_mode
 
@@ -336,6 +363,10 @@ class SubtrajectoryReplayBuffer:
             ]
 
             self.mask_[self.insert_idx % self.buffer_size] = 0
+
+            # mask out truncated subtrajectories or mask in the last indices
+            # before termination to ensure that these transitions may appear
+            # as the first transitions in sampled subtrajectories
             past_idx = (
                 self.insert_idx
                 - np.arange(min(self.episode_timesteps, self.horizon))
@@ -343,7 +374,7 @@ class SubtrajectoryReplayBuffer:
             ) % self.buffer_size
             self.mask_[past_idx] = (
                 0 if sample["truncated"] else 1
-            )  # mask out truncated subtrajectories
+            )
 
             inserted_at += [self.insert_idx]
             self.insert_idx = (self.insert_idx + 1) % self.buffer_size
@@ -416,6 +447,26 @@ class SubtrajectoryReplayBuffer:
         return batch
 
     def _mask_for_horizon(self, horizon: int):
+        """Get the mask for starting indices to be sampled under the given
+        sampling horizon.
+
+        If mrq_mode is True, this is just self.mask_.
+
+        If mrq_mode is False, and the given sampling horizon is the same as
+        self.horizon, this is also just self.mask_. If however mrq_mode is
+        False and the sampling horizon is shorter, recalculate the mask
+        so as to allow for sampling from later starting indices enabled by
+        the shorter horizon. This recalculation is performed by dilate_right().
+
+        If, for example, self.horizon is 5, self.mask_[0] is 1 and
+        self.mask_[1:] is 0, this means transitions [0,5) may be sampled.
+        For a sampling horizon of 5, this means only one subtrajectory may
+        be sampled, namely the one starting at index 0. It has length 5 and
+        contains all transitions at indices in [0,5). For a sampling horizon
+        of 3, however, this means subtrajectories may be sampled starting at
+        either 0, 1, or 2, as all these subtrajectories (of length 3) only
+        contain transitions in [0,5).
+        """
         if self._mrq_mode:
             return self.mask_
         assert horizon >= 1 and horizon <= self.horizon
