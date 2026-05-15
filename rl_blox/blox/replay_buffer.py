@@ -167,19 +167,22 @@ class SubtrajectoryReplayBuffer:
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
 
-    legacy_mode : bool, optional
+    mrq_mode : bool, optional
         If True, termination and truncation are handled the way the original
-        MRQ implementation of this replay buffer did, which may be considered
-        incorrect. If False, our fixes are included. These fixes are:
+        MRQ implementation of this replay buffer did, which may or may not be
+        considered incorrect. If False, the following changes are included:
         - No subtrajectories will be generated that include transitions from
-          more than one episode. Previously, this was possible for
-          subtrajectories that would start close to the end of a terminated
-          episode.
+          more than one episode. With mrq_mode, this is possible for
+          subtrajectories that start close to the end of a terminated episode.
         - There is no delay in added transitions for being eligible to be
           sampled any more. Originally, the most recently added transition
           would in general not be part of the sample_batch() return value.
-        Note that if legacy_mode is True, add_sample() returns a list[int].
-        If legacy_mode is False, add_sample() returns just an int.
+        - If sample_batch() is called with a horizon shorter than the horizon
+          specified on construction, the mask of allowed start indices for
+          sample subtrajectories will be extended to the right by the
+          difference.
+        Note that if mrq_mode is True, add_sample() returns a list[int].
+        If mrq_mode is False, add_sample() returns just an int.
     """
 
     def __init__(
@@ -189,7 +192,7 @@ class SubtrajectoryReplayBuffer:
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
-        legacy_mode: bool = False,
+        mrq_mode: bool = True,
     ):
         assert buffer_size > 0
         assert horizon > 0
@@ -234,7 +237,7 @@ class SubtrajectoryReplayBuffer:
         self.environment_terminates = False
         self.horizon = horizon
         self.mask_ = np.zeros(self.buffer_size, dtype=int)
-        self._legacy_mode = legacy_mode
+        self._mrq_mode = mrq_mode
 
     def add_sample(self, **sample) -> int | list[int]:
         """Add transition sample to the replay buffer.
@@ -247,11 +250,11 @@ class SubtrajectoryReplayBuffer:
         -------
         int | list[int]
             Index in the buffer at which the sample was inserted.
-            Note that if legacy_mode was set to True on construction,
+            Note that if mrq_mode was set to True on construction,
             this is a list of indices (multiple samples may be inserted).
         """
-        if self._legacy_mode:
-            return self._add_sample_legacy(**sample)
+        if self._mrq_mode:
+            return self._add_sample_mrq(**sample)
         else:
             return self._add_sample(**sample)
 
@@ -262,7 +265,7 @@ class SubtrajectoryReplayBuffer:
         Notes
         -----
         This is the updated version of _add_sample(). See documentation
-        for __init__(): legacy_mode.
+        for __init__(): mrq_mode.
         """
         if self.current_len == 0:
             for k, v in sample.items():
@@ -292,13 +295,13 @@ class SubtrajectoryReplayBuffer:
 
         return inserted_at
 
-    def _add_sample_legacy(self, **sample) -> list[int]:
+    def _add_sample_mrq(self, **sample) -> list[int]:
         """Add transition sample to the replay buffer.
 
         Notes
         -----
-        This is the legacy version of _add_sample(). See documentation
-        for __init__() -> legacy_mode.
+        This is the mrq version of _add_sample(). See documentation
+        for __init__(): mrq_mode.
         """
         if self.current_len == 0:
             for k, v in sample.items():
@@ -413,7 +416,7 @@ class SubtrajectoryReplayBuffer:
         return batch
 
     def _mask_for_horizon(self, horizon: int):
-        if self._legacy_mode:
+        if self._mrq_mode:
             return self.mask_
         assert horizon >= 1 and horizon <= self.horizon
         if horizon == self.horizon:
@@ -764,8 +767,8 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
 
-    legacy_mode : bool, optional
-        See documentation for SubtrajectoryReplayBuffer.__init__(): legacy_mode.
+    mrq_mode : bool, optional
+        See documentation for SubtrajectoryReplayBuffer.__init__(): mrq_mode.
     """
 
     priority: PriorityBuffer
@@ -777,10 +780,10 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
-        legacy_mode: bool = False,
+        mrq_mode: bool = True,
     ):
         super().__init__(
-            buffer_size, horizon, keys, dtypes, discrete_actions, legacy_mode
+            buffer_size, horizon, keys, dtypes, discrete_actions, mrq_mode
         )
         self.priority = PriorityBuffer(buffer_size)
 
