@@ -207,6 +207,13 @@ class SubtrajectoryReplayBuffer:
 
         Note that if mrq_mode is True, add_sample() returns a list[int].
         If mrq_mode is False, add_sample() returns just an int.
+
+    Notes
+    -----
+    This is implemented as a ring buffer of size buffer_size to which
+    transition samples (or just samples) will be added at self._insert_idx.
+    This self._insert_idx is incremented after each sample addition and wraps
+    around at the end, overwriting previously added samples.
     """
 
     def __init__(
