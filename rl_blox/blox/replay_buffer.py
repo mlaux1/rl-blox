@@ -134,6 +134,24 @@ class ReplayBuffer:
         self.Batch = namedtuple("Batch", self.buffer)
 
 
+def dilate_right(a, n):
+    """Given a mask 'a' of 0s and 1s, return a mask that is created from 'a'
+    by setting all n values to the right of every 1 in 'a' to 1 too. Wrap
+    around at the end.
+
+    Examples
+    --------
+    a=[0, 1, 0, 0, 1, 0]
+    - n=0 -> [0, 1, 0, 0, 1, 0]
+    - n=1 -> [0, 1, 1, 0, 1, 1]
+    - n=2 -> [1, 1, 1, 1, 1, 1]
+    """
+    for _ in range(n):
+        a_shifted_right = np.concatenate([a[-1:], a[:-1]])
+        a = np.bitwise_or(a, a_shifted_right)
+    return a
+
+
 class SubtrajectoryReplayBuffer:
     """Replay buffer for sampling batches of subtrajectories.
 
@@ -143,7 +161,8 @@ class SubtrajectoryReplayBuffer:
         Maximum size of the buffer.
 
     horizon : int, optional
-        Maximum length of the horizon.
+        Maximum length of the horizon. During sampling, a shorter horizon may
+        be specified.
 
     keys : list[str], optional
         Names of the quantities that should be stored in the replay buffer.
@@ -159,6 +178,42 @@ class SubtrajectoryReplayBuffer:
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
+
+    mrq_mode : bool, optional
+        If True, termination and truncation are handled the way the original
+        MRQ implementation of this replay buffer did, which may or may not be
+        considered incorrect. If False, the following changes are included:
+        - No subtrajectories will be generated that include transitions from
+          more than one episode. With mrq_mode, this is possible for
+          subtrajectories that start close to the end of a terminated episode.
+        - There is no delay in added transitions for being eligible to be
+          sampled any more. Originally, the most recently added transition
+          would in general not be part of the sample_batch() return value.
+        - If sample_batch() is called with a horizon shorter than the horizon
+          specified on construction, the mask of allowed start indices for
+          sample subtrajectories will be extended to the right by the
+          difference.
+        
+        For MRQ, subtrajectories that start in one episode and end in the next
+        are expected and required for best performance, for two reasons:
+        1. MRQ benefits from having all transitions up to the last transition of
+        an episode as the first transition in a subtrajectory. For the last
+        horizon-1 transitions this is achieved by sampling subtrajectories that
+        end in next episode.
+        2. These trans-episode trajectories do not corrupt the learning process
+        because MRQ discounts rewards of transitions following a termination
+        transition, effectively ignoring the second episode in two-episode
+        subtrajectories.
+
+        Note that if mrq_mode is True, add_sample() returns a list[int].
+        If mrq_mode is False, add_sample() returns just an int.
+
+    Notes
+    -----
+    This is implemented as a ring buffer of size buffer_size to which
+    transition samples (or just samples) will be added at self._insert_idx.
+    This self._insert_idx is incremented after each sample addition and wraps
+    around at the end, overwriting previously added samples.
     """
 
     def __init__(
@@ -168,6 +223,7 @@ class SubtrajectoryReplayBuffer:
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
+        mrq_mode: bool = True,
     ):
         assert buffer_size > 0
         assert horizon > 0
@@ -211,14 +267,75 @@ class SubtrajectoryReplayBuffer:
         # track if there are any terminal transitions in the buffer
         self.environment_terminates = False
         self.horizon = horizon
+        # mask that is 1 at an index if that index in the buffer can be the
+        # first index of a subtrajectory to be sampled with sample_batch
+        # if that is called with horizon==self.horizon, or 0 otherwise.
         self.mask_ = np.zeros(self.buffer_size, dtype=int)
+        self._mrq_mode = mrq_mode
 
-    def add_sample(self, **sample) -> list[int]:
+    def add_sample(self, **sample) -> int | list[int]:
         """Add transition sample to the replay buffer.
 
         Note that the individual arguments have to be passed as keyword
         arguments with keys matching the ones passed to the constructor or
         the default keys respectively.
+
+        Returns
+        -------
+        int | list[int]
+            Index in the buffer at which the sample was inserted.
+            Note that if mrq_mode was set to True on construction,
+            this is a list of indices (multiple samples may be inserted).
+        """
+        if self._mrq_mode:
+            return self._add_sample_mrq(**sample)
+        else:
+            return self._add_sample(**sample)
+
+
+    def _add_sample(self, **sample) -> int:
+        """Add transition sample to the replay buffer.
+
+        Notes
+        -----
+        This is the updated version of _add_sample(). See documentation
+        for __init__(): mrq_mode.
+        """
+        if self.current_len == 0:
+            for k, v in sample.items():
+                assert k in self.buffer, f"{k} not in {self.buffer.keys()}"
+                self.buffer[k] = np.empty(
+                    (self.buffer_size,) + np.asarray(v).shape,
+                    dtype=self.buffer[k].dtype,
+                )
+        for k, v in sample.items():
+            self.buffer[k][self.insert_idx] = v
+
+        self.current_len = min(self.current_len + 1, self.buffer_size)
+        self.episode_timesteps += 1
+        if sample["terminated"]:
+            self.environment_terminates = True
+
+        self.mask_[self.insert_idx] = 0
+        if self.episode_timesteps >= self.horizon and not sample["truncated"]:
+            # mask in the index that the new subtrajectory starts with
+            self.mask_[(self.insert_idx - self.horizon + 1) % self.buffer_size] = 1
+
+        inserted_at = self.insert_idx
+        self.insert_idx = (self.insert_idx + 1) % self.buffer_size
+
+        if sample["terminated"] or sample["truncated"]:
+            self.episode_timesteps = 0
+
+        return inserted_at
+
+    def _add_sample_mrq(self, **sample) -> list[int]:
+        """Add transition sample to the replay buffer.
+
+        Notes
+        -----
+        This is the mrq version of _add_sample(). See documentation
+        for __init__(): mrq_mode.
         """
         if self.current_len == 0:
             for k, v in sample.items():
@@ -253,6 +370,10 @@ class SubtrajectoryReplayBuffer:
             ]
 
             self.mask_[self.insert_idx % self.buffer_size] = 0
+
+            # mask out truncated subtrajectories or mask in the last indices
+            # before termination to ensure that these transitions may appear
+            # as the first transitions in sampled subtrajectories
             past_idx = (
                 self.insert_idx
                 - np.arange(min(self.episode_timesteps, self.horizon))
@@ -260,7 +381,7 @@ class SubtrajectoryReplayBuffer:
             ) % self.buffer_size
             self.mask_[past_idx] = (
                 0 if sample["truncated"] else 1
-            )  # mask out truncated subtrajectories
+            )
 
             inserted_at += [self.insert_idx]
             self.insert_idx = (self.insert_idx + 1) % self.buffer_size
@@ -302,7 +423,7 @@ class SubtrajectoryReplayBuffer:
         assert batch_size > 0
         assert horizon > 0
 
-        indices = self._sample_idx(batch_size, rng)
+        indices = self._sample_idx(batch_size, horizon, rng)
         # TODO % self.current_len or % self.buffer_size?
         # - maybe self.buffer_size is possible because of the mask?
         indices = (
@@ -332,10 +453,40 @@ class SubtrajectoryReplayBuffer:
 
         return batch
 
+    def _mask_for_horizon(self, horizon: int):
+        """Get the mask for starting indices to be sampled under the given
+        sampling horizon.
+
+        If mrq_mode is True, this is just self.mask_.
+
+        If mrq_mode is False, and the given sampling horizon is the same as
+        self.horizon, this is also just self.mask_. If however mrq_mode is
+        False and the sampling horizon is shorter, recalculate the mask
+        so as to allow for sampling from later starting indices enabled by
+        the shorter horizon. This recalculation is performed by dilate_right().
+
+        If, for example, self.horizon is 5, self.mask_[0] is 1 and
+        self.mask_[1:] is 0, this means transitions [0,5) may be sampled.
+        For a sampling horizon of 5, this means only one subtrajectory may
+        be sampled, namely the one starting at index 0. It has length 5 and
+        contains all transitions at indices in [0,5). For a sampling horizon
+        of 3, however, this means subtrajectories may be sampled starting at
+        either 0, 1, or 2, as all these subtrajectories (of length 3) only
+        contain transitions in [0,5).
+        """
+        if self._mrq_mode:
+            return self.mask_
+        assert horizon >= 1 and horizon <= self.horizon
+        if horizon == self.horizon:
+            return self.mask_
+        difference = self.horizon - horizon
+        return dilate_right(self.mask_, difference)
+
     def _sample_idx(
-        self, batch_size: int, rng: np.random.Generator
+        self, batch_size: int, horizon: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
-        nz = np.nonzero(self.mask_)[0]
+        mask = self._mask_for_horizon(horizon)
+        nz = np.nonzero(mask)[0]
         indices = rng.integers(0, len(nz), size=batch_size)
         return nz[indices]
 
@@ -370,7 +521,7 @@ class PriorityBuffer:
         self.priority = np.empty(buffer_size, dtype=float)
         self.sampled_indices = np.empty(0, dtype=int)
 
-    def initialize_priority(self, insert_idx: npt.NDArray[int]):
+    def initialize_priority(self, insert_idx: int):
         """Initialize the priority of the next inserted sample."""
         self.priority[insert_idx] = self.max_priority
 
@@ -673,6 +824,9 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
+
+    mrq_mode : bool, optional
+        See documentation for SubtrajectoryReplayBuffer.__init__(): mrq_mode.
     """
 
     priority: PriorityBuffer
@@ -684,8 +838,11 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
+        mrq_mode: bool = True,
     ):
-        super().__init__(buffer_size, horizon, keys, dtypes, discrete_actions)
+        super().__init__(
+            buffer_size, horizon, keys, dtypes, discrete_actions, mrq_mode
+        )
         self.priority = PriorityBuffer(buffer_size)
 
     def add_sample(self, **sample):
@@ -699,10 +856,11 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         self.priority.initialize_priority(inserted_at)
 
     def _sample_idx(
-        self, batch_size: int, rng: np.random.Generator
+        self, batch_size: int, horizon: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
+        mask = self._mask_for_horizon(horizon)
         return self.priority.prioritized_sampling(
-            self.current_len, batch_size, rng, self.mask_
+            self.current_len, batch_size, rng, mask
         )
 
     def update_priority(self, priority):
