@@ -1,13 +1,17 @@
 import os
 import pickle
-import pytest
 
 import gymnasium as gym
 import jax.numpy as jnp
 import numpy as np
+import pytest
 from numpy.testing import assert_array_almost_equal
 
-from rl_blox.blox.replay_buffer import ReplayBuffer, SubtrajectoryReplayBuffer, dilate_right
+from rl_blox.blox.replay_buffer import (
+    ReplayBuffer,
+    SubtrajectoryReplayBuffer,
+    dilate_right,
+)
 
 
 def test_pickle_replay_buffer():
@@ -53,7 +57,9 @@ def test_pickle_replay_buffer():
 
 
 def test_subtrajectory_replay_buffer():
-    buffer = SubtrajectoryReplayBuffer(buffer_size=10_000, horizon=5)
+    buffer = SubtrajectoryReplayBuffer(
+        buffer_size=10_000, horizon=5, mrq_mode=False
+    )
 
     n_steps = 2_000
 
@@ -101,6 +107,7 @@ def add(buffer, obs, next_obs, term, trunc):
         truncated=trunc,
     )
 
+
 @pytest.fixture
 def mask():
     return np.array([0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0])
@@ -127,48 +134,50 @@ def test_dilate_right_3(mask):
 
 @pytest.fixture
 def empty_strb():
-    return SubtrajectoryReplayBuffer(buffer_size=10, horizon=3)
+    return SubtrajectoryReplayBuffer(buffer_size=10, horizon=3, mrq_mode=False)
+
 
 @pytest.fixture
 def strb_for_masking(empty_strb):
     buf = empty_strb
     for i in range(4):
-        add(buf, obs=i, next_obs=i+1, term=False, trunc=False)
+        add(buf, obs=i, next_obs=i + 1, term=False, trunc=False)
     return buf
+
 
 @pytest.fixture
 def full_strb(empty_strb):
     buf = empty_strb
     for i in range(10):
-        add(buf, obs=i, next_obs=i+1, term=False, trunc=False)
+        add(buf, obs=i, next_obs=i + 1, term=False, trunc=False)
     return buf
 
 
 def test_subtrajectory_replay_buffer_no_end(strb_for_masking):
     buf = strb_for_masking
     add(buf, obs=4, next_obs=5, term=False, trunc=False)
-    assert (buf.current_len == 5)
+    assert buf.current_len == 5
     assert (buf.mask_ == jnp.array([1, 1, 1, 0, 0, 0, 0, 0, 0, 0])).all()
 
 
 def test_subtrajectory_replay_buffer_termination(strb_for_masking):
     buf = strb_for_masking
     add(buf, obs=4, next_obs=5, term=True, trunc=False)
-    assert (buf.current_len == 5)
+    assert buf.current_len == 5
     assert (buf.mask_ == jnp.array([1, 1, 1, 0, 0, 0, 0, 0, 0, 0])).all()
 
 
 def test_subtrajectory_replay_buffer_truncation(strb_for_masking):
     buf = strb_for_masking
     add(buf, obs=4, next_obs=5, term=False, trunc=True)
-    assert (buf.current_len == 5)
+    assert buf.current_len == 5
     assert (buf.mask_ == jnp.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0])).all()
 
 
 def test_subtrajectory_replay_buffer_has_horizon_as_min_episode_len():
-    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3)
+    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3, mrq_mode=False)
     for i in range(3):
-        add(buf, obs=i, next_obs=i+1, term=False, trunc=False)
+        add(buf, obs=i, next_obs=i + 1, term=False, trunc=False)
     assert buf.mask_.any()
     # ensure subtrajectories can be generated from a minimum-length episode
     # otherwise an error will be thrown from inside sample_batch
@@ -181,13 +190,13 @@ def test_subtrajectory_replay_buffer_has_horizon_as_min_episode_len():
 
 
 def test_subtrajectory_replay_buffer_respects_episode_boundaries_on_termination():
-    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3)
-    for i in range(4): # all non-negative
-        add(buf, obs=i, next_obs=i+1, term=False, trunc=False)
-    add(buf, obs=4, next_obs=5, term=True, trunc=False) # still non-negative
+    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3, mrq_mode=False)
+    for i in range(4):  # all non-negative
+        add(buf, obs=i, next_obs=i + 1, term=False, trunc=False)
+    add(buf, obs=4, next_obs=5, term=True, trunc=False)  # still non-negative
 
-    for i in range(-4, 0): # next episode, all negative
-        add(buf, obs=i, next_obs=i-1, term=False, trunc=False)
+    for i in range(-4, 0):  # next episode, all negative
+        add(buf, obs=i, next_obs=i - 1, term=False, trunc=False)
 
     obs_subseqs, *_ = buf.sample_batch(
         batch_size=100,
@@ -199,7 +208,9 @@ def test_subtrajectory_replay_buffer_respects_episode_boundaries_on_termination(
         assert (obs_subseq >= 0).all() or (obs_subseq <= 0).all()
 
 
-def test_subtrajectory_replay_buffer_termination_transitions_are_always_last_without_next_ep(strb_for_masking):
+def test_subtrajectory_replay_buffer_termination_transitions_are_always_last_without_next_ep(
+    strb_for_masking,
+):
     buf = strb_for_masking
     # add termination transition as the last transition
     add(buf, obs=4, next_obs=5, term=True, trunc=False)
@@ -210,10 +221,12 @@ def test_subtrajectory_replay_buffer_termination_transitions_are_always_last_wit
         include_intermediate=True,
         rng=np.random.default_rng(0),
     )
-    assert not terminated[:,:-1].any() and terminated[:,-1].any()
+    assert not terminated[:, :-1].any() and terminated[:, -1].any()
 
 
-def test_subtrajectory_replay_buffer_termination_transitions_are_always_last_with_next_ep(strb_for_masking):
+def test_subtrajectory_replay_buffer_termination_transitions_are_always_last_with_next_ep(
+    strb_for_masking,
+):
     buf = strb_for_masking
     # add termination transition before the next episode
     add(buf, obs=4, next_obs=5, term=True, trunc=False)
@@ -226,10 +239,12 @@ def test_subtrajectory_replay_buffer_termination_transitions_are_always_last_wit
         include_intermediate=True,
         rng=np.random.default_rng(0),
     )
-    assert not terminated[:,:-1].any() and terminated[:,-1].any()
+    assert not terminated[:, :-1].any() and terminated[:, -1].any()
 
 
-def test_subtrajectory_replay_buffer_may_not_produce_truncation_transitions_without_next_ep(strb_for_masking):
+def test_subtrajectory_replay_buffer_may_not_produce_truncation_transitions_without_next_ep(
+    strb_for_masking,
+):
     buf = strb_for_masking
     # add truncation transition as the last transition
     add(buf, obs=4, next_obs=5, term=False, trunc=True)
@@ -243,7 +258,9 @@ def test_subtrajectory_replay_buffer_may_not_produce_truncation_transitions_with
     assert not truncated.any()
 
 
-def test_subtrajectory_replay_buffer_may_not_produce_truncation_transitions_with_next_ep(strb_for_masking):
+def test_subtrajectory_replay_buffer_may_not_produce_truncation_transitions_with_next_ep(
+    strb_for_masking,
+):
     buf = strb_for_masking
     # add truncation transition before the next episode
     add(buf, obs=4, next_obs=5, term=False, trunc=True)
@@ -258,40 +275,42 @@ def test_subtrajectory_replay_buffer_may_not_produce_truncation_transitions_with
     )
     assert not truncated.any()
 
+
 # From here: Same tests as before, just on an already full buffer
 # (as far as they apply here). They are arranged so that generally
 # the most interesting index for each test respectively (i.e., newest
 # transition, termination, truncation, ...) is at buffer index 0.
 
+
 def test_subtrajectory_replay_buffer_full_no_end(full_strb):
     buf = full_strb
     add(buf, obs=10, next_obs=11, term=False, trunc=False)
-    assert (buf.current_len == 10)
+    assert buf.current_len == 10
     assert (buf.mask_ == jnp.array([0, 1, 1, 1, 1, 1, 1, 1, 1, 0])).all()
 
 
 def test_subtrajectory_replay_buffer_full_termination(full_strb):
     buf = full_strb
     add(buf, obs=10, next_obs=11, term=True, trunc=False)
-    assert (buf.current_len == 10)
+    assert buf.current_len == 10
     assert (buf.mask_ == jnp.array([0, 1, 1, 1, 1, 1, 1, 1, 1, 0])).all()
 
 
 def test_subtrajectory_replay_buffer_full_truncation(full_strb):
     buf = full_strb
     add(buf, obs=10, next_obs=11, term=False, trunc=True)
-    assert (buf.current_len == 10)
+    assert buf.current_len == 10
     assert (buf.mask_ == jnp.array([0, 1, 1, 1, 1, 1, 1, 1, 0, 0])).all()
 
 
 def test_subtrajectory_replay_buffer_full_respects_episode_boundaries_on_termination():
-    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3)
-    for i in range(10): # all non-negative
-        add(buf, obs=i, next_obs=i+1, term=False, trunc=False)
-    add(buf, obs=10, next_obs=11, term=True, trunc=False) # still non-negative
+    buf = SubtrajectoryReplayBuffer(buffer_size=10, horizon=3, mrq_mode=False)
+    for i in range(10):  # all non-negative
+        add(buf, obs=i, next_obs=i + 1, term=False, trunc=False)
+    add(buf, obs=10, next_obs=11, term=True, trunc=False)  # still non-negative
 
-    for i in range(-4, 0): # next episode, all negative
-        add(buf, obs=i, next_obs=i-1, term=False, trunc=False)
+    for i in range(-4, 0):  # next episode, all negative
+        add(buf, obs=i, next_obs=i - 1, term=False, trunc=False)
 
     obs_subseqs, *_ = buf.sample_batch(
         batch_size=100,
@@ -303,7 +322,9 @@ def test_subtrajectory_replay_buffer_full_respects_episode_boundaries_on_termina
         assert (obs_subseq >= 0).all() or (obs_subseq <= 0).all()
 
 
-def test_subtrajectory_replay_buffer_full_termination_transitions_are_always_last_without_next_ep(full_strb):
+def test_subtrajectory_replay_buffer_full_termination_transitions_are_always_last_without_next_ep(
+    full_strb,
+):
     buf = full_strb
     # add termination transition as the last transition
     add(buf, obs=10, next_obs=11, term=True, trunc=False)
@@ -314,10 +335,12 @@ def test_subtrajectory_replay_buffer_full_termination_transitions_are_always_las
         include_intermediate=True,
         rng=np.random.default_rng(0),
     )
-    assert not terminated[:,:-1].any() and terminated[:,-1].any()
+    assert not terminated[:, :-1].any() and terminated[:, -1].any()
 
 
-def test_subtrajectory_replay_buffer_full_termination_transitions_are_always_last_with_next_ep(full_strb):
+def test_subtrajectory_replay_buffer_full_termination_transitions_are_always_last_with_next_ep(
+    full_strb,
+):
     buf = full_strb
     # add termination transition before the next episode
     add(buf, obs=10, next_obs=11, term=True, trunc=False)
@@ -330,10 +353,12 @@ def test_subtrajectory_replay_buffer_full_termination_transitions_are_always_las
         include_intermediate=True,
         rng=np.random.default_rng(0),
     )
-    assert not terminated[:,:-1].any() and terminated[:,-1].any()
+    assert not terminated[:, :-1].any() and terminated[:, -1].any()
 
 
-def test_subtrajectory_replay_buffer_full_may_not_produce_truncation_transitions_without_next_ep(full_strb):
+def test_subtrajectory_replay_buffer_full_may_not_produce_truncation_transitions_without_next_ep(
+    full_strb,
+):
     buf = full_strb
     # add truncation transition as the last transition
     add(buf, obs=10, next_obs=11, term=False, trunc=True)
@@ -347,7 +372,9 @@ def test_subtrajectory_replay_buffer_full_may_not_produce_truncation_transitions
     assert not truncated.any()
 
 
-def test_subtrajectory_replay_buffer_full_may_not_produce_truncation_transitions_with_next_ep(full_strb):
+def test_subtrajectory_replay_buffer_full_may_not_produce_truncation_transitions_with_next_ep(
+    full_strb,
+):
     buf = full_strb
     # add truncation transition before the next episode
     add(buf, obs=10, next_obs=11, term=False, trunc=True)
