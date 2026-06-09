@@ -49,7 +49,11 @@ dev = [
     "isort",
     "pytest-cov",
 ]
-logging = ["aim", "orbax-checkpoint"]
+logging = [
+    "aim",
+    "orbax-checkpoint",
+    "mlflow",
+]
 examples = ["gymnasium[classic-control,toy-text,mujoco]", "matplotlib"]
 doc = [
     "sphinx",
