@@ -4,6 +4,7 @@ import contextlib
 import os
 import pprint
 import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -15,6 +16,13 @@ try:
     import aim
 except ImportError:
     aim = None
+try:
+    import mlflow
+
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    mlflow = None  # type: ignore[assignment]
+    MLFLOW_AVAILABLE = False
 
 
 class LoggerBase(abc.ABC):
@@ -860,6 +868,154 @@ class AIMLogger(LoggerBase):
         with contextlib.suppress(TypeError):
             value = float(value)
         self.run.track(value=value, name=key, step=s, epoch=episode)
+
+
+class MLFlowLogger(LoggerBase):
+    """Use MLFlow to log experiment statistics.
+
+    Parameters
+    ----------
+    db_dir : str, optional
+        Directory in which we store the database.
+
+        .. warning::
+
+            This directory will be created if it does not exist.
+
+    experiment : str, optional
+        Name of the group where the runs will be saved.
+
+    params : dict, optional
+        Hyperparameters of the experiment.
+
+    run_name : str, optional
+        Name of the run in MLFlow.
+
+    system_tracking : bool, optional
+        If true, system metrics will be tracked. Needs extra dependencies, see: https://mlflow.org/docs/latest/ml/tracking/system-metrics/
+    """
+
+    def __init__(
+        self,
+        db_dir: str | Path = "mlruns",
+        experiment: str = "training",
+        params: dict | None = None,
+        run_name: str = "first",
+        system_tracking=False,
+    ):
+        db = Path(db_dir).resolve() / "mlflow.db"
+        self.tracking_uri = f"sqlite:///{db}"
+        self.experiment = experiment
+        self.params = params or {}
+        self.run_name = run_name
+        self._run = None
+        self.n_steps = 0
+        self._n_episodes = 0
+        self.system_metrics = system_tracking
+        self._start()
+
+    @property
+    def n_episodes(self) -> int:
+        return self._n_episodes
+
+    def _start(self) -> None:
+        if not MLFLOW_AVAILABLE:
+            raise ImportError(
+                "mlflow is required for MLflowLogger. Install it with: pip install mlflow"
+            )
+        mlflow.set_tracking_uri(self.tracking_uri)
+        mlflow.set_experiment(self.experiment)
+        self._run = mlflow.start_run(
+            run_name=self.run_name, log_system_metrics=self.system_metrics
+        )
+        if self.params:
+            mlflow.log_params(self.params)
+        atexit.register(self._finish)
+
+    def _finish(self) -> None:
+        if self._run is not None and MLFLOW_AVAILABLE:
+            mlflow.end_run()  # type: ignore[union-attr]
+            self._run = None
+
+    def record_stat(
+        self,
+        key: str,
+        value: Any,
+        episode: int | None = None,
+        step: int | None = None,
+        t: float | None = None,
+        verbose: int | None = None,
+        format_str: str = "{0:.3f}",
+    ):
+        """Record statistics.
+
+        Parameters
+        ----------
+        key : str
+            The name of the statistic.
+
+        value : Any
+            Value that should be recorded.
+
+        episode : int, optional
+            Episode which we record the statistic.
+
+        step : int, optional
+            Step at which we record the statistic.
+
+        t : float, optional
+            Wallclock time, measured with time.time().
+
+        verbose : int, optional
+            Overwrite verbosity level.
+
+        format_str : str, optional
+            Format string for stdout logging.
+        """
+        if step is None:
+            step = self.n_steps
+        mlflow.log_metric(key, value, step)
+
+    def define_experiment(
+        self,
+        env_name: str | None = None,
+        algorithm_name: str | None = None,
+        hparams: dict | None = None,
+    ):
+        """Define the experiment.
+
+        Parameters
+        ----------
+        env_name : str, optional
+            The name of the gym environment.
+
+        algorithm_name : str, optional
+            The name of the reinforcement learning algorithm.
+
+        hparams : dict, optional
+            Hyperparameters of the experiment.
+        """
+        if env_name:
+            mlflow.set_experiment_tag("env_name", env_name)
+        if algorithm_name:
+            mlflow.set_experiment_tag("algorithm", algorithm_name)
+        if hparams:
+            mlflow.log_params(hparams)
+
+    def stop_episode(self, total_steps: int):
+        """Register end of episode.
+
+        Parameters
+        ----------
+        total_steps : int
+            Total number of steps in the episode that just terminated.
+        """
+        self.n_steps += total_steps
+        self.record_stat("episode_length", total_steps)
+
+    def start_new_episode(self):
+        """Register start of new episode."""
+        self._n_episodes += 1
 
 
 class LoggerList(LoggerBase):
