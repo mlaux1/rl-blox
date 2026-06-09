@@ -897,10 +897,10 @@ class MLFlowLogger(LoggerBase):
 
     def __init__(
         self,
-        db_dir: str | Path = "mlruns",
+        db_dir: str | Path = ".",
         experiment: str = "training",
         params: dict | None = None,
-        run_name: str = "first",
+        run_name: str = "run_name",
         system_tracking=False,
     ):
         db = Path(db_dir).resolve() / "mlflow.db"
