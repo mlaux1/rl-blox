@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
-from rl_blox.logging.logger import AIMLogger
+from rl_blox.logging.logger import MLFlowLogger
 
 env_name = "Pendulum-v1"
 env = gym.make(env_name)
@@ -26,10 +26,10 @@ hparams_algorithm = dict(
 
 if verbose:
     print(
-        "This example uses the AIM logger. You will not see any output on "
-        "stdout. Run 'aim up' to analyze the progress."
+        "This example uses the MLFlow logger. You will not see any output on "
+        "stdout. Run 'mlfow server' to analyze the progress."
     )
-logger = AIMLogger()
+logger = MLFlowLogger()
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="MR.Q",
