@@ -167,3 +167,6 @@ cython_debug/
 
 # Ignore aim outputs
 **/.aim/
+
+# Ignore mlflow .db files
+*.db
