@@ -34,7 +34,7 @@ dependencies = [
     "tfp-nightly[jax]",
     "chex",
     "tqdm",
-    "flax<0.12",
+    "flax>0.10",
 ]
 
 readme = { file = "README.md", content-type = "text/markdown" }
