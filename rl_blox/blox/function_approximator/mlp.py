@@ -33,7 +33,7 @@ class MLP(nnx.Module):
     activation: Callable[[jnp.ndarray], jnp.ndarray]
     """Activation function."""
 
-    hidden_layers: list[nnx.Linear]
+    hidden_layers: nnx.List
     """Hidden layers."""
 
     output_layer: nnx.Linear
@@ -53,11 +53,12 @@ class MLP(nnx.Module):
         self.n_outputs = n_outputs
         self.activation = getattr(nnx, activation)
 
-        self.hidden_layers = []
+        hidden_layers = []
         n_in = n_features
         for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
             n_in = n_out
+        self.hidden_layers = nnx.List(hidden_layers)
 
         self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
 
