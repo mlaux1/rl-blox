@@ -8,7 +8,7 @@ from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
-from rl_blox.algorithm.uniform_task_sampling import train_uts
+from rl_blox.algorithm.t3s_sampling import train_t3s
 from rl_blox.blox.replay_buffer import ReplayBuffer
 from rl_blox.logging.checkpointer import OrbaxCheckpointer
 from rl_blox.logging.logger import AIMLogger, LoggerList
@@ -38,7 +38,7 @@ hparams_algorithm = dict(
 logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name=f"UTS-{backbone_algorithm}",
+    algorithm_name=f"T3S-{backbone_algorithm}",
     hparams=hparams_models | hparams_algorithm,
 )
 
@@ -84,7 +84,7 @@ match backbone_algorithm:
         )
 
 
-uts_result = train_uts(
+uts_result = train_t3s(
     train_set,
     train_st,
     **hparams_algorithm,

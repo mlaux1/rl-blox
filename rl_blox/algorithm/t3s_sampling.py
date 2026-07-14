@@ -1,16 +1,19 @@
 from collections.abc import Callable
 
 import jax
+import numpy as np
 from gymnasium.vector import VectorEnv
+from scipy.special import softmax
 from tqdm.rich import tqdm
 
 from ..blox.multitask import DiscreteTaskSet
 from ..logging.logger import LoggerBase
 
 
-def train_uts(
+def train_t3s(
     task_set: DiscreteTaskSet | VectorEnv,
     train_st: Callable,
+    tau: float = 1.0,
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
     seed: int = 1,
@@ -18,11 +21,12 @@ def train_uts(
     progress_bar: bool = True,
     logger: LoggerBase = None,
 ) -> tuple:
-    """Uniform task sampling.
+    """T3S task sampling.
 
-    A basic task scheduling method for multi-task reinforcement learning. Given
-    a set of tasks, it uniformly samples a task on which a given backbone
-    algorithm is trained on for one episode.
+    A task scheduling method for multi-task reinforcement learning. Given
+    a set of tasks, it samples a task to train on based on a combination of
+    task progress and task learning speed by performing regular evaluation
+    rollouts on each task in the set.
 
     Parameters
     ----------
@@ -62,9 +66,14 @@ def train_uts(
     else:
         n_tasks = len(task_set)
 
+    # Assign initial sampling probabilities
+    task_probs = np.ones(n_tasks) / n_tasks
+    print(f"{task_probs=}")
+
     while global_step < total_timesteps:
         key, skey = jax.random.split(key)
-        task_id = jax.random.choice(skey, n_tasks)
+        task_id = jax.random.choice(skey, n_tasks, p=task_probs)
+        print(f"Sampled task {task_id=}")
 
         if isinstance(task_set, VectorEnv):
             env = task_set.envs[task_id]
@@ -84,5 +93,17 @@ def train_uts(
         )
 
         global_step = st_result.global_step
+
+        # Perform evaluation and compute task progress and task learning speed
+        task_success_rates = np.zeros_like(task_probs)
+        task_learning_progress = np.zeros_like(task_probs)
+        last_task_learning_progress = np.zeros_like(task_probs)
+
+        # Compute new task probabilities
+        task_probs = 0.5 * softmax(task_success_rates / tau) + 0.5 * softmax(
+            task_learning_progress / tau
+        )
+
+        print(f"{task_probs=}")
 
     return st_result

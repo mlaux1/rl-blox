@@ -103,7 +103,7 @@ readme = {file = ["README.md"]}
 
 [tool.black]
 line-length = 80
-target-version = ["py311", "py312", "py313", "py314"]
+target-version = ["py311", "py312", "py313"]
 include = '''
 /(
       rl_blox
