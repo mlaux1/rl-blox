@@ -65,8 +65,9 @@ def sac_actor_loss(
     actor_loss : array, shape ()
         Loss value.
     """
-    actions = policy.sample(observations, action_key)
-    log_prob = policy.log_probability(observations, actions)
+    # actions = policy.sample(observations, action_key)
+    # log_prob = policy.log_probability(observations, actions)
+    actions, log_prob = policy.sample_and_log_prob(observations, action_key)
     obs_act = jnp.concatenate((observations, actions), axis=-1)
     q_value = q(obs_act).squeeze()
     actor_loss = (alpha * log_prob - q_value).mean()
@@ -116,8 +117,9 @@ def sac_exploration_loss(
     loss : array, shape ()
         Loss value.
     """
-    actions = policy.sample(observations, action_key)
-    log_prob = policy.log_probability(observations, actions)
+    # actions = policy.sample(observations, action_key)
+    # log_prob = policy.log_probability(observations, actions)
+    actions, log_prob = policy.sample_and_log_prob(observations, action_key)
     return (-alpha() * (log_prob + target_entropy)).mean()
 
 
@@ -485,7 +487,7 @@ def train_sac(
 
     @nnx.jit
     def _sample_action(policy, obs, action_key):
-        return policy.sample(obs, action_key)
+        return policy.sample_and_log_prob(obs, action_key)[0]
 
     env.observation_space.dtype = np.float32
     if replay_buffer is None:

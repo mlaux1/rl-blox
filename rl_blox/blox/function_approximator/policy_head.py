@@ -187,6 +187,23 @@ class GaussianTanhPolicy(StochasticPolicyBase):
             action
         )
 
+    def sample_and_log_prob(self, observation: jnp.ndarray, key: jnp.ndarray):
+        mean, log_var = self.net(observation)
+        log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
+        std = jnp.exp(log_std)
+
+        eps = jax.random.normal(key, mean.shape)
+        u = mean + std * eps
+        tanh_u = nnx.tanh(u)
+        action = tanh_u * self.action_scale.value + self.action_bias.value
+
+        log_prob = dist.Normal(mean, std).log_prob(u).sum(-1)
+        log_prob -= jnp.sum(
+            jnp.log(self.action_scale.value * (1 - tanh_u**2) + 1e-6), axis=-1
+        )
+
+        return action, log_prob
+
     def entropy(self, observations: jnp.ndarray) -> jnp.ndarray:
         """Compute entropy of policy for given observation."""
         mean, std = self(observations)

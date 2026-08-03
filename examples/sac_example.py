@@ -1,4 +1,5 @@
 import gymnasium as gym
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -64,11 +65,17 @@ policy, _, q, _, _, _, _, _ = sac_result
 # Evaluation
 env = gym.make(env_name, render_mode="human")
 env = gym.wrappers.RecordEpisodeStatistics(env)
+key = jax.random.key(0)
 while True:
     done = False
     obs, _ = env.reset()
     while not done:
         action = np.asarray(policy(jnp.asarray(obs))[0])
+        print(f"{action=}")
+        sampled_action = np.asarray(
+            policy.sample_and_log_prob(jnp.asarray(obs), key)[0]
+        )
+        print(f"{sampled_action=}")
         next_obs, reward, termination, truncation, info = env.step(action)
         done = termination or truncation
         obs = np.asarray(next_obs)
