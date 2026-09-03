@@ -14,10 +14,13 @@ def train_t3s(
     task_set: DiscreteTaskSet | VectorEnv,
     train_st: Callable,
     tau: float = 1.0,
+    learning_speed_weight: float = 0.5,
+    progress_weight: float = 0.5,
+    n_eval_episodes: int = 10,
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
     seed: int = 1,
-    exploring_starts: int = 1_000,
+    exploring_starts: int = 2_000,
     progress_bar: bool = True,
     logger: LoggerBase = None,
 ) -> tuple:
@@ -58,6 +61,7 @@ def train_t3s(
 
     """
     global_step = 0
+    eval_freq = 1
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
 
@@ -69,6 +73,7 @@ def train_t3s(
     # Assign initial sampling probabilities
     task_probs = np.ones(n_tasks) / n_tasks
     print(f"{task_probs=}")
+    previous_task_performance = None
 
     while global_step < total_timesteps:
         key, skey = jax.random.split(key)
@@ -94,16 +99,49 @@ def train_t3s(
 
         global_step = st_result.global_step
 
-        # Perform evaluation and compute task progress and task learning speed
-        task_success_rates = np.zeros_like(task_probs)
-        task_learning_progress = np.zeros_like(task_probs)
-        last_task_learning_progress = np.zeros_like(task_probs)
+        if global_step % eval_freq == 0:
+            # Perform evaluation and compute task progress and task learning speed
+            task_performance = np.zeros_like(task_probs)
 
-        # Compute new task probabilities
-        task_probs = 0.5 * softmax(task_success_rates / tau) + 0.5 * softmax(
-            task_learning_progress / tau
-        )
+            for i in range(n_tasks):
+                if isinstance(task_set, VectorEnv):
+                    env = task_set.envs[i]
+                else:
+                    env = task_set.get_task(i)
 
-        print(f"{task_probs=}")
+                for _ in range(n_eval_episodes):
+                    obs, _ = env.reset()
+                    success = False
+                    done = False
+                    while not done:
+                        action = st_result.policy(obs)[1]
+                        obs, reward, terminated, truncated, info = env.step(
+                            action
+                        )
+                        success |= info["success"] == 1.0
+                        done = terminated or truncated
+                    task_performance[i] += float(success) / n_eval_episodes
+
+            # Compute new task probabilities
+            task_progress = 1.0 - task_performance
+
+            if previous_task_performance is None:
+                task_learning_speed = np.zeros(n_tasks)
+            else:
+                task_learning_speed = -(
+                    task_performance - previous_task_performance
+                )
+
+            print(
+                f"{task_performance=},{
+                    task_progress=},{task_learning_speed=}"
+            )
+
+            task_probs = progress_weight * softmax(
+                task_progress / tau
+            ) + learning_speed_weight * softmax(task_learning_speed / tau)
+
+            print(f"{task_probs=}")
+            previous_task_performance = task_performance.copy()
 
     return st_result

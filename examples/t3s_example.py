@@ -30,9 +30,9 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=10_000,
+    total_timesteps=100_000,
     exploring_starts=5_000,
-    episodes_per_task=3,
+    episodes_per_task=1,
 )
 
 logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
