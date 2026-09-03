@@ -20,18 +20,24 @@ seed = 42
 verbose = 1
 backbone_algorithm = "SAC"
 
-train_set = gym.make_vec(env_name, vector_strategy="sync", seed=seed)
+train_set = gym.make_vec(
+    env_name,
+    vector_strategy="sync",
+    seed=seed,
+    use_one_hot=True,
+    terminate_on_success=True,
+)
 
 hparams_models = dict(
-    q_hidden_nodes=[512, 512],
+    q_hidden_nodes=[256, 256],
     q_learning_rate=3e-4,
-    policy_learning_rate=1e-3,
-    policy_hidden_nodes=[128, 128],
+    policy_learning_rate=3e-4,
+    policy_hidden_nodes=[256, 256],
     seed=seed,
 )
 hparams_algorithm = dict(
     total_timesteps=100_000,
-    exploring_starts=5_000,
+    exploring_starts=1_000,
     episodes_per_task=1,
 )
 
@@ -49,8 +55,8 @@ match backbone_algorithm:
         sac_state = create_sac_state(env, **hparams_models)
 
         q_target = nnx.clone(sac_state.q)
-        replay_buffer = ReplayBuffer(buffer_size=100_000)
-        entropy_control = EntropyControl(env, 0.2, True, 1e-3)
+        replay_buffer = ReplayBuffer(buffer_size=1_000_000)
+        entropy_control = EntropyControl(env, 0.2, True, 3e-4)
 
         train_st = partial(
             train_sac,
@@ -61,6 +67,7 @@ match backbone_algorithm:
             q_optimizer=sac_state.q_optimizer,
             entropy_control=entropy_control,
             replay_buffer=replay_buffer,
+            batch_size=1280,
         )
     case "DDPG":
         state = create_ddpg_state(env, seed=seed)
@@ -84,19 +91,24 @@ match backbone_algorithm:
         )
 
 
-uts_result = train_t3s(
+t3s_result = train_t3s(
     train_set,
     train_st,
     **hparams_algorithm,
     logger=logger,
 )
 
-policy = uts_result.policy
+policy = t3s_result.policy
 
-test_set = gym.make_vec(env_name)
+test_set = gym.make_vec(
+    env_name, terminate_on_success=True, seed=42, use_one_hot=True
+)
 
+
+task_success_rates = []
 
 for i in range(len(test_set.envs)):
+    successes = []
     for ep in range(5):
         env = test_set.envs[i]
         ep_return = 0.0
@@ -113,4 +125,8 @@ for i in range(len(test_set.envs)):
             success |= info["success"] == 1.0
             done = termination or truncation
             obs = np.asarray(next_obs)
-        print(f"Episode terminated in with {ep_return=}, {success=}")
+        successes.append(success)
+    task_success_rates.append(np.mean(successes))
+
+print(f"Per task: {task_success_rates}")
+print(f"MT10 mean: {np.mean(task_success_rates)}")
