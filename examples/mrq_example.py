@@ -68,5 +68,4 @@ while True:
             zs = result.policy_with_encoder.encoder.encode_zs(obs)
             zsa = result.policy_with_encoder.encoder.encode_zsa(zs, action)
             q_value = result.q(zsa)
-            print(f"{q_value=}")
         obs = np.asarray(next_obs)
