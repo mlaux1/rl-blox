@@ -78,7 +78,7 @@ def train_t3s(
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
 
-    if isinstance(task_set, VectorEnv):
+    if isinstance(task_set, SyncVectorEnv):
         n_tasks = task_set.num_envs
     else:
         n_tasks = len(task_set)
@@ -117,7 +117,7 @@ def train_t3s(
             task_performance = np.zeros_like(task_probs)
 
             for i in range(n_tasks):
-                if isinstance(task_set, VectorEnv):
+                if isinstance(task_set, SyncVectorEnv):
                     env = task_set.envs[i]
                 else:
                     env = task_set.get_task(i)
