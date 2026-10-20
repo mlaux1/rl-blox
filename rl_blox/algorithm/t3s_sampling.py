@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 import jax
 import numpy as np
-from gymnasium.vector import VectorEnv
+from gymnasium.vector import SyncVectorEnv
 from scipy.special import softmax
 from tqdm.rich import tqdm
 
@@ -11,7 +11,7 @@ from ..logging.logger import LoggerBase
 
 
 def train_t3s(
-    task_set: DiscreteTaskSet | VectorEnv,
+    task_set: DiscreteTaskSet | SyncVectorEnv,
     train_st: Callable,
     tau: float = 1.0,
     learning_speed_weight: float = 0.5,
@@ -19,6 +19,7 @@ def train_t3s(
     n_eval_episodes: int = 10,
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
+    eval_freq: int = 25_000,
     seed: int = 1,
     exploring_starts: int = 2_000,
     progress_bar: bool = True,
@@ -34,7 +35,7 @@ def train_t3s(
     Parameters
     ----------
 
-    task_set : DiscreteTaskSet
+    task_set : DiscreteTaskSet | SyncVectorEnv
         The set of tasks available for training.
 
     train_st : Callable
@@ -60,6 +61,7 @@ def train_t3s(
         Experiment logger.
 
     """
+    assert total_timesteps > 0
 
     if tau <= 0:
         raise ValueError("tau must be > 0")
@@ -72,7 +74,6 @@ def train_t3s(
 
     global_step = 0
     eval_step = 0
-    eval_freq = 10_000
     next_eval_step = eval_freq
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
@@ -92,7 +93,7 @@ def train_t3s(
         task_id = int(jax.random.choice(skey, n_tasks, p=task_probs))
         print(f"Sampled task {task_id=}")
 
-        if isinstance(task_set, VectorEnv):
+        if isinstance(task_set, SyncVectorEnv):
             env = task_set.envs[task_id]
         else:
             env = task_set.get_task(task_id)
@@ -111,7 +112,7 @@ def train_t3s(
 
         global_step = st_result.global_step
 
-        if global_step >= next_eval_step:
+        if global_step + eval_step >= next_eval_step:
             # Perform evaluation and compute task progress and task learning speed
             task_performance = np.zeros_like(task_probs)
 
@@ -130,6 +131,8 @@ def train_t3s(
                     while not done:
                         action = st_result.policy(obs)[0]
                         eval_step += 1
+                        global_step += 1
+                        progress.update()
                         obs, reward, terminated, truncated, info = env.step(
                             action
                         )
@@ -150,8 +153,8 @@ def train_t3s(
                 )
 
             print(
-                f"{task_performance=},{
-                    task_progress_metric=},{task_learning_speed_metric=}"
+                f"{task_performance=},{task_progress_metric=},{
+                    task_learning_speed_metric=}"
             )
 
             task_probs = progress_weight * softmax(
@@ -163,6 +166,6 @@ def train_t3s(
             print(f"{task_probs=}")
             previous_task_performance = task_performance.copy()
 
-            next_eval_step += eval_freq
+            next_eval_step = eval_freq + global_step
 
     return st_result
