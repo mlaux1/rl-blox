@@ -247,6 +247,16 @@ def create_sac_state(
     )(policy, policy_optimizer, q, q_optimizer)
 
 
+@nnx.jit
+def _sample_action(policy, obs, action_key):
+    return policy.sample_and_log_prob(obs, action_key)[0]
+
+
+_sac_train_step = nnx.jit(
+    partial(train_step_with_loss, sac_loss), static_argnames=("gamma",)
+)
+
+
 def train_sac(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: StochasticPolicyBase,
@@ -485,16 +495,9 @@ def train_sac(
             env, alpha, autotune, entropy_learning_rate
         )
 
-    @nnx.jit
-    def _sample_action(policy, obs, action_key):
-        return policy.sample_and_log_prob(obs, action_key)[0]
-
     env.observation_space.dtype = np.float32
     if replay_buffer is None:
         replay_buffer = ReplayBuffer(buffer_size)
-
-    train_step = partial(train_step_with_loss, sac_loss)
-    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     episode_idx = 0
     if logger is not None:
@@ -538,7 +541,7 @@ def train_sac(
             batch = replay_buffer.sample_batch(batch_size, rng)
 
             key, action_key = jax.random.split(key)
-            q_loss_value, q_mean = train_step(
+            q_loss_value, q_mean = _sac_train_step(
                 q_optimizer,
                 q,
                 q_target,
@@ -586,6 +589,9 @@ def train_sac(
                 for k, v in updated_modules.items():
                     logger.record_epoch(k, v, step=step)
 
+        progress.update()
+        step += 1
+
         if termination or truncation:
             if logger is not None:
                 logger.record_stat("return", accumulated_reward, step=step)
@@ -603,9 +609,6 @@ def train_sac(
 
         else:
             obs = next_obs
-
-        progress.update()
-        step += 1
 
     return namedtuple(
         "SACResult",
