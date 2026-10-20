@@ -2,6 +2,7 @@ from collections.abc import Callable
 
 import jax
 import numpy as np
+from flax import nnx
 from gymnasium.vector import SyncVectorEnv
 from scipy.special import softmax
 from tqdm.rich import tqdm
@@ -10,8 +11,15 @@ from ..blox.multitask import DiscreteTaskSet
 from ..logging.logger import LoggerBase
 
 
+@nnx.jit
+def act(policy, observation):
+    out = policy(observation)
+    return out[0] if isinstance(out, tuple) else out
+
+
 def train_t3s(
     task_set: DiscreteTaskSet | SyncVectorEnv,
+    eval_set: DiscreteTaskSet | SyncVectorEnv,
     train_st: Callable,
     tau: float = 1.0,
     learning_speed_weight: float = 0.5,
@@ -85,13 +93,20 @@ def train_t3s(
 
     # Assign initial sampling probabilities
     task_probs = np.ones(n_tasks) / n_tasks
-    print(f"{task_probs=}")
     previous_task_performance = None
 
-    while global_step + eval_step < total_timesteps:
+    if logger is not None:
+        for i in range(n_tasks):
+            logger.record_stat(
+                f"task_probability_{i}",
+                task_probs[i],
+                step=global_step,
+            )
+
+    while global_step < total_timesteps:
         key, skey = jax.random.split(key)
         task_id = int(jax.random.choice(skey, n_tasks, p=task_probs))
-        print(f"Sampled task {task_id=}")
+        logger.record_stat("task_id", task_id, step=global_step)
 
         if isinstance(task_set, SyncVectorEnv):
             env = task_set.envs[task_id]
@@ -112,15 +127,15 @@ def train_t3s(
 
         global_step = st_result.global_step
 
-        if global_step + eval_step >= next_eval_step:
+        if global_step >= next_eval_step and global_step < total_timesteps:
             # Perform evaluation and compute task progress and task learning speed
             task_performance = np.zeros_like(task_probs)
 
             for i in range(n_tasks):
-                if isinstance(task_set, SyncVectorEnv):
-                    env = task_set.envs[i]
+                if isinstance(eval_set, SyncVectorEnv):
+                    env = eval_set.envs[i]
                 else:
-                    env = task_set.get_task(i)
+                    env = eval_set.get_task(i)
 
                 n_successes = 0
 
@@ -129,7 +144,7 @@ def train_t3s(
                     success = False
                     done = False
                     while not done:
-                        action = st_result.policy(obs)[0]
+                        action = np.asarray(act(st_result.policy, obs))
                         eval_step += 1
                         global_step += 1
                         progress.update()
@@ -151,19 +166,35 @@ def train_t3s(
                 task_learning_speed_metric = -(
                     task_performance - previous_task_performance
                 )
-
-            print(
-                f"{task_performance=},{task_progress_metric=},{
-                    task_learning_speed_metric=}"
-            )
-
             task_probs = progress_weight * softmax(
                 task_progress_metric / tau
             ) + learning_speed_weight * softmax(
                 task_learning_speed_metric / tau
             )
 
-            print(f"{task_probs=}")
+            if logger is not None:
+                for i in range(n_tasks):
+                    logger.record_stat(
+                        f"task_performance_{i}",
+                        task_performance[i],
+                        step=global_step,
+                    )
+                    logger.record_stat(
+                        f"task_progress_{i}",
+                        task_progress_metric[i],
+                        step=global_step,
+                    )
+                    logger.record_stat(
+                        f"task_learning_speed_{i}",
+                        task_learning_speed_metric[i],
+                        step=global_step,
+                    )
+                    logger.record_stat(
+                        f"task_probability_{i}",
+                        task_probs[i],
+                        step=global_step,
+                    )
+
             previous_task_performance = task_performance.copy()
 
             next_eval_step = eval_freq + global_step

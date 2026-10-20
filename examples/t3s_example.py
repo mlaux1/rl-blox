@@ -27,6 +27,13 @@ train_set = gym.make_vec(
     use_one_hot=True,
     terminate_on_success=True,
 )
+eval_set = gym.make_vec(
+    env_name,
+    vector_strategy="sync",
+    seed=seed,
+    use_one_hot=True,
+    terminate_on_success=True,
+)
 
 hparams_models = dict(
     q_hidden_nodes=[256, 256],
@@ -68,6 +75,7 @@ match backbone_algorithm:
             entropy_control=entropy_control,
             replay_buffer=replay_buffer,
             batch_size=1280,
+            n_eval_episodes=3,
         )
     case "DDPG":
         state = create_ddpg_state(env, seed=seed)
@@ -93,6 +101,7 @@ match backbone_algorithm:
 
 t3s_result = train_t3s(
     train_set,
+    eval_set,
     train_st,
     **hparams_algorithm,
     logger=logger,
