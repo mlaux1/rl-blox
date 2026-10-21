@@ -17,6 +17,13 @@ def act(policy, observation):
     return out[0] if isinstance(out, tuple) else out
 
 
+def _get_env(task_set, i):
+    if isinstance(task_set, SyncVectorEnv):
+        return task_set.envs[i]
+    else:
+        return task_set.get_task(i)
+
+
 def train_t3s(
     task_set: DiscreteTaskSet | SyncVectorEnv,
     eval_set: DiscreteTaskSet | SyncVectorEnv,
@@ -27,6 +34,8 @@ def train_t3s(
     n_eval_episodes: int = 10,
     total_timesteps: int = 100_000,
     episodes_per_task: int = 1,
+    tasks_per_iteration: int = 3,
+    sample_tasks_with_replacement: bool = False,
     eval_freq: int = 25_000,
     seed: int = 1,
     exploring_starts: int = 2_000,
@@ -88,8 +97,17 @@ def train_t3s(
 
     if isinstance(task_set, SyncVectorEnv):
         n_tasks = task_set.num_envs
+        assert eval_set.num_envs == n_tasks
     else:
         n_tasks = len(task_set)
+        assert len(eval_set) == n_tasks
+
+    if tasks_per_iteration < 1:
+        raise ValueError("tasks_per_iteration must be positive")
+    if not sample_tasks_with_replacement and tasks_per_iteration > n_tasks:
+        raise ValueError(
+            "tasks_per_iteration cannot exceed number of tasks whan sampling without replacement"
+        )
 
     # Assign initial sampling probabilities
     task_probs = np.ones(n_tasks) / n_tasks
@@ -105,38 +123,46 @@ def train_t3s(
 
     while global_step < total_timesteps:
         key, skey = jax.random.split(key)
-        task_id = int(jax.random.choice(skey, n_tasks, p=task_probs))
-        logger.record_stat("task_id", task_id, step=global_step)
-
-        if isinstance(task_set, SyncVectorEnv):
-            env = task_set.envs[task_id]
-        else:
-            env = task_set.get_task(task_id)
-
-        st_result = train_st(
-            env,
-            seed=seed + global_step,
-            total_timesteps=total_timesteps,
-            total_episodes=episodes_per_task,
-            learning_starts=exploring_starts,
-            progress_bar=progress_bar,
-            logger=logger,
-            global_step=global_step,
-            bar=progress,
+        task_ids = np.asarray(
+            jax.random.choice(
+                skey,
+                n_tasks,
+                shape=(tasks_per_iteration,),
+                replace=sample_tasks_with_replacement,
+                p=task_probs,
+            )
         )
 
-        global_step = st_result.global_step
+        for task_id in task_ids:
+            if global_step >= total_timesteps:
+                break
+            task_id = int(task_id)
+            if logger is not None:
+                logger.record_stat("task_id", task_id, step=global_step)
 
-        if global_step >= next_eval_step and global_step < total_timesteps:
+            st_result = train_st(
+                _get_env(task_set, task_id),
+                seed=seed + global_step,
+                total_timesteps=total_timesteps,
+                total_episodes=episodes_per_task,
+                learning_starts=exploring_starts,
+                progress_bar=progress_bar,
+                logger=logger,
+                global_step=global_step,
+                bar=progress,
+            )
+
+            global_step = st_result.global_step
+
+        if (
+            global_step >= next_eval_step
+            and global_step + n_tasks * n_eval_episodes < total_timesteps
+        ):
             # Perform evaluation and compute task progress and task learning speed
             task_performance = np.zeros_like(task_probs)
 
             for i in range(n_tasks):
-                if isinstance(eval_set, SyncVectorEnv):
-                    env = eval_set.envs[i]
-                else:
-                    env = eval_set.get_task(i)
-
+                env = _get_env(eval_set, i)
                 n_successes = 0
 
                 for _ in range(n_eval_episodes):
@@ -148,9 +174,7 @@ def train_t3s(
                         eval_step += 1
                         global_step += 1
                         progress.update()
-                        obs, reward, terminated, truncated, info = env.step(
-                            action
-                        )
+                        obs, _, terminated, truncated, info = env.step(action)
                         success |= bool(info["success"])
                         done = terminated or truncated
                     n_successes += int(success)
@@ -198,5 +222,7 @@ def train_t3s(
             previous_task_performance = task_performance.copy()
 
             next_eval_step = eval_freq + global_step
+
+    progress.close()
 
     return st_result
