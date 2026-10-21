@@ -1,14 +1,13 @@
 from functools import partial
 
 import gymnasium as gym
-import jax.numpy as jnp
 import metaworld
 import numpy as np
 from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
-from rl_blox.algorithm.t3s_sampling import train_t3s
+from rl_blox.algorithm.t3s_sampling import act, train_t3s
 from rl_blox.blox.replay_buffer import ReplayBuffer
 from rl_blox.logging.checkpointer import OrbaxCheckpointer
 from rl_blox.logging.logger import AIMLogger, LoggerList
@@ -32,7 +31,7 @@ eval_set = gym.make_vec(
     vector_strategy="sync",
     seed=seed,
     use_one_hot=True,
-    terminate_on_success=True,
+    terminate_on_success=False,
 )
 
 hparams_models = dict(
@@ -43,9 +42,15 @@ hparams_models = dict(
     seed=seed,
 )
 hparams_algorithm = dict(
-    total_timesteps=100_000,
-    exploring_starts=1_000,
+    total_timesteps=1_000_000,
+    exploring_starts=1_280,
     episodes_per_task=1,
+    n_eval_episodes=3,
+    eval_freq=50_000,
+    tau=1.0,
+    learning_speed_weight=0.5,
+    progress_weight=0.5,
+    tasks_per_iteration=3,
 )
 
 logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
@@ -54,6 +59,8 @@ logger.define_experiment(
     algorithm_name=f"T3S-{backbone_algorithm}",
     hparams=hparams_models | hparams_algorithm,
 )
+logger.define_checkpoint_frequency("policy", 250_000)
+logger.define_checkpoint_frequency("q", 250_000)
 
 env = train_set.envs[0]
 
@@ -75,7 +82,6 @@ match backbone_algorithm:
             entropy_control=entropy_control,
             replay_buffer=replay_buffer,
             batch_size=1280,
-            n_eval_episodes=3,
         )
     case "DDPG":
         state = create_ddpg_state(env, seed=seed)
@@ -109,28 +115,20 @@ t3s_result = train_t3s(
 
 policy = t3s_result.policy
 
-test_set = gym.make_vec(
-    env_name, terminate_on_success=True, seed=42, use_one_hot=True
-)
-
 
 task_success_rates = []
 
-for i in range(len(test_set.envs)):
+for i in range(len(eval_set.envs)):
     successes = []
     for ep in range(5):
-        env = test_set.envs[i]
+        env = eval_set.envs[i]
         ep_return = 0.0
         done = False
         obs, _ = env.reset()
         success = False
         while not done:
-            if backbone_algorithm == "SAC":
-                action = np.asarray(policy(jnp.asarray(obs))[0])
-            else:
-                action = np.asarray(policy(jnp.asarray(obs)))
+            action = np.asarray(act(policy, obs))
             next_obs, reward, termination, truncation, info = env.step(action)
-            ep_return += reward
             success |= info["success"] == 1.0
             done = termination or truncation
             obs = np.asarray(next_obs)
@@ -138,4 +136,4 @@ for i in range(len(test_set.envs)):
     task_success_rates.append(np.mean(successes))
 
 print(f"Per task: {task_success_rates}")
-print(f"MT10 mean: {np.mean(task_success_rates)}")
+print(f"MT10 mean training set performance: {np.mean(task_success_rates)}")
