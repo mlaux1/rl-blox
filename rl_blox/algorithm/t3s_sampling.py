@@ -37,11 +37,68 @@ def _max_episode_steps(env):
     return None
 
 
+EvalEpisode = namedtuple("EvalEpisode", ["task_id", "rewards", "infos"])
+"""Evaluation episode passed to the ``episode_score`` function of T3S."""
+
+
+def success(episode: EvalEpisode) -> float:
+    """Score an episode by success.
+
+    Returns 1 if ``info["success"]`` was set at any step of the episode,
+    otherwise 0.
+    """
+    try:
+        return float(any(info["success"] for info in episode.infos))
+    except KeyError:
+        raise KeyError(
+            "The evaluation environment does not report info['success']. "
+            "Pass another episode_score, e.g., "
+            "partial(normalized_return, low=..., high=...)."
+        ) from None
+
+
+def normalized_return(
+    episode: EvalEpisode,
+    low: float | np.ndarray,
+    high: float | np.ndarray,
+) -> float:
+    """Score an episode by its return, scaled from [low, high] to [0, 1].
+
+    Bind the bounds before passing it to T3S, e.g.,
+    ``episode_score=partial(normalized_return, low=-1600.0, high=0.0)``.
+
+    Parameters
+    ----------
+    episode : EvalEpisode
+        Evaluation episode.
+
+    low : float or array, shape (n_tasks,)
+        Return that corresponds to a score of 0, per task if an array.
+
+    high : float or array, shape (n_tasks,)
+        Return that corresponds to a score of 1, per task if an array.
+
+    Returns
+    -------
+    score : float
+        Clipped, normalized return.
+    """
+    if np.ndim(low) > 0:
+        low = low[episode.task_id]
+    if np.ndim(high) > 0:
+        high = high[episode.task_id]
+    if high <= low:
+        raise ValueError("high must be greater than low")
+
+    ret = np.sum(episode.rewards)
+    return float(np.clip((ret - low) / (high - low), 0.0, 1.0))
+
+
 def train_t3s(
     task_set: DiscreteTaskSet | SyncVectorEnv,
     eval_set: DiscreteTaskSet | SyncVectorEnv,
     train_st: Callable,
-    tau: float = 1.0,
+    tau: float = 0.5,
     learning_speed_weight: float = 0.5,
     progress_weight: float = 0.5,
     n_eval_episodes: int = 10,
@@ -51,6 +108,7 @@ def train_t3s(
     sample_tasks_with_replacement: bool = False,
     eval_freq: int = 25_000,
     max_eval_episode_steps: int | None = None,
+    episode_score: Callable[[EvalEpisode], float] = success,
     seed: int = 1,
     exploring_starts: int = 2_000,
     progress_bar: bool = True,
@@ -83,6 +141,12 @@ def train_t3s(
         would exceed ``total_timesteps``. If not set, it is inferred from the
         ``TimeLimit`` wrapper or spec of the evaluation environments. If it
         cannot be inferred, evaluations may exceed ``total_timesteps``.
+
+    episode_score : callable, optional (default: success)
+        Maps an :class:`EvalEpisode` to a score in [0, 1]. The performance of
+        a task is the mean score of its evaluation episodes. Use
+        :func:`success` for environments that report ``info["success"]`` or
+        :func:`normalized_return` with bound ``low`` and ``high`` otherwise.
 
     seed : int
         The random seed.
@@ -216,23 +280,36 @@ def train_t3s(
 
             for i in range(n_tasks):
                 env = _get_env(eval_set, i)
-                n_successes = 0
+                scores = []
 
                 for _ in range(n_eval_episodes):
                     obs, _ = env.reset()
-                    success = False
+                    rewards = []
+                    infos = []
                     done = False
                     while not done:
                         action = np.asarray(act(st_result.policy, obs))
                         eval_steps += 1
                         global_step += 1
                         progress.update()
-                        obs, _, terminated, truncated, info = env.step(action)
-                        success |= bool(info["success"])
+                        obs, reward, terminated, truncated, info = env.step(
+                            action
+                        )
+                        rewards.append(reward)
+                        infos.append(info)
                         done = terminated or truncated
-                    n_successes += int(success)
 
-                task_performance[i] = n_successes / n_eval_episodes
+                    score = episode_score(
+                        EvalEpisode(i, np.asarray(rewards), infos)
+                    )
+                    if not 0.0 <= score <= 1.0:
+                        raise ValueError(
+                            f"episode_score must return a value in [0, 1], "
+                            f"got {score} for task {i}"
+                        )
+                    scores.append(score)
+
+                task_performance[i] = np.mean(scores)
 
             # Compute new task probabilities
             task_progress_metric = 1.0 - task_performance
@@ -240,6 +317,8 @@ def train_t3s(
             if previous_task_performance is None:
                 task_learning_speed_metric = np.zeros(n_tasks)
             else:
+                # Negative change in performance as in the T3S paper: tasks
+                # whose performance dropped get more weight
                 task_learning_speed_metric = -(
                     task_performance - previous_task_performance
                 )
