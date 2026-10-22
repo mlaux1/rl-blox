@@ -11,7 +11,7 @@ from gymnasium.wrappers import TimeLimit
 from scipy.special import softmax
 from tqdm.rich import tqdm
 
-from ..blox.multitask import DiscreteTaskSet
+from ..blox.multitask import DiscreteTaskSet, warn_if_state_not_bound
 from ..logging.logger import LoggerBase
 
 
@@ -262,6 +262,10 @@ def train_t3s(
         If the episode length of the evaluation environments cannot be
         inferred and ``max_eval_episode_steps`` is not set.
 
+    UserWarning
+        If the backbone's replay buffer, target networks, or entropy control
+        are not bound to ``train_st``.
+
     Notes
     -----
     After each evaluation, the performance :math:`p_i \in [0, 1]` of each task
@@ -296,6 +300,7 @@ def train_t3s(
     * ``task_probability_{i}`` - sampling probability of task i
     """
     assert total_timesteps > 0
+    warn_if_state_not_bound(train_st)
 
     if tau <= 0:
         raise ValueError("tau must be > 0")
