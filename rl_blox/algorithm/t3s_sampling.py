@@ -1,9 +1,11 @@
+import warnings
 from collections.abc import Callable
 
 import jax
 import numpy as np
 from flax import nnx
 from gymnasium.vector import SyncVectorEnv
+from gymnasium.wrappers import TimeLimit
 from scipy.special import softmax
 from tqdm.rich import tqdm
 
@@ -24,6 +26,16 @@ def _get_env(task_set, i):
         return task_set.get_task(i)
 
 
+def _max_episode_steps(env):
+    while env is not None:
+        if isinstance(env, TimeLimit):
+            return env._max_episode_steps
+        if env.spec is not None and env.spec.max_episode_steps is not None:
+            return env.spec.max_episode_steps
+        env = getattr(env, "env", None)
+    return None
+
+
 def train_t3s(
     task_set: DiscreteTaskSet | SyncVectorEnv,
     eval_set: DiscreteTaskSet | SyncVectorEnv,
@@ -37,6 +49,7 @@ def train_t3s(
     tasks_per_iteration: int = 3,
     sample_tasks_with_replacement: bool = False,
     eval_freq: int = 25_000,
+    max_eval_episode_steps: int | None = None,
     seed: int = 1,
     exploring_starts: int = 2_000,
     progress_bar: bool = True,
@@ -63,6 +76,12 @@ def train_t3s(
 
     episodes_per_task : int
         The number of episodes to train the policy on the scheduled task for.
+
+    max_eval_episode_steps : int, optional
+        Maximum length of an evaluation episode. Used to skip evaluations that
+        would exceed ``total_timesteps``. If not set, it is inferred from the
+        ``TimeLimit`` wrapper or spec of the evaluation environments. If it
+        cannot be inferred, evaluations may exceed ``total_timesteps``.
 
     seed : int
         The random seed.
@@ -108,6 +127,24 @@ def train_t3s(
         raise ValueError(
             "tasks_per_iteration cannot exceed number of tasks whan sampling without replacement"
         )
+
+    # Upper bound on the number of steps a full evaluation can take
+    if max_eval_episode_steps is not None:
+        episode_limits = [max_eval_episode_steps] * n_tasks
+    else:
+        episode_limits = [
+            _max_episode_steps(_get_env(eval_set, i)) for i in range(n_tasks)
+        ]
+    if None in episode_limits:
+        warnings.warn(
+            "Could not infer the episode length of all evaluation "
+            "environments, evaluations may exceed total_timesteps. Set "
+            "max_eval_episode_steps to avoid this.",
+            stacklevel=2,
+        )
+        max_eval_steps = 0
+    else:
+        max_eval_steps = n_eval_episodes * sum(episode_limits)
 
     # Assign initial sampling probabilities
     task_probs = np.ones(n_tasks) / n_tasks
@@ -156,7 +193,7 @@ def train_t3s(
 
         if (
             global_step >= next_eval_step
-            and global_step + n_tasks * n_eval_episodes < total_timesteps
+            and global_step + max_eval_steps <= total_timesteps
         ):
             # Perform evaluation and compute task progress and task learning speed
             task_performance = np.zeros_like(task_probs)
