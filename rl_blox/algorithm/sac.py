@@ -13,10 +13,7 @@ from tqdm.rich import tqdm, trange
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
 from ..blox.function_approximator.mlp import MLP
-from ..blox.function_approximator.policy_head import (
-    GaussianTanhPolicy,
-    StochasticPolicyBase,
-)
+from ..blox.function_approximator.policy_head import GaussianTanhPolicy
 from ..blox.losses import sac_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
@@ -25,7 +22,7 @@ from .dqn import train_step_with_loss
 
 
 def sac_actor_loss(
-    policy: StochasticPolicyBase,
+    policy: GaussianTanhPolicy,
     q: ContinuousClippedDoubleQNet,
     alpha: float,
     action_key: jnp.ndarray,
@@ -45,7 +42,7 @@ def sac_actor_loss(
 
     Parameters
     ----------
-    policy : StochasticPolicyBase
+    policy : GaussianTanhPolicy
         Policy.
 
     q : ContinuousClippedDoubleQNet
@@ -65,8 +62,6 @@ def sac_actor_loss(
     actor_loss : array, shape ()
         Loss value.
     """
-    # actions = policy.sample(observations, action_key)
-    # log_prob = policy.log_probability(observations, actions)
     actions, log_prob = policy.sample_and_log_prob(observations, action_key)
     obs_act = jnp.concatenate((observations, actions), axis=-1)
     q_value = q(obs_act).squeeze()
@@ -87,7 +82,7 @@ class EntropyCoefficient(nnx.Module):
 
 
 def sac_exploration_loss(
-    policy: StochasticPolicyBase,
+    policy: GaussianTanhPolicy,
     target_entropy: float,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
@@ -97,7 +92,7 @@ def sac_exploration_loss(
 
     Parameters
     ----------
-    policy : StochasticPolicyBase
+    policy : GaussianTanhPolicy
         Policy.
 
     target_entropy : float
@@ -117,8 +112,6 @@ def sac_exploration_loss(
     loss : array, shape ()
         Loss value.
     """
-    # actions = policy.sample(observations, action_key)
-    # log_prob = policy.log_probability(observations, actions)
     actions, log_prob = policy.sample_and_log_prob(observations, action_key)
     return (-alpha() * (log_prob + target_entropy)).mean()
 
@@ -259,7 +252,7 @@ _sac_train_step = nnx.jit(
 
 def train_sac(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    policy: StochasticPolicyBase,
+    policy: GaussianTanhPolicy,
     policy_optimizer: nnx.Optimizer,
     q: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
@@ -321,8 +314,8 @@ def train_sac(
     env : gymnasium.Env
         Gymnasium environment.
 
-    policy : StochasticPolicyBase
-        Stochastic policy.
+    policy : GaussianTanhPolicy
+        Gaussian policy with tanh scaling.
 
     policy_optimizer : nnx.Optimizer
         Optimizer for policy.
@@ -636,7 +629,7 @@ def train_sac(
 
 @nnx.jit
 def sac_update_actor(
-    policy: nnx.Module,
+    policy: GaussianTanhPolicy,
     policy_optimizer: nnx.Optimizer,
     q: ContinuousClippedDoubleQNet,
     action_key: jnp.ndarray,
@@ -650,7 +643,7 @@ def sac_update_actor(
 
     Parameters
     ----------
-    policy : StochasticPolicyBase
+    policy : GaussianTanhPolicy
         Policy.
 
     policy_optimizer : nnx.Optimizer
