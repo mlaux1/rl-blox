@@ -2,10 +2,12 @@ from functools import partial
 
 import gymnasium as gym
 import numpy as np
+from flax import nnx
 
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
 from rl_blox.algorithm.uniform_task_sampling import train_uts
 from rl_blox.blox.multitask import DiscreteTaskSet
+from rl_blox.blox.replay_buffer import ReplayBuffer
 
 
 def test_uts():
@@ -46,8 +48,10 @@ def test_uts():
         policy=state.policy,
         policy_optimizer=state.policy_optimizer,
         q=state.q,
+        q_target=nnx.clone(state.q),
         q_optimizer=state.q_optimizer,
         entropy_control=entropy_control,
+        replay_buffer=ReplayBuffer(buffer_size=100),
     )
 
     _ = train_uts(
