@@ -1,4 +1,5 @@
 import warnings
+from collections import namedtuple
 from collections.abc import Callable
 
 import jax
@@ -96,6 +97,18 @@ def train_t3s(
     logger : Logger
         Experiment logger.
 
+    Returns
+    -------
+    result : namedtuple
+        The result of the last call to ``train_st``, extended by the fields
+        ``train_steps`` and ``eval_steps``. Both training and evaluation steps
+        count towards ``total_timesteps``, hence ``global_step`` is their sum.
+
+    Logging
+    -------
+    * ``train_steps`` - number of environment steps used for training
+    * ``eval_steps`` - number of environment steps used for evaluation
+
     """
     assert total_timesteps > 0
 
@@ -108,8 +121,10 @@ def train_t3s(
     ):
         raise ValueError("metric weights must sum up to 1")
 
+    # global_step counts both training and evaluation steps
     global_step = 0
-    eval_step = 0
+    train_steps = 0
+    eval_steps = 0
     next_eval_step = eval_freq
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
@@ -189,6 +204,7 @@ def train_t3s(
                 bar=progress,
             )
 
+            train_steps += st_result.global_step - global_step
             global_step = st_result.global_step
 
         if (
@@ -208,7 +224,7 @@ def train_t3s(
                     done = False
                     while not done:
                         action = np.asarray(act(st_result.policy, obs))
-                        eval_step += 1
+                        eval_steps += 1
                         global_step += 1
                         progress.update()
                         obs, _, terminated, truncated, info = env.step(action)
@@ -234,6 +250,8 @@ def train_t3s(
             )
 
             if logger is not None:
+                logger.record_stat("train_steps", train_steps, step=global_step)
+                logger.record_stat("eval_steps", eval_steps, step=global_step)
                 for i in range(n_tasks):
                     logger.record_stat(
                         f"task_performance_{i}",
@@ -262,4 +280,13 @@ def train_t3s(
 
     progress.close()
 
-    return st_result
+    if logger is not None:
+        logger.record_stat("train_steps", train_steps, step=global_step)
+        logger.record_stat("eval_steps", eval_steps, step=global_step)
+
+    T3SResult = namedtuple(
+        "T3SResult", st_result._fields + ("train_steps", "eval_steps")
+    )
+    return T3SResult(
+        *st_result._replace(global_step=global_step), train_steps, eval_steps
+    )
