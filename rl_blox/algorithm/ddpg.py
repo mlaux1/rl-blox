@@ -9,7 +9,7 @@ import jax.random
 import numpy as np
 import optax
 from flax import nnx
-from tqdm.rich import trange
+from tqdm.rich import tqdm, trange
 
 from ..blox.function_approximator.mlp import MLP
 from ..blox.function_approximator.policy_head import DeterministicTanhPolicy
@@ -206,6 +206,7 @@ def train_ddpg(
     logger: LoggerBase | None = None,
     global_step: int = 0,
     progress_bar: bool = True,
+    bar: tqdm = None,
 ) -> tuple[
     nnx.Module,
     nnx.Module,
@@ -214,6 +215,7 @@ def train_ddpg(
     nnx.Module,
     nnx.Optimizer,
     ReplayBuffer,
+    int,
 ]:
     r"""Deep Deterministic Policy Gradients (DDPG).
 
@@ -291,6 +293,9 @@ def train_ddpg(
 
     progress_bar : bool, optional
         Flag to enable/disable the tqdm progressbar.
+
+    bar : tqdm, optional
+        The progress bar to be used
 
     Returns
     -------
@@ -402,10 +407,17 @@ def train_ddpg(
     if q_target is None:
         q_target = nnx.clone(q)
 
-    for global_step in trange(
-        global_step, total_timesteps, disable=not progress_bar
-    ):
-        if global_step < learning_starts:
+    if bar is None:
+        progress = trange(
+            global_step, total_timesteps, disable=not progress_bar
+        )
+    else:
+        progress = bar
+
+    step = global_step
+
+    while step < total_timesteps:
+        if step < learning_starts:
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
@@ -425,7 +437,7 @@ def train_ddpg(
             termination=termination,
         )
 
-        if global_step >= learning_starts:
+        if step >= learning_starts:
             for _ in range(gradient_steps):
                 batch = replay_buffer.sample_batch(batch_size, rng)
 
@@ -450,7 +462,7 @@ def train_ddpg(
                         "policy loss": actor_loss_value,
                     }
                     for k, v in stats.items():
-                        logger.record_stat(k, v, step=global_step + 1)
+                        logger.record_stat(k, v, step=step + 1)
                     updated_modules = {
                         "q": q,
                         "q_target": q_target,
@@ -458,13 +470,14 @@ def train_ddpg(
                         "policy_target": policy_target,
                     }
                     for k, v in updated_modules.items():
-                        logger.record_epoch(k, v, step=global_step + 1)
+                        logger.record_epoch(k, v, step=step + 1)
+
+        progress.update()
+        step += 1
 
         if termination or truncated:
             if logger is not None:
-                logger.record_stat(
-                    "return", accumulated_reward, step=global_step + 1
-                )
+                logger.record_stat("return", accumulated_reward, step=step)
                 logger.stop_episode(steps_per_episode)
             episode_idx += 1
 
@@ -492,7 +505,7 @@ def train_ddpg(
             "q_target",
             "q_optimizer",
             "replay_buffer",
-            "steps_trained",
+            "global_step",
         ],
     )(
         policy,
@@ -502,5 +515,5 @@ def train_ddpg(
         q_target,
         q_optimizer,
         replay_buffer,
-        global_step + 1,
+        step,
     )
