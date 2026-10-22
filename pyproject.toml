@@ -18,10 +18,10 @@ keywords = ["Reinforcement Learning", "RL", "JAX"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -34,7 +34,7 @@ dependencies = [
     "tfp-nightly[jax]",
     "chex",
     "tqdm",
-    "flax>0.10",
+    "flax>=0.12",
 ]
 
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -54,7 +54,11 @@ logging = [
     "orbax-checkpoint",
     "mlflow",
 ]
-examples = ["gymnasium[classic-control,toy-text,mujoco]", "matplotlib"]
+examples = [
+    "gymnasium[classic-control,toy-text,mujoco]",
+    "matplotlib",
+    "metaworld>=3.0",
+]
 doc = [
     "sphinx",
     "pydata-sphinx-theme",
@@ -127,7 +131,7 @@ line_length = 80
 
 [tool.ruff]
 line-length = 80
-target-version = "py310"
+target-version = "py311"
 include = [
     "rl_blox/**/*.py",
     "examples/**/*.py",
