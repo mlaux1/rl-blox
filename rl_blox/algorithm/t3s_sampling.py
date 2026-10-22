@@ -164,7 +164,7 @@ def train_t3s(
     A task scheduling method for multi-task reinforcement learning. Given
     a set of tasks, it samples a task to train on based on a combination of
     task progress and task learning speed by performing regular evaluation
-    rollouts on each task in the set.
+    rollouts on each task in the set [1]_.
 
     Parameters
     ----------
@@ -230,7 +230,8 @@ def train_t3s(
         :func:`normalized_return` with bound ``low`` and ``high`` otherwise.
 
     seed : int
-        The random seed.
+        The random seed for task sampling, the backbone, and the evaluation
+        environments.
 
     exploring_starts : int
         The number of random exploration steps to be performed at the beginning
@@ -253,8 +254,8 @@ def train_t3s(
     ------
     ValueError
         If ``tau`` is not positive, the metric weights do not sum up to 1,
-        ``tasks_per_iteration`` is invalid, or ``episode_score`` returns a
-        value outside of [0, 1].
+        ``tasks_per_iteration`` or ``n_eval_episodes`` is invalid, or
+        ``episode_score`` returns a value outside of [0, 1].
 
     Warns
     -----
@@ -298,6 +299,14 @@ def train_t3s(
     * ``task_progress_{i}`` - task progress metric of task i
     * ``task_learning_speed_{i}`` - learning speed metric of task i
     * ``task_probability_{i}`` - sampling probability of task i
+
+    References
+    ----------
+    .. [1] Yu, Y., Yang, T., Lv, Y., Zheng, Y., Hao, J. (2023). T3S: Improving
+       Multi-Task Reinforcement Learning with Task-Specific Feature Selector
+       and Scheduler. In 2023 International Joint Conference on Neural
+       Networks (IJCNN), pp. 1-8.
+       https://doi.org/10.1109/IJCNN54540.2023.10191536
     """
     assert total_timesteps > 0
     warn_if_state_not_bound(train_st)
@@ -330,8 +339,15 @@ def train_t3s(
         raise ValueError("tasks_per_iteration must be positive")
     if not sample_tasks_with_replacement and tasks_per_iteration > n_tasks:
         raise ValueError(
-            "tasks_per_iteration cannot exceed number of tasks when sampling without replacement"
+            "tasks_per_iteration cannot exceed number of tasks when sampling "
+            "without replacement"
         )
+    if n_eval_episodes < 1:
+        raise ValueError("n_eval_episodes must be positive")
+
+    # Seed evaluation environments for reproducible evaluations
+    for i in range(n_tasks):
+        _get_env(eval_set, i).reset(seed=seed + i)
 
     # Upper bound on the number of steps a full evaluation can take
     if max_eval_episode_steps is not None:
@@ -402,7 +418,7 @@ def train_t3s(
             global_step >= next_eval_step
             and global_step + max_eval_steps <= total_timesteps
         ):
-            # Perform evaluation and compute task progress and task learning speed
+            # Evaluate and compute task progress and task learning speed
             task_performance = np.zeros_like(task_probs)
 
             for i in range(n_tasks):
