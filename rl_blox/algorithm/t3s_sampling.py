@@ -1,6 +1,7 @@
 import warnings
 from collections import namedtuple
 from collections.abc import Callable
+from typing import NamedTuple
 
 import jax
 import numpy as np
@@ -37,15 +38,44 @@ def _max_episode_steps(env):
     return None
 
 
-EvalEpisode = namedtuple("EvalEpisode", ["task_id", "rewards", "infos"])
-"""Evaluation episode passed to the ``episode_score`` function of T3S."""
+class EvalEpisode(NamedTuple):
+    """Evaluation episode passed to the ``episode_score`` function of T3S.
+
+    Parameters
+    ----------
+    task_id : int
+        Index of the evaluated task.
+
+    rewards : array, shape (n_steps,)
+        Rewards obtained in each step of the episode.
+
+    infos : list of dict
+        Info dictionaries returned by the environment in each step.
+    """
+
+    task_id: int
+    rewards: np.ndarray
+    infos: list[dict]
 
 
 def success(episode: EvalEpisode) -> float:
     """Score an episode by success.
 
-    Returns 1 if ``info["success"]`` was set at any step of the episode,
-    otherwise 0.
+    Parameters
+    ----------
+    episode : EvalEpisode
+        Evaluation episode.
+
+    Returns
+    -------
+    score : float
+        1 if ``info["success"]`` was set at any step of the episode,
+        otherwise 0.
+
+    Raises
+    ------
+    KeyError
+        If the environment does not report ``info["success"]``.
     """
     try:
         return float(any(info["success"] for info in episode.infos))
@@ -64,9 +94,6 @@ def normalized_return(
 ) -> float:
     """Score an episode by its return, scaled from [low, high] to [0, 1].
 
-    Bind the bounds before passing it to T3S, e.g.,
-    ``episode_score=partial(normalized_return, low=-1600.0, high=0.0)``.
-
     Parameters
     ----------
     episode : EvalEpisode
@@ -82,6 +109,24 @@ def normalized_return(
     -------
     score : float
         Clipped, normalized return.
+
+    Raises
+    ------
+    ValueError
+        If ``high`` is not greater than ``low``.
+
+    Notes
+    -----
+    Bind the bounds with :func:`functools.partial` before passing this
+    function as ``episode_score`` to :func:`train_t3s`.
+
+    Examples
+    --------
+    >>> from functools import partial
+    >>> import numpy as np
+    >>> score = partial(normalized_return, low=-1600.0, high=0.0)
+    >>> score(EvalEpisode(task_id=0, rewards=np.full(200, -2.0), infos=[]))
+    0.75
     """
     if np.ndim(low) > 0:
         low = low[episode.task_id]
@@ -114,7 +159,7 @@ def train_t3s(
     progress_bar: bool = True,
     logger: LoggerBase = None,
 ) -> tuple:
-    """T3S task sampling.
+    r"""T3S task sampling.
 
     A task scheduling method for multi-task reinforcement learning. Given
     a set of tasks, it samples a task to train on based on a combination of
@@ -123,18 +168,54 @@ def train_t3s(
 
     Parameters
     ----------
-
     task_set : DiscreteTaskSet | SyncVectorEnv
         The set of tasks available for training.
 
+    eval_set : DiscreteTaskSet | SyncVectorEnv
+        The set of tasks used for evaluation. Must contain the same number of
+        tasks as ``task_set`` in the same order.
+
     train_st : Callable
-        The training step of the backbone algorithm.
+        The training function of the backbone algorithm, e.g., ``train_sac``
+        with the backbone's state bound via ``functools.partial``. It is called
+        once per scheduled task and must accept the keyword arguments
+        ``seed``, ``total_timesteps``, ``total_episodes``, ``learning_starts``,
+        ``progress_bar``, ``logger``, ``global_step``, and ``bar``, and return
+        a namedtuple with the fields ``policy`` and ``global_step``.
+
+    tau : float, optional (default: 0.5)
+        Temperature of the softmax distributions. Smaller values concentrate
+        the sampling on fewer tasks. Must be positive.
+
+    learning_speed_weight : float, optional (default: 0.5)
+        Weight of the learning speed distribution.
+
+    progress_weight : float, optional (default: 0.5)
+        Weight of the task progress distribution. Must sum up to 1 with
+        ``learning_speed_weight``.
+
+    n_eval_episodes : int, optional (default: 10)
+        Number of evaluation episodes per task in each evaluation.
 
     total_timesteps : int
-        The number of total environment steps to train for.
+        The number of total environment steps, including training and
+        evaluation steps.
 
     episodes_per_task : int
         The number of episodes to train the policy on the scheduled task for.
+
+    tasks_per_iteration : int, optional (default: 3)
+        Number of tasks sampled from the current distribution before checking
+        whether an evaluation is due.
+
+    sample_tasks_with_replacement : bool, optional (default: False)
+        Sample the tasks of an iteration with replacement. Without replacement,
+        ``tasks_per_iteration`` must not exceed the number of tasks.
+
+    eval_freq : int, optional (default: 25_000)
+        Number of environment steps between evaluations. Evaluations are only
+        performed between iterations, so the actual interval can be slightly
+        larger.
 
     max_eval_episode_steps : int, optional
         Maximum length of an evaluation episode. Used to skip evaluations that
@@ -155,7 +236,7 @@ def train_t3s(
         The number of random exploration steps to be performed at the beginning
         of training.
 
-    progress_par : bool
+    progress_bar : bool
         Flag to enable/disable the tqdm progress bar.
 
     logger : Logger
@@ -168,11 +249,51 @@ def train_t3s(
         ``train_steps`` and ``eval_steps``. Both training and evaluation steps
         count towards ``total_timesteps``, hence ``global_step`` is their sum.
 
+    Raises
+    ------
+    ValueError
+        If ``tau`` is not positive, the metric weights do not sum up to 1,
+        ``tasks_per_iteration`` is invalid, or ``episode_score`` returns a
+        value outside of [0, 1].
+
+    Warns
+    -----
+    UserWarning
+        If the episode length of the evaluation environments cannot be
+        inferred and ``max_eval_episode_steps`` is not set.
+
+    Notes
+    -----
+    After each evaluation, the performance :math:`p_i \in [0, 1]` of each task
+    :math:`i` is used to update the task sampling probabilities
+
+    .. math::
+
+        P(i) = w_p \operatorname{softmax}\left(\frac{1 - p_i}{\tau}\right)
+        + w_s \operatorname{softmax}\left(
+        \frac{-(p_i - p_i^{\text{prev}})}{\tau}\right),
+
+    where :math:`w_p` (``progress_weight``) and :math:`w_s`
+    (``learning_speed_weight``) weight task progress and learning speed, and
+    :math:`p_i^{\text{prev}}` is the performance at the previous evaluation.
+    Before the first evaluation, tasks are sampled uniformly.
+
+    All tasks are trained with the same backbone state, i.e., the policy,
+    critics, optimizers, replay buffer, and entropy coefficient that are bound
+    to ``train_st``. The backbone's state must be bound explicitly, e.g.,
+    ``partial(train_sac, replay_buffer=..., q_target=..., ...)``. Otherwise,
+    the backbone creates a new replay buffer and new target networks for each
+    scheduled task.
+
     Logging
-    -------
+
+    * ``task_id`` - task scheduled for training
     * ``train_steps`` - number of environment steps used for training
     * ``eval_steps`` - number of environment steps used for evaluation
-
+    * ``task_performance_{i}`` - performance of task i at the last evaluation
+    * ``task_progress_{i}`` - task progress metric of task i
+    * ``task_learning_speed_{i}`` - learning speed metric of task i
+    * ``task_probability_{i}`` - sampling probability of task i
     """
     assert total_timesteps > 0
 
@@ -204,7 +325,7 @@ def train_t3s(
         raise ValueError("tasks_per_iteration must be positive")
     if not sample_tasks_with_replacement and tasks_per_iteration > n_tasks:
         raise ValueError(
-            "tasks_per_iteration cannot exceed number of tasks whan sampling without replacement"
+            "tasks_per_iteration cannot exceed number of tasks when sampling without replacement"
         )
 
     # Upper bound on the number of steps a full evaluation can take
@@ -215,12 +336,13 @@ def train_t3s(
             _max_episode_steps(_get_env(eval_set, i)) for i in range(n_tasks)
         ]
     if None in episode_limits:
-        warnings.warn(
-            "Could not infer the episode length of all evaluation "
-            "environments, evaluations may exceed total_timesteps. Set "
-            "max_eval_episode_steps to avoid this.",
-            stacklevel=2,
-        )
+        if eval_freq < total_timesteps:
+            warnings.warn(
+                "Could not infer the episode length of all evaluation "
+                "environments, evaluations may exceed total_timesteps. Set "
+                "max_eval_episode_steps to avoid this.",
+                stacklevel=2,
+            )
         max_eval_steps = 0
     else:
         max_eval_steps = n_eval_episodes * sum(episode_limits)

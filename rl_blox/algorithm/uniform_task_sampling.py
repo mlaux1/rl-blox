@@ -26,12 +26,13 @@ def train_uts(
 
     Parameters
     ----------
-
     task_set : DiscreteTaskSet
         The set of tasks available for training.
 
     train_st : Callable
-        The training step of the backbone algorithm.
+        The training function of the backbone algorithm, e.g., ``train_sac``
+        with the backbone's state bound via ``functools.partial``. It is called
+        once per scheduled task.
 
     total_timesteps : int
         The number of total environment steps to train for.
@@ -46,12 +47,25 @@ def train_uts(
         The number of random exploration steps to be performed at the beginning
         of training.
 
-    progress_par : bool
+    progress_bar : bool
         Flag to enable/disable the tqdm progress bar.
 
     logger : Logger
         Experiment logger.
 
+    Returns
+    -------
+    result : namedtuple
+        The result of the last call to ``train_st``.
+
+    Notes
+    -----
+    All tasks are trained with the same backbone state, i.e., the policy,
+    critics, optimizers, replay buffer, and entropy coefficient that are bound
+    to ``train_st``. The backbone's state must be bound explicitly, e.g.,
+    ``partial(train_sac, replay_buffer=..., q_target=..., ...)``. Otherwise,
+    the backbone creates a new replay buffer and new target networks for each
+    scheduled task.
     """
     global_step = 0
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
