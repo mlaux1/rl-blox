@@ -1,4 +1,7 @@
+import inspect
+import warnings
 from collections.abc import Callable
+from functools import partial
 
 import gymnasium as gym
 import jax
@@ -26,6 +29,54 @@ class TaskSelectionMixin:
             ID of the task to select, usually an index.
         """
         self.task_id = task_id
+
+
+BACKBONE_STATE = (
+    "replay_buffer",
+    "q_target",
+    "policy_target",
+    "entropy_control",
+)
+"""Arguments of backbone algorithms that are created anew if not passed."""
+
+
+def warn_if_state_not_bound(train_st: Callable) -> None:
+    """Warn if the backbone's state is not bound to its training function.
+
+    Task schedulers call ``train_st`` once per scheduled task. Backbone
+    algorithms create a new replay buffer, new target networks, or a new
+    entropy control if these are not passed, which discards their state
+    whenever a new task is scheduled.
+
+    Parameters
+    ----------
+    train_st : callable
+        Training function of the backbone algorithm. Only instances of
+        :class:`functools.partial` can be checked, other callables are
+        ignored.
+
+    Warns
+    -----
+    UserWarning
+        If an argument from :data:`BACKBONE_STATE` that the backbone accepts
+        is not bound to ``train_st``.
+    """
+    if not isinstance(train_st, partial):
+        return
+
+    accepted = inspect.signature(train_st.func).parameters
+    unbound = [
+        name
+        for name in BACKBONE_STATE
+        if name in accepted and train_st.keywords.get(name) is None
+    ]
+    if unbound:
+        warnings.warn(
+            f"{', '.join(unbound)} not bound to train_st, the backbone will "
+            "create new ones for each scheduled task. Bind them with "
+            "functools.partial to share them across tasks.",
+            stacklevel=3,
+        )
 
 
 class DiscreteTaskSet:
