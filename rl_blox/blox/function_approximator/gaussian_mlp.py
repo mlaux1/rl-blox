@@ -41,10 +41,10 @@ class GaussianMLP(nnx.Module):
     activation: Callable[[jnp.ndarray], jnp.ndarray]
     """Activation function."""
 
-    hidden_layers: list[nnx.Linear]
+    hidden_layers: nnx.List
     """Hidden layers."""
 
-    output_layers: list[nnx.Linear]
+    output_layers: nnx.List
     """Output layers."""
 
     def __init__(
@@ -63,20 +63,20 @@ class GaussianMLP(nnx.Module):
         self.n_outputs = n_outputs
         self.activation = getattr(nnx, activation)
 
-        self.hidden_layers = []
+        hidden_layers = []
         n_in = n_features
         for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
             n_in = n_out
+        self.hidden_layers = nnx.List(hidden_layers)
 
-        self.output_layers = []
+        output_layers = []
         if shared_head:
-            self.output_layers.append(
-                nnx.Linear(n_in, 2 * n_outputs, rngs=rngs)
-            )
+            output_layers.append(nnx.Linear(n_in, 2 * n_outputs, rngs=rngs))
         else:
-            self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
-            self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
+            output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
+            output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
+        self.output_layers = nnx.List(output_layers)
 
     def __call__(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         for layer in self.hidden_layers:

@@ -5,7 +5,10 @@ import optax
 from flax import nnx
 
 from .double_qnet import ContinuousClippedDoubleQNet
-from .function_approximator.policy_head import StochasticPolicyBase
+from .function_approximator.policy_head import (
+    GaussianTanhPolicy,
+    StochasticPolicyBase,
+)
 
 
 def masked_mse_loss(
@@ -491,7 +494,7 @@ def huber_loss(abs_errors: jnp.ndarray, delta: float) -> jnp.ndarray:
 def sac_loss(
     q: ContinuousClippedDoubleQNet,
     q_target: ContinuousClippedDoubleQNet,
-    policy: StochasticPolicyBase,
+    policy: GaussianTanhPolicy,
     action_key: jnp.ndarray,
     alpha: float,
     batch: tuple[
@@ -537,8 +540,9 @@ def sac_loss(
         space.
     q_target : ContinuousClippedDoubleQNet
         Target network for ``q``.
-    policy : StochasticPolicyBase
-        Policy.
+    policy : GaussianTanhPolicy
+        Policy. Next actions and their log probabilities are sampled with
+        ``sample_and_log_prob``, as in the actor update.
     action_key : array
         Random key for action sampling.
     alpha : float
@@ -566,11 +570,8 @@ def sac_loss(
     """
     observation, action, reward, next_observation, terminated = batch
 
-    next_actions = jax.lax.stop_gradient(
-        policy.sample(next_observation, action_key)
-    )
-    next_log_pi = jax.lax.stop_gradient(
-        policy.log_probability(next_observation, next_actions)
+    next_actions, next_log_pi = jax.lax.stop_gradient(
+        policy.sample_and_log_prob(next_observation, action_key)
     )
     next_obs_act = jnp.concatenate((next_observation, next_actions), axis=-1)
     q_next_target = jax.lax.stop_gradient(
@@ -847,6 +848,7 @@ def ddqn_loss(
 
     return optax.squared_error(pred, target).mean(), pred.mean()
 
+
 def ddqn_per_loss(
     q: nnx.Module,
     q_target: nnx.Module,
@@ -858,7 +860,7 @@ def ddqn_per_loss(
 ) -> tuple[float, tuple[float, jnp.ndarray]]:
     r"""Prioritized‑Experience‑Replay (PER) loss.
 
-    This is a weighted MSE loss derived from the DDQN objective, where each 
+    This is a weighted MSE loss derived from the DDQN objective, where each
     TD‑error is scaled by an importance‑sampling weight to correct for bias
     from prioritized sampling.
 
@@ -886,14 +888,14 @@ def ddqn_per_loss(
         observations :math:`o_{i+1}`, termination flags :math:`t_i`.
     gamma : float, default=0.99
         Discount factor :math:`\gamma`.
-    is_ratio : tuple, default=1.0  
+    is_ratio : tuple, default=1.0
         Importance‑sampling weights for the batch.
 
     Returns
     -------
-    loss : float  
-        The mean weighted TD‑error squared over the batch.  
-    metrics : tuple (float, float)  
+    loss : float
+        The mean weighted TD‑error squared over the batch.
+    metrics : tuple (float, float)
         - q_mean : float
             Mean of the predicted action values.
         - td_err_mean: float

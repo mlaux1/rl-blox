@@ -13,10 +13,7 @@ from tqdm.rich import tqdm, trange
 from ..blox.double_qnet import ContinuousClippedDoubleQNet
 from ..blox.function_approximator.gaussian_mlp import GaussianMLP
 from ..blox.function_approximator.mlp import MLP
-from ..blox.function_approximator.policy_head import (
-    GaussianTanhPolicy,
-    StochasticPolicyBase,
-)
+from ..blox.function_approximator.policy_head import GaussianTanhPolicy
 from ..blox.losses import sac_loss
 from ..blox.replay_buffer import ReplayBuffer
 from ..blox.target_net import soft_target_net_update
@@ -25,7 +22,7 @@ from .dqn import train_step_with_loss
 
 
 def sac_actor_loss(
-    policy: StochasticPolicyBase,
+    policy: GaussianTanhPolicy,
     q: ContinuousClippedDoubleQNet,
     alpha: float,
     action_key: jnp.ndarray,
@@ -45,7 +42,7 @@ def sac_actor_loss(
 
     Parameters
     ----------
-    policy : StochasticPolicyBase
+    policy : GaussianTanhPolicy
         Policy.
 
     q : ContinuousClippedDoubleQNet
@@ -65,8 +62,7 @@ def sac_actor_loss(
     actor_loss : array, shape ()
         Loss value.
     """
-    actions = policy.sample(observations, action_key)
-    log_prob = policy.log_probability(observations, actions)
+    actions, log_prob = policy.sample_and_log_prob(observations, action_key)
     obs_act = jnp.concatenate((observations, actions), axis=-1)
     q_value = q(obs_act).squeeze()
     actor_loss = (alpha * log_prob - q_value).mean()
@@ -86,7 +82,7 @@ class EntropyCoefficient(nnx.Module):
 
 
 def sac_exploration_loss(
-    policy: StochasticPolicyBase,
+    policy: GaussianTanhPolicy,
     target_entropy: float,
     action_key: jnp.ndarray,
     observations: jnp.ndarray,
@@ -96,7 +92,7 @@ def sac_exploration_loss(
 
     Parameters
     ----------
-    policy : StochasticPolicyBase
+    policy : GaussianTanhPolicy
         Policy.
 
     target_entropy : float
@@ -116,8 +112,7 @@ def sac_exploration_loss(
     loss : array, shape ()
         Loss value.
     """
-    actions = policy.sample(observations, action_key)
-    log_prob = policy.log_probability(observations, actions)
+    actions, log_prob = policy.sample_and_log_prob(observations, action_key)
     return (-alpha() * (log_prob + target_entropy)).mean()
 
 
@@ -245,9 +240,19 @@ def create_sac_state(
     )(policy, policy_optimizer, q, q_optimizer)
 
 
+@nnx.jit
+def _sample_action(policy, obs, action_key):
+    return policy.sample_and_log_prob(obs, action_key)[0]
+
+
+_sac_train_step = nnx.jit(
+    partial(train_step_with_loss, sac_loss), static_argnames=("gamma",)
+)
+
+
 def train_sac(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
-    policy: StochasticPolicyBase,
+    policy: GaussianTanhPolicy,
     policy_optimizer: nnx.Optimizer,
     q: ContinuousClippedDoubleQNet,
     q_optimizer: nnx.Optimizer,
@@ -309,8 +314,8 @@ def train_sac(
     env : gymnasium.Env
         Gymnasium environment.
 
-    policy : StochasticPolicyBase
-        Stochastic policy.
+    policy : GaussianTanhPolicy
+        Gaussian policy with tanh scaling.
 
     policy_optimizer : nnx.Optimizer
         Optimizer for policy.
@@ -483,16 +488,9 @@ def train_sac(
             env, alpha, autotune, entropy_learning_rate
         )
 
-    @nnx.jit
-    def _sample_action(policy, obs, action_key):
-        return policy.sample(obs, action_key)
-
     env.observation_space.dtype = np.float32
     if replay_buffer is None:
         replay_buffer = ReplayBuffer(buffer_size)
-
-    train_step = partial(train_step_with_loss, sac_loss)
-    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
 
     episode_idx = 0
     if logger is not None:
@@ -536,7 +534,7 @@ def train_sac(
             batch = replay_buffer.sample_batch(batch_size, rng)
 
             key, action_key = jax.random.split(key)
-            q_loss_value, q_mean = train_step(
+            q_loss_value, q_mean = _sac_train_step(
                 q_optimizer,
                 q,
                 q_target,
@@ -584,6 +582,9 @@ def train_sac(
                 for k, v in updated_modules.items():
                     logger.record_epoch(k, v, step=step)
 
+        progress.update()
+        step += 1
+
         if termination or truncation:
             if logger is not None:
                 logger.record_stat("return", accumulated_reward, step=step)
@@ -601,9 +602,6 @@ def train_sac(
 
         else:
             obs = next_obs
-
-        progress.update()
-        step += 1
 
     return namedtuple(
         "SACResult",
@@ -631,7 +629,7 @@ def train_sac(
 
 @nnx.jit
 def sac_update_actor(
-    policy: nnx.Module,
+    policy: GaussianTanhPolicy,
     policy_optimizer: nnx.Optimizer,
     q: ContinuousClippedDoubleQNet,
     action_key: jnp.ndarray,
@@ -645,7 +643,7 @@ def sac_update_actor(
 
     Parameters
     ----------
-    policy : StochasticPolicyBase
+    policy : GaussianTanhPolicy
         Policy.
 
     policy_optimizer : nnx.Optimizer

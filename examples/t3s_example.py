@@ -1,0 +1,139 @@
+from functools import partial
+
+import gymnasium as gym
+import metaworld
+import numpy as np
+from flax import nnx
+
+from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
+from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
+from rl_blox.algorithm.t3s_sampling import act, train_t3s
+from rl_blox.blox.replay_buffer import ReplayBuffer
+from rl_blox.logging.checkpointer import OrbaxCheckpointer
+from rl_blox.logging.logger import AIMLogger, LoggerList
+
+gym.register_envs(metaworld)
+
+env_name = "Meta-World/MT10"
+seed = 42
+verbose = 1
+backbone_algorithm = "SAC"
+
+train_set = gym.make_vec(
+    env_name,
+    vector_strategy="sync",
+    seed=seed,
+    use_one_hot=True,
+    terminate_on_success=True,
+)
+eval_set = gym.make_vec(
+    env_name,
+    vector_strategy="sync",
+    seed=seed,
+    use_one_hot=True,
+    terminate_on_success=False,
+)
+
+hparams_models = dict(
+    q_hidden_nodes=[256, 256],
+    q_learning_rate=3e-4,
+    policy_learning_rate=3e-4,
+    policy_hidden_nodes=[256, 256],
+    seed=seed,
+)
+hparams_algorithm = dict(
+    total_timesteps=1_000_000,
+    exploring_starts=1_280,
+    episodes_per_task=1,
+    n_eval_episodes=3,
+    eval_freq=50_000,
+    tau=0.5,
+    learning_speed_weight=0.5,
+    progress_weight=0.5,
+    tasks_per_iteration=3,
+)
+
+logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
+logger.define_experiment(
+    env_name=env_name,
+    algorithm_name=f"T3S-{backbone_algorithm}",
+    hparams=hparams_models | hparams_algorithm,
+)
+logger.define_checkpoint_frequency("policy", 250_000)
+logger.define_checkpoint_frequency("q", 250_000)
+
+env = train_set.envs[0]
+
+match backbone_algorithm:
+    case "SAC":
+        sac_state = create_sac_state(env, **hparams_models)
+
+        q_target = nnx.clone(sac_state.q)
+        replay_buffer = ReplayBuffer(buffer_size=1_000_000)
+        entropy_control = EntropyControl(env, 0.2, True, 3e-4)
+
+        train_st = partial(
+            train_sac,
+            policy=sac_state.policy,
+            policy_optimizer=sac_state.policy_optimizer,
+            q=sac_state.q,
+            q_target=q_target,
+            q_optimizer=sac_state.q_optimizer,
+            entropy_control=entropy_control,
+            replay_buffer=replay_buffer,
+            batch_size=1280,
+        )
+    case "DDPG":
+        state = create_ddpg_state(env, seed=seed)
+        policy_target = nnx.clone(state.policy)
+        q_target = nnx.clone(state.q)
+        replay_buffer = ReplayBuffer(buffer_size=100_000)
+
+        train_st = partial(
+            train_ddpg,
+            policy=state.policy,
+            policy_target=policy_target,
+            policy_optimizer=state.policy_optimizer,
+            q=state.q,
+            q_optimizer=state.q_optimizer,
+            q_target=q_target,
+            replay_buffer=replay_buffer,
+        )
+    case _:
+        raise ValueError(
+            f"Unsupported backbone algorithm: {backbone_algorithm}"
+        )
+
+
+t3s_result = train_t3s(
+    train_set,
+    eval_set,
+    train_st,
+    **hparams_algorithm,
+    logger=logger,
+)
+
+policy = t3s_result.policy
+
+
+task_success_rates = []
+
+for i in range(len(eval_set.envs)):
+    successes = []
+    for ep in range(5):
+        env = eval_set.envs[i]
+        ep_return = 0.0
+        done = False
+        obs, _ = env.reset()
+        success = False
+        while not done:
+            action = np.asarray(act(policy, obs))
+            next_obs, reward, termination, truncation, info = env.step(action)
+            success |= info["success"] == 1.0
+            done = termination or truncation
+            obs = np.asarray(next_obs)
+        successes.append(success)
+    task_success_rates.append(np.mean(successes))
+
+print(f"Per task: {task_success_rates}")
+print(f"MT10 mean training set performance: {np.mean(task_success_rates)}")

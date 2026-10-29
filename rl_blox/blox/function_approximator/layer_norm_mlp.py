@@ -41,10 +41,10 @@ class LayerNormMLP(nnx.Module):
     activation: Callable[[jnp.ndarray], jnp.ndarray]
     """Activation function."""
 
-    hidden_layers: list[nnx.Linear]
+    hidden_layers: nnx.List
     """Hidden layers."""
 
-    layer_norms: list[nnx.LayerNorm]
+    layer_norms: nnx.List
     """Layer normalization layers for hidden layers."""
 
     output_layer: nnx.Linear
@@ -65,17 +65,17 @@ class LayerNormMLP(nnx.Module):
         self.n_outputs = n_outputs
         self.activation = getattr(nnx, activation)
 
-        self.hidden_layers = []
-        self.layer_norms = []
+        hidden_layers = []
+        layer_norms = []
         n_in = n_features
         for n_out in hidden_nodes:
-            self.hidden_layers.append(
+            hidden_layers.append(
                 nnx.Linear(n_in, n_out, rngs=rngs, kernel_init=kernel_init)
             )
-            self.layer_norms.append(
-                nnx.LayerNorm(num_features=n_out, rngs=rngs)
-            )
+            layer_norms.append(nnx.LayerNorm(num_features=n_out, rngs=rngs))
             n_in = n_out
+        self.layer_norms = nnx.List(layer_norms)
+        self.hidden_layers = nnx.List(hidden_layers)
 
         self.output_layer = nnx.Linear(
             n_in,
