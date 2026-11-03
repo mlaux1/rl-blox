@@ -40,7 +40,7 @@ def train_smt(
 
     Parameters
     ----------
-    task_set
+    task_set : DiscreteTaskSet or VectorEnv
         The multi-task environment definition.
 
     train_st : callable
@@ -71,6 +71,15 @@ def train_smt(
         Total number of timesteps to train the agent in second stage.
         Corresponds to :math:`B_2` in the paper [1]_.
 
+    solved_threshold : float
+        A task is solved once its training performance (see ``n_average``)
+        is at least this value. Corresponds to :math:`M` in the paper [1]_.
+
+    unsolvable_threshold : float
+        When a task has used up its budget, it is unsolvable if its training
+        performance is at most this value. Otherwise, it returns to the main
+        pool. Corresponds to :math:`m` in the paper [1]_.
+
     scheduling_interval : int
         Number of episodes after which the task scheduling is performed.
 
@@ -82,11 +91,14 @@ def train_smt(
         Number of tasks to train in each iteration.
 
     n_average : int
-        Number of tasks to average the performance over when checking if a task
-        is solved or unsolvable.
+        Number of recent training episodes of a task whose mean return is the
+        task's training performance. It is used to check if a task is solved
+        or unsolvable.
 
     learning_starts : int
-        Number of steps to wait before starting training per task.
+        Number of steps at the start of SMT in which the backbone only takes
+        random actions and does not train. ``train_st`` compares it with the
+        global step, so it counts steps over all tasks, not per task.
 
     seed : int
         Seed for random number generation.
@@ -330,7 +342,6 @@ def smt_stage1(
                     updated_training_pool.remove(task_id)
 
             if global_step >= b1:
-                print("break2")
                 break
 
         # The original SMT algorithm would evaluate the performance on each task
