@@ -281,3 +281,32 @@ def test_smt_without_stage2_budget():
     )
 
     assert training_steps.sum() == 100
+
+
+def test_smt_picks_untrained_tasks_at_random():
+    # Each task returns to the main pool after one episode, as its budget
+    # (at most 7 steps) is shorter than an episode (10 steps). So the first
+    # 5 refills pick each of the other, untrained tasks once.
+    def untrained_refill_order(seed):
+        logger = MemoryLogger()
+        train_smt(
+            constant_reward_task_set([0.0] * 6),
+            random_actions_st,
+            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 6),
+            b1=60,
+            b2=10,
+            solved_threshold=np.inf,  # no task is ever solved
+            unsolvable_threshold=-np.inf,  # no task is ever unsolvable
+            kappa=0.1,
+            K=1,
+            seed=seed,
+            logger=logger,
+            progress_bar=False,
+        )
+        _, refilled_tasks = logger.get_stat("worst task", x_key="step")
+        return refilled_tasks[:5].tolist()
+
+    orders = [untrained_refill_order(seed) for seed in range(5)]
+
+    assert all(len(set(order)) == 5 for order in orders)
+    assert any(order != sorted(order) for order in orders)

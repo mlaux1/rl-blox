@@ -356,12 +356,16 @@ def smt_stage1(
                 # else: Continue until training pool is solved or unsolvable.
                 break
 
-            # Select task with the lowest performance (from main pool)
-            main_pool_indices = list(main_pool)
-            worst_index = np.argmin(
-                avg_training_performances[main_pool_indices]
+            # Select task with the lowest performance (from main pool). Ties,
+            # e.g., between tasks that were never trained, are broken at
+            # random, so that untrained tasks are selected in random order.
+            main_pool_indices = np.array(sorted(main_pool))
+            performances = avg_training_performances[main_pool_indices]
+            worst = int(
+                rng.choice(
+                    main_pool_indices[performances == performances.min()]
+                )
             )
-            worst = main_pool_indices[worst_index]
             # Move it to training pool
             updated_training_pool.add(worst)
             main_pool.remove(worst)
