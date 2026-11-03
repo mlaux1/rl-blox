@@ -99,11 +99,11 @@ def test_smt_budget_counts_from_entering_training_pool():
 
     # Each task returns to the main pool once its budget is used up and
     # tasks re-enter the training pool, so the training pool is refilled
-    # whenever a budget of kappa times the remaining total budget (8200
-    # steps at the start) has been used since the task entered it:
-    # 4100 -> 4200, 2000 -> 2000, 1000 -> 1000, 500 -> 600, 200 -> 200.
+    # whenever a budget of kappa times the remaining budget of stage 1
+    # (8000 steps at the start) divided by K = 1 has been used since the
+    # task entered it: 4000, 2000, 1000, 500 -> 600, 200, 100 -> 200.
     refill_steps, _ = logger.get_stat("worst task", x_key="step")
-    assert refill_steps.tolist() == [4200, 6200, 7200, 7800, 8000]
+    assert refill_steps.tolist() == [4000, 6000, 7000, 7600, 7800, 8000]
 
 
 class ConstantRewardEnv(gym.Env):
@@ -143,9 +143,10 @@ def constant_reward_task_set(rewards):
 
 def test_smt_stage2_trains_tasks_left_in_training_pool():
     # Tasks 0 and 1 are solved in their first episode (return 10). Task 2
-    # is never solved (return 0) and never exhausts its budget, so it is
-    # still in the training pool when stage 1 ends, while the main pool and
-    # the unsolvable pool are empty.
+    # is never solved (return 0) and never unsolvable. Whenever it uses up
+    # its budget, it is the only task in the main pool and re-enters the
+    # training pool at once, so it is still in the training pool when
+    # stage 1 ends, while the main pool and the unsolvable pool are empty.
     task_set = constant_reward_task_set([1.0, 1.0, 0.0])
 
     _, training_steps, _ = train_smt(
@@ -212,8 +213,9 @@ def test_smt_stage2_trains_unsolvable_tasks_until_solved():
     def set_episodes_to_solve(env, context):
         env.episodes_to_solve = int(context[0])
 
-    # Task 0 needs 30 episodes, but its budget of 120 steps (12 episodes)
-    # ends in stage 1, so it becomes unsolvable. Task 1 is solved at once.
+    # Task 0 needs 30 episodes, but its budget of at most 20 steps (2
+    # episodes) ends in stage 1, so it becomes unsolvable. Task 1 is solved
+    # at once.
     task_set = DiscreteTaskSet(
         ImprovingRewardEnv(),
         set_episodes_to_solve,
@@ -238,11 +240,11 @@ def test_smt_stage2_trains_unsolvable_tasks_until_solved():
     )
 
     assert training_steps.sum() == 1_200
-    # Stage 1 ends after 13 episodes. Task 0 then trains alone for 20 more
+    # Stage 1 ends after 3 episodes. Task 0 then trains alone for 30 more
     # episodes, until the mean of its last 3 returns reaches 5 (episodes 31
     # and 32 have a return of 10). The rest of the 120 episodes alternate.
-    stage2_tasks = recorder.selected_tasks[13:]
-    assert stage2_tasks == [0] * 20 + [0, 1] * 43 + [0]
+    stage2_tasks = recorder.selected_tasks[3:]
+    assert stage2_tasks == [0] * 30 + [0, 1] * 43 + [0]
 
 
 def test_smt_round_robin_if_all_tasks_solved_in_stage1():
@@ -285,7 +287,7 @@ def test_smt_without_stage2_budget():
 
 def test_smt_picks_untrained_tasks_at_random():
     # Each task returns to the main pool after one episode, as its budget
-    # (at most 7 steps) is shorter than an episode (10 steps). So the first
+    # (at most 6 steps) is shorter than an episode (10 steps). So the first
     # 5 refills pick each of the other, untrained tasks once.
     def untrained_refill_order(seed):
         logger = MemoryLogger()
@@ -310,3 +312,28 @@ def test_smt_picks_untrained_tasks_at_random():
 
     assert all(len(set(order)) == 5 for order in orders)
     assert any(order != sorted(order) for order in orders)
+
+
+def test_smt_budget_shares_stage1_budget_among_training_pool():
+    # Paper settings for MT10, scaled down by 1000. Each task's budget is
+    # kappa * (b1 - used steps) / K, so the 3 initial tasks get
+    # 0.8 * 17000 / 3 = 4533.3 steps. Trained in turns with episodes of
+    # 10 steps, all of them use it up in round 454, at step 3 * 4540.
+    logger = MemoryLogger()
+
+    train_smt(
+        constant_reward_task_set([0.0] * 10),
+        random_actions_st,
+        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 10),
+        b1=17_000,
+        b2=3_000,
+        solved_threshold=np.inf,  # no task is ever solved
+        unsolvable_threshold=-np.inf,  # no task is ever unsolvable
+        kappa=0.8,
+        K=3,
+        logger=logger,
+        progress_bar=False,
+    )
+
+    refill_steps, _ = logger.get_stat("worst task", x_key="step")
+    assert refill_steps[:3].tolist() == [13_620] * 3

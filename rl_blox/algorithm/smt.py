@@ -84,8 +84,14 @@ def train_smt(
         Number of episodes after which the task scheduling is performed.
 
     kappa : float
-        Budget for each task is initially set to :math:`\kappa B_{total}`
-        with :math:`B_{total} = B_1 + B_2`.
+        Share of the remaining budget of the first stage that the tasks in
+        the training pool may use. When a task enters the training pool, its
+        budget is set to :math:`\kappa (B_1 - B_{used}) / K`, where
+        :math:`B_{used}` is the number of steps used so far. This follows
+        Appendix G.1 of [1]_. Algorithm 1 of [1]_ uses :math:`\kappa B`
+        instead, with :math:`B` the remaining total budget, but with this
+        budget, tasks would hardly ever use up their budget in the first
+        stage for the values of :math:`\kappa` and :math:`K` from the paper.
 
     K : int
         Number of tasks to train in each iteration.
@@ -190,7 +196,6 @@ def train_smt(
         global_step,
         scheduling_interval,
         b1,
-        b_total,
         K,
         kappa,
         learning_starts,
@@ -244,7 +249,6 @@ def smt_stage1(
     global_step,
     scheduling_interval,
     b1,
-    b_total,
     K,
     kappa,
     learning_starts,
@@ -261,7 +265,7 @@ def smt_stage1(
     main_pool = set(range(n_tasks)) - training_pool
     solved_pool = set()
     unsolvable_pool = set()
-    task_budgets = np.full(n_tasks, kappa * b_total)
+    task_budgets = np.full(n_tasks, kappa * b1 / K)
     # A task's budget is spent from the moment it enters the training pool.
     steps_in_training_pool = np.zeros(n_tasks, dtype=int)
 
@@ -369,8 +373,8 @@ def smt_stage1(
             # Move it to training pool
             updated_training_pool.add(worst)
             main_pool.remove(worst)
-            # Set its budget to kappa * B (B: remaining total budget)
-            task_budgets[worst] = kappa * (b_total - global_step)
+            # Set its budget to kappa * B / K (B: remaining budget of stage 1)
+            task_budgets[worst] = kappa * (b1 - global_step) / K
             steps_in_training_pool[worst] = 0
 
             if logger is not None:
