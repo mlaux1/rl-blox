@@ -110,7 +110,17 @@ def train_smt(
         Number of training steps for each task.
 
     training_performances : np.ndarray
-        Average training performance for each task from stage 1.
+        Average training performance for each task.
+
+    Warns
+    -----
+    UserWarning
+        If ``K`` is not smaller than the number of tasks, because then there
+        is no task scheduling.
+
+    UserWarning
+        If all tasks are solved in the first stage, so that the second stage
+        trains all tasks round robin.
 
     Notes
     -----
@@ -119,7 +129,12 @@ def train_smt(
     algorithm to be used as a backbone (not just SAC) and instead of estimating
     the task encoding with a recurrent neural network, it can use a context
     vector provided by the multi-task environment definition to distinguish
-    tasks.
+    tasks. If no task is unsolvable after the first stage, the second stage
+    trains all tasks that are not solved instead, including those that are
+    still in the training pool. The second stage trains these tasks only
+    until they are solved. Afterwards, or if all tasks are already solved in
+    the first stage, it trains all tasks round robin until the budget is used
+    up, so that SMT always uses the full budget :math:`B_1 + B_2`.
 
     References
     ----------
@@ -135,56 +150,70 @@ def train_smt(
     else:
         n_tasks = len(task_set)
 
+    if K >= n_tasks:
+        warnings.warn(
+            f"K={K} is not smaller than the number of tasks ({n_tasks}). All "
+            "tasks are trained at the same time, so there is no task "
+            "scheduling.",
+            stacklevel=2,
+        )
+
     b_total = b1 + b2
     global_step = 0
     training_steps = np.zeros(n_tasks, dtype=int)
+    training_performances = [deque(maxlen=n_average) for _ in range(n_tasks)]
+    avg_training_performances = np.full(n_tasks, -np.finfo(float).max)
     progress = tqdm(total=b_total, disable=not progress_bar)
 
-    avg_training_performances, global_step, result_st, unsolvable_pool = (
-        smt_stage1(
-            task_set,
-            train_st,
-            replay_buffer,
-            task_selectables,
-            training_steps,
-            solved_threshold,
-            unsolvable_threshold,
-            global_step,
-            scheduling_interval,
-            b1,
-            b_total,
-            n_average,
-            K,
-            kappa,
-            learning_starts,
-            logger,
-            seed,
-            rng,
-            progress,
-        )
+    global_step, result_st, unsolvable_pool = smt_stage1(
+        task_set,
+        train_st,
+        replay_buffer,
+        task_selectables,
+        training_steps,
+        training_performances,
+        avg_training_performances,
+        solved_threshold,
+        unsolvable_threshold,
+        global_step,
+        scheduling_interval,
+        b1,
+        b_total,
+        K,
+        kappa,
+        learning_starts,
+        logger,
+        seed,
+        rng,
+        progress,
     )
 
-    if len(unsolvable_pool) > 0:
-        result_st = smt_stage2(
-            task_set,
-            train_st,
-            replay_buffer,
-            task_selectables,
-            unsolvable_pool,
-            training_steps,
-            global_step,
-            scheduling_interval,
-            b_total,
-            learning_starts,
-            logger,
-            seed,
-            progress,
-        )
-    else:
+    if len(unsolvable_pool) == 0:
         warnings.warn(
-            "Unsolvable pool is empty. There is no second SMT stage.",
+            "All tasks are solved after the first SMT stage. The second stage "
+            "trains all tasks round robin.",
             stacklevel=2,
         )
+
+    result_st = smt_stage2(
+        task_set,
+        train_st,
+        replay_buffer,
+        task_selectables,
+        unsolvable_pool,
+        training_steps,
+        training_performances,
+        avg_training_performances,
+        solved_threshold,
+        global_step,
+        scheduling_interval,
+        b_total,
+        learning_starts,
+        logger,
+        seed,
+        progress,
+        result_st,
+    )
     progress.close()
 
     return result_st, training_steps, avg_training_performances
@@ -196,13 +225,14 @@ def smt_stage1(
     replay_buffer,
     task_selectables,
     training_steps,
+    training_performances,
+    avg_training_performances,
     solved_threshold,
     unsolvable_threshold,
     global_step,
     scheduling_interval,
     b1,
     b_total,
-    n_average,
     K,
     kappa,
     learning_starts,
@@ -219,9 +249,9 @@ def smt_stage1(
     main_pool = set(range(n_tasks)) - training_pool
     solved_pool = set()
     unsolvable_pool = set()
-    avg_training_performances = np.full(n_tasks, -np.finfo(float).max)
-    training_performances = [deque(maxlen=n_average) for _ in range(n_tasks)]
     task_budgets = np.full(n_tasks, kappa * b_total)
+    # A task's budget is spent from the moment it enters the training pool.
+    steps_in_training_pool = np.zeros(n_tasks, dtype=int)
 
     while global_step < b1:
         updated_training_pool = copy.deepcopy(training_pool)
@@ -252,6 +282,7 @@ def smt_stage1(
 
             steps = sum(env_with_stats.length_queue)
             training_steps[task_id] += steps
+            steps_in_training_pool[task_id] += steps
             global_step += steps
             progress.update(steps)
 
@@ -260,6 +291,7 @@ def smt_stage1(
                 unlogged_steps = b1 - global_step
                 global_step = b1
                 training_steps[task_id] += unlogged_steps
+                steps_in_training_pool[task_id] += unlogged_steps
                 progress.update(unlogged_steps)
 
             training_performances[task_id].extend(env_with_stats.return_queue)
@@ -289,7 +321,7 @@ def smt_stage1(
             if avg_training_performances[task_id] >= solved_threshold:
                 solved_pool.add(task_id)
                 updated_training_pool.remove(task_id)
-            elif training_steps[task_id] >= task_budgets[task_id]:
+            elif steps_in_training_pool[task_id] >= task_budgets[task_id]:
                 if avg_training_performances[task_id] <= unsolvable_threshold:
                     unsolvable_pool.add(task_id)
                     updated_training_pool.remove(task_id)
@@ -324,6 +356,7 @@ def smt_stage1(
             main_pool.remove(worst)
             # Set its budget to kappa * B (B: remaining total budget)
             task_budgets[worst] = kappa * (b_total - global_step)
+            steps_in_training_pool[worst] = 0
 
             if logger is not None:
                 logger.record_stat("worst task", worst, step=global_step)
@@ -333,17 +366,18 @@ def smt_stage1(
                     step=global_step,
                 )
 
+        training_pool = updated_training_pool
+
         if early_stop_stage:
             break
 
-        training_pool = updated_training_pool
+    unsolved_pool = main_pool | training_pool
+    if len(unsolvable_pool) == 0 and len(unsolved_pool) > 0:
+        # If there are no unsolvable tasks, iterate over all unsolved tasks
+        # instead. This is different from the original implementation.
+        unsolvable_pool = unsolved_pool
 
-    if len(unsolvable_pool) == 0 and len(main_pool) > 0:
-        # If there are no unsolvable tasks, iterate over the main pool instead.
-        # This is different from the original implementation.
-        unsolvable_pool = main_pool
-
-    return avg_training_performances, global_step, result_st, unsolvable_pool
+    return global_step, result_st, unsolvable_pool
 
 
 def smt_stage2(
@@ -353,6 +387,9 @@ def smt_stage2(
     task_selectables,
     unsolvable_pool,
     training_steps,
+    training_performances,
+    avg_training_performances,
+    solved_threshold,
     global_step,
     scheduling_interval,
     b_total,
@@ -360,10 +397,21 @@ def smt_stage2(
     logger,
     seed,
     progress,
+    result_st,
 ):
-    """SMT will iterate over the unsolvable tasks in stage 2."""
+    """SMT trains the unsolvable tasks in stage 2 until they are solved.
+
+    Once all of them are solved, all tasks are trained round robin.
+    """
+    n_tasks = len(training_steps)
+    unsolved_pool = set(unsolvable_pool)
     while global_step < b_total:
-        for task_id in unsolvable_pool:
+        if len(unsolved_pool) > 0:
+            scheduled_tasks = sorted(unsolved_pool)
+        else:
+            scheduled_tasks = range(n_tasks)
+
+        for task_id in scheduled_tasks:
             if isinstance(task_set, VectorEnv):
                 env = task_set.envs[task_id]
             else:
@@ -401,11 +449,26 @@ def smt_stage2(
                 training_steps[task_id] += unlogged_steps
                 progress.update(unlogged_steps)
 
+            training_performances[task_id].extend(env_with_stats.return_queue)
+            avg_training_performances[task_id] = np.mean(
+                training_performances[task_id]
+            )
+            if (
+                task_id in unsolved_pool
+                and avg_training_performances[task_id] >= solved_threshold
+            ):
+                unsolved_pool.remove(task_id)
+
             if logger is not None:
                 logger.record_stat("task_id", task_id, step=global_step)
                 logger.record_stat(
+                    "task_performance",
+                    avg_training_performances[task_id],
+                    step=global_step,
+                )
+                logger.record_stat(
                     "pool_size_unsolvable",
-                    len(unsolvable_pool),
+                    len(unsolved_pool),
                     step=global_step,
                 )
 

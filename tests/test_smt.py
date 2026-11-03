@@ -2,12 +2,14 @@ from functools import partial
 
 import gymnasium as gym
 import numpy as np
+import pytest
 from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.smt import train_smt
 from rl_blox.blox.multitask import DiscreteTaskSet
 from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
+from rl_blox.logging.logger import MemoryLogger
 
 
 def test_smt():
@@ -53,3 +55,229 @@ def test_smt():
         scheduling_interval=1,
         seed=seed,
     )
+
+
+def random_actions_st(
+    env, total_timesteps, total_episodes, global_step, seed, **kwargs
+):
+    """Backbone stub that only acts randomly for the scheduled episodes."""
+    env.action_space.seed(seed)
+    step = global_step
+    for episode in range(total_episodes):
+        env.reset(seed=seed + episode)
+        done = False
+        while not done and step < total_timesteps:
+            _, _, terminated, truncated, _ = env.step(env.action_space.sample())
+            done = terminated or truncated
+            step += 1
+    return step
+
+
+def test_smt_budget_counts_from_entering_training_pool():
+    base_env = gym.make("Pendulum-v1")  # every episode has 200 steps
+    task_set = DiscreteTaskSet(
+        base_env,
+        lambda env, context: None,
+        np.zeros((2, 1)),
+        context_aware=False,
+    )
+    logger = MemoryLogger()
+
+    train_smt(
+        task_set,
+        random_actions_st,
+        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
+        b1=8_000,
+        b2=200,
+        solved_threshold=np.inf,  # no task is ever solved
+        unsolvable_threshold=-np.inf,  # no task is ever unsolvable
+        kappa=0.5,
+        K=1,
+        logger=logger,
+        progress_bar=False,
+    )
+
+    # Each task returns to the main pool once its budget is used up and
+    # tasks re-enter the training pool, so the training pool is refilled
+    # whenever a budget of kappa times the remaining total budget (8200
+    # steps at the start) has been used since the task entered it:
+    # 4100 -> 4200, 2000 -> 2000, 1000 -> 1000, 500 -> 600, 200 -> 200.
+    refill_steps, _ = logger.get_stat("worst task", x_key="step")
+    assert refill_steps.tolist() == [4200, 6200, 7200, 7800, 8000]
+
+
+class ConstantRewardEnv(gym.Env):
+    """Episodes of 10 steps with the same reward in every step."""
+
+    observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(1,))
+    action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(1,))
+
+    def __init__(self):
+        self.reward = 0.0
+        self.t = 0
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.t = 0
+        return np.zeros(1, dtype=np.float32), {}
+
+    def step(self, action):
+        self.t += 1
+        truncated = self.t >= 10
+        return np.zeros(1, dtype=np.float32), self.reward, False, truncated, {}
+
+
+def constant_reward_task_set(rewards):
+    """Tasks that differ only in their reward per step."""
+
+    def set_reward(env, context):
+        env.reward = float(context[0])
+
+    return DiscreteTaskSet(
+        ConstantRewardEnv(),
+        set_reward,
+        np.asarray(rewards, dtype=float)[:, np.newaxis],
+        context_aware=False,
+    )
+
+
+def test_smt_stage2_trains_tasks_left_in_training_pool():
+    # Tasks 0 and 1 are solved in their first episode (return 10). Task 2
+    # is never solved (return 0) and never exhausts its budget, so it is
+    # still in the training pool when stage 1 ends, while the main pool and
+    # the unsolvable pool are empty.
+    task_set = constant_reward_task_set([1.0, 1.0, 0.0])
+
+    _, training_steps, _ = train_smt(
+        task_set,
+        random_actions_st,
+        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
+        b1=1_000,
+        b2=1_000,
+        solved_threshold=5.0,
+        unsolvable_threshold=-np.inf,
+        kappa=0.9,
+        K=2,
+        progress_bar=False,
+    )
+
+    assert training_steps.sum() == 2_000
+    assert training_steps[2] == 2_000 - training_steps[:2].sum()
+
+
+def test_smt_warns_if_all_tasks_are_in_training_pool():
+    task_set = constant_reward_task_set([0.0, 0.0])
+
+    with pytest.warns(UserWarning, match="no task scheduling"):
+        train_smt(
+            task_set,
+            random_actions_st,
+            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
+            b1=100,
+            b2=100,
+            K=2,
+            progress_bar=False,
+        )
+
+
+class ImprovingRewardEnv(ConstantRewardEnv):
+    """Rewards each step with 1 once a task has been trained long enough.
+
+    The context of a task is the number of episodes after which it is solved.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.episodes_to_solve = 0
+        self.episodes = {}
+
+    def reset(self, seed=None, options=None):
+        n_episodes = self.episodes.get(self.episodes_to_solve, 0) + 1
+        self.episodes[self.episodes_to_solve] = n_episodes
+        self.reward = float(n_episodes > self.episodes_to_solve)
+        return super().reset(seed=seed, options=options)
+
+
+class TaskRecorder:
+    """Records the task that SMT selects for each scheduling interval."""
+
+    def __init__(self):
+        self.selected_tasks = []
+
+    def select_task(self, task_id):
+        self.selected_tasks.append(task_id)
+
+
+def test_smt_stage2_trains_unsolvable_tasks_until_solved():
+    def set_episodes_to_solve(env, context):
+        env.episodes_to_solve = int(context[0])
+
+    # Task 0 needs 30 episodes, but its budget of 120 steps (12 episodes)
+    # ends in stage 1, so it becomes unsolvable. Task 1 is solved at once.
+    task_set = DiscreteTaskSet(
+        ImprovingRewardEnv(),
+        set_episodes_to_solve,
+        np.array([[30.0], [0.0]]),
+        context_aware=False,
+    )
+    recorder = TaskRecorder()
+
+    _, training_steps, _ = train_smt(
+        task_set,
+        random_actions_st,
+        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
+        b1=200,
+        b2=1_000,
+        solved_threshold=5.0,
+        unsolvable_threshold=0.5,
+        kappa=0.1,
+        K=1,
+        n_average=3,
+        task_selectables=[recorder],
+        progress_bar=False,
+    )
+
+    assert training_steps.sum() == 1_200
+    # Stage 1 ends after 13 episodes. Task 0 then trains alone for 20 more
+    # episodes, until the mean of its last 3 returns reaches 5 (episodes 31
+    # and 32 have a return of 10). The rest of the 120 episodes alternate.
+    stage2_tasks = recorder.selected_tasks[13:]
+    assert stage2_tasks == [0] * 20 + [0, 1] * 43 + [0]
+
+
+def test_smt_round_robin_if_all_tasks_solved_in_stage1():
+    task_set = constant_reward_task_set([1.0, 1.0])
+
+    with pytest.warns(UserWarning, match="round robin"):
+        _, training_steps, _ = train_smt(
+            task_set,
+            random_actions_st,
+            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
+            b1=100,
+            b2=100,
+            solved_threshold=5.0,
+            K=1,
+            progress_bar=False,
+        )
+
+    # Each task is solved in its first episode in stage 1, then the
+    # remaining 180 steps are split evenly between both tasks.
+    assert training_steps.tolist() == [100, 100]
+
+
+def test_smt_without_stage2_budget():
+    task_set = constant_reward_task_set([0.0, 0.0])
+
+    _, training_steps, _ = train_smt(
+        task_set,
+        random_actions_st,
+        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
+        b1=100,
+        b2=0,
+        solved_threshold=np.inf,  # no task is ever solved
+        unsolvable_threshold=-np.inf,  # no task is ever unsolvable
+        K=1,
+        progress_bar=False,
+    )
+
+    assert training_steps.sum() == 100
