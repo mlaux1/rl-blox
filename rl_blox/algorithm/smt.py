@@ -29,8 +29,8 @@ def train_smt(
     replay_buffer: MultiTaskReplayBuffer,
     b1: int = 17_000_000,
     b2: int = 3_000_000,
-    solved_threshold: float = -100.0,
-    unsolvable_threshold: float = -1000.0,
+    solved_threshold: float = 4000.0,
+    unsolvable_threshold: float = 1000.0,
     scheduling_interval: int = 1,
     kappa: float = 0.8,
     K: int = 3,
@@ -95,11 +95,13 @@ def train_smt(
     solved_threshold : float
         A task is solved once its training performance (see ``n_average``)
         is greater than this value. Corresponds to :math:`M` in the paper [1]_.
+        The default is set for Meta-World with episodes of 500 steps.
 
     unsolvable_threshold : float
         When a task has used up its budget, it is unsolvable if its training
         performance is less than this value. Otherwise, it returns to the main
-        pool. Corresponds to :math:`m` in the paper [1]_.
+        pool. Corresponds to :math:`m` in the paper [1]_. The default is set
+        for Meta-World with episodes of 500 steps.
 
     scheduling_interval : int
         Number of episodes after which the task scheduling is performed.
@@ -108,11 +110,8 @@ def train_smt(
         Share of the remaining budget of the first stage that the tasks in
         the training pool may use. When a task enters the training pool, its
         budget is set to :math:`\kappa (B_1 - B_{used}) / K`, where
-        :math:`B_{used}` is the number of steps used so far. This follows
-        Appendix G.1 of [1]_. Algorithm 1 of [1]_ uses :math:`\kappa B`
-        instead, with :math:`B` the remaining total budget, but with this
-        budget, tasks would hardly ever use up their budget in the first
-        stage for the values of :math:`\kappa` and :math:`K` from the paper.
+        :math:`B_{used}` is the number of steps used so far (Appendix G.1 of
+        [1]_).
 
     K : int
         Number of tasks to train in each iteration.
@@ -145,24 +144,19 @@ def train_smt(
     get_policy : callable
         Maps the result of ``train_st`` to the policy that is evaluated, an
         ``nnx.Module`` that maps an observation to an action. Policies with a
-        method ``sample_and_log_prob(observation, key)`` are treated as
-        stochastic. All other policies are treated as deterministic, so their
-        output is used as the action, or the first element if the output is
-        a tuple. Hence, stochastic policies without ``sample_and_log_prob``,
-        e.g., ``SoftmaxPolicy``, are not supported. The default returns the
-        field ``policy``, which works for SAC, DDPG, and TD3.
+        method ``sample_and_log_prob(observation, key)`` are sampled, all
+        others are treated as deterministic. The default returns the field
+        ``policy`` (SAC, DDPG, TD3).
 
     reset_st : callable, optional
         Reinitializes the backbone's networks after each evaluation in the
-        first stage, as in [1]_. It is called with a seed and must modify the
-        state that is bound to ``train_st`` in place, e.g., with
-        ``nnx.update(policy, nnx.state(new_policy))``, and keep the replay
-        buffer. If not set, the networks are not reset.
+        first stage. It is called with a seed and must reinitialize the state
+        bound to ``train_st`` in place, except for the replay buffer. If not
+        set, the networks are not reset.
 
     learning_starts : int
         Number of steps at the start of SMT in which the backbone only takes
-        random actions and does not train. ``train_st`` compares it with the
-        global step, so it counts steps over all tasks, not per task.
+        random actions and does not train, counted over all tasks.
 
     seed : int
         Seed for random number generation.
@@ -203,8 +197,7 @@ def train_smt(
     Warns
     -----
     UserWarning
-        If ``K`` equals the number of tasks, because then there
-        is no task scheduling.
+        If ``K`` equals the number of tasks, so there is no task scheduling.
 
     UserWarning
         If all tasks are solved in the first stage, so that the second stage
@@ -220,47 +213,30 @@ def train_smt(
 
     Notes
     -----
-    In comparison to the original SMT algorithm [1]_, this implementation
-    only resets networks if ``reset_st`` is given. Furthermore, it allows
-    any underlying RL algorithm to be used as a backbone (not just SAC) and
-    instead of estimating the task encoding with a recurrent neural network,
-    it can use a context vector provided by the multi-task environment
-    definition to distinguish tasks. If no task is unsolvable after the
-    first stage, the second stage trains all tasks that are not solved
-    instead, including those that are still in the training pool. The second
-    stage trains these tasks only until they are solved. Afterwards, or if
-    all tasks are already solved in the first stage, it trains all tasks
-    round robin until the budget is used up, so that SMT always uses the
-    full budget :math:`B_1 + B_2`.
+    In contrast to [1]_, any RL algorithm can be used as a backbone, tasks
+    can be distinguished by a context vector instead of a recurrent task
+    encoder, and networks are only reset if ``reset_st`` is given. If no
+    task is unsolvable after the first stage, the second stage trains all
+    unsolved tasks until they are solved, and then all tasks round robin,
+    so that SMT always uses the full budget :math:`B_1 + B_2`.
 
-    All tasks are trained with the same backbone state. SMT passes the
-    replay buffer to ``train_st``, but the backbone's target networks and
-    entropy control must be bound explicitly, e.g.,
-    ``partial(train_sac, q_target=..., entropy_control=..., ...)``.
-    Otherwise, the backbone creates new ones for each scheduled task.
+    The backbone's target networks and entropy control must be bound to
+    ``train_st``, e.g., ``partial(train_sac, q_target=..., ...)``, so that
+    all tasks share them.
 
     In the first stage, SMT evaluates the policy on all tasks every
-    ``eval_freq`` steps. When the training pool has a vacancy, it is filled
-    with the task from the main pool that has the lowest evaluation
-    performance. Before the first evaluation, tasks are selected at random.
-    The evaluation performance of a task is the mean of the metric
+    ``eval_freq`` steps and fills vacancies in the training pool with the
+    task from the main pool that has the lowest evaluation performance,
+    i.e., the mean of
 
     .. math::
 
         \sum_{t=1}^H \gamma^{t-1} r_t - \sum_{t=1}^H \log \pi(a_t|s_t)
 
-    (equation (5) of [1]_) over ``n_eval_episodes`` episodes, in which the
-    actions are sampled from the policy. For deterministic policies, the
-    entropy term is omitted. Evaluation steps count towards the budget
-    :math:`B_1`. Whether a task is solved or unsolvable
-    is decided based on its training performance, as in the paper.
-
-    After each evaluation, ``reset_st`` reinitializes the networks, while
-    the replay buffers are kept (Algorithm 1 of [1]_). Hence, the network
-    reset period equals ``eval_freq``. The training performances, which
-    decide whether a task is solved or unsolvable, and the evaluation
-    performances, which decide which task is trained next, are not reset.
-    There are no resets in the second stage.
+    over ``n_eval_episodes`` episodes (equation (5) of [1]_). The entropy
+    term is omitted for deterministic policies. Before the first evaluation,
+    tasks are selected at random. Evaluation steps count towards
+    :math:`B_1`. After each evaluation, ``reset_st`` is called.
 
     Logging
 
