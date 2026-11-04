@@ -8,6 +8,8 @@ import pytest
 from numpy.testing import assert_array_almost_equal
 
 from rl_blox.blox.replay_buffer import (
+    LAP,
+    MultiTaskReplayBuffer,
     ReplayBuffer,
     SubtrajectoryReplayBuffer,
     dilate_right,
@@ -388,3 +390,135 @@ def test_subtrajectory_replay_buffer_full_may_not_produce_truncation_transitions
         rng=np.random.default_rng(0),
     )
     assert not truncated.any()
+
+
+def add_transition(replay_buffer, value):
+    replay_buffer.add_sample(
+        observation=np.full(2, value),
+        action=np.zeros(1),
+        reward=0.0,
+        next_observation=np.full(2, value),
+        termination=0,
+    )
+
+
+def test_multitask_task_view_adds_samples_to_its_task():
+    replay_buffer = MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 3)
+
+    add_transition(replay_buffer.task(1), 1.0)
+    add_transition(replay_buffer.task(1), 1.0)
+    add_transition(replay_buffer.task(2), 2.0)
+
+    assert [len(buffer) for buffer in replay_buffer.buffers] == [0, 2, 1]
+
+
+def test_multitask_task_view_behaves_like_multitask_buffer():
+    replay_buffer = MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2)
+    view = replay_buffer.task(0)
+
+    add_transition(view, 0.0)
+
+    assert len(view) == len(replay_buffer) == 1
+    batch = view.sample_batch(4, np.random.default_rng(0))
+    assert batch.observation.shape == (4, 2)
+
+
+def test_multitask_task_view_rejects_invalid_task():
+    replay_buffer = MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2)
+
+    with pytest.raises(ValueError):
+        replay_buffer.task(2)
+
+
+def multitask_buffer(n_samples_per_task, **kwargs):
+    """Multi-task buffer whose observations contain the task index."""
+    replay_buffer = MultiTaskReplayBuffer(
+        ReplayBuffer(buffer_size=100), len(n_samples_per_task), **kwargs
+    )
+    for task_id, n_samples in enumerate(n_samples_per_task):
+        for _ in range(n_samples):
+            add_transition(replay_buffer.task(task_id), task_id)
+    return replay_buffer
+
+
+def sampled_tasks(batch):
+    return np.asarray(batch.observation[:, 0]).astype(int)
+
+
+def test_multitask_uniform_weighting_splits_batch_evenly():
+    replay_buffer = multitask_buffer([5, 50, 5])
+
+    batch = replay_buffer.sample_batch(7, np.random.default_rng(0))
+
+    counts = np.bincount(sampled_tasks(batch), minlength=3)
+    assert counts.sum() == 7
+    assert set(counts.tolist()) == {2, 3}
+
+
+def test_multitask_proportional_weighting_follows_amount_of_data():
+    replay_buffer = multitask_buffer([10, 90], task_weighting="proportional")
+
+    batch = replay_buffer.sample_batch(10_000, np.random.default_rng(0))
+
+    share_of_task_0 = np.mean(sampled_tasks(batch) == 0)
+    assert share_of_task_0 == pytest.approx(0.1, abs=0.02)
+
+
+def test_multitask_rejects_unknown_task_weighting():
+    with pytest.raises(ValueError):
+        MultiTaskReplayBuffer(
+            ReplayBuffer(buffer_size=10), 2, task_weighting="random"
+        )
+
+
+def test_multitask_samples_only_tasks_with_data():
+    replay_buffer = multitask_buffer([0, 5, 0])
+
+    batch = replay_buffer.sample_batch(6, np.random.default_rng(0))
+
+    assert set(sampled_tasks(batch).tolist()) == {1}
+
+
+def test_multitask_skips_subtrajectory_buffers_without_valid_start():
+    replay_buffer = MultiTaskReplayBuffer(
+        SubtrajectoryReplayBuffer(buffer_size=10, horizon=3, mrq_mode=False),
+        2,
+    )
+    # A full episode of 4 steps in task 0, an episode of 2 steps in task 1
+    for i in range(4):
+        add(
+            replay_buffer.task(0),
+            obs=i,
+            next_obs=i + 1,
+            term=i == 3,
+            trunc=False,
+        )
+    for i in range(2):
+        add(
+            replay_buffer.task(1),
+            obs=10 + i,
+            next_obs=11 + i,
+            term=i == 1,
+            trunc=False,
+        )
+
+    batch = replay_buffer.sample_batch(8, 3, True, np.random.default_rng(0))
+
+    assert batch.observation.shape == (8, 3)
+    assert np.all(batch.observation < 10)
+
+
+def test_multitask_routes_priorities_to_sampled_tasks():
+    replay_buffer = MultiTaskReplayBuffer(LAP(buffer_size=10), 2)
+    for task_id in range(2):
+        for _ in range(5):
+            add_transition(replay_buffer.task(task_id), task_id)
+
+    batch = replay_buffer.sample_batch(4, np.random.default_rng(0))
+    priorities = 10.0 + sampled_tasks(batch)
+    replay_buffer.update_priority(priorities)
+
+    for task_id, buffer in enumerate(replay_buffer.buffers):
+        sampled = buffer.priority.sampled_indices
+        assert len(sampled) == 2
+        assert np.all(buffer.priority.priority[sampled] == 10.0 + task_id)

@@ -120,6 +120,10 @@ class ReplayBuffer:
             **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
         )
 
+    def can_sample(self) -> bool:
+        """Check if a batch can be sampled."""
+        return self.current_len > 0
+
     def __len__(self):
         """Return current number of stored transitions in the replay buffer."""
         return self.current_len
@@ -193,7 +197,7 @@ class SubtrajectoryReplayBuffer:
           specified on construction, the mask of allowed start indices for
           sample subtrajectories will be extended to the right by the
           difference.
-        
+
         For MRQ, subtrajectories that start in one episode and end in the next
         are expected and required for best performance, for two reasons:
         1. MRQ benefits from having all transitions up to the last transition of
@@ -292,7 +296,6 @@ class SubtrajectoryReplayBuffer:
         else:
             return self._add_sample(**sample)
 
-
     def _add_sample(self, **sample) -> int:
         """Add transition sample to the replay buffer.
 
@@ -319,7 +322,9 @@ class SubtrajectoryReplayBuffer:
         self.mask_[self.insert_idx] = 0
         if self.episode_timesteps >= self.horizon and not sample["truncated"]:
             # mask in the index that the new subtrajectory starts with
-            self.mask_[(self.insert_idx - self.horizon + 1) % self.buffer_size] = 1
+            self.mask_[
+                (self.insert_idx - self.horizon + 1) % self.buffer_size
+            ] = 1
 
         inserted_at = self.insert_idx
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
@@ -379,9 +384,7 @@ class SubtrajectoryReplayBuffer:
                 - np.arange(min(self.episode_timesteps, self.horizon))
                 - 1
             ) % self.buffer_size
-            self.mask_[past_idx] = (
-                0 if sample["truncated"] else 1
-            )
+            self.mask_[past_idx] = 0 if sample["truncated"] else 1
 
             inserted_at += [self.insert_idx]
             self.insert_idx = (self.insert_idx + 1) % self.buffer_size
@@ -489,6 +492,10 @@ class SubtrajectoryReplayBuffer:
         nz = np.nonzero(mask)[0]
         indices = rng.integers(0, len(nz), size=batch_size)
         return nz[indices]
+
+    def can_sample(self) -> bool:
+        """Check if a subtrajectory can be sampled."""
+        return bool(np.any(self.mask_))
 
     def reward_scale(self, eps: float = 1e-8):
         assert "reward" in self.buffer
@@ -681,6 +688,7 @@ class LAP(ReplayBuffer):
     def reset_max_priority(self):
         self.priority.reset_max_priority(self.current_len)
 
+
 class PrioritizedReplayBuffer(LAP):
     def prioritized_sampling_stratified(
         self,
@@ -705,7 +713,7 @@ class PrioritizedReplayBuffer(LAP):
         random_points = rng.uniform(
             low=np.arange(batch_size) * segment,
             high=(np.arange(batch_size) + 1) * segment,
-            size=batch_size
+            size=batch_size,
         )
 
         self.sampled_indices = np.searchsorted(probabilities, random_points)
@@ -734,11 +742,11 @@ class PrioritizedReplayBuffer(LAP):
             via names, e.g., ``batch.observation``.
 
         importance_ratio : array
-            Importance sampling ratio corresponding to the samples in batch.    
-        
+            Importance sampling ratio corresponding to the samples in batch.
+
         """
 
-        # TODO: Using stratified prioritized sampling or the prioritized sampling 
+        # TODO: Using stratified prioritized sampling or the prioritized sampling
         #       implementation in PriorityBuffer class makes almost no difference
         #       in training. Consider removing prioritized_sampling_stratified()
         #       and merging PrioritizedReplayBuffer class with LAP class.
@@ -749,15 +757,20 @@ class PrioritizedReplayBuffer(LAP):
         #     self.current_len, batch_size, rng
         # )
         importance_ratio = self.compute_importance_ratio(indices, beta)
-        return self.Batch(
-            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
-        ), importance_ratio
+        return (
+            self.Batch(
+                **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+            ),
+            importance_ratio,
+        )
 
     def compute_importance_ratio(
-        self, indices: npt.NDArray[int], beta: float,
-        ) -> list[jnp.ndarray]:
+        self,
+        indices: npt.NDArray[int],
+        beta: float,
+    ) -> list[jnp.ndarray]:
         r"""Compute importance ratio importance ratio.
-        
+
         The probability of sampling a transition i is
         math::
             P(i)
@@ -766,7 +779,7 @@ class PrioritizedReplayBuffer(LAP):
             {\sum_j |\delta_j|^{\alpha} + \epsilon}, with the priority
         math::
             p(i) = |\delta_i|^{\alpha} + \epsilon.
-        
+
         Compute importance sampling weight :math:`w_i`:
 
         math::
@@ -790,7 +803,7 @@ class PrioritizedReplayBuffer(LAP):
         Returns
         -------
         normalized_weights : array
-            A batch of importance sampling ratio.       
+            A batch of importance sampling ratio.
         """
         priority = self.priority.priority[indices]
         sum_probability = np.cumsum(priority)[-1]
@@ -798,6 +811,7 @@ class PrioritizedReplayBuffer(LAP):
 
         normalized_weights = is_weight / np.max(is_weight)
         return normalized_weights
+
 
 class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
     """Replay buffer for sampling batches of subtrajectories with PER or LAP.
@@ -921,6 +935,7 @@ def lap_priority(
     """
     return jnp.maximum(abs_td_error, min_priority) ** alpha
 
+
 @partial(jax.jit, static_argnames=["alpha"])
 def per_priority(
     abs_td_error: jnp.ndarray, alpha: float, epsion: float
@@ -964,7 +979,8 @@ def per_priority(
        Experience Replay. In International Conference on Learning
        Representations. https://arxiv.org/abs/1511.05952
     """
-    return abs_td_error ** alpha + epsion
+    return abs_td_error**alpha + epsion
+
 
 # TODO: rank-based prioritization
 # @partial(jax.jit, static_argnames=["alpha"])
@@ -973,12 +989,13 @@ def per_priority(
 # ) -> jnp.ndarray:
 #     return None
 
+
 class MultiTaskReplayBuffer:
     """Replay buffer for discrete set of tasks.
 
-    For each task we will create a separate replay buffer. During sampling,
-    we will store samples in the corresponding task's replay buffer. We will
-    sample batches from all replay buffers.
+    For each task we will create a separate replay buffer. Samples are added
+    through the view returned by :meth:`task`. Batches are sampled from all
+    tasks that have data.
 
     Parameters
     ----------
@@ -987,45 +1004,115 @@ class MultiTaskReplayBuffer:
 
     n_tasks : int
         Number of tasks.
+
+    task_weighting : str, optional
+        Share of each task in a batch. 'uniform': equal shares. 'proportional':
+        shares proportional to the number of samples of the task.
+
+    Raises
+    ------
+    ValueError
+        If ``task_weighting`` is unknown.
     """
 
-    def __init__(self, replay_buffer, n_tasks: int):
+    def __init__(
+        self, replay_buffer, n_tasks: int, task_weighting: str = "uniform"
+    ):
+        if task_weighting not in ("uniform", "proportional"):
+            raise ValueError(f"Unknown task weighting: {task_weighting}")
         self.buffers = [replay_buffer]
         for _ in range(n_tasks - 1):
             self.buffers.append(copy.deepcopy(replay_buffer))
-        self.selected_task = 0
-        self.active_buffers = set()
+        self.task_weighting = task_weighting
+        # Tasks that can be sampled from. A task stays sampleable once it is.
+        self.sampleable_tasks = set()
+        self.sampled_counts = {}
 
-    def select_task(self, task_id: int):
-        """Select the task for which samples will be added."""
-        if 0 <= task_id < len(self.buffers):
-            self.selected_task = task_id
-        else:
+    def task(self, task_id: int) -> "TaskReplayBuffer":
+        """View of this replay buffer that adds samples to one task.
+
+        Parameters
+        ----------
+        task_id : int
+            Index of the task.
+
+        Returns
+        -------
+        view : TaskReplayBuffer
+            View that can be passed to a single-task algorithm.
+
+        Raises
+        ------
+        ValueError
+            If the task index is invalid.
+        """
+        if not 0 <= task_id < len(self.buffers):
             raise ValueError(
                 f"Invalid task id: {task_id}. "
                 f"Must be in [0, {len(self.buffers) - 1}]."
             )
+        return TaskReplayBuffer(self, task_id)
 
-    def add_sample(self, *args, **kwargs):
-        """Add transition sample to the replay buffer for a specific task."""
-        self.buffers[self.selected_task].add_sample(*args, **kwargs)
-        self.active_buffers.add(self.selected_task)
+    def add_sample(self, task_id: int, **sample):
+        """Add transition sample to the replay buffer of a task.
 
-    def sample_batch(self, *args, **kwargs):
-        """Sample a batch of transitions from all replay buffers."""
-        args = list(args)
-        if "rng" in kwargs:
-            rng = kwargs.pop("rng")
-        elif len(kwargs) == 0:
-            rng = args[-1]
-            del args[-1]
+        Parameters
+        ----------
+        task_id : int
+            Index of the task.
+
+        **sample
+            Transition, see the ``add_sample`` of the task's replay buffer.
+        """
+        self.buffers[task_id].add_sample(**sample)
+        if task_id not in self.sampleable_tasks:
+            if self.buffers[task_id].can_sample():
+                self.sampleable_tasks.add(task_id)
+
+    def sample_batch(self, batch_size: int, *args, **kwargs):
+        """Sample a batch of transitions from all tasks.
+
+        Parameters
+        ----------
+        batch_size : int
+            Size of the sampled batch.
+
+        *args, **kwargs
+            Further arguments of the ``sample_batch`` of the task's replay
+            buffer, including the random number generator.
+
+        Returns
+        -------
+        batch
+            Batches of the tasks, concatenated along the first axis.
+        """
+        rng = kwargs.get("rng")
+        if rng is None:
+            rng = next(a for a in args if isinstance(a, np.random.Generator))
+
+        tasks = sorted(self.sampleable_tasks)
+        if self.task_weighting == "uniform":
+            counts = np.full(len(tasks), batch_size // len(tasks))
+            remainder = batch_size % len(tasks)
+            counts[rng.choice(len(tasks), remainder, replace=False)] += 1
         else:
-            raise ValueError("No rng provided.")
+            n_samples = np.array([len(self.buffers[t]) for t in tasks])
+            counts = rng.multinomial(batch_size, n_samples / n_samples.sum())
+        self.sampled_counts = {
+            task_id: int(count)
+            for task_id, count in zip(tasks, counts, strict=True)
+            if count > 0
+        }
 
-        self.sampled_task_idx = rng.choice(list(self.active_buffers), size=1)[0]
-
-        return self.buffers[self.sampled_task_idx].sample_batch(
-            *args, rng=rng, **kwargs
+        batches = [
+            self.buffers[task_id].sample_batch(count, *args, **kwargs)
+            for task_id, count in self.sampled_counts.items()
+        ]
+        # Each task's buffer has its own Batch type, so concatenate the leaves
+        fields = zip(*(jax.tree.leaves(batch) for batch in batches))
+        return jax.tree.unflatten(
+            jax.tree.structure(batches[0]),
+            [jnp.concatenate(field) for field in fields],
         )
 
     def reward_scale(self, eps: float = 1e-8):
@@ -1040,8 +1127,13 @@ class MultiTaskReplayBuffer:
         return accumulated_reward / n_samples
 
     def update_priority(self, priority):
-        """Update the priority of previous samples."""
-        self.buffers[self.sampled_task_idx].update_priority(priority)
+        """Update the priority of the samples of the last batch."""
+        boundaries = np.cumsum(list(self.sampled_counts.values()))[:-1]
+        task_priorities = np.split(np.asarray(priority), boundaries)
+        for task_id, task_priority in zip(
+            self.sampled_counts, task_priorities, strict=True
+        ):
+            self.buffers[task_id].update_priority(task_priority)
 
     def reset_max_priority(self):
         """Recalculate the maximum priority for all tasks."""
@@ -1058,3 +1150,50 @@ class MultiTaskReplayBuffer:
 
     def __len__(self):
         return sum(len(buffer) for buffer in self.buffers)
+
+
+class TaskReplayBuffer:
+    """View of a :class:`MultiTaskReplayBuffer` for one task.
+
+    Samples are added to the replay buffer of the task. All other methods
+    use the whole multi-task replay buffer.
+
+    Parameters
+    ----------
+    replay_buffer : MultiTaskReplayBuffer
+        Multi-task replay buffer.
+
+    task_id : int
+        Index of the task.
+    """
+
+    def __init__(self, replay_buffer: MultiTaskReplayBuffer, task_id: int):
+        self.replay_buffer = replay_buffer
+        self.task_id = task_id
+
+    def add_sample(self, **sample):
+        """Add transition sample to the replay buffer of the task."""
+        self.replay_buffer.add_sample(self.task_id, **sample)
+
+    def sample_batch(self, *args, **kwargs):
+        """Sample a batch of transitions from all tasks."""
+        return self.replay_buffer.sample_batch(*args, **kwargs)
+
+    def reward_scale(self, eps: float = 1e-8):
+        """Compute the reward scale for all tasks."""
+        return self.replay_buffer.reward_scale(eps)
+
+    def update_priority(self, priority):
+        """Update the priority of previous samples."""
+        self.replay_buffer.update_priority(priority)
+
+    def reset_max_priority(self):
+        """Recalculate the maximum priority for all tasks."""
+        self.replay_buffer.reset_max_priority()
+
+    @property
+    def environment_terminates(self):
+        return self.replay_buffer.environment_terminates
+
+    def __len__(self):
+        return len(self.replay_buffer)
