@@ -29,6 +29,25 @@ def td7_policy(result):
     return DeterministicSALEPolicy(result.embedding, result.actor)
 
 
+def make_reset(create_state, state, targets):
+    """Create a function that reinitializes the backbone for SMT.
+
+    ``train_st`` holds references to the networks and optimizers, so they
+    are reinitialized in place. ``targets`` maps target networks to the
+    fields of the state that they are copies of.
+    """
+
+    def reset_st(seed):
+        fresh = create_state(env, seed=seed)
+        for old, new in zip(state, fresh):
+            if isinstance(old, nnx.Module | nnx.Optimizer):
+                nnx.update(old, nnx.state(new))
+        for target, field in targets:
+            nnx.update(target, nnx.state(getattr(fresh, field)))
+
+    return reset_st
+
+
 def set_context(env: gym.Env, context):
     env.unwrapped.g = context[0]
 
@@ -80,6 +99,11 @@ if backbone == "DDPG":
         policy_target=policy_target,
         q_target=q_target,
     )
+    reset_st = make_reset(
+        create_ddpg_state,
+        state,
+        [(policy_target, "policy"), (q_target, "q")],
+    )
 elif backbone == "TD3":
     state = create_td3_state(env, seed=seed)
     q_target = nnx.clone(state.q)
@@ -97,6 +121,11 @@ elif backbone == "TD3":
         q_optimizer=state.q_optimizer,
         q_target=q_target,
         policy_target=policy_target,
+    )
+    reset_st = make_reset(
+        create_td3_state,
+        state,
+        [(policy_target, "policy"), (q_target, "q")],
     )
 elif backbone == "TD7":
     state = create_td7_state(env, seed=seed)
@@ -119,6 +148,11 @@ elif backbone == "TD7":
         actor_target=actor_target,
     )
     get_policy = td7_policy
+    reset_st = make_reset(
+        create_td7_state,
+        state,
+        [(actor_target, "actor"), (critic_target, "critic")],
+    )
 elif backbone == "MR.Q":
     state = create_mrq_state(env, seed=seed)
     q_target = nnx.clone(state.q)
@@ -140,6 +174,14 @@ elif backbone == "MR.Q":
         policy_with_encoder_target=policy_with_encoder_target,
     )
     get_policy = attrgetter("policy_with_encoder")
+    reset_st = make_reset(
+        create_mrq_state,
+        state,
+        [
+            (q_target, "q"),
+            (policy_with_encoder_target, "policy_with_encoder"),
+        ],
+    )
 else:
     assert backbone == "SAC", "Backbone must be either 'DDPG' or 'SAC'."
     state = create_sac_state(env, seed=seed)
@@ -159,6 +201,14 @@ else:
         q_target=q_target,
         entropy_control=entroy_control,
     )
+    reset_networks = make_reset(create_sac_state, state, [(q_target, "q")])
+
+    def reset_sac(seed):
+        reset_networks(seed)
+        # EntropyControl is not an nnx module, so it is reinitialized in place
+        entroy_control.__init__(env, 0.2, True, 1e-3)
+
+    reset_st = reset_sac
 
 result = train_smt(
     train_set,
@@ -176,6 +226,7 @@ result = train_smt(
     eval_freq=3_000,
     n_eval_episodes=1,
     get_policy=get_policy,
+    reset_st=reset_st,
     logger=logger,
     seed=seed,
 )

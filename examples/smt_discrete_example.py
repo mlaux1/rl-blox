@@ -59,30 +59,54 @@ logger.define_experiment(
 )
 
 env = train_set.get_task(0)
-if context_in_observation:
-    q_net = MLP(
-        n_features=env.observation_space.shape[0],
-        n_outputs=int(env.action_space.n),
-        activation="relu",
-        hidden_nodes=[128, 128],
-        rngs=nnx.Rngs(seed),
-    )
-else:
-    q_net = MTMLPQNetwork(
-        n_tasks=len(train_set),
-        task_embedding_dim=10,
-        n_features=env.observation_space.shape[0],
-        n_outputs=int(env.action_space.n),
-        activation="relu",
-        hidden_nodes=[128, 128],
-        rngs=nnx.Rngs(seed),
-    )
+
+
+def create_q_net(seed):
+    if context_in_observation:
+        return MLP(
+            n_features=env.observation_space.shape[0],
+            n_outputs=int(env.action_space.n),
+            activation="relu",
+            hidden_nodes=[128, 128],
+            rngs=nnx.Rngs(seed),
+        )
+    else:
+        return MTMLPQNetwork(
+            n_tasks=len(train_set),
+            task_embedding_dim=10,
+            n_features=env.observation_space.shape[0],
+            n_outputs=int(env.action_space.n),
+            activation="relu",
+            hidden_nodes=[128, 128],
+            rngs=nnx.Rngs(seed),
+        )
+
+
+def create_optimizer(q_net):
+    return nnx.Optimizer(q_net, optax.adam(0.003), wrt=nnx.Param)
+
+
+q_net = create_q_net(seed)
 q_target_net = nnx.clone(q_net)
 replay_buffer = MultiTaskReplayBuffer(
     ReplayBuffer(buffer_size=100_000, discrete_actions=True),
     len(train_set),
 )
-optimizer = nnx.Optimizer(q_net, optax.adam(0.003), wrt=nnx.Param)
+optimizer = create_optimizer(q_net)
+
+
+def reset_st(seed):
+    """Reinitialize the Q-network, including task embeddings, for SMT.
+
+    ``train_st`` holds references to the network, its target, and the
+    optimizer, so they are reinitialized in place.
+    """
+    fresh_q_net = create_q_net(seed)
+    nnx.update(q_net, nnx.state(fresh_q_net))
+    nnx.update(q_target_net, nnx.state(fresh_q_net))
+    nnx.update(optimizer, nnx.state(create_optimizer(fresh_q_net)))
+
+
 if backbone == "DDQN":
     train_st = partial(
         train_ddqn,
@@ -117,6 +141,7 @@ result = train_smt(
     eval_freq=20_000,
     n_eval_episodes=1,
     get_policy=lambda result: GreedyPolicy(result.q_net),
+    reset_st=reset_st,
     logger=logger,
     seed=seed,
 )

@@ -40,6 +40,7 @@ def train_smt(
     max_eval_episode_steps: int | None = None,
     gamma: float = 0.99,
     get_policy: Callable[..., nnx.Module] = attrgetter("policy"),
+    reset_st: Callable[[int], None] | None = None,
     learning_starts: int = 5_000,
     seed: int = 0,
     task_selectables: list[TaskSelectionMixin] | None = None,
@@ -151,6 +152,13 @@ def train_smt(
         e.g., ``SoftmaxPolicy``, are not supported. The default returns the
         field ``policy``, which works for SAC, DDPG, and TD3.
 
+    reset_st : callable, optional
+        Reinitializes the backbone's networks after each evaluation in the
+        first stage, as in [1]_. It is called with a seed and must modify the
+        state that is bound to ``train_st`` in place, e.g., with
+        ``nnx.update(policy, nnx.state(new_policy))``, and keep the replay
+        buffer. If not set, the networks are not reset.
+
     learning_starts : int
         Number of steps at the start of SMT in which the backbone only takes
         random actions and does not train. ``train_st`` compares it with the
@@ -213,16 +221,17 @@ def train_smt(
     Notes
     -----
     In comparison to the original SMT algorithm [1]_, this implementation
-    does not reset networks. Furthermore, it allows any underlying RL
-    algorithm to be used as a backbone (not just SAC) and instead of estimating
-    the task encoding with a recurrent neural network, it can use a context
-    vector provided by the multi-task environment definition to distinguish
-    tasks. If no task is unsolvable after the first stage, the second stage
-    trains all tasks that are not solved instead, including those that are
-    still in the training pool. The second stage trains these tasks only
-    until they are solved. Afterwards, or if all tasks are already solved in
-    the first stage, it trains all tasks round robin until the budget is used
-    up, so that SMT always uses the full budget :math:`B_1 + B_2`.
+    only resets networks if ``reset_st`` is given. Furthermore, it allows
+    any underlying RL algorithm to be used as a backbone (not just SAC) and
+    instead of estimating the task encoding with a recurrent neural network,
+    it can use a context vector provided by the multi-task environment
+    definition to distinguish tasks. If no task is unsolvable after the
+    first stage, the second stage trains all tasks that are not solved
+    instead, including those that are still in the training pool. The second
+    stage trains these tasks only until they are solved. Afterwards, or if
+    all tasks are already solved in the first stage, it trains all tasks
+    round robin until the budget is used up, so that SMT always uses the
+    full budget :math:`B_1 + B_2`.
 
     All tasks are trained with the same backbone state. SMT passes the
     replay buffer to ``train_st``, but the backbone's target networks and
@@ -246,10 +255,18 @@ def train_smt(
     :math:`B_1`. Whether a task is solved or unsolvable
     is decided based on its training performance, as in the paper.
 
+    After each evaluation, ``reset_st`` reinitializes the networks, while
+    the replay buffers are kept (Algorithm 1 of [1]_). Hence, the network
+    reset period equals ``eval_freq``. The training performances, which
+    decide whether a task is solved or unsolvable, and the evaluation
+    performances, which decide which task is trained next, are not reset.
+    There are no resets in the second stage.
+
     Logging
 
     * ``eval_steps`` - number of environment steps used for evaluation
     * ``eval_performance_{i}`` - evaluation performance of task i
+    * ``reset`` - 1 whenever the networks are reset
 
     References
     ----------
@@ -326,6 +343,7 @@ def train_smt(
         n_eval_episodes,
         gamma,
         get_policy,
+        reset_st,
         train_st,
         replay_buffer,
         task_selectables,
@@ -385,6 +403,7 @@ def smt_stage1(
     n_eval_episodes,
     gamma,
     get_policy,
+    reset_st,
     train_st,
     replay_buffer,
     task_selectables,
@@ -530,8 +549,10 @@ def smt_stage1(
                         eval_performances[i],
                         step=global_step,
                     )
-            # The original SMT algorithm would also reset the networks here,
-            # i.e., randomly initialize them.
+            if reset_st is not None:
+                reset_st(seed + global_step)
+                if logger is not None:
+                    logger.record_stat("reset", 1, step=global_step)
 
         early_stop_stage = False
         while len(updated_training_pool) < K:

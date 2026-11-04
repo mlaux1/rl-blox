@@ -536,3 +536,59 @@ def test_smt_warns_if_evaluated_policy_is_deterministic():
             get_policy=lambda result: ZeroPolicy(),
             progress_bar=False,
         )
+
+
+def test_smt_resets_networks_after_each_evaluation_in_stage1():
+    logger = MemoryLogger()
+    reset_seeds = []
+
+    train_smt(
+        constant_reward_task_set([0.0, -1.0, 1.0]),
+        constant_reward_task_set([0.0, -1.0, 1.0]),
+        random_actions_st,
+        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 3),
+        b1=400,
+        b2=200,
+        solved_threshold=np.inf,  # no task is ever solved
+        unsolvable_threshold=-np.inf,  # no task is ever unsolvable
+        kappa=0.1,
+        K=1,
+        eval_freq=100,
+        n_eval_episodes=1,
+        max_eval_episode_steps=10,
+        get_policy=lambda result: FixedStochasticPolicy(log_prob=0.0),
+        reset_st=reset_seeds.append,
+        logger=logger,
+        progress_bar=False,
+    )
+
+    eval_steps, _ = logger.get_stat("eval_steps", x_key="step")
+    reset_steps, _ = logger.get_stat("reset", x_key="step")
+    assert len(reset_seeds) > 1
+    assert len(set(reset_seeds)) == len(reset_seeds)
+    # Each evaluation is followed by a reset, and both only happen in stage 1
+    assert reset_steps.tolist() == eval_steps.tolist()
+    assert max(reset_steps) <= 400
+
+
+def test_smt_does_not_reset_without_reset_function():
+    logger = MemoryLogger()
+
+    train_smt(
+        constant_reward_task_set([0.0, 0.0]),
+        constant_reward_task_set([0.0, 0.0]),
+        random_actions_st,
+        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2),
+        b1=100,
+        b2=0,
+        K=1,
+        eval_freq=1,
+        n_eval_episodes=1,
+        max_eval_episode_steps=10,
+        get_policy=lambda result: FixedStochasticPolicy(log_prob=0.0),
+        logger=logger,
+        progress_bar=False,
+    )
+
+    assert "eval_steps" in logger.stats
+    assert "reset" not in logger.stats
