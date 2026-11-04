@@ -11,8 +11,11 @@ from numpy.testing import assert_array_almost_equal
 from rl_blox.blox.replay_buffer import (
     LAP,
     MultiTaskReplayBuffer,
+    PrioritizedReplayBuffer,
     ReplayBuffer,
     SubtrajectoryReplayBuffer,
+    SubtrajectoryReplayBufferPER,
+    SumTree,
     dilate_right,
 )
 
@@ -567,3 +570,73 @@ def test_subtrajectory_sample_arrays_returns_numpy_version_of_sample_batch(
     assert all(isinstance(a, np.ndarray) for a in arrays)
     for a, b in zip(arrays, batch, strict=True):
         assert_array_almost_equal(a, b)
+
+
+def test_sum_tree_samples_proportional_to_values():
+    values = np.array([0.0, 1.0, 2.0, 0.0, 3.0, 4.0])
+    tree = SumTree(len(values))
+    tree.update(np.arange(len(values)), values)
+
+    rng = np.random.default_rng(0)
+    indices = tree.sample(rng.uniform(size=100_000) * tree.total())
+
+    frequencies = np.bincount(indices, minlength=len(values)) / len(indices)
+    assert tree.total() == pytest.approx(10.0)
+    assert_array_almost_equal(frequencies, values / values.sum(), decimal=2)
+    assert frequencies[0] == frequencies[3] == 0.0
+
+
+def test_lap_sampling_matches_cumulative_sum_sampling():
+    lap = LAP(buffer_size=1000)
+    for i in range(1000):
+        add_transition(lap, i)
+    rng = np.random.default_rng(0)
+    lap.sample_batch(1000, rng)
+    lap.update_priority(rng.uniform(0.1, 3.0, 1000))
+
+    indices = lap.priority.prioritized_sampling(
+        1000, 10_000, np.random.default_rng(1)
+    )
+
+    cumulative = np.cumsum(lap.priority.priority)
+    uniforms = np.random.default_rng(1).uniform(0, 1, size=10_000)
+    expected = np.searchsorted(cumulative, uniforms * cumulative[-1])
+    assert np.mean(indices == expected) > 0.999
+
+
+def test_subtrajectory_per_never_samples_masked_out_starts():
+    buffer = SubtrajectoryReplayBufferPER(buffer_size=50, horizon=3)
+    rng = np.random.default_rng(0)
+    for i in range(120):  # overwrite the ring buffer more than twice
+        add(buffer, obs=i, next_obs=i + 1, term=i % 9 == 8, trunc=i % 13 == 12)
+        buffer.sample_batch(16, 3, False, rng)
+        buffer.update_priority(rng.uniform(0.1, 3.0, 16))
+
+    starts = buffer.priority.prioritized_sampling(
+        buffer.current_len, 10_000, rng
+    )
+
+    assert np.all(buffer.mask_[starts] == 1)
+
+
+def test_multitask_normalizes_importance_ratios_over_whole_batch():
+    replay_buffer = MultiTaskReplayBuffer(
+        PrioritizedReplayBuffer(buffer_size=100), 2
+    )
+    for task_id in range(2):
+        for _ in range(100):
+            add_transition(replay_buffer.task(task_id), task_id)
+    rng = np.random.default_rng(0)
+    # Task 0 keeps equal priorities, task 1 gets very unequal priorities
+    batch, _ = replay_buffer.sample_batch(200, rng)
+    tasks = sampled_tasks(batch)
+    replay_buffer.update_priority(
+        np.where(tasks == 0, 1.0, rng.uniform(0.01, 10.0, 200))
+    )
+
+    batch, importance_ratio = replay_buffer.sample_batch(200, rng, 0.4)
+
+    tasks = sampled_tasks(batch)
+    importance_ratio = np.asarray(importance_ratio)
+    assert importance_ratio.max() == pytest.approx(1.0)
+    assert np.all(importance_ratio[tasks == 0] < 1.0)

@@ -37,6 +37,13 @@ def fill(replay_buffer, n_samples, rng, terminations=True):
     return replay_buffer
 
 
+def measure_fill(replay_buffer, n_samples, rng, terminations=True):
+    """Fill a replay buffer and return it with the mean time per sample."""
+    start = time.perf_counter()
+    fill(replay_buffer, n_samples, rng, terminations)
+    return replay_buffer, (time.perf_counter() - start) / n_samples * 1e3
+
+
 def measure(fn, n_repeats):
     """Mean wall-clock time of fn in ms, including the transfer to device."""
     jax.block_until_ready(fn())  # warm-up
@@ -50,18 +57,16 @@ def main(buffer_size, n_tasks, n_repeats):
     rng = np.random.default_rng(0)
     results = {}
 
-    start = time.perf_counter()
-    replay_buffer = fill(
+    replay_buffer, results["ReplayBuffer add_sample"] = measure_fill(
         ReplayBuffer(buffer_size), buffer_size, rng, terminations=False
-    )
-    results["ReplayBuffer add_sample"] = (
-        (time.perf_counter() - start) / buffer_size * 1e3
     )
     results["ReplayBuffer sample_batch"] = measure(
         lambda: replay_buffer.sample_batch(BATCH_SIZE, rng), n_repeats
     )
 
-    lap = fill(LAP(buffer_size), buffer_size, rng, terminations=False)
+    lap, results["LAP add_sample"] = measure_fill(
+        LAP(buffer_size), buffer_size, rng, terminations=False
+    )
     results["LAP sample_batch"] = measure(
         lambda: lap.sample_batch(BATCH_SIZE, rng), n_repeats
     )
@@ -78,7 +83,7 @@ def main(buffer_size, n_tasks, n_repeats):
         n_repeats,
     )
 
-    mrq = fill(
+    mrq, results["MR.Q add_sample"] = measure_fill(
         SubtrajectoryReplayBufferPER(buffer_size, horizon=5), buffer_size, rng
     )
     results["MR.Q critic sample_batch (h=3)"] = measure(

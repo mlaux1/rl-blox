@@ -530,19 +530,100 @@ class SubtrajectoryReplayBuffer:
         self.Batch = namedtuple("Batch", self.buffer)
 
 
+class SumTree:
+    """Binary tree of sums for sampling indices in proportion to values.
+
+    Parameters
+    ----------
+    capacity : int
+        Number of values.
+    """
+
+    def __init__(self, capacity: int):
+        self.n_leaves = 1
+        while self.n_leaves < capacity:
+            self.n_leaves *= 2
+        self.nodes = np.zeros(2 * self.n_leaves)
+
+    def total(self) -> float:
+        """Sum of all values."""
+        return self.nodes[1]
+
+    def update(self, indices: npt.ArrayLike, values: npt.ArrayLike):
+        """Set values at indices."""
+        nodes = np.asarray(indices) + self.n_leaves
+        self.nodes[nodes] = values
+        # All leaves have the same depth, so the parents reach the root at once
+        parents = nodes // 2
+        while parents[0] > 0:
+            self.nodes[parents] = (
+                self.nodes[2 * parents] + self.nodes[2 * parents + 1]
+            )
+            parents //= 2
+
+    def sample(self, cumulative_values: npt.ArrayLike) -> npt.NDArray[int]:
+        """Find the indices at which the cumulative sum of values is reached.
+
+        Parameters
+        ----------
+        cumulative_values : array, shape (n_samples,)
+            Values in [0, total()).
+
+        Returns
+        -------
+        indices : array, shape (n_samples,)
+            Indices of values that are not zero.
+        """
+        remaining = np.array(cumulative_values, dtype=float)
+        nodes = np.ones(len(remaining), dtype=int)
+        while nodes[0] < self.n_leaves:
+            left = 2 * nodes
+            left_sum = self.nodes[left]
+            go_right = (remaining >= left_sum) & (self.nodes[left + 1] > 0)
+            remaining = np.where(go_right, remaining - left_sum, remaining)
+            nodes = left + go_right
+        return nodes - self.n_leaves
+
+
 class PriorityBuffer:
+    """Priorities of the samples in a replay buffer.
+
+    Parameters
+    ----------
+    buffer_size : int
+        Maximum size of the buffer.
+
+    mask : array, shape (buffer_size,), optional
+        Samples where the mask is 0 are never sampled. Call :meth:`refresh`
+        after changing it.
+    """
+
     max_priority: float
     priority: npt.NDArray[float]
     sampled_indices: npt.NDArray[int]
 
-    def __init__(self, buffer_size: int):
+    def __init__(self, buffer_size: int, mask: npt.NDArray[int] | None = None):
         self.max_priority = 1.0
-        self.priority = np.empty(buffer_size, dtype=float)
+        self.priority = np.zeros(buffer_size)
+        self.mask = mask
+        self.sum_tree = SumTree(buffer_size)
         self.sampled_indices = np.empty(0, dtype=int)
 
-    def initialize_priority(self, insert_idx: int):
+    def initialize_priority(self, insert_idx: int | list[int]):
         """Initialize the priority of the next inserted sample."""
         self.priority[insert_idx] = self.max_priority
+        self.refresh(np.atleast_1d(insert_idx))
+
+    def refresh(self, indices: npt.ArrayLike):
+        """Update the sampling weights of indices."""
+        weights = self.priority[indices]
+        if self.mask is not None:
+            weights = weights * self.mask[indices]
+        self.sum_tree.update(indices, weights)
+
+    def total(self) -> float:
+        """Sum of the sampling weights."""
+        return self.sum_tree.total()
 
     def prioritized_sampling(
         self,
@@ -552,17 +633,24 @@ class PriorityBuffer:
         mask: npt.NDArray[int] | None = None,
     ) -> npt.NDArray[int]:
         """Sample indices based on the priority distribution."""
-        priority = self.priority[:current_len]
-        if mask is not None:
-            priority = priority * mask[:current_len]
-        probabilities = np.cumsum(priority)
-        random_uniforms = rng.uniform(0, 1, size=batch_size) * probabilities[-1]
-        self.sampled_indices = np.searchsorted(probabilities, random_uniforms)
+        if mask is not None and mask is not self.mask:
+            priority = self.priority[:current_len] * mask[:current_len]
+            probabilities = np.cumsum(priority)
+            random_uniforms = (
+                rng.uniform(0, 1, size=batch_size) * probabilities[-1]
+            )
+            self.sampled_indices = np.searchsorted(
+                probabilities, random_uniforms
+            )
+        else:
+            random_uniforms = rng.uniform(0, 1, size=batch_size) * self.total()
+            self.sampled_indices = self.sum_tree.sample(random_uniforms)
         return self.sampled_indices
 
     def update_priority(self, priority: npt.ArrayLike):
         """Update the priority of the sampled indices."""
         self.priority[self.sampled_indices] = priority
+        self.refresh(self.sampled_indices)
         self.max_priority = max(np.max(priority), self.max_priority)
 
     def reset_max_priority(self, current_len: int):
@@ -680,23 +768,10 @@ class LAP(ReplayBuffer):
 
 class PrioritizedReplayBuffer(LAP):
     def prioritized_sampling_stratified(
-        self,
-        current_len: int,
-        batch_size: int,
-        rng: np.random.Generator,
-        mask: npt.NDArray[int] | None = None,
+        self, batch_size: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
-        """Sample indices using stratified sampling over the cumulative priority sum.
-
-        Divide [0, sum_probability] into batch_size segments and sample one point per segment
-        """
-        priority = self.priority.priority[:current_len]
-        if mask is not None:
-            priority = priority * mask[:current_len]
-        probabilities = np.cumsum(priority)
-
-        # stratified sampling: divide [0, sum_probability] into batch_size segments
-        segment = probabilities[-1] / batch_size
+        """Sample one index from each of batch_size equal priority segments."""
+        segment = self.priority.total() / batch_size
 
         # sample one uniform value per segment
         random_points = rng.uniform(
@@ -705,8 +780,10 @@ class PrioritizedReplayBuffer(LAP):
             size=batch_size,
         )
 
-        self.sampled_indices = np.searchsorted(probabilities, random_points)
-        return self.sampled_indices
+        self.priority.sampled_indices = self.priority.sum_tree.sample(
+            random_points
+        )
+        return self.priority.sampled_indices
 
     def sample_batch(
         self, batch_size: int, rng: np.random.Generator, beta: float = 0.4
@@ -733,19 +810,21 @@ class PrioritizedReplayBuffer(LAP):
         importance_ratio : array
             Importance sampling ratio corresponding to the samples in batch.
         """
-        return jax.device_put(self.sample_arrays(batch_size, rng, beta))
+        batch, importance_ratio = self.sample_arrays(batch_size, rng, beta)
+        return jax.device_put(
+            (batch, importance_ratio / importance_ratio.max())
+        )
 
     def sample_arrays(
         self, batch_size: int, rng: np.random.Generator, beta: float = 0.4
     ):
-        """Like :meth:`sample_batch`, but returns NumPy arrays."""
+        """Like :meth:`sample_batch`, but returns NumPy arrays and
+        unnormalized importance ratios."""
         # TODO: Using stratified prioritized sampling or the prioritized sampling
         #       implementation in PriorityBuffer class makes almost no difference
         #       in training. Consider removing prioritized_sampling_stratified()
         #       and merging PrioritizedReplayBuffer class with LAP class.
-        indices = self.prioritized_sampling_stratified(
-            self.current_len, batch_size, rng
-        )
+        indices = self.prioritized_sampling_stratified(batch_size, rng)
         # indices = self.priority.prioritized_sampling(
         #     self.current_len, batch_size, rng
         # )
@@ -756,52 +835,27 @@ class PrioritizedReplayBuffer(LAP):
         )
 
     def compute_importance_ratio(
-        self,
-        indices: npt.NDArray[int],
-        beta: float,
-    ) -> list[jnp.ndarray]:
-        r"""Compute importance ratio importance ratio.
-
-        The probability of sampling a transition i is
-        math::
-            P(i)
-            =
-            \frac{|\delta_i|^{\alpha} + \epsilon}
-            {\sum_j |\delta_j|^{\alpha} + \epsilon}, with the priority
-        math::
-            p(i) = |\delta_i|^{\alpha} + \epsilon.
-
-        Compute importance sampling weight :math:`w_i`:
-
-        math::
-            w_i
-            =
-            \left( \frac{1}{N \, P(i)} \right)^{\beta},
-
-        then normalize it with max is-weight :math:`\max w_i` in the batch.
+        self, indices: npt.NDArray[int], beta: float
+    ) -> npt.NDArray[float]:
+        r"""Compute unnormalized importance sampling weights.
 
         Parameters
         ----------
-        batch_size : int
-            Size of the sampled batch.
+        indices : array, shape (n_samples,)
+            Indices of the sampled transitions.
 
-        rng : np.random.Generator
-            Random number generator.
-
-        beta: float
+        beta : float
             Importance-sampling correction exponent.
 
         Returns
         -------
-        normalized_weights : array
-            A batch of importance sampling ratio.
+        weights : array, shape (n_samples,)
+            Weights :math:`w_i = (N P(i))^{-\beta}`, where :math:`P(i)` is the
+            sampling probability of transition :math:`i` and :math:`N` the
+            number of transitions.
         """
-        priority = self.priority.priority[indices]
-        sum_probability = np.cumsum(priority)[-1]
-        is_weight = (self.current_len * priority / sum_probability) ** (-beta)
-
-        normalized_weights = is_weight / np.max(is_weight)
-        return normalized_weights
+        probability = self.priority.priority[indices] / self.priority.total()
+        return (self.current_len * probability) ** (-beta)
 
 
 class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
@@ -848,7 +902,7 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         super().__init__(
             buffer_size, horizon, keys, dtypes, discrete_actions, mrq_mode
         )
-        self.priority = PriorityBuffer(buffer_size)
+        self.priority = PriorityBuffer(buffer_size, mask=self.mask_)
 
     def add_sample(self, **sample):
         """Add transition sample to the replay buffer.
@@ -857,8 +911,17 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         arguments with keys matching the ones passed to the constructor or
         the default keys respectively.
         """
+        previous_insert_idx = self.insert_idx
         inserted_at = super().add_sample(**sample)
         self.priority.initialize_priority(inserted_at)
+        # Adding a sample changes the mask from horizon steps before it
+        n_changed = (self.insert_idx - previous_insert_idx) % self.buffer_size
+        changed = (
+            previous_insert_idx
+            - self.horizon
+            + np.arange(n_changed + self.horizon)
+        )
+        self.priority.refresh(changed % self.buffer_size)
 
     def _sample_idx(
         self, batch_size: int, horizon: int, rng: np.random.Generator
@@ -1077,7 +1140,11 @@ class MultiTaskReplayBuffer:
         batch
             Batches of the tasks, concatenated along the first axis.
         """
-        return jax.device_put(self.sample_arrays(batch_size, *args, **kwargs))
+        arrays = self.sample_arrays(batch_size, *args, **kwargs)
+        if isinstance(self.buffers[0], PrioritizedReplayBuffer):
+            batch, importance_ratio = arrays
+            arrays = batch, importance_ratio / importance_ratio.max()
+        return jax.device_put(arrays)
 
     def sample_arrays(self, batch_size: int, *args, **kwargs):
         """Like :meth:`sample_batch`, but returns NumPy arrays."""
