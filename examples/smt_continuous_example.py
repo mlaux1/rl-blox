@@ -1,4 +1,5 @@
 from functools import partial
+from operator import attrgetter
 
 import gymnasium as gym
 import jax.numpy as jnp
@@ -24,6 +25,10 @@ from rl_blox.logging.logger import AIMLogger
 env_name = "Pendulum-v1"
 
 
+def td7_policy(result):
+    return DeterministicSALEPolicy(result.embedding, result.actor)
+
+
 def set_context(env: gym.Env, context):
     env.unwrapped.g = context[0]
 
@@ -32,6 +37,9 @@ base_env = gym.make(env_name)
 contexts = np.linspace(0, 20, 21)[:, np.newaxis]
 
 train_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
+eval_set = DiscreteTaskSet(
+    gym.make(env_name), set_context, contexts, context_aware=True
+)
 
 
 seed = 2
@@ -52,6 +60,8 @@ logger.define_experiment(
 )
 
 env = train_set.get_task(0)
+# Policy that SMT evaluates to select tasks
+get_policy = attrgetter("policy")
 if backbone == "DDPG":
     state = create_ddpg_state(env, seed=seed)
     policy_target = nnx.clone(state.policy)
@@ -108,6 +118,7 @@ elif backbone == "TD7":
         critic_target=critic_target,
         actor_target=actor_target,
     )
+    get_policy = td7_policy
 elif backbone == "MR.Q":
     state = create_mrq_state(env, seed=seed)
     q_target = nnx.clone(state.q)
@@ -128,6 +139,7 @@ elif backbone == "MR.Q":
         q_target=q_target,
         policy_with_encoder_target=policy_with_encoder_target,
     )
+    get_policy = attrgetter("policy_with_encoder")
 else:
     assert backbone == "SAC", "Backbone must be either 'DDPG' or 'SAC'."
     state = create_sac_state(env, seed=seed)
@@ -150,6 +162,7 @@ else:
 
 result = train_smt(
     train_set,
+    eval_set,
     train_st,
     replay_buffer,
     solved_threshold=-100.0,
@@ -158,6 +171,11 @@ result = train_smt(
     b2=10_000,
     learning_starts=1_000,
     scheduling_interval=1,
+    # One evaluation (21 tasks x 200 steps) after 3000 steps, so that the
+    # remaining refills are based on it
+    eval_freq=3_000,
+    n_eval_episodes=1,
+    get_policy=get_policy,
     logger=logger,
     seed=seed,
 )

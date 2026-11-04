@@ -18,6 +18,16 @@ from rl_blox.logging.logger import AIMLogger
 env_name = "MountainCar-v0"
 
 
+class GreedyPolicy(nnx.Module):
+    """Policy that SMT evaluates: the greedy action of the Q-network."""
+
+    def __init__(self, q_net):
+        self.q_net = q_net
+
+    def __call__(self, observation):
+        return jnp.argmax(self.q_net(observation))
+
+
 def set_context(env, context):
     env.unwrapped.goal_velocity = context
 
@@ -26,6 +36,9 @@ base_env = gym.make(env_name)
 contexts = np.linspace(0, 0.3, 11)[:, np.newaxis]
 
 train_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
+eval_set = DiscreteTaskSet(
+    gym.make(env_name), set_context, contexts, context_aware=True
+)
 
 seed = 2
 verbose = 2
@@ -89,6 +102,7 @@ else:
 
 result = train_smt(
     train_set,
+    eval_set,
     train_st,
     replay_buffer,
     solved_threshold=-110.0,
@@ -98,6 +112,11 @@ result = train_smt(
     b2=30_000,
     learning_starts=0,
     scheduling_interval=20,
+    # Up to 11 tasks x 200 steps per evaluation. Evaluations happen between
+    # scheduling iterations (3 tasks x 20 episodes), at least 20000 apart
+    eval_freq=20_000,
+    n_eval_episodes=1,
+    get_policy=lambda result: GreedyPolicy(result.q_net),
     logger=logger,
     seed=seed,
 )

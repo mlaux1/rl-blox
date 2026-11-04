@@ -2,19 +2,29 @@ import copy
 import warnings
 from collections import deque
 from collections.abc import Callable
+from operator import attrgetter
 
 import gymnasium as gym
+import jax
 import numpy as np
+from flax import nnx
 from gymnasium.vector import SyncVectorEnv
 from tqdm.rich import tqdm
 
-from ..blox.multitask import DiscreteTaskSet, TaskSelectionMixin
+from ..blox.multitask import (
+    DiscreteTaskSet,
+    TaskSelectionMixin,
+    act,
+    get_task_env,
+    max_episode_steps,
+)
 from ..blox.replay_buffer import MultiTaskReplayBuffer
 from ..logging.logger import LoggerBase
 
 
 def train_smt(
     task_set: DiscreteTaskSet | SyncVectorEnv,
+    eval_set: DiscreteTaskSet | SyncVectorEnv,
     train_st: Callable,
     replay_buffer: MultiTaskReplayBuffer,
     b1: int = 17_000_000,
@@ -25,6 +35,11 @@ def train_smt(
     kappa: float = 0.8,
     K: int = 3,
     n_average: int = 5,
+    eval_freq: int = 500_000,
+    n_eval_episodes: int = 5,
+    max_eval_episode_steps: int | None = None,
+    gamma: float = 0.99,
+    get_policy: Callable[..., nnx.Module] = attrgetter("policy"),
     learning_starts: int = 5_000,
     seed: int = 0,
     task_selectables: list[TaskSelectionMixin] | None = None,
@@ -42,6 +57,11 @@ def train_smt(
     ----------
     task_set : DiscreteTaskSet or SyncVectorEnv
         The multi-task environment definition.
+
+    eval_set : DiscreteTaskSet or SyncVectorEnv
+        The set of tasks used for evaluation. Must contain the same number of
+        tasks as ``task_set`` in the same order. Must not share environment
+        instances with ``task_set``.
 
     train_st : callable
         The single-task training algorithm. The training function should accept
@@ -101,6 +121,36 @@ def train_smt(
         task's training performance. It is used to check if a task is solved
         or unsolvable.
 
+    eval_freq : int
+        Number of environment steps between evaluations in the first stage.
+        Corresponds to :math:`T_{eval}` in the paper [1]_. Evaluations are
+        only performed between scheduling iterations, so the actual interval
+        can be slightly larger.
+
+    n_eval_episodes : int
+        Number of evaluation episodes per task in each evaluation.
+        Corresponds to :math:`n_{eval}` in the paper [1]_.
+
+    max_eval_episode_steps : int, optional
+        Maximum length of an evaluation episode. Used to skip evaluations that
+        would exceed ``b1``. If not set, it is inferred from the ``TimeLimit``
+        wrapper or spec of the evaluation environments. If it cannot be
+        inferred, evaluations may exceed ``b1``.
+
+    gamma : float
+        Discount factor of the evaluation return. Should be the same as the
+        discount factor of the backbone.
+
+    get_policy : callable
+        Maps the result of ``train_st`` to the policy that is evaluated, an
+        ``nnx.Module`` that maps an observation to an action. Policies with a
+        method ``sample_and_log_prob(observation, key)`` are treated as
+        stochastic. All other policies are treated as deterministic, so their
+        output is used as the action, or the first element if the output is
+        a tuple. Hence, stochastic policies without ``sample_and_log_prob``,
+        e.g., ``SoftmaxPolicy``, are not supported. The default returns the
+        field ``policy``, which works for SAC, DDPG, and TD3.
+
     learning_starts : int
         Number of steps at the start of SMT in which the backbone only takes
         random actions and does not train. ``train_st`` compares it with the
@@ -130,11 +180,17 @@ def train_smt(
     training_performances : np.ndarray
         Average training performance for each task.
 
+    eval_steps : int
+        Number of environment steps used for evaluation. Together with
+        ``training_steps``, they sum up to :math:`B_1 + B_2`.
+
     Raises
     ------
     ValueError
         If ``K`` is not between 1 and the number of tasks, ``kappa`` is not in
-        (0, 1], ``b1`` is not positive, or ``b2`` is negative.
+        (0, 1], ``b1`` is not positive, ``b2`` is negative, ``eval_set`` does
+        not have the same number of tasks as ``task_set``, or ``eval_freq``
+        or ``n_eval_episodes`` is not positive.
 
     Warns
     -----
@@ -145,6 +201,14 @@ def train_smt(
     UserWarning
         If all tasks are solved in the first stage, so that the second stage
         trains all tasks round robin.
+
+    UserWarning
+        If the evaluated policy is deterministic, so that the entropy term of
+        the evaluation metric is omitted.
+
+    UserWarning
+        If the episode length of the evaluation environments cannot be
+        inferred and ``max_eval_episode_steps`` is not set.
 
     Notes
     -----
@@ -165,6 +229,27 @@ def train_smt(
     entropy control must be bound explicitly, e.g.,
     ``partial(train_sac, q_target=..., entropy_control=..., ...)``.
     Otherwise, the backbone creates new ones for each scheduled task.
+
+    In the first stage, SMT evaluates the policy on all tasks every
+    ``eval_freq`` steps. When the training pool has a vacancy, it is filled
+    with the task from the main pool that has the lowest evaluation
+    performance. Before the first evaluation, tasks are selected at random.
+    The evaluation performance of a task is the mean of the metric
+
+    .. math::
+
+        \sum_{t=1}^H \gamma^{t-1} r_t - \sum_{t=1}^H \log \pi(a_t|s_t)
+
+    (equation (5) of [1]_) over ``n_eval_episodes`` episodes, in which the
+    actions are sampled from the policy. For deterministic policies, the
+    entropy term is omitted. Evaluation steps count towards the budget
+    :math:`B_1`. Whether a task is solved or unsolvable
+    is decided based on its training performance, as in the paper.
+
+    Logging
+
+    * ``eval_steps`` - number of environment steps used for evaluation
+    * ``eval_performance_{i}`` - evaluation performance of task i
 
     References
     ----------
@@ -190,6 +275,18 @@ def train_smt(
         raise ValueError("b1 must be positive")
     if b2 < 0:
         raise ValueError("b2 must not be negative")
+    if isinstance(eval_set, SyncVectorEnv):
+        n_eval_tasks = eval_set.num_envs
+    else:
+        n_eval_tasks = len(eval_set)
+    if n_eval_tasks != n_tasks:
+        raise ValueError(
+            f"eval_set has {n_eval_tasks} tasks, task_set has {n_tasks}"
+        )
+    if eval_freq <= 0:
+        raise ValueError("eval_freq must be positive")
+    if n_eval_episodes < 1:
+        raise ValueError("n_eval_episodes must be positive")
 
     if K == n_tasks:
         warnings.warn(
@@ -205,8 +302,30 @@ def train_smt(
     avg_training_performances = np.full(n_tasks, -np.finfo(float).max)
     progress = tqdm(total=b_total, disable=not progress_bar)
 
-    global_step, result_st, unsolvable_pool = smt_stage1(
+    # Seed evaluation environments for reproducible evaluations
+    for i in range(n_tasks):
+        get_task_env(eval_set, i).reset(seed=seed + i)
+    max_eval_steps = max_evaluation_steps(
+        eval_set, n_eval_episodes, max_eval_episode_steps
+    )
+    if max_eval_steps is None:
+        if eval_freq < b1:
+            warnings.warn(
+                "Could not infer the episode length of all evaluation "
+                "environments, evaluations may exceed b1. Set "
+                "max_eval_episode_steps to avoid this.",
+                stacklevel=2,
+            )
+        max_eval_steps = 0
+
+    global_step, result_st, unsolvable_pool, eval_steps = smt_stage1(
         task_set,
+        eval_set,
+        eval_freq,
+        max_eval_steps,
+        n_eval_episodes,
+        gamma,
+        get_policy,
         train_st,
         replay_buffer,
         task_selectables,
@@ -255,11 +374,17 @@ def train_smt(
     )
     progress.close()
 
-    return result_st, training_steps, avg_training_performances
+    return result_st, training_steps, avg_training_performances, eval_steps
 
 
 def smt_stage1(
     task_set,
+    eval_set,
+    eval_freq,
+    max_eval_steps,
+    n_eval_episodes,
+    gamma,
+    get_policy,
     train_st,
     replay_buffer,
     task_selectables,
@@ -290,6 +415,12 @@ def smt_stage1(
     task_budgets = np.full(n_tasks, kappa * b1 / K)
     # A task's budget is spent from the moment it enters the training pool.
     steps_in_training_pool = np.zeros(n_tasks, dtype=int)
+    # All tasks tie before the first evaluation, so they are picked at random.
+    eval_performances = np.full(n_tasks, -np.inf)
+    next_eval_step = eval_freq
+    key = jax.random.key(seed)
+    warned_deterministic = False
+    total_eval_steps = 0
 
     while global_step < b1:
         updated_training_pool = copy.deepcopy(training_pool)
@@ -370,8 +501,37 @@ def smt_stage1(
             if global_step >= b1:
                 break
 
-        # The original SMT algorithm would evaluate the performance on each task
-        # and reset the networks here, i.e., randomly initialize them.
+        if global_step >= next_eval_step and global_step + max_eval_steps <= b1:
+            policy = get_policy(result_st)
+            if not is_stochastic(policy) and not warned_deterministic:
+                warnings.warn(
+                    "The evaluated policy is deterministic, so the entropy "
+                    "term of the SMT evaluation metric is omitted.",
+                    stacklevel=3,
+                )
+                warned_deterministic = True
+            eval_performances, eval_steps, key = evaluate_tasks(
+                policy,
+                eval_set,
+                n_eval_episodes,
+                gamma,
+                key,
+                task_selectables,
+            )
+            global_step += eval_steps
+            total_eval_steps += eval_steps
+            progress.update(eval_steps)
+            next_eval_step = global_step + eval_freq
+            if logger is not None:
+                logger.record_stat("eval_steps", eval_steps, step=global_step)
+                for i in range(n_tasks):
+                    logger.record_stat(
+                        f"eval_performance_{i}",
+                        eval_performances[i],
+                        step=global_step,
+                    )
+            # The original SMT algorithm would also reset the networks here,
+            # i.e., randomly initialize them.
 
         early_stop_stage = False
         while len(updated_training_pool) < K:
@@ -382,11 +542,11 @@ def smt_stage1(
                 # else: Continue until training pool is solved or unsolvable.
                 break
 
-            # Select task with the lowest performance (from main pool). Ties,
-            # e.g., between tasks that were never trained, are broken at
-            # random, so that untrained tasks are selected in random order.
+            # Select task with the lowest evaluation performance (from main
+            # pool). Ties, e.g., before the first evaluation, are broken at
+            # random.
             main_pool_indices = np.array(sorted(main_pool))
-            performances = avg_training_performances[main_pool_indices]
+            performances = eval_performances[main_pool_indices]
             worst = int(
                 rng.choice(
                     main_pool_indices[performances == performances.min()]
@@ -403,7 +563,7 @@ def smt_stage1(
                 logger.record_stat("worst task", worst, step=global_step)
                 logger.record_stat(
                     "worst performance",
-                    avg_training_performances[worst],
+                    eval_performances[worst],
                     step=global_step,
                 )
 
@@ -418,7 +578,7 @@ def smt_stage1(
         # instead. This is different from the original implementation.
         unsolvable_pool = unsolved_pool
 
-    return global_step, result_st, unsolvable_pool
+    return global_step, result_st, unsolvable_pool, total_eval_steps
 
 
 def smt_stage2(
@@ -517,3 +677,156 @@ def smt_stage2(
                 break
 
     return result_st
+
+
+def is_stochastic(policy: nnx.Module) -> bool:
+    """Check if a policy can sample actions with their log probabilities.
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Policy.
+
+    Returns
+    -------
+    stochastic : bool
+        True if the policy has a method ``sample_and_log_prob``.
+    """
+    return hasattr(policy, "sample_and_log_prob")
+
+
+def max_evaluation_steps(
+    eval_set: DiscreteTaskSet | SyncVectorEnv,
+    n_eval_episodes: int,
+    max_eval_episode_steps: int | None,
+) -> int | None:
+    """Upper bound on the number of steps of an evaluation of all tasks.
+
+    Parameters
+    ----------
+    eval_set : DiscreteTaskSet or SyncVectorEnv
+        The set of tasks used for evaluation.
+
+    n_eval_episodes : int
+        Number of evaluation episodes per task.
+
+    max_eval_episode_steps : int or None
+        Maximum length of an evaluation episode. Inferred from the evaluation
+        environments if None.
+
+    Returns
+    -------
+    max_steps : int or None
+        Upper bound on the number of steps. None if the episode length of an
+        evaluation environment cannot be inferred.
+    """
+    if isinstance(eval_set, SyncVectorEnv):
+        n_tasks = eval_set.num_envs
+    else:
+        n_tasks = len(eval_set)
+
+    if max_eval_episode_steps is not None:
+        episode_limits = [max_eval_episode_steps] * n_tasks
+    else:
+        episode_limits = [
+            max_episode_steps(get_task_env(eval_set, i)) for i in range(n_tasks)
+        ]
+    if None in episode_limits:
+        return None
+    return n_eval_episodes * sum(episode_limits)
+
+
+def evaluate_tasks(
+    policy: nnx.Module,
+    eval_set: DiscreteTaskSet | SyncVectorEnv,
+    n_eval_episodes: int,
+    gamma: float,
+    key: jax.Array,
+    task_selectables: list[TaskSelectionMixin] | None = None,
+) -> tuple[np.ndarray, int, jax.Array]:
+    r"""Evaluate a policy on all tasks with equation (5) of the SMT paper.
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Policy that maps an observation to an action. If it is stochastic
+        (see :func:`is_stochastic`), actions are sampled from it.
+
+    eval_set : DiscreteTaskSet or SyncVectorEnv
+        The set of tasks used for evaluation.
+
+    n_eval_episodes : int
+        Number of evaluation episodes per task.
+
+    gamma : float
+        Discount factor of the evaluation return.
+
+    key : jax.Array
+        Pseudo random number generator key for sampling actions.
+
+    task_selectables : list, optional
+        Objects that are informed about the evaluated task.
+
+    Returns
+    -------
+    performances : np.ndarray
+        Mean evaluation metric of each task.
+
+    n_steps : int
+        Number of environment steps used for the evaluation.
+
+    key : jax.Array
+        Updated pseudo random number generator key.
+
+    Notes
+    -----
+    The evaluation metric of an episode is
+
+    .. math::
+
+        \sum_{t=1}^H \gamma^{t-1} r_t - \sum_{t=1}^H \log \pi(a_t|s_t).
+
+    For deterministic policies, the entropy term is omitted.
+    """
+    if isinstance(eval_set, SyncVectorEnv):
+        n_tasks = eval_set.num_envs
+    else:
+        n_tasks = len(eval_set)
+    stochastic = is_stochastic(policy)
+
+    performances = np.zeros(n_tasks)
+    n_steps = 0
+    for task_id in range(n_tasks):
+        if task_selectables is not None:
+            for ts in task_selectables:
+                ts.select_task(task_id)
+        env = get_task_env(eval_set, task_id)
+
+        scores = []
+        for _ in range(n_eval_episodes):
+            obs, _ = env.reset()
+            discounted_return = 0.0
+            entropy = 0.0
+            discount = 1.0
+            done = False
+            while not done:
+                if stochastic:
+                    key, sampling_key = jax.random.split(key)
+                    action, log_prob = policy.sample_and_log_prob(
+                        obs, sampling_key
+                    )
+                    entropy -= float(log_prob)
+                else:
+                    action = act(policy, obs)
+                obs, reward, terminated, truncated, _ = env.step(
+                    np.asarray(action)
+                )
+                discounted_return += discount * float(reward)
+                discount *= gamma
+                n_steps += 1
+                done = terminated or truncated
+            scores.append(discounted_return + entropy)
+
+        performances[task_id] = np.mean(scores)
+
+    return performances, n_steps, key

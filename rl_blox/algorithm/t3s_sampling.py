@@ -5,37 +5,18 @@ from typing import NamedTuple
 
 import jax
 import numpy as np
-from flax import nnx
 from gymnasium.vector import SyncVectorEnv
-from gymnasium.wrappers import TimeLimit
 from scipy.special import softmax
 from tqdm.rich import tqdm
 
-from ..blox.multitask import DiscreteTaskSet, warn_if_state_not_bound
+from ..blox.multitask import (
+    DiscreteTaskSet,
+    act,
+    get_task_env,
+    max_episode_steps,
+    warn_if_state_not_bound,
+)
 from ..logging.logger import LoggerBase
-
-
-@nnx.jit
-def act(policy, observation):
-    out = policy(observation)
-    return out[0] if isinstance(out, tuple) else out
-
-
-def _get_env(task_set, i):
-    if isinstance(task_set, SyncVectorEnv):
-        return task_set.envs[i]
-    else:
-        return task_set.get_task(i)
-
-
-def _max_episode_steps(env):
-    while env is not None:
-        if isinstance(env, TimeLimit):
-            return env._max_episode_steps
-        if env.spec is not None and env.spec.max_episode_steps is not None:
-            return env.spec.max_episode_steps
-        env = getattr(env, "env", None)
-    return None
 
 
 class EvalEpisode(NamedTuple):
@@ -347,14 +328,14 @@ def train_t3s(
 
     # Seed evaluation environments for reproducible evaluations
     for i in range(n_tasks):
-        _get_env(eval_set, i).reset(seed=seed + i)
+        get_task_env(eval_set, i).reset(seed=seed + i)
 
     # Upper bound on the number of steps a full evaluation can take
     if max_eval_episode_steps is not None:
         episode_limits = [max_eval_episode_steps] * n_tasks
     else:
         episode_limits = [
-            _max_episode_steps(_get_env(eval_set, i)) for i in range(n_tasks)
+            max_episode_steps(get_task_env(eval_set, i)) for i in range(n_tasks)
         ]
     if None in episode_limits:
         if eval_freq < total_timesteps:
@@ -400,7 +381,7 @@ def train_t3s(
                 logger.record_stat("task_id", task_id, step=global_step)
 
             st_result = train_st(
-                _get_env(task_set, task_id),
+                get_task_env(task_set, task_id),
                 seed=seed + global_step,
                 total_timesteps=total_timesteps,
                 total_episodes=episodes_per_task,
@@ -422,7 +403,7 @@ def train_t3s(
             task_performance = np.zeros_like(task_probs)
 
             for i in range(n_tasks):
-                env = _get_env(eval_set, i)
+                env = get_task_env(eval_set, i)
                 scores = []
 
                 for _ in range(n_eval_episodes):

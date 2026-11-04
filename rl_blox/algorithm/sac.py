@@ -240,11 +240,6 @@ def create_sac_state(
     )(policy, policy_optimizer, q, q_optimizer)
 
 
-@nnx.jit
-def _sample_action(policy, obs, action_key):
-    return policy.sample_and_log_prob(obs, action_key)[0]
-
-
 _sac_train_step = nnx.jit(
     partial(train_step_with_loss, sac_loss), static_argnames=("gamma",)
 )
@@ -514,9 +509,8 @@ def train_sac(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key)
-            action = np.asarray(
-                _sample_action(policy, jnp.asarray(obs), action_key)
-            )
+            action, _ = policy.sample_and_log_prob(jnp.asarray(obs), action_key)
+            action = np.asarray(action)
 
         next_obs, reward, termination, truncation, info = env.step(action)
         steps_per_episode += 1
