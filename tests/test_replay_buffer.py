@@ -640,3 +640,27 @@ def test_multitask_normalizes_importance_ratios_over_whole_batch():
     importance_ratio = np.asarray(importance_ratio)
     assert importance_ratio.max() == pytest.approx(1.0)
     assert np.all(importance_ratio[tasks == 0] < 1.0)
+
+
+@pytest.mark.parametrize("episode_length", [4, 40])
+def test_subtrajectory_samples_valid_starts_uniformly(episode_length):
+    # Short episodes leave few valid starts, which triggers the fallback
+    buffer = SubtrajectoryReplayBuffer(
+        buffer_size=1000, horizon=3, mrq_mode=False
+    )
+    for i in range(1000):
+        add(
+            buffer,
+            obs=i,
+            next_obs=i + 1,
+            term=False,
+            trunc=i % episode_length == episode_length - 1,
+        )
+    valid_starts = np.flatnonzero(buffer.mask_)
+
+    starts = buffer._sample_idx(100_000, 3, np.random.default_rng(0))
+
+    assert np.all(buffer.mask_[starts] == 1)
+    frequencies = np.bincount(starts, minlength=1000)[valid_starts]
+    expected = len(starts) / len(valid_starts)
+    assert np.all(np.abs(frequencies - expected) < 5 * np.sqrt(expected))

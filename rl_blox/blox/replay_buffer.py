@@ -501,9 +501,17 @@ class SubtrajectoryReplayBuffer:
         self, batch_size: int, horizon: int, rng: np.random.Generator
     ) -> npt.NDArray[int]:
         mask = self._mask_for_horizon(horizon)
-        nz = np.nonzero(mask)[0]
-        indices = rng.integers(0, len(nz), size=batch_size)
-        return nz[indices]
+        # Redraw invalid starts instead of searching all valid starts
+        indices = rng.integers(0, self.current_len, size=batch_size)
+        invalid = np.flatnonzero(mask[indices] == 0)
+        for _ in range(10):
+            if len(invalid) == 0:
+                return indices
+            indices[invalid] = rng.integers(0, self.current_len, len(invalid))
+            invalid = invalid[mask[indices[invalid]] == 0]
+        valid_starts = np.flatnonzero(mask)
+        indices[invalid] = rng.choice(valid_starts, len(invalid))
+        return indices
 
     def can_sample(self) -> bool:
         """Check if a subtrajectory can be sampled."""
