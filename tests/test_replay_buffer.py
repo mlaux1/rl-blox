@@ -522,3 +522,12 @@ def test_multitask_routes_priorities_to_sampled_tasks():
         sampled = buffer.priority.sampled_indices
         assert len(sampled) == 2
         assert np.all(buffer.priority.priority[sampled] == 10.0 + task_id)
+
+
+@pytest.mark.parametrize(
+    "replay_buffer",
+    [ReplayBuffer(buffer_size=10), SubtrajectoryReplayBuffer(buffer_size=10)],
+)
+def test_replay_buffer_stores_floats_as_float32(replay_buffer):
+    assert replay_buffer.buffer["observation"].dtype == np.float32
+    assert replay_buffer.buffer["reward"].dtype == np.float32

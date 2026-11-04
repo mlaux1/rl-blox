@@ -29,7 +29,7 @@ class ReplayBuffer:
         this order.
 
     dtypes : list[dtype], optional
-        dtype used for each buffer. Defaults to float for everything except
+        dtype used for each buffer. Defaults to float32 for everything except
         'termination'.
 
     discrete_actions : bool, optional
@@ -59,10 +59,10 @@ class ReplayBuffer:
             ]
         if dtypes is None:
             dtypes = [
-                float,
-                int if discrete_actions else float,
-                float,
-                float,
+                np.float32,
+                int if discrete_actions else np.float32,
+                np.float32,
+                np.float32,
                 int,
             ]
         self.buffer = OrderedDict()
@@ -177,7 +177,7 @@ class SubtrajectoryReplayBuffer:
         'next_observation', 'terminated', and 'truncated'.
 
     dtypes : list[dtype], optional
-        dtype used for each buffer. Defaults to float for everything except
+        dtype used for each buffer. Defaults to float32 for everything except
         'terminated' and 'truncated'.
 
     discrete_actions : bool, optional
@@ -243,10 +243,10 @@ class SubtrajectoryReplayBuffer:
             ]
         if dtypes is None:
             dtypes = [
-                float,
-                int if discrete_actions else float,
-                float,
-                float,
+                np.float32,
+                int if discrete_actions else np.float32,
+                np.float32,
+                np.float32,
                 int,
                 int,
             ]
@@ -612,7 +612,7 @@ class LAP(ReplayBuffer):
         this order.
 
     dtypes : list[dtype], optional
-        dtype used for each buffer. Defaults to float for everything except
+        dtype used for each buffer. Defaults to float32 for everything except
         'termination'.
 
     discrete_actions : bool, optional
@@ -833,7 +833,7 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         'next_observation', 'terminated', and 'truncated'.
 
     dtypes : list[dtype], optional
-        dtype used for each buffer. Defaults to float for everything except
+        dtype used for each buffer. Defaults to float32 for everything except
         'terminated' and 'truncated'.
 
     discrete_actions : bool, optional
