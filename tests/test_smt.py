@@ -45,7 +45,7 @@ def test_smt():
         q_target=q_target,
     )
 
-    train_smt(
+    _, training_steps, training_performances = train_smt(
         train_set,
         train_st,
         replay_buffer,
@@ -55,6 +55,11 @@ def test_smt():
         scheduling_interval=1,
         seed=seed,
     )
+
+    assert training_steps.shape == (len(train_set),)
+    assert training_steps.sum() == 400
+    assert training_performances.shape == (len(train_set),)
+    assert len(replay_buffer) == 400
 
 
 def random_actions_st(
@@ -363,3 +368,28 @@ def test_smt_thresholds_are_strict():
     _, n_unsolvable = logger.get_stat("pool_size_unsolvable", x_key="step")
     assert n_solved.max() == 0
     assert n_unsolvable.max() == 0
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"K": 0},
+        {"K": 3},
+        {"kappa": 0.0},
+        {"kappa": 1.5},
+        {"b1": 0},
+        {"b2": -1},
+    ],
+)
+def test_smt_rejects_invalid_arguments(kwargs):
+    arguments = {"b1": 100, "b2": 100, "K": 1, "progress_bar": False}
+    arguments.update(kwargs)
+    task_set = constant_reward_task_set([0.0, 0.0])
+
+    with pytest.raises(ValueError):
+        train_smt(
+            task_set,
+            random_actions_st,
+            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
+            **arguments,
+        )

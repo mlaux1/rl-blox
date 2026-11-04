@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 import gymnasium as gym
 import numpy as np
-from gymnasium.vector import VectorEnv
+from gymnasium.vector import SyncVectorEnv
 from tqdm.rich import tqdm
 
 from ..blox.multitask import DiscreteTaskSet, TaskSelectionMixin
@@ -14,7 +14,7 @@ from ..logging.logger import LoggerBase
 
 
 def train_smt(
-    task_set: DiscreteTaskSet | VectorEnv,
+    task_set: DiscreteTaskSet | SyncVectorEnv,
     train_st: Callable,
     replay_buffer: MultiTaskReplayBuffer,
     b1: int = 17_000_000,
@@ -40,7 +40,7 @@ def train_smt(
 
     Parameters
     ----------
-    task_set : DiscreteTaskSet or VectorEnv
+    task_set : DiscreteTaskSet or SyncVectorEnv
         The multi-task environment definition.
 
     train_st : callable
@@ -130,10 +130,16 @@ def train_smt(
     training_performances : np.ndarray
         Average training performance for each task.
 
+    Raises
+    ------
+    ValueError
+        If ``K`` is not between 1 and the number of tasks, ``kappa`` is not in
+        (0, 1], ``b1`` is not positive, or ``b2`` is negative.
+
     Warns
     -----
     UserWarning
-        If ``K`` is not smaller than the number of tasks, because then there
+        If ``K`` equals the number of tasks, because then there
         is no task scheduling.
 
     UserWarning
@@ -154,6 +160,12 @@ def train_smt(
     the first stage, it trains all tasks round robin until the budget is used
     up, so that SMT always uses the full budget :math:`B_1 + B_2`.
 
+    All tasks are trained with the same backbone state. SMT passes the
+    replay buffer to ``train_st``, but the backbone's target networks and
+    entropy control must be bound explicitly, e.g.,
+    ``partial(train_sac, q_target=..., entropy_control=..., ...)``.
+    Otherwise, the backbone creates new ones for each scheduled task.
+
     References
     ----------
     .. [1] Cho, M., Park, J., Lee, S., Sung, Y. (2024). Hard tasks first:
@@ -163,16 +175,26 @@ def train_smt(
        https://icml.cc/virtual/2024/poster/33388
     """
     rng = np.random.default_rng(seed)
-    if isinstance(task_set, VectorEnv):
+    if isinstance(task_set, SyncVectorEnv):
         n_tasks = task_set.num_envs
     else:
         n_tasks = len(task_set)
 
-    if K >= n_tasks:
+    if not 1 <= K <= n_tasks:
+        raise ValueError(
+            f"K must be between 1 and the number of tasks ({n_tasks})"
+        )
+    if not 0 < kappa <= 1:
+        raise ValueError("kappa must be in (0, 1]")
+    if b1 <= 0:
+        raise ValueError("b1 must be positive")
+    if b2 < 0:
+        raise ValueError("b2 must not be negative")
+
+    if K == n_tasks:
         warnings.warn(
-            f"K={K} is not smaller than the number of tasks ({n_tasks}). All "
-            "tasks are trained at the same time, so there is no task "
-            "scheduling.",
+            f"K={K} equals the number of tasks ({n_tasks}). All tasks are "
+            "trained at the same time, so there is no task scheduling.",
             stacklevel=2,
         )
 
@@ -257,7 +279,7 @@ def smt_stage1(
     rng,
     progress,
 ):
-    if isinstance(task_set, VectorEnv):
+    if isinstance(task_set, SyncVectorEnv):
         n_tasks = task_set.num_envs
     else:
         n_tasks = len(task_set)
@@ -272,7 +294,7 @@ def smt_stage1(
     while global_step < b1:
         updated_training_pool = copy.deepcopy(training_pool)
         for task_id in training_pool:
-            if isinstance(task_set, VectorEnv):
+            if isinstance(task_set, SyncVectorEnv):
                 env = task_set.envs[task_id]
             else:
                 env = task_set.get_task(task_id)
@@ -431,7 +453,7 @@ def smt_stage2(
             scheduled_tasks = range(n_tasks)
 
         for task_id in scheduled_tasks:
-            if isinstance(task_set, VectorEnv):
+            if isinstance(task_set, SyncVectorEnv):
                 env = task_set.envs[task_id]
             else:
                 env = task_set.get_task(task_id)
