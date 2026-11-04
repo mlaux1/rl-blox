@@ -8,7 +8,126 @@ import numpy as np
 from numpy import typing as npt
 
 
-class ReplayBuffer:
+def _select_indices(indices, mode):
+    """Select the first or last step of subtrajectory indices."""
+    if mode == "first":
+        return indices[:, 0]
+    if mode == "last":
+        return indices[:, -1]
+    return indices
+
+
+@partial(jax.jit, static_argnames=("layout", "select"))
+def _gather_on_device(data, indices, layout, select):
+    fields = []
+    for (start, stop, shape, dtype), mode in zip(layout, select, strict=True):
+        rows = _select_indices(indices, mode)
+        values = data[rows, start:stop].reshape(rows.shape + shape)
+        fields.append(values.astype(dtype))
+    return fields
+
+
+@partial(jax.jit, donate_argnums=0)
+def _scatter_on_device(data, rows, values):
+    return data.at[rows].set(values)
+
+
+class DeviceCopy:
+    """Copy of replay buffer data on the default JAX device.
+
+    All quantities are packed as float32 columns of one array, so that changed
+    rows are copied in one transfer. Integers must be smaller than 2**24.
+
+    Parameters
+    ----------
+    n_rows : int
+        Number of rows.
+
+    arrays : list of arrays
+        Quantities of a replay buffer, used for their shapes and dtypes.
+    """
+
+    def __init__(self, n_rows: int, arrays: list[npt.NDArray]):
+        layout = []
+        start = 0
+        for array in arrays:
+            shape = array.shape[1:]
+            stop = start + int(np.prod(shape))
+            dtype = jax.dtypes.canonicalize_dtype(array.dtype).name
+            layout.append((start, stop, shape, dtype))
+            start = stop
+        self.layout = tuple(layout)
+        self.data = jnp.zeros((n_rows, start), dtype=jnp.float32)
+
+    def update(self, rows: npt.NDArray[int], values: list[npt.NDArray]):
+        """Copy values of all quantities to rows."""
+        packed = np.concatenate(
+            [v.reshape(len(rows), -1) for v in values], axis=1
+        ).astype(np.float32)
+        self.data = _scatter_on_device(self.data, rows, packed)
+
+    def gather(self, indices: npt.NDArray[int], select: tuple[str]):
+        """Gather all quantities at indices, see :func:`_select_indices`."""
+        return _gather_on_device(
+            self.data, jnp.asarray(indices), self.layout, select
+        )
+
+
+class _BatchStorage:
+    """Gathers batches from host memory or from a copy on the device."""
+
+    def _init_storage(self, on_device: bool):
+        self.on_device = on_device
+        self.device_copy = None
+        self.changed_rows = []
+
+    def _mark_changed(self, rows: int | list[int]):
+        if self.on_device:
+            self.changed_rows.append(np.atleast_1d(rows))
+
+    def _gather(self, indices, select=None):
+        if select is None:
+            select = ("all",) * len(self.buffer)
+        return self.Batch(
+            **{
+                k: self.buffer[k][_select_indices(indices, mode)]
+                for k, mode in zip(self.buffer, select, strict=True)
+            }
+        )
+
+    def _transfer(self, indices, select=None):
+        if not self.on_device:
+            return jax.device_put(self._gather(indices, select))
+        if select is None:
+            select = ("all",) * len(self.buffer)
+        self._update_device_copy()
+        return self.Batch(*self.device_copy.gather(indices, select))
+
+    def _update_device_copy(self):
+        arrays = list(self.buffer.values())
+        if self.device_copy is None:
+            self.device_copy = DeviceCopy(self.buffer_size, arrays)
+            rows = np.arange(self.current_len)
+        elif self.changed_rows:
+            rows = np.unique(np.concatenate(self.changed_rows))
+        else:
+            return
+        self.changed_rows = []
+        self.device_copy.update(rows, [a[rows] for a in arrays])
+
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        del d["Batch"]
+        d["device_copy"] = None
+        d["changed_rows"] = []
+        return d
+
+    def __setstate__(self, d):
+        self.__dict__.update(d)
+        self.Batch = namedtuple("Batch", self.buffer)
+
+
+class ReplayBuffer(_BatchStorage):
     """Replay buffer that returns jax arrays.
 
     For each quantity, we store all samples in NumPy array that will be
@@ -34,6 +153,10 @@ class ReplayBuffer:
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
+
+    on_device : bool, optional
+        Keep a copy of the data on the default JAX device and gather batches
+        there. Integers must be smaller than 2**24.
     """
 
     buffer: OrderedDict[str, npt.NDArray[float]]
@@ -48,6 +171,7 @@ class ReplayBuffer:
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
+        on_device: bool = False,
     ):
         if keys is None:
             keys = [
@@ -72,6 +196,7 @@ class ReplayBuffer:
         self.buffer_size = buffer_size
         self.current_len = 0
         self.insert_idx = 0
+        self._init_storage(on_device)
 
     def add_sample(self, **sample):
         """Add transition sample to the replay buffer.
@@ -89,6 +214,7 @@ class ReplayBuffer:
                 )
         for k, v in sample.items():
             self.buffer[k][self.insert_idx] = v
+        self._mark_changed(self.insert_idx)
         self.insert_idx = (self.insert_idx + 1) % self.buffer_size
         self.current_len = min(self.current_len + 1, self.buffer_size)
 
@@ -115,12 +241,14 @@ class ReplayBuffer:
             Named tuple with order defined by keys. Content is also accessible
             via names, e.g., ``batch.observation``.
         """
-        return jax.device_put(self.sample_arrays(batch_size, rng))
+        return self._transfer(*self._sample_indices(batch_size, rng))
 
     def sample_arrays(self, batch_size: int, rng: np.random.Generator):
         """Like :meth:`sample_batch`, but returns NumPy arrays."""
-        indices = rng.integers(0, self.current_len, batch_size)
-        return self.Batch(**{k: self.buffer[k][indices] for k in self.buffer})
+        return self._gather(*self._sample_indices(batch_size, rng))
+
+    def _sample_indices(self, batch_size: int, rng: np.random.Generator):
+        return rng.integers(0, self.current_len, batch_size), None
 
     def can_sample(self) -> bool:
         """Check if a batch can be sampled."""
@@ -129,15 +257,6 @@ class ReplayBuffer:
     def __len__(self):
         """Return current number of stored transitions in the replay buffer."""
         return self.current_len
-
-    def __getstate__(self):
-        d = dict(self.__dict__)
-        del d["Batch"]
-        return d
-
-    def __setstate__(self, d):
-        self.__dict__.update(d)
-        self.Batch = namedtuple("Batch", self.buffer)
 
 
 def dilate_right(a, n):
@@ -158,7 +277,7 @@ def dilate_right(a, n):
     return a
 
 
-class SubtrajectoryReplayBuffer:
+class SubtrajectoryReplayBuffer(_BatchStorage):
     """Replay buffer for sampling batches of subtrajectories.
 
     Parameters
@@ -214,6 +333,10 @@ class SubtrajectoryReplayBuffer:
         Note that if mrq_mode is True, add_sample() returns a list[int].
         If mrq_mode is False, add_sample() returns just an int.
 
+    on_device : bool, optional
+        Keep a copy of the data on the default JAX device and gather batches
+        there. Integers must be smaller than 2**24.
+
     Notes
     -----
     This is implemented as a ring buffer of size buffer_size to which
@@ -230,6 +353,7 @@ class SubtrajectoryReplayBuffer:
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
         mrq_mode: bool = True,
+        on_device: bool = False,
     ):
         assert buffer_size > 0
         assert horizon > 0
@@ -278,6 +402,7 @@ class SubtrajectoryReplayBuffer:
         # if that is called with horizon==self.horizon, or 0 otherwise.
         self.mask_ = np.zeros(self.buffer_size, dtype=int)
         self._mrq_mode = mrq_mode
+        self._init_storage(on_device)
 
     def add_sample(self, **sample) -> int | list[int]:
         """Add transition sample to the replay buffer.
@@ -294,9 +419,11 @@ class SubtrajectoryReplayBuffer:
             this is a list of indices (multiple samples may be inserted).
         """
         if self._mrq_mode:
-            return self._add_sample_mrq(**sample)
+            inserted_at = self._add_sample_mrq(**sample)
         else:
-            return self._add_sample(**sample)
+            inserted_at = self._add_sample(**sample)
+        self._mark_changed(inserted_at)
+        return inserted_at
 
     def _add_sample(self, **sample) -> int:
         """Add transition sample to the replay buffer.
@@ -425,8 +552,10 @@ class SubtrajectoryReplayBuffer:
             A tuple containing the sampled observations, actions, rewards,
             next observations, and terminations.
         """
-        return jax.device_put(
-            self.sample_arrays(batch_size, horizon, include_intermediate, rng)
+        return self._transfer(
+            *self._sample_indices(
+                batch_size, horizon, include_intermediate, rng
+            )
         )
 
     def sample_arrays(
@@ -437,6 +566,19 @@ class SubtrajectoryReplayBuffer:
         rng: np.random.Generator,
     ):
         """Like :meth:`sample_batch`, but returns NumPy arrays."""
+        return self._gather(
+            *self._sample_indices(
+                batch_size, horizon, include_intermediate, rng
+            )
+        )
+
+    def _sample_indices(
+        self,
+        batch_size: int,
+        horizon: int,
+        include_intermediate: bool,
+        rng: np.random.Generator,
+    ):
         assert batch_size > 0
         assert horizon > 0
 
@@ -450,23 +592,17 @@ class SubtrajectoryReplayBuffer:
         if include_intermediate:
             # sample subtrajectories (with horizon dimension) for unrolling
             # dynamics
-            batch = self.Batch(
-                **{k: self.buffer[k][indices] for k in self.buffer}
+            return indices, None
+        # sample at specific horizon (used for multistep rewards)
+        select = tuple(
+            (
+                "first"
+                if k in ["observation", "action"]
+                else "last" if k == "next_observation" else "all"
             )
-        else:
-            # sample at specific horizon (used for multistep rewards)
-            batch = {}
-            for k in self.buffer:
-                if k in ["observation", "action"]:
-                    indices_without_intermediate = indices[:, 0]
-                elif k == "next_observation":
-                    indices_without_intermediate = indices[:, -1]
-                else:
-                    indices_without_intermediate = indices
-                batch[k] = self.buffer[k][indices_without_intermediate]
-            batch = self.Batch(**batch)
-
-        return batch
+            for k in self.buffer
+        )
+        return indices, select
 
     def _mask_for_horizon(self, horizon: int):
         """Get the mask for starting indices to be sampled under the given
@@ -527,15 +663,6 @@ class SubtrajectoryReplayBuffer:
     def __len__(self):
         """Return current number of stored transitions in the replay buffer."""
         return self.current_len
-
-    def __getstate__(self):
-        d = dict(self.__dict__)
-        del d["Batch"]
-        return d
-
-    def __setstate__(self, d):
-        self.__dict__.update(d)
-        self.Batch = namedtuple("Batch", self.buffer)
 
 
 class SumTree:
@@ -726,6 +853,9 @@ class LAP(ReplayBuffer):
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
 
+    on_device : bool, optional
+        See :class:`ReplayBuffer`.
+
     References
     ----------
     .. [1] Fujimoto, S., Meger, D., Precup, D. (2020). An Equivalence between
@@ -746,8 +876,9 @@ class LAP(ReplayBuffer):
         keys: list[str] | None = None,
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
+        on_device: bool = False,
     ):
-        super().__init__(buffer_size, keys, dtypes, discrete_actions)
+        super().__init__(buffer_size, keys, dtypes, discrete_actions, on_device)
         self.priority = PriorityBuffer(buffer_size)
 
     def add_sample(self, **sample):
@@ -760,12 +891,11 @@ class LAP(ReplayBuffer):
         self.priority.initialize_priority(self.insert_idx)
         super().add_sample(**sample)
 
-    def sample_arrays(self, batch_size: int, rng: np.random.Generator):
-        """Like :meth:`sample_batch`, but returns NumPy arrays."""
+    def _sample_indices(self, batch_size: int, rng: np.random.Generator):
         indices = self.priority.prioritized_sampling(
             self.current_len, batch_size, rng
         )
-        return self.Batch(**{k: self.buffer[k][indices] for k in self.buffer})
+        return indices, None
 
     def update_priority(self, priority):
         self.priority.update_priority(priority)
@@ -818,9 +948,10 @@ class PrioritizedReplayBuffer(LAP):
         importance_ratio : array
             Importance sampling ratio corresponding to the samples in batch.
         """
-        batch, importance_ratio = self.sample_arrays(batch_size, rng, beta)
-        return jax.device_put(
-            (batch, importance_ratio / importance_ratio.max())
+        indices = self.prioritized_sampling_stratified(batch_size, rng)
+        importance_ratio = self.compute_importance_ratio(indices, beta)
+        return self._transfer(indices), jax.device_put(
+            importance_ratio / importance_ratio.max()
         )
 
     def sample_arrays(
@@ -837,10 +968,7 @@ class PrioritizedReplayBuffer(LAP):
         #     self.current_len, batch_size, rng
         # )
         importance_ratio = self.compute_importance_ratio(indices, beta)
-        return (
-            self.Batch(**{k: self.buffer[k][indices] for k in self.buffer}),
-            importance_ratio,
-        )
+        return self._gather(indices), importance_ratio
 
     def compute_importance_ratio(
         self, indices: npt.NDArray[int], beta: float
@@ -894,6 +1022,9 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
 
     mrq_mode : bool, optional
         See documentation for SubtrajectoryReplayBuffer.__init__(): mrq_mode.
+
+    on_device : bool, optional
+        See :class:`SubtrajectoryReplayBuffer`.
     """
 
     priority: PriorityBuffer
@@ -906,9 +1037,16 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         dtypes: list[npt.DTypeLike] | None = None,
         discrete_actions: bool = False,
         mrq_mode: bool = True,
+        on_device: bool = False,
     ):
         super().__init__(
-            buffer_size, horizon, keys, dtypes, discrete_actions, mrq_mode
+            buffer_size,
+            horizon,
+            keys,
+            dtypes,
+            discrete_actions,
+            mrq_mode,
+            on_device,
         )
         self.priority = PriorityBuffer(buffer_size, mask=self.mask_)
 
@@ -1074,7 +1212,13 @@ class MultiTaskReplayBuffer:
     Raises
     ------
     ValueError
-        If ``task_weighting`` is unknown.
+        If ``task_weighting`` is unknown or ``replay_buffer`` is a
+        :class:`PrioritizedReplayBuffer` with ``on_device``.
+
+    Notes
+    -----
+    If ``replay_buffer`` has ``on_device``, the data of all tasks is copied to
+    one array on the device, from which batches are gathered.
     """
 
     def __init__(
@@ -1082,6 +1226,13 @@ class MultiTaskReplayBuffer:
     ):
         if task_weighting not in ("uniform", "proportional"):
             raise ValueError(f"Unknown task weighting: {task_weighting}")
+        if replay_buffer.on_device and isinstance(
+            replay_buffer, PrioritizedReplayBuffer
+        ):
+            raise ValueError(
+                "on_device is not supported for a PrioritizedReplayBuffer in "
+                "a MultiTaskReplayBuffer"
+            )
         self.buffers = [replay_buffer]
         for _ in range(n_tasks - 1):
             self.buffers.append(copy.deepcopy(replay_buffer))
@@ -1089,6 +1240,7 @@ class MultiTaskReplayBuffer:
         # Tasks that can be sampled from. A task stays sampleable once it is.
         self.sampleable_tasks = set()
         self.sampled_counts = {}
+        self.device_copy = None
 
     def task(self, task_id: int) -> "TaskReplayBuffer":
         """View of this replay buffer that adds samples to one task.
@@ -1148,6 +1300,8 @@ class MultiTaskReplayBuffer:
         batch
             Batches of the tasks, concatenated along the first axis.
         """
+        if self.buffers[0].on_device:
+            return self._sample_on_device(batch_size, *args, **kwargs)
         arrays = self.sample_arrays(batch_size, *args, **kwargs)
         if isinstance(self.buffers[0], PrioritizedReplayBuffer):
             batch, importance_ratio = arrays
@@ -1156,6 +1310,62 @@ class MultiTaskReplayBuffer:
 
     def sample_arrays(self, batch_size: int, *args, **kwargs):
         """Like :meth:`sample_batch`, but returns NumPy arrays."""
+        self._sample_counts(batch_size, *args, **kwargs)
+        batches = [
+            self.buffers[task_id].sample_arrays(count, *args, **kwargs)
+            for task_id, count in self.sampled_counts.items()
+        ]
+        # Each task's buffer has its own Batch type, so concatenate the leaves
+        fields = zip(*(jax.tree.leaves(batch) for batch in batches))
+        return jax.tree.unflatten(
+            jax.tree.structure(batches[0]),
+            [np.concatenate(field) for field in fields],
+        )
+
+    def _sample_on_device(self, batch_size: int, *args, **kwargs):
+        self._sample_counts(batch_size, *args, **kwargs)
+        buffer_size = self.buffers[0].buffer_size
+        indices = []
+        for task_id, count in self.sampled_counts.items():
+            task_indices, select = self.buffers[task_id]._sample_indices(
+                count, *args, **kwargs
+            )
+            indices.append(task_indices + task_id * buffer_size)
+        self._update_device_copy()
+        first_task = self.buffers[next(iter(self.sampled_counts))]
+        if select is None:
+            select = ("all",) * len(first_task.buffer)
+        return first_task.Batch(
+            *self.device_copy.gather(np.concatenate(indices), select)
+        )
+
+    def _update_device_copy(self):
+        buffer_size = self.buffers[0].buffer_size
+        if self.device_copy is None:
+            arrays = list(
+                self.buffers[min(self.sampleable_tasks)].buffer.values()
+            )
+            self.device_copy = DeviceCopy(
+                len(self.buffers) * buffer_size, arrays
+            )
+            for buffer in self.buffers:
+                buffer.changed_rows = [np.arange(buffer.current_len)]
+        rows = []
+        values = []
+        for task_id, buffer in enumerate(self.buffers):
+            if not buffer.changed_rows:
+                continue
+            task_rows = np.unique(np.concatenate(buffer.changed_rows))
+            buffer.changed_rows = []
+            rows.append(task_rows + task_id * buffer_size)
+            values.append([a[task_rows] for a in buffer.buffer.values()])
+        if rows:
+            self.device_copy.update(
+                np.concatenate(rows),
+                [np.concatenate(field) for field in zip(*values)],
+            )
+
+    def _sample_counts(self, batch_size: int, *args, **kwargs):
         rng = kwargs.get("rng")
         if rng is None:
             rng = next(a for a in args if isinstance(a, np.random.Generator))
@@ -1173,17 +1383,6 @@ class MultiTaskReplayBuffer:
             for task_id, count in zip(tasks, counts, strict=True)
             if count > 0
         }
-
-        batches = [
-            self.buffers[task_id].sample_arrays(count, *args, **kwargs)
-            for task_id, count in self.sampled_counts.items()
-        ]
-        # Each task's buffer has its own Batch type, so concatenate the leaves
-        fields = zip(*(jax.tree.leaves(batch) for batch in batches))
-        return jax.tree.unflatten(
-            jax.tree.structure(batches[0]),
-            [np.concatenate(field) for field in fields],
-        )
 
     def reward_scale(self, eps: float = 1e-8):
         """Compute the reward scale for all tasks."""

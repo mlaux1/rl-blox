@@ -664,3 +664,114 @@ def test_subtrajectory_samples_valid_starts_uniformly(episode_length):
     frequencies = np.bincount(starts, minlength=1000)[valid_starts]
     expected = len(starts) / len(valid_starts)
     assert np.all(np.abs(frequencies - expected) < 5 * np.sqrt(expected))
+
+
+def add_step(replay_buffer, i, subtrajectory):
+    transition = dict(
+        observation=np.full(2, i, dtype=float),
+        action=np.full(1, -i, dtype=float),
+        reward=float(i),
+        next_observation=np.full(2, i + 1, dtype=float),
+    )
+    if subtrajectory:
+        replay_buffer.add_sample(
+            **transition, terminated=i % 7 == 6, truncated=i % 11 == 10
+        )
+    else:
+        replay_buffer.add_sample(**transition, termination=i % 7 == 6)
+
+
+DEVICE_CASES = {
+    "ReplayBuffer": (lambda **kw: ReplayBuffer(50, **kw), (), False),
+    "LAP": (lambda **kw: LAP(50, **kw), (), False),
+    "PrioritizedReplayBuffer": (
+        lambda **kw: PrioritizedReplayBuffer(50, **kw),
+        (0.4,),
+        False,
+    ),
+    "Subtrajectory": (
+        lambda **kw: SubtrajectoryReplayBuffer(50, horizon=3, **kw),
+        (3, False),
+        True,
+    ),
+    "SubtrajectoryPER with horizon": (
+        lambda **kw: SubtrajectoryReplayBufferPER(50, horizon=3, **kw),
+        (3, True),
+        True,
+    ),
+}
+
+
+def sample(replay_buffer, extra_args, seed):
+    rng = np.random.default_rng(seed)
+    if isinstance(replay_buffer, MultiTaskReplayBuffer):
+        single_task_buffer = replay_buffer.buffers[0]
+    else:
+        single_task_buffer = replay_buffer
+    if isinstance(single_task_buffer, SubtrajectoryReplayBuffer):
+        return replay_buffer.sample_batch(16, *extra_args, rng)
+    return replay_buffer.sample_batch(16, rng, *extra_args)
+
+
+def assert_same_batches(a, b):
+    for x, y in zip(jax.tree.leaves(a), jax.tree.leaves(b), strict=True):
+        assert x.dtype == y.dtype
+        np.testing.assert_array_equal(x, y)
+
+
+@pytest.mark.parametrize("case", DEVICE_CASES)
+def test_on_device_sampling_equals_host_sampling(case):
+    create, extra_args, subtrajectory = DEVICE_CASES[case]
+    host, device = create(), create(on_device=True)
+    # Sample between additions and wrap around the ring buffer
+    for start, stop in [(0, 30), (30, 45), (45, 120)]:
+        for i in range(start, stop):
+            add_step(host, i, subtrajectory)
+            add_step(device, i, subtrajectory)
+        assert_same_batches(
+            sample(host, extra_args, stop), sample(device, extra_args, stop)
+        )
+
+
+def test_on_device_buffer_can_be_pickled():
+    replay_buffer = ReplayBuffer(50, on_device=True)
+    for i in range(30):
+        add_step(replay_buffer, i, False)
+    sample(replay_buffer, (), 0)
+
+    restored = pickle.loads(pickle.dumps(replay_buffer))
+    add_step(restored, 30, False)
+    add_step(replay_buffer, 30, False)
+
+    assert_same_batches(sample(replay_buffer, (), 1), sample(restored, (), 1))
+
+
+@pytest.mark.parametrize(
+    "create, extra_args, subtrajectory",
+    [
+        (lambda **kw: ReplayBuffer(50, **kw), (), False),
+        (
+            lambda **kw: SubtrajectoryReplayBufferPER(50, 3, **kw),
+            (3, True),
+            True,
+        ),
+    ],
+)
+def test_on_device_multitask_sampling_equals_host_sampling(
+    create, extra_args, subtrajectory
+):
+    host = MultiTaskReplayBuffer(create(), 3)
+    device = MultiTaskReplayBuffer(create(on_device=True), 3)
+    for task_id in range(3):
+        for i in range(40 * task_id, 40 * task_id + 25):
+            add_step(host.task(task_id), i, subtrajectory)
+            add_step(device.task(task_id), i, subtrajectory)
+
+    assert_same_batches(
+        sample(host, extra_args, 0), sample(device, extra_args, 0)
+    )
+
+
+def test_on_device_multitask_rejects_prioritized_replay_buffer():
+    with pytest.raises(ValueError, match="on_device"):
+        MultiTaskReplayBuffer(PrioritizedReplayBuffer(50, on_device=True), 2)

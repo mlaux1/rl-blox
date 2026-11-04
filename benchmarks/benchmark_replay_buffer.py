@@ -53,19 +53,25 @@ def measure(fn, n_repeats):
     return (time.perf_counter() - start) / n_repeats * 1e3
 
 
-def main(buffer_size, n_tasks, n_repeats):
+def main(buffer_size, n_tasks, n_repeats, on_device):
     rng = np.random.default_rng(0)
     results = {}
 
     replay_buffer, results["ReplayBuffer add_sample"] = measure_fill(
-        ReplayBuffer(buffer_size), buffer_size, rng, terminations=False
+        ReplayBuffer(buffer_size, on_device=on_device),
+        buffer_size,
+        rng,
+        terminations=False,
     )
     results["ReplayBuffer sample_batch"] = measure(
         lambda: replay_buffer.sample_batch(BATCH_SIZE, rng), n_repeats
     )
 
     lap, results["LAP add_sample"] = measure_fill(
-        LAP(buffer_size), buffer_size, rng, terminations=False
+        LAP(buffer_size, on_device=on_device),
+        buffer_size,
+        rng,
+        terminations=False,
     )
     results["LAP sample_batch"] = measure(
         lambda: lap.sample_batch(BATCH_SIZE, rng), n_repeats
@@ -76,7 +82,9 @@ def main(buffer_size, n_tasks, n_repeats):
     )
 
     subtrajectory = fill(
-        SubtrajectoryReplayBuffer(buffer_size, horizon=5), buffer_size, rng
+        SubtrajectoryReplayBuffer(buffer_size, horizon=5, on_device=on_device),
+        buffer_size,
+        rng,
     )
     results["Subtrajectory sample_batch (h=3)"] = measure(
         lambda: subtrajectory.sample_batch(BATCH_SIZE, 3, False, rng),
@@ -84,7 +92,11 @@ def main(buffer_size, n_tasks, n_repeats):
     )
 
     mrq, results["MR.Q add_sample"] = measure_fill(
-        SubtrajectoryReplayBufferPER(buffer_size, horizon=5), buffer_size, rng
+        SubtrajectoryReplayBufferPER(
+            buffer_size, horizon=5, on_device=on_device
+        ),
+        buffer_size,
+        rng,
     )
     results["MR.Q critic sample_batch (h=3)"] = measure(
         lambda: mrq.sample_batch(BATCH_SIZE, 3, False, rng), n_repeats
@@ -102,7 +114,7 @@ def main(buffer_size, n_tasks, n_repeats):
     )
 
     multitask = MultiTaskReplayBuffer(
-        ReplayBuffer(buffer_size // n_tasks), n_tasks
+        ReplayBuffer(buffer_size // n_tasks, on_device=on_device), n_tasks
     )
     for task_id in range(n_tasks):
         fill(
@@ -115,7 +127,10 @@ def main(buffer_size, n_tasks, n_repeats):
         lambda: multitask.sample_batch(BATCH_SIZE, rng), n_repeats
     )
 
-    print(f"buffer size {buffer_size}, observation dimension {OBS_DIM}")
+    print(
+        f"buffer size {buffer_size}, observation dimension {OBS_DIM}, "
+        f"on_device {on_device}"
+    )
     for name, ms in results.items():
         print(f"{name:45s} {ms:9.4f} ms")
 
@@ -125,5 +140,6 @@ if __name__ == "__main__":
     parser.add_argument("--buffer-size", type=int, default=500_000)
     parser.add_argument("--n-tasks", type=int, default=10)
     parser.add_argument("--n-repeats", type=int, default=200)
+    parser.add_argument("--on-device", action="store_true")
     args = parser.parse_args()
-    main(args.buffer_size, args.n_tasks, args.n_repeats)
+    main(args.buffer_size, args.n_tasks, args.n_repeats, args.on_device)
