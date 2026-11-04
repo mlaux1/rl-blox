@@ -24,7 +24,7 @@ def train_smt(
     scheduling_interval: int = 1,
     kappa: float = 0.8,
     K: int = 3,
-    n_average: int = 3,
+    n_average: int = 5,
     learning_starts: int = 5_000,
     seed: int = 0,
     task_selectables: list[TaskSelectionMixin] | None = None,
@@ -73,11 +73,11 @@ def train_smt(
 
     solved_threshold : float
         A task is solved once its training performance (see ``n_average``)
-        is at least this value. Corresponds to :math:`M` in the paper [1]_.
+        is greater than this value. Corresponds to :math:`M` in the paper [1]_.
 
     unsolvable_threshold : float
         When a task has used up its budget, it is unsolvable if its training
-        performance is at most this value. Otherwise, it returns to the main
+        performance is less than this value. Otherwise, it returns to the main
         pool. Corresponds to :math:`m` in the paper [1]_.
 
     scheduling_interval : int
@@ -334,11 +334,11 @@ def smt_stage1(
                     step=global_step,
                 )
 
-            if avg_training_performances[task_id] >= solved_threshold:
+            if avg_training_performances[task_id] > solved_threshold:
                 solved_pool.add(task_id)
                 updated_training_pool.remove(task_id)
             elif steps_in_training_pool[task_id] >= task_budgets[task_id]:
-                if avg_training_performances[task_id] <= unsolvable_threshold:
+                if avg_training_performances[task_id] < unsolvable_threshold:
                     unsolvable_pool.add(task_id)
                     updated_training_pool.remove(task_id)
                 else:
@@ -474,7 +474,7 @@ def smt_stage2(
             )
             if (
                 task_id in unsolved_pool
-                and avg_training_performances[task_id] >= solved_threshold
+                and avg_training_performances[task_id] > solved_threshold
             ):
                 unsolved_pool.remove(task_id)
 

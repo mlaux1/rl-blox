@@ -337,3 +337,29 @@ def test_smt_budget_shares_stage1_budget_among_training_pool():
 
     refill_steps, _ = logger.get_stat("worst task", x_key="step")
     assert refill_steps[:3].tolist() == [13_620] * 3
+
+
+def test_smt_thresholds_are_strict():
+    # Every episode has a return of exactly 10, which equals both thresholds.
+    # A task is only solved above M and only unsolvable below m, so both
+    # tasks stay unsolved and keep returning to the main pool.
+    logger = MemoryLogger()
+
+    train_smt(
+        constant_reward_task_set([1.0, 1.0]),
+        random_actions_st,
+        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2),
+        b1=100,
+        b2=0,
+        solved_threshold=10.0,
+        unsolvable_threshold=10.0,
+        kappa=0.1,
+        K=1,
+        logger=logger,
+        progress_bar=False,
+    )
+
+    _, n_solved = logger.get_stat("pool_size_solved", x_key="step")
+    _, n_unsolvable = logger.get_stat("pool_size_unsolvable", x_key="step")
+    assert n_solved.max() == 0
+    assert n_unsolvable.max() == 0
