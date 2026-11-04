@@ -115,10 +115,12 @@ class ReplayBuffer:
             Named tuple with order defined by keys. Content is also accessible
             via names, e.g., ``batch.observation``.
         """
+        return jax.device_put(self.sample_arrays(batch_size, rng))
+
+    def sample_arrays(self, batch_size: int, rng: np.random.Generator):
+        """Like :meth:`sample_batch`, but returns NumPy arrays."""
         indices = rng.integers(0, self.current_len, batch_size)
-        return self.Batch(
-            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
-        )
+        return self.Batch(**{k: self.buffer[k][indices] for k in self.buffer})
 
     def can_sample(self) -> bool:
         """Check if a batch can be sampled."""
@@ -423,6 +425,18 @@ class SubtrajectoryReplayBuffer:
             A tuple containing the sampled observations, actions, rewards,
             next observations, and terminations.
         """
+        return jax.device_put(
+            self.sample_arrays(batch_size, horizon, include_intermediate, rng)
+        )
+
+    def sample_arrays(
+        self,
+        batch_size: int,
+        horizon: int,
+        include_intermediate: bool,
+        rng: np.random.Generator,
+    ):
+        """Like :meth:`sample_batch`, but returns NumPy arrays."""
         assert batch_size > 0
         assert horizon > 0
 
@@ -437,7 +451,7 @@ class SubtrajectoryReplayBuffer:
             # sample subtrajectories (with horizon dimension) for unrolling
             # dynamics
             batch = self.Batch(
-                **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
+                **{k: self.buffer[k][indices] for k in self.buffer}
             )
         else:
             # sample at specific horizon (used for multistep rewards)
@@ -449,9 +463,7 @@ class SubtrajectoryReplayBuffer:
                     indices_without_intermediate = indices[:, -1]
                 else:
                     indices_without_intermediate = indices
-                batch[k] = jnp.asarray(
-                    self.buffer[k][indices_without_intermediate]
-                )
+                batch[k] = self.buffer[k][indices_without_intermediate]
             batch = self.Batch(**batch)
 
         return batch
@@ -652,35 +664,12 @@ class LAP(ReplayBuffer):
         self.priority.initialize_priority(self.insert_idx)
         super().add_sample(**sample)
 
-    def sample_batch(
-        self, batch_size: int, rng: np.random.Generator
-    ) -> list[jnp.ndarray]:
-        """Sample a batch of transitions.
-
-        Note that the individual quantities will be returned in the same order
-        as the keys were given to the constructor or the default order
-        respectively.
-
-        Parameters
-        ----------
-        batch_size : int
-            Size of the sampled batch.
-
-        rng : np.random.Generator
-            Random number generator.
-
-        Returns
-        -------
-        batch : Batch
-            Named tuple with order defined by keys. Content is also accessible
-            via names, e.g., ``batch.observation``.
-        """
+    def sample_arrays(self, batch_size: int, rng: np.random.Generator):
+        """Like :meth:`sample_batch`, but returns NumPy arrays."""
         indices = self.priority.prioritized_sampling(
             self.current_len, batch_size, rng
         )
-        return self.Batch(
-            **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
-        )
+        return self.Batch(**{k: self.buffer[k][indices] for k in self.buffer})
 
     def update_priority(self, priority):
         self.priority.update_priority(priority)
@@ -743,9 +732,13 @@ class PrioritizedReplayBuffer(LAP):
 
         importance_ratio : array
             Importance sampling ratio corresponding to the samples in batch.
-
         """
+        return jax.device_put(self.sample_arrays(batch_size, rng, beta))
 
+    def sample_arrays(
+        self, batch_size: int, rng: np.random.Generator, beta: float = 0.4
+    ):
+        """Like :meth:`sample_batch`, but returns NumPy arrays."""
         # TODO: Using stratified prioritized sampling or the prioritized sampling
         #       implementation in PriorityBuffer class makes almost no difference
         #       in training. Consider removing prioritized_sampling_stratified()
@@ -758,9 +751,7 @@ class PrioritizedReplayBuffer(LAP):
         # )
         importance_ratio = self.compute_importance_ratio(indices, beta)
         return (
-            self.Batch(
-                **{k: jnp.asarray(self.buffer[k][indices]) for k in self.buffer}
-            ),
+            self.Batch(**{k: self.buffer[k][indices] for k in self.buffer}),
             importance_ratio,
         )
 
@@ -1086,6 +1077,10 @@ class MultiTaskReplayBuffer:
         batch
             Batches of the tasks, concatenated along the first axis.
         """
+        return jax.device_put(self.sample_arrays(batch_size, *args, **kwargs))
+
+    def sample_arrays(self, batch_size: int, *args, **kwargs):
+        """Like :meth:`sample_batch`, but returns NumPy arrays."""
         rng = kwargs.get("rng")
         if rng is None:
             rng = next(a for a in args if isinstance(a, np.random.Generator))
@@ -1105,14 +1100,14 @@ class MultiTaskReplayBuffer:
         }
 
         batches = [
-            self.buffers[task_id].sample_batch(count, *args, **kwargs)
+            self.buffers[task_id].sample_arrays(count, *args, **kwargs)
             for task_id, count in self.sampled_counts.items()
         ]
         # Each task's buffer has its own Batch type, so concatenate the leaves
         fields = zip(*(jax.tree.leaves(batch) for batch in batches))
         return jax.tree.unflatten(
             jax.tree.structure(batches[0]),
-            [jnp.concatenate(field) for field in fields],
+            [np.concatenate(field) for field in fields],
         )
 
     def reward_scale(self, eps: float = 1e-8):

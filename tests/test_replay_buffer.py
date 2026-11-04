@@ -2,6 +2,7 @@ import os
 import pickle
 
 import gymnasium as gym
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -531,3 +532,38 @@ def test_multitask_routes_priorities_to_sampled_tasks():
 def test_replay_buffer_stores_floats_as_float32(replay_buffer):
     assert replay_buffer.buffer["observation"].dtype == np.float32
     assert replay_buffer.buffer["reward"].dtype == np.float32
+
+
+def filled_flat_buffers():
+    buffers = [ReplayBuffer(buffer_size=10), LAP(buffer_size=10)]
+    for replay_buffer in buffers:
+        for i in range(10):
+            add_transition(replay_buffer, i)
+    return buffers + [multitask_buffer([5, 5])]
+
+
+@pytest.mark.parametrize("replay_buffer", filled_flat_buffers())
+def test_sample_arrays_returns_numpy_version_of_sample_batch(replay_buffer):
+    arrays = replay_buffer.sample_arrays(6, np.random.default_rng(0))
+    batch = replay_buffer.sample_batch(6, np.random.default_rng(0))
+
+    assert all(isinstance(a, np.ndarray) for a in arrays)
+    assert all(isinstance(b, jax.Array) for b in batch)
+    for a, b in zip(arrays, batch, strict=True):
+        assert_array_almost_equal(a, b)
+
+
+@pytest.mark.parametrize("include_intermediate", [False, True])
+def test_subtrajectory_sample_arrays_returns_numpy_version_of_sample_batch(
+    full_strb, include_intermediate
+):
+    arrays = full_strb.sample_arrays(
+        6, 3, include_intermediate, np.random.default_rng(0)
+    )
+    batch = full_strb.sample_batch(
+        6, 3, include_intermediate, np.random.default_rng(0)
+    )
+
+    assert all(isinstance(a, np.ndarray) for a in arrays)
+    for a, b in zip(arrays, batch, strict=True):
+        assert_array_almost_equal(a, b)
