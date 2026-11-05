@@ -127,6 +127,25 @@ def get_task_env(
         return task_set.get_task(task_id)
 
 
+def get_n_tasks(task_set: "DiscreteTaskSet | SyncVectorEnv") -> int:
+    """Get the number of tasks.
+
+    Parameters
+    ----------
+    task_set : DiscreteTaskSet or SyncVectorEnv
+        Set of tasks.
+
+    Returns
+    -------
+    n_tasks : int
+        Number of tasks.
+    """
+    if isinstance(task_set, SyncVectorEnv):
+        return task_set.num_envs
+    else:
+        return len(task_set)
+
+
 def max_episode_steps(env: gym.Env) -> int | None:
     """Infer the maximum episode length of an environment.
 

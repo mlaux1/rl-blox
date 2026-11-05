@@ -12,6 +12,7 @@ from tqdm.rich import tqdm
 from ..blox.multitask import (
     DiscreteTaskSet,
     act,
+    get_n_tasks,
     get_task_env,
     max_episode_steps,
     warn_if_state_not_bound,
@@ -309,12 +310,8 @@ def train_t3s(
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
 
-    if isinstance(task_set, SyncVectorEnv):
-        n_tasks = task_set.num_envs
-        assert eval_set.num_envs == n_tasks
-    else:
-        n_tasks = len(task_set)
-        assert len(eval_set) == n_tasks
+    n_tasks = get_n_tasks(task_set)
+    assert get_n_tasks(eval_set) == n_tasks
 
     if tasks_per_iteration < 1:
         raise ValueError("tasks_per_iteration must be positive")

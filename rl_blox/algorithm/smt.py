@@ -15,6 +15,7 @@ from ..blox.multitask import (
     DiscreteTaskSet,
     TaskSelectionMixin,
     act,
+    get_n_tasks,
     get_task_env,
     max_episode_steps,
 )
@@ -253,10 +254,7 @@ def train_smt(
        https://icml.cc/virtual/2024/poster/33388
     """
     rng = np.random.default_rng(seed)
-    if isinstance(task_set, SyncVectorEnv):
-        n_tasks = task_set.num_envs
-    else:
-        n_tasks = len(task_set)
+    n_tasks = get_n_tasks(task_set)
 
     if not 1 <= K <= n_tasks:
         raise ValueError(
@@ -268,10 +266,7 @@ def train_smt(
         raise ValueError("b1 must be positive")
     if b2 < 0:
         raise ValueError("b2 must not be negative")
-    if isinstance(eval_set, SyncVectorEnv):
-        n_eval_tasks = eval_set.num_envs
-    else:
-        n_eval_tasks = len(eval_set)
+    n_eval_tasks = get_n_tasks(eval_set)
     if n_eval_tasks != n_tasks:
         raise ValueError(
             f"eval_set has {n_eval_tasks} tasks, task_set has {n_tasks}"
@@ -399,10 +394,7 @@ def smt_stage1(
     rng,
     progress,
 ):
-    if isinstance(task_set, SyncVectorEnv):
-        n_tasks = task_set.num_envs
-    else:
-        n_tasks = len(task_set)
+    n_tasks = get_n_tasks(task_set)
     training_pool = set(rng.choice(n_tasks, size=K, replace=False))
     main_pool = set(range(n_tasks)) - training_pool
     solved_pool = set()
@@ -420,10 +412,7 @@ def smt_stage1(
     while global_step < b1:
         updated_training_pool = copy.deepcopy(training_pool)
         for task_id in training_pool:
-            if isinstance(task_set, SyncVectorEnv):
-                env = task_set.envs[task_id]
-            else:
-                env = task_set.get_task(task_id)
+            env = get_task_env(task_set, task_id)
             env_with_stats = gym.wrappers.RecordEpisodeStatistics(
                 env, buffer_length=scheduling_interval
             )
@@ -610,10 +599,7 @@ def smt_stage2(
             scheduled_tasks = range(n_tasks)
 
         for task_id in scheduled_tasks:
-            if isinstance(task_set, SyncVectorEnv):
-                env = task_set.envs[task_id]
-            else:
-                env = task_set.get_task(task_id)
+            env = get_task_env(task_set, task_id)
             replay_buffer.select_task(task_id)
             if task_selectables is not None:
                 for ts in task_selectables:
@@ -717,10 +703,7 @@ def max_evaluation_steps(
         Upper bound on the number of steps. None if the episode length of an
         evaluation environment cannot be inferred.
     """
-    if isinstance(eval_set, SyncVectorEnv):
-        n_tasks = eval_set.num_envs
-    else:
-        n_tasks = len(eval_set)
+    n_tasks = get_n_tasks(eval_set)
 
     if max_eval_episode_steps is not None:
         episode_limits = [max_eval_episode_steps] * n_tasks
@@ -785,10 +768,7 @@ def evaluate_tasks(
 
     For deterministic policies, the entropy term is omitted.
     """
-    if isinstance(eval_set, SyncVectorEnv):
-        n_tasks = eval_set.num_envs
-    else:
-        n_tasks = len(eval_set)
+    n_tasks = get_n_tasks(eval_set)
     stochastic = is_stochastic(policy)
 
     performances = np.zeros(n_tasks)
