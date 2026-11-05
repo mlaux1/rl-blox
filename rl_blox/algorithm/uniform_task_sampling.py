@@ -4,7 +4,12 @@ import jax
 from gymnasium.vector import SyncVectorEnv
 from tqdm.rich import tqdm
 
-from ..blox.multitask import DiscreteTaskSet, warn_if_state_not_bound
+from ..blox.multitask import (
+    DiscreteTaskSet,
+    get_n_tasks,
+    get_task_env,
+    warn_if_state_not_bound,
+)
 from ..logging.logger import LoggerBase
 
 
@@ -84,10 +89,7 @@ def train_uts(
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     key = jax.random.key(seed)
 
-    if isinstance(task_set, SyncVectorEnv):
-        n_tasks = task_set.num_envs
-    else:
-        n_tasks = len(task_set)
+    n_tasks = get_n_tasks(task_set)
 
     while global_step < total_timesteps:
         key, skey = jax.random.split(key)
@@ -95,10 +97,7 @@ def train_uts(
         if logger is not None:
             logger.record_stat("task_id", task_id, step=global_step)
 
-        if isinstance(task_set, SyncVectorEnv):
-            env = task_set.envs[task_id]
-        else:
-            env = task_set.get_task(task_id)
+        env = get_task_env(task_set, task_id)
 
         st_result = train_st(
             env,

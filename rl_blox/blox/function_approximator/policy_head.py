@@ -187,6 +187,7 @@ class GaussianTanhPolicy(StochasticPolicyBase):
             action
         )
 
+    @nnx.jit
     def sample_and_log_prob(self, observation: jnp.ndarray, key: jnp.ndarray):
         mean, log_var = self.net(observation)
         log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
