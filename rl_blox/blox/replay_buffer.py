@@ -1349,7 +1349,8 @@ class MultiTaskReplayBuffer:
                 len(self.buffers) * buffer_size, arrays
             )
             for buffer in self.buffers:
-                buffer.changed_rows = [np.arange(buffer.current_len)]
+                if buffer.current_len > 0:
+                    buffer.changed_rows = [np.arange(buffer.current_len)]
         rows = []
         values = []
         for task_id, buffer in enumerate(self.buffers):

@@ -762,14 +762,15 @@ def test_on_device_multitask_sampling_equals_host_sampling(
 ):
     host = MultiTaskReplayBuffer(create(), 3)
     device = MultiTaskReplayBuffer(create(on_device=True), 3)
+    # Sample while later tasks are still empty
     for task_id in range(3):
         for i in range(40 * task_id, 40 * task_id + 25):
             add_step(host.task(task_id), i, subtrajectory)
             add_step(device.task(task_id), i, subtrajectory)
-
-    assert_same_batches(
-        sample(host, extra_args, 0), sample(device, extra_args, 0)
-    )
+        assert_same_batches(
+            sample(host, extra_args, task_id),
+            sample(device, extra_args, task_id),
+        )
 
 
 def test_on_device_multitask_rejects_prioritized_replay_buffer():
