@@ -95,7 +95,9 @@ def train_smt(
 
     solved_threshold : float
         A task is solved once its training performance (see ``n_average``)
-        is greater than this value. Corresponds to :math:`M` in the paper [1]_.
+        is greater than this value. In the first stage, a solved task returns
+        to the main pool if its undiscounted evaluation return is not greater
+        than this value. Corresponds to :math:`M` in the paper [1]_.
         The default is set for Meta-World with episodes of 500 steps.
 
     unsolvable_threshold : float
@@ -218,8 +220,8 @@ def train_smt(
     can be distinguished by a context vector instead of a recurrent task
     encoder, and networks are only reset if ``reset_st`` is given. If no
     task is unsolvable after the first stage, the second stage trains all
-    unsolved tasks until they are solved, and then all tasks round robin,
-    so that SMT always uses the full budget :math:`B_1 + B_2`.
+    unsolved tasks instead, or all tasks if every task is solved, so that
+    SMT always uses the full budget :math:`B_1 + B_2`.
 
     The backbone's target networks and entropy control must be bound to
     ``train_st``, e.g., ``partial(train_sac, q_target=..., ...)``, so that
@@ -236,8 +238,14 @@ def train_smt(
 
     over ``n_eval_episodes`` episodes (equation (5) of [1]_). The entropy
     term is omitted for deterministic policies. Before the first evaluation,
-    tasks are selected at random. Evaluation steps count towards
-    :math:`B_1`. After each evaluation, ``reset_st`` is called.
+    tasks are selected at random. A solved task whose mean undiscounted
+    evaluation return is not greater than ``solved_threshold`` returns to
+    the main pool and has to be solved again by new training episodes.
+    Evaluation steps count towards :math:`B_1`. After each evaluation,
+    ``reset_st`` is called.
+
+    The second stage trains the unsolvable tasks round robin until
+    :math:`B_2` is used up, even once they are solved.
 
     Logging
 
@@ -351,7 +359,6 @@ def train_smt(
         training_steps,
         training_performances,
         avg_training_performances,
-        solved_threshold,
         global_step,
         scheduling_interval,
         b_total,
@@ -494,7 +501,7 @@ def smt_stage1(
                     stacklevel=3,
                 )
                 warned_deterministic = True
-            eval_performances, eval_steps, key = evaluate_tasks(
+            eval_performances, eval_returns, eval_steps, key = evaluate_tasks(
                 policy,
                 eval_set,
                 n_eval_episodes,
@@ -514,6 +521,13 @@ def smt_stage1(
                         eval_performances[i],
                         step=global_step,
                     )
+            # Solved tasks that are no longer solved return to the main pool
+            # and have to be solved again by new training episodes.
+            for task_id in sorted(solved_pool):
+                if eval_returns[task_id] <= solved_threshold:
+                    solved_pool.remove(task_id)
+                    main_pool.add(task_id)
+                    training_performances[task_id].clear()
             if reset_st is not None:
                 reset_st(seed + global_step)
                 if logger is not None:
@@ -576,7 +590,6 @@ def smt_stage2(
     training_steps,
     training_performances,
     avg_training_performances,
-    solved_threshold,
     global_step,
     scheduling_interval,
     b_total,
@@ -586,18 +599,16 @@ def smt_stage2(
     progress,
     result_st,
 ):
-    """SMT trains the unsolvable tasks in stage 2 until they are solved.
+    """SMT trains the unsolvable tasks round robin in stage 2.
 
-    Once all of them are solved, all tasks are trained round robin.
+    They are trained until the budget is used up, even once they are solved.
+    Without unsolvable tasks, all tasks are trained round robin.
     """
-    n_tasks = len(training_steps)
-    unsolved_pool = set(unsolvable_pool)
+    if len(unsolvable_pool) > 0:
+        scheduled_tasks = sorted(unsolvable_pool)
+    else:
+        scheduled_tasks = range(len(training_steps))
     while global_step < b_total:
-        if len(unsolved_pool) > 0:
-            scheduled_tasks = sorted(unsolved_pool)
-        else:
-            scheduled_tasks = range(n_tasks)
-
         for task_id in scheduled_tasks:
             env = get_task_env(task_set, task_id)
             replay_buffer.select_task(task_id)
@@ -637,22 +648,12 @@ def smt_stage2(
             avg_training_performances[task_id] = np.mean(
                 training_performances[task_id]
             )
-            if (
-                task_id in unsolved_pool
-                and avg_training_performances[task_id] > solved_threshold
-            ):
-                unsolved_pool.remove(task_id)
 
             if logger is not None:
                 logger.record_stat("task_id", task_id, step=global_step)
                 logger.record_stat(
                     "task_performance",
                     avg_training_performances[task_id],
-                    step=global_step,
-                )
-                logger.record_stat(
-                    "pool_size_unsolvable",
-                    len(unsolved_pool),
                     step=global_step,
                 )
 
@@ -723,7 +724,7 @@ def evaluate_tasks(
     gamma: float,
     key: jax.Array,
     task_selectables: list[TaskSelectionMixin] | None = None,
-) -> tuple[np.ndarray, int, jax.Array]:
+) -> tuple[np.ndarray, np.ndarray, int, jax.Array]:
     r"""Evaluate a policy on all tasks with equation (5) of the SMT paper.
 
     Parameters
@@ -752,6 +753,9 @@ def evaluate_tasks(
     performances : np.ndarray
         Mean evaluation metric of each task.
 
+    returns : np.ndarray
+        Mean undiscounted return of each task.
+
     n_steps : int
         Number of environment steps used for the evaluation.
 
@@ -772,6 +776,7 @@ def evaluate_tasks(
     stochastic = is_stochastic(policy)
 
     performances = np.zeros(n_tasks)
+    returns = np.zeros(n_tasks)
     n_steps = 0
     for task_id in range(n_tasks):
         if task_selectables is not None:
@@ -780,8 +785,10 @@ def evaluate_tasks(
         env = get_task_env(eval_set, task_id)
 
         scores = []
+        episode_returns = []
         for _ in range(n_eval_episodes):
             obs, _ = env.reset()
+            episode_return = 0.0
             discounted_return = 0.0
             entropy = 0.0
             discount = 1.0
@@ -798,12 +805,15 @@ def evaluate_tasks(
                 obs, reward, terminated, truncated, _ = env.step(
                     np.asarray(action)
                 )
+                episode_return += float(reward)
                 discounted_return += discount * float(reward)
                 discount *= gamma
                 n_steps += 1
                 done = terminated or truncated
             scores.append(discounted_return + entropy)
+            episode_returns.append(episode_return)
 
         performances[task_id] = np.mean(scores)
+        returns[task_id] = np.mean(episode_returns)
 
-    return performances, n_steps, key
+    return performances, returns, n_steps, key

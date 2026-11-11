@@ -225,7 +225,7 @@ class TaskRecorder:
         self.selected_tasks.append(task_id)
 
 
-def test_smt_stage2_trains_unsolvable_tasks_until_solved():
+def test_smt_stage2_trains_unsolvable_tasks_until_budget_is_used_up():
     def set_episodes_to_solve(env, context):
         env.episodes_to_solve = int(context[0])
 
@@ -256,12 +256,11 @@ def test_smt_stage2_trains_unsolvable_tasks_until_solved():
         progress_bar=False,
     )
 
-    assert training_steps.sum() == 1_200
-    # Stage 1 ends after 3 episodes. Task 0 then trains alone for 30 more
-    # episodes, until the mean of its last 3 returns reaches 5 (episodes 31
-    # and 32 have a return of 10). The rest of the 120 episodes alternate.
+    # Stage 1 ends after 3 episodes. Task 0 then trains alone for the
+    # remaining 117 episodes, although it is solved after 32 episodes.
+    assert training_steps.tolist() == [1_190, 10]
     stage2_tasks = recorder.selected_tasks[3:]
-    assert stage2_tasks == [0] * 30 + [0, 1] * 43 + [0]
+    assert stage2_tasks == [0] * 117
 
 
 def test_smt_round_robin_if_all_tasks_solved_in_stage1():
@@ -494,7 +493,7 @@ def test_smt_refills_training_pool_with_worst_evaluated_task():
 
 
 def test_smt_evaluation_metric_adds_entropy_to_discounted_return():
-    performances, n_steps, _ = evaluate_tasks(
+    performances, _, n_steps, _ = evaluate_tasks(
         FixedStochasticPolicy(log_prob=-2.0),
         constant_reward_task_set([1.0]),
         n_eval_episodes=2,
@@ -509,7 +508,7 @@ def test_smt_evaluation_metric_adds_entropy_to_discounted_return():
 
 
 def test_smt_evaluation_of_deterministic_policy_omits_entropy():
-    performances, _, _ = evaluate_tasks(
+    performances, _, _, _ = evaluate_tasks(
         ZeroPolicy(),
         constant_reward_task_set([1.0]),
         n_eval_episodes=1,
@@ -518,6 +517,68 @@ def test_smt_evaluation_of_deterministic_policy_omits_entropy():
     )
 
     assert performances[0] == pytest.approx((1.0 - 0.5**10) / (1.0 - 0.5))
+
+
+def test_smt_evaluation_returns_undiscounted_return():
+    _, returns, _, _ = evaluate_tasks(
+        FixedStochasticPolicy(log_prob=-2.0),
+        constant_reward_task_set([1.0]),
+        n_eval_episodes=2,
+        gamma=0.5,
+        key=jax.random.key(0),
+    )
+
+    assert returns[0] == pytest.approx(10.0)
+
+
+class DecliningRewardEnv(ConstantRewardEnv):
+    """Rewards each step with 1 only in the first episode."""
+
+    def __init__(self):
+        super().__init__()
+        self.episodes = 0
+
+    def reset(self, seed=None, options=None):
+        self.episodes += 1
+        self.reward = float(self.episodes == 1)
+        return super().reset(seed=seed, options=options)
+
+
+def test_smt_solved_task_returns_if_evaluation_return_drops():
+    # The task is solved in its first episode (return 10), but its
+    # evaluation return is 0, so it returns to the main pool and re-enters
+    # the training pool after the first evaluation. Its first return does
+    # not count any more, so the following episodes (return 0) do not solve
+    # it again and it stays in the training pool until the end of stage 1.
+    logger = MemoryLogger()
+
+    with pytest.warns(UserWarning, match="no task scheduling"):
+        train_smt(
+            DiscreteTaskSet(
+                DecliningRewardEnv(),
+                lambda env, context: None,
+                np.zeros((1, 1)),
+                context_aware=False,
+            ),
+            constant_reward_task_set([0.0]),
+            random_actions_st,
+            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 1),
+            b1=200,
+            b2=0,
+            solved_threshold=1.0,
+            unsolvable_threshold=-np.inf,  # the task is never unsolvable
+            K=1,
+            eval_freq=1,
+            n_eval_episodes=1,
+            max_eval_episode_steps=10,
+            get_policy=lambda result: FixedStochasticPolicy(log_prob=0.0),
+            logger=logger,
+            progress_bar=False,
+        )
+
+    # First episode (10 steps) and evaluation (10 steps)
+    refill_steps, _ = logger.get_stat("worst task", x_key="step")
+    assert refill_steps.tolist() == [20]
 
 
 def test_smt_warns_if_evaluated_policy_is_deterministic():
