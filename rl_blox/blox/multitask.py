@@ -7,7 +7,9 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-from gymnasium.wrappers import TransformObservation
+from flax import nnx
+from gymnasium.vector import SyncVectorEnv
+from gymnasium.wrappers import TimeLimit, TransformObservation
 from numpy.typing import ArrayLike
 
 from ..blox.mapb import DUCB
@@ -77,6 +79,95 @@ def warn_if_state_not_bound(train_st: Callable) -> None:
             "functools.partial to share them across tasks.",
             stacklevel=3,
         )
+
+
+@nnx.jit
+def act(policy: nnx.Module, observation: jnp.ndarray) -> jnp.ndarray:
+    """Compute the deterministic action of a policy.
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Policy. If it returns a tuple, e.g., the mean and standard deviation
+        of a Gaussian policy, the first element is the action.
+
+    observation : array
+        Observation.
+
+    Returns
+    -------
+    action : array
+        Action.
+    """
+    out = policy(observation)
+    return out[0] if isinstance(out, tuple) else out
+
+
+def get_task_env(
+    task_set: "DiscreteTaskSet | SyncVectorEnv", task_id: int
+) -> gym.Env:
+    """Get the environment of a task.
+
+    Parameters
+    ----------
+    task_set : DiscreteTaskSet or SyncVectorEnv
+        Set of tasks.
+
+    task_id : int
+        Index of the task.
+
+    Returns
+    -------
+    env : gym.Env
+        Environment of the task.
+    """
+    if isinstance(task_set, SyncVectorEnv):
+        return task_set.envs[task_id]
+    else:
+        return task_set.get_task(task_id)
+
+
+def get_n_tasks(task_set: "DiscreteTaskSet | SyncVectorEnv") -> int:
+    """Get the number of tasks.
+
+    Parameters
+    ----------
+    task_set : DiscreteTaskSet or SyncVectorEnv
+        Set of tasks.
+
+    Returns
+    -------
+    n_tasks : int
+        Number of tasks.
+    """
+    if isinstance(task_set, SyncVectorEnv):
+        return task_set.num_envs
+    else:
+        return len(task_set)
+
+
+def max_episode_steps(env: gym.Env) -> int | None:
+    """Infer the maximum episode length of an environment.
+
+    Parameters
+    ----------
+    env : gym.Env
+        Environment.
+
+    Returns
+    -------
+    max_episode_steps : int or None
+        Maximum episode length from the ``TimeLimit`` wrapper or the spec of
+        the environment or any environment that it wraps. None if it cannot
+        be inferred.
+    """
+    while env is not None:
+        if isinstance(env, TimeLimit):
+            return env._max_episode_steps
+        if env.spec is not None and env.spec.max_episode_steps is not None:
+            return env.spec.max_episode_steps
+        env = getattr(env, "env", None)
+    return None
 
 
 class DiscreteTaskSet:
