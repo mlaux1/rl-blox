@@ -1,3 +1,4 @@
+import copy
 import os
 import pickle
 
@@ -771,6 +772,28 @@ def test_on_device_multitask_sampling_equals_host_sampling(
             sample(host, extra_args, task_id),
             sample(device, extra_args, task_id),
         )
+
+
+@pytest.mark.parametrize(
+    "restore",
+    [lambda b: pickle.loads(pickle.dumps(b)), copy.deepcopy],
+    ids=["pickle", "deepcopy"],
+)
+def test_on_device_multitask_buffer_can_be_restored(restore):
+    host = MultiTaskReplayBuffer(ReplayBuffer(50), 2)
+    device = MultiTaskReplayBuffer(ReplayBuffer(50, on_device=True), 2)
+    for i in range(10):
+        add_step(host.task(i % 2), i, False)
+        add_step(device.task(i % 2), i, False)
+    sample(device, (), 0)
+    # Not on the device yet
+    for i in range(10, 40):
+        add_step(host.task(i % 2), i, False)
+        add_step(device.task(i % 2), i, False)
+
+    restored = restore(device)
+
+    assert_same_batches(sample(host, (), 1), sample(restored, (), 1))
 
 
 def test_on_device_multitask_rejects_prioritized_replay_buffer():

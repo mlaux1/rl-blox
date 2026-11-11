@@ -1421,6 +1421,11 @@ class MultiTaskReplayBuffer:
     def __len__(self):
         return sum(len(buffer) for buffer in self.buffers)
 
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        d["device_copy"] = None
+        return d
+
 
 class TaskReplayBuffer:
     """View of a :class:`MultiTaskReplayBuffer` for one task.
