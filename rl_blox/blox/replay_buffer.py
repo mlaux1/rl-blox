@@ -35,8 +35,9 @@ def _scatter_on_device(data, rows, values):
 class DeviceCopy:
     """Copy of replay buffer data on the default JAX device.
 
-    All quantities are packed as float32 columns of one array, so that changed
-    rows are copied in one transfer. Integers must be smaller than 2**24.
+    All quantities are packed as float columns of one array, so that changed
+    rows are copied in one transfer. Floats are float32, or float64 if JAX's
+    x64 mode is enabled. Integers must be smaller than 2**24.
 
     Parameters
     ----------
@@ -57,13 +58,15 @@ class DeviceCopy:
             layout.append((start, stop, shape, dtype))
             start = stop
         self.layout = tuple(layout)
-        self.data = jnp.zeros((n_rows, start), dtype=jnp.float32)
+        self.data = jnp.zeros(
+            (n_rows, start), dtype=jax.dtypes.canonicalize_dtype(np.float64)
+        )
 
     def update(self, rows: npt.NDArray[int], values: list[npt.NDArray]):
         """Copy values of all quantities to rows."""
         packed = np.concatenate(
             [v.reshape(len(rows), -1) for v in values], axis=1
-        ).astype(np.float32)
+        ).astype(self.data.dtype)
         self.data = _scatter_on_device(self.data, rows, packed)
 
     def gather(self, indices: npt.NDArray[int], select: tuple[str]):
@@ -148,8 +151,8 @@ class ReplayBuffer(_BatchStorage):
         this order.
 
     dtypes : list[dtype], optional
-        dtype used for each buffer. Defaults to float32 for everything except
-        'termination'.
+        dtype used for each buffer. Defaults to float32, or float64 if JAX's
+        x64 mode is enabled, for everything except 'termination'.
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
@@ -182,11 +185,13 @@ class ReplayBuffer(_BatchStorage):
                 "termination",
             ]
         if dtypes is None:
+            # float32, or float64 if JAX's x64 mode is enabled
+            float_dtype = jax.dtypes.canonicalize_dtype(np.float64)
             dtypes = [
-                np.float32,
-                int if discrete_actions else np.float32,
-                np.float32,
-                np.float32,
+                float_dtype,
+                int if discrete_actions else float_dtype,
+                float_dtype,
+                float_dtype,
                 int,
             ]
         self.buffer = OrderedDict()
@@ -298,8 +303,9 @@ class SubtrajectoryReplayBuffer(_BatchStorage):
         'next_observation', 'terminated', and 'truncated'.
 
     dtypes : list[dtype], optional
-        dtype used for each buffer. Defaults to float32 for everything except
-        'terminated' and 'truncated'.
+        dtype used for each buffer. Defaults to float32, or float64 if JAX's
+        x64 mode is enabled, for everything except 'terminated' and
+        'truncated'.
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
@@ -368,11 +374,13 @@ class SubtrajectoryReplayBuffer(_BatchStorage):
                 "truncated",
             ]
         if dtypes is None:
+            # float32, or float64 if JAX's x64 mode is enabled
+            float_dtype = jax.dtypes.canonicalize_dtype(np.float64)
             dtypes = [
-                np.float32,
-                int if discrete_actions else np.float32,
-                np.float32,
-                np.float32,
+                float_dtype,
+                int if discrete_actions else float_dtype,
+                float_dtype,
+                float_dtype,
                 int,
                 int,
             ]
@@ -847,8 +855,8 @@ class LAP(ReplayBuffer):
         this order.
 
     dtypes : list[dtype], optional
-        dtype used for each buffer. Defaults to float32 for everything except
-        'termination'.
+        dtype used for each buffer. Defaults to float32, or float64 if JAX's
+        x64 mode is enabled, for everything except 'termination'.
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.
@@ -1014,8 +1022,9 @@ class SubtrajectoryReplayBufferPER(SubtrajectoryReplayBuffer):
         'next_observation', 'terminated', and 'truncated'.
 
     dtypes : list[dtype], optional
-        dtype used for each buffer. Defaults to float32 for everything except
-        'terminated' and 'truncated'.
+        dtype used for each buffer. Defaults to float32, or float64 if JAX's
+        x64 mode is enabled, for everything except 'terminated' and
+        'truncated'.
 
     discrete_actions : bool, optional
         Changes the default dtype for actions to int.

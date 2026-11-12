@@ -1,3 +1,4 @@
+import contextlib
 import copy
 import os
 import pickle
@@ -538,6 +539,27 @@ def test_replay_buffer_stores_floats_as_float32(replay_buffer):
     assert replay_buffer.buffer["reward"].dtype == np.float32
 
 
+@contextlib.contextmanager
+def x64_mode():
+    # jax.enable_x64 is not available in older JAX versions
+    enabled = jax.config.jax_enable_x64
+    jax.config.update("jax_enable_x64", True)
+    try:
+        yield
+    finally:
+        jax.config.update("jax_enable_x64", enabled)
+
+
+@pytest.mark.parametrize(
+    "buffer_class", [ReplayBuffer, SubtrajectoryReplayBuffer]
+)
+def test_replay_buffer_stores_floats_as_float64_in_x64_mode(buffer_class):
+    with x64_mode():
+        replay_buffer = buffer_class(buffer_size=10)
+    assert replay_buffer.buffer["observation"].dtype == np.float64
+    assert replay_buffer.buffer["reward"].dtype == np.float64
+
+
 def filled_flat_buffers():
     buffers = [ReplayBuffer(buffer_size=10), LAP(buffer_size=10)]
     for replay_buffer in buffers:
@@ -732,6 +754,18 @@ def test_on_device_sampling_equals_host_sampling(case):
         assert_same_batches(
             sample(host, extra_args, stop), sample(device, extra_args, stop)
         )
+
+
+def test_on_device_sampling_equals_host_sampling_in_x64_mode():
+    with x64_mode():
+        host = ReplayBuffer(50)
+        device = ReplayBuffer(50, on_device=True)
+        for i in range(30):
+            # Thirds are rounded differently in float32 and float64
+            add_step(host, i / 3, False)
+            add_step(device, i / 3, False)
+
+        assert_same_batches(sample(host, (), 0), sample(device, (), 0))
 
 
 def test_on_device_buffer_can_be_pickled():
