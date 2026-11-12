@@ -567,6 +567,11 @@ def train_reinforce(
     )(policy, policy_optimizer, value_function, value_function_optimizer)
 
 
+@nnx.jit
+def _sample_action(policy, observation, key):
+    return policy.sample(observation, key)
+
+
 def sample_trajectories(
     env: gym.Env,
     policy: StochasticPolicyBase,
@@ -612,15 +617,14 @@ def sample_trajectories(
     if logger is not None:
         logger.start_new_episode()
 
-    @nnx.jit
-    def sample(policy, observation, subkey):
-        return policy.sample(observation, subkey)
+    # Traverse the module graph once per call instead of once per step
+    sample_action = nnx.cached_partial(_sample_action, policy)
 
     steps_per_episode = 0
     observation, _ = env.reset()
     while True:
         key, subkey = jax.random.split(key)
-        action = np.asarray(sample(policy, jnp.array(observation), subkey))
+        action = np.asarray(sample_action(jnp.array(observation), subkey))
 
         next_observation, reward, terminated, truncated, _ = env.step(action)
 
