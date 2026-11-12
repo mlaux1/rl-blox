@@ -557,6 +557,11 @@ def set_params(net: nnx.Module, params: jnp.ndarray):
     nnx.update(net, state)
 
 
+@nnx.jit
+def _policy_action(policy, observation):
+    return policy(observation)
+
+
 def train_cmaes(
     env: gymnasium.Env,
     policy: nnx.Module,
@@ -672,9 +677,8 @@ def train_cmaes(
         samples=sample_population(config, state),
     )
 
-    @nnx.jit
-    def policy_action(policy, observation):
-        return policy(observation)
+    # Traverse the module graph once per call instead of once per step
+    policy_action = nnx.cached_partial(_policy_action, policy)
 
     stopped = False
 
@@ -687,7 +691,7 @@ def train_cmaes(
         ret = 0.0
         done = False
         while not done:
-            action = np.asarray(policy_action(policy, jnp.asarray(obs)))
+            action = np.asarray(policy_action(jnp.asarray(obs)))
 
             next_obs, reward, termination, truncation, info = env.step(action)
             step_counter += 1
