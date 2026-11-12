@@ -89,21 +89,24 @@ def sample_target_actions(
     return jnp.clip(action + clipped_eps, action_low, action_high)
 
 
+_jit_sample_target_actions = nnx.jit(sample_target_actions)
+
+
 def make_sample_target_actions(
     action_space: gym.spaces.Box,
     exploration_noise: float,
     noise_clip: float,
 ) -> Callable[[nnx.Module, jnp.ndarray, jnp.ndarray], jnp.ndarray]:
-    action_scale = 0.5 * (action_space.high - action_space.low)
-    return nnx.jit(
-        partial(
-            sample_target_actions,
-            action_space.low,
-            action_space.high,
-            action_scale,
-            exploration_noise,
-            noise_clip,
-        )
+    # Bounds and noise are arguments of one module-level jitted function, so
+    # that new values do not cause a recompilation
+    action_scale = jnp.asarray(0.5 * (action_space.high - action_space.low))
+    return partial(
+        _jit_sample_target_actions,
+        jnp.asarray(action_space.low),
+        jnp.asarray(action_space.high),
+        action_scale,
+        jnp.asarray(exploration_noise, dtype=action_scale.dtype),
+        jnp.asarray(noise_clip, dtype=action_scale.dtype),
     )
 
 
