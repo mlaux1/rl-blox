@@ -2,7 +2,6 @@ from collections import namedtuple
 from functools import partial
 
 import gymnasium
-import jax
 import numpy as np
 from flax import nnx
 from tqdm.rich import tqdm, trange
@@ -11,10 +10,14 @@ from ..blox.function_approximator.mlp import MLP
 from ..blox.losses import ddqn_loss
 from ..blox.q_policy import greedy_policy
 from ..blox.replay_buffer import ReplayBuffer
-from ..blox.schedules import linear_schedule
+from ..blox.schedules import linear_schedule_value
 from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .dqn import train_step_with_loss
+
+_ddqn_train_step = nnx.jit(
+    partial(train_step_with_loss, ddqn_loss), static_argnames=("gamma",)
+)
 
 
 def train_ddqn(
@@ -117,7 +120,6 @@ def train_ddqn(
         env.action_space, gymnasium.spaces.Discrete
     ), "DQN only supports discrete action spaces"
 
-    key = jax.random.key(seed)
     rng = np.random.default_rng(seed)
 
     if logger is not None:
@@ -134,16 +136,14 @@ def train_ddqn(
     if q_target_net is None:
         q_target_net = nnx.clone(q_net)
 
-    train_step = partial(train_step_with_loss, ddqn_loss)
-    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
+    # Traverse the module graphs once per call instead of once per step
+    train_step = nnx.cached_partial(
+        _ddqn_train_step, optimizer, q_net, q_target_net
+    )
+    policy = nnx.cached_partial(greedy_policy, q_net)
 
     # initialise episode
     obs, _ = env.reset(seed=seed)
-
-    epsilon = linear_schedule(total_timesteps)
-
-    key, subkey = jax.random.split(key)
-    epsilon_rolls = jax.random.uniform(subkey, (total_timesteps,))
 
     episode = 1
     accumulated_reward = 0.0
@@ -151,10 +151,11 @@ def train_ddqn(
     step = global_step
 
     while step < total_timesteps:
-        if step < learning_starts or epsilon_rolls[step] < epsilon[step]:
-            action = env.action_space.sample()
+        epsilon = linear_schedule_value(step, total_timesteps)
+        if step < learning_starts or rng.random() < epsilon:
+            action = env.action_space.start + rng.integers(env.action_space.n)
         else:
-            action = greedy_policy(q_net, obs)
+            action = policy(obs)
 
         next_obs, reward, terminated, truncated, info = env.step(int(action))
         accumulated_reward += reward
@@ -169,9 +170,7 @@ def train_ddqn(
         if step > batch_size:
             if step % update_frequency == 0:
                 transition_batch = replay_buffer.sample_batch(batch_size, rng)
-                q_loss, q_mean = train_step(
-                    optimizer, q_net, q_target_net, transition_batch, gamma
-                )
+                q_loss, q_mean = train_step(transition_batch, gamma)
                 if logger is not None:
                     logger.record_stat(
                         "q loss", q_loss, step=step + 1, episode=episode
