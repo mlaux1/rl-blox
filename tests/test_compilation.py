@@ -11,6 +11,7 @@ from rl_blox.algorithm.cmaes import train_cmaes
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.ddqn import train_ddqn
 from rl_blox.algorithm.dqn import train_dqn
+from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.nature_dqn import train_nature_dqn
 from rl_blox.algorithm.per import train_ddqn_per
 from rl_blox.algorithm.reinforce import (
@@ -29,6 +30,7 @@ from rl_blox.blox.replay_buffer import (
     LAP,
     PrioritizedReplayBuffer,
     ReplayBuffer,
+    SubtrajectoryReplayBufferPER,
 )
 
 compilations = []
@@ -122,6 +124,31 @@ def td7():
     )
 
 
+def mrq():
+    env = gym.make("Pendulum-v1")
+    state = create_mrq_state(
+        env,
+        policy_hidden_nodes=[8],
+        q_hidden_nodes=[8],
+        encoder_zs_dim=8,
+        encoder_za_dim=8,
+        encoder_zsa_dim=8,
+        encoder_hidden_nodes=[8],
+        seed=0,
+    )
+    return partial(
+        train_mrq,
+        env,
+        *state,
+        batch_size=8,
+        total_timesteps=60,
+        learning_starts=20,
+        target_delay=10,
+        replay_buffer=SubtrajectoryReplayBufferPER(100, horizon=5),
+        progress_bar=False,
+    )
+
+
 def policy_gradient(train):
     # Pendulum episodes have a fixed length: batches of different lengths
     # would cause recompilations of the updates
@@ -171,6 +198,7 @@ CASES = {
     "TD3-LAP": lambda: continuous(train_td3_lap, create_td3_state, LAP),
     "SAC": sac,
     "TD7": td7,
+    "MR.Q": mrq,
     "REINFORCE": lambda: policy_gradient(train_reinforce),
     "actor-critic": lambda: policy_gradient(train_ac),
     "CMA-ES": cmaes,

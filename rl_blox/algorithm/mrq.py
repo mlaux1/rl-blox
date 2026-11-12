@@ -593,10 +593,11 @@ def train_mrq(
         activation_weight,
     )
 
+    # Python floats, so that the update is compiled only once
     reward_scale = 1.0
     target_reward_scale = 0.0
     if len(replay_buffer) > 0:
-        reward_scale = replay_buffer.reward_scale()
+        reward_scale = float(replay_buffer.reward_scale())
         target_reward_scale = reward_scale
 
     episode_idx = 0
@@ -643,7 +644,7 @@ def train_mrq(
                 hard_target_net_update(q, q_target)
 
                 target_reward_scale = reward_scale
-                reward_scale = replay_buffer.reward_scale()
+                reward_scale = float(replay_buffer.reward_scale())
 
                 replay_buffer.reset_max_priority()
 
