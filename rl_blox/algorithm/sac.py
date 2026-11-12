@@ -490,6 +490,15 @@ def train_sac(
     if replay_buffer is None:
         replay_buffer = ReplayBuffer(buffer_size)
 
+    # Traverse the module graphs once per call instead of once per step
+    train_step = nnx.cached_partial(
+        _sac_train_step, q_optimizer, q, q_target, policy
+    )
+    update_actor = nnx.cached_partial(
+        sac_update_actor, policy, policy_optimizer, q
+    )
+    update_q_target = nnx.cached_partial(soft_target_net_update, q, q_target)
+
     episode_idx = 0
     if logger is not None:
         logger.start_new_episode()
@@ -532,15 +541,8 @@ def train_sac(
             batch = replay_buffer.sample_batch(batch_size, rng)
 
             key, action_key = jax.random.split(key)
-            q_loss_value, q_mean = _sac_train_step(
-                q_optimizer,
-                q,
-                q_target,
-                policy,
-                action_key,
-                entropy_control.alpha_,
-                batch,
-                gamma,
+            q_loss_value, q_mean = train_step(
+                action_key, entropy_control.alpha_, batch, gamma
             )
             stats = {"q loss": q_loss_value, "q mean": q_mean}
             updated_modules = {"q": q}
@@ -549,13 +551,8 @@ def train_sac(
                 # compensate for delay by doing 'policy_frequency' updates
                 for _ in range(policy_delay):
                     key, action_key = jax.random.split(key)
-                    policy_loss_value = sac_update_actor(
-                        policy,
-                        policy_optimizer,
-                        q,
-                        action_key,
-                        batch.observation,
-                        entropy_control.alpha_,
+                    policy_loss_value = update_actor(
+                        action_key, batch.observation, entropy_control.alpha_
                     )
                     stats["policy loss"] = policy_loss_value
                     updated_modules["policy"] = policy
@@ -571,7 +568,7 @@ def train_sac(
                         stats["alpha loss"] = exploration_loss_value
 
             if step % target_network_delay == 0:
-                soft_target_net_update(q, q_target, tau)
+                update_q_target(tau)
                 updated_modules["q_target"] = q_target
 
             if logger is not None:
