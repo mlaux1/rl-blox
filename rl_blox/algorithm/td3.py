@@ -165,6 +165,9 @@ def create_td3_state(
     )(policy, policy_optimizer, q, q_optimizer)
 
 
+_td3_train_step = nnx.jit(partial(train_step_with_loss, td3_loss))
+
+
 def train_td3(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: nnx.Module,
@@ -395,14 +398,6 @@ def train_td3(
     if replay_buffer is None:
         replay_buffer = ReplayBuffer(buffer_size)
 
-    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
-    _sample_target_actions = make_sample_target_actions(
-        env.action_space, exploration_noise, noise_clip
-    )
-
-    train_step = partial(train_step_with_loss, td3_loss)
-    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
-
     episode_idx = 0
     if logger is not None:
         logger.start_new_episode()
@@ -415,6 +410,25 @@ def train_td3(
     if q_target is None:
         q_target = nnx.clone(q)
 
+    # Traverse the module graphs once per call instead of once per step
+    _sample_actions = nnx.cached_partial(
+        make_sample_actions(env.action_space, exploration_noise), policy
+    )
+    _sample_target_actions = nnx.cached_partial(
+        make_sample_target_actions(
+            env.action_space, exploration_noise, noise_clip
+        ),
+        policy_target,
+    )
+    train_step = nnx.cached_partial(_td3_train_step, q_optimizer, q, q_target)
+    update_actor = nnx.cached_partial(
+        ddpg_update_actor, policy, policy_optimizer, q
+    )
+    update_policy_target = nnx.cached_partial(
+        soft_target_net_update, policy, policy_target
+    )
+    update_q_target = nnx.cached_partial(soft_target_net_update, q, q_target)
+
     if bar is None:
         bar = trange(global_step, total_timesteps, disable=not progress_bar)
 
@@ -425,9 +439,7 @@ def train_td3(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(
-                _sample_actions(policy, jnp.asarray(obs), action_key)
-            )
+            action = np.asarray(_sample_actions(jnp.asarray(obs), action_key))
 
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
@@ -448,25 +460,16 @@ def train_td3(
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
                 next_actions = _sample_target_actions(
-                    policy_target, batch.next_observation, sampling_key
+                    batch.next_observation, sampling_key
                 )
-                q_loss_value, q_mean = train_step(
-                    q_optimizer,
-                    q,
-                    q_target,
-                    next_actions,
-                    batch,
-                    gamma,
-                )
+                q_loss_value, q_mean = train_step(next_actions, batch, gamma)
                 stats = {"q loss": q_loss_value, "q mean": q_mean}
                 updated_modules = {"q": q}
 
                 if step % policy_delay == 0:
-                    policy_loss_value = ddpg_update_actor(
-                        policy, policy_optimizer, q, batch.observation
-                    )
-                    soft_target_net_update(policy, policy_target, tau)
-                    soft_target_net_update(q, q_target, tau)
+                    policy_loss_value = update_actor(batch.observation)
+                    update_policy_target(tau)
+                    update_q_target(tau)
 
                     stats["policy loss"] = policy_loss_value
                     updated_modules.update(

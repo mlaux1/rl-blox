@@ -15,9 +15,7 @@ from ..blox.target_net import hard_target_net_update
 from ..logging.logger import LoggerBase
 from .dqn import train_step_with_loss
 
-_ddqn_train_step = nnx.jit(
-    partial(train_step_with_loss, ddqn_loss), static_argnames=("gamma",)
-)
+_ddqn_train_step = nnx.jit(partial(train_step_with_loss, ddqn_loss))
 
 
 def train_ddqn(

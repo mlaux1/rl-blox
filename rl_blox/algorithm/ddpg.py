@@ -187,6 +187,9 @@ def create_ddpg_state(
     )(policy, policy_optimizer, q, q_optimizer)
 
 
+_ddpg_train_step = nnx.jit(partial(train_step_with_loss, ddpg_loss))
+
+
 def train_ddpg(
     env: gym.Env[gym.spaces.Box, gym.spaces.Box],
     policy: nnx.Module,
@@ -392,11 +395,6 @@ def train_ddpg(
     if replay_buffer is None:
         replay_buffer = ReplayBuffer(buffer_size)
 
-    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
-
-    train_step = partial(train_step_with_loss, ddpg_loss)
-    train_step = partial(nnx.jit, static_argnames=("gamma",))(train_step)
-
     episode_idx = 0
     if logger is not None:
         logger.start_new_episode()
@@ -409,6 +407,21 @@ def train_ddpg(
         policy_target = nnx.clone(policy)
     if q_target is None:
         q_target = nnx.clone(q)
+
+    # Traverse the module graphs once per call instead of once per step
+    _sample_actions = nnx.cached_partial(
+        make_sample_actions(env.action_space, exploration_noise), policy
+    )
+    train_step = nnx.cached_partial(
+        _ddpg_train_step, q_optimizer, q, q_target, policy_target
+    )
+    update_actor = nnx.cached_partial(
+        ddpg_update_actor, policy, policy_optimizer, q
+    )
+    update_policy_target = nnx.cached_partial(
+        soft_target_net_update, policy, policy_target
+    )
+    update_q_target = nnx.cached_partial(soft_target_net_update, q, q_target)
 
     if bar is None:
         progress = trange(
@@ -424,9 +437,7 @@ def train_ddpg(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(
-                _sample_actions(policy, jnp.asarray(obs), action_key)
-            )
+            action = np.asarray(_sample_actions(jnp.asarray(obs), action_key))
 
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
@@ -444,19 +455,10 @@ def train_ddpg(
             for _ in range(gradient_steps):
                 batch = replay_buffer.sample_batch(batch_size, rng)
 
-                q_loss_value, q_mean = train_step(
-                    q_optimizer,
-                    q,
-                    q_target,
-                    policy_target,
-                    batch,
-                    gamma,
-                )
-                actor_loss_value = ddpg_update_actor(
-                    policy, policy_optimizer, q, batch.observation
-                )
-                soft_target_net_update(policy, policy_target, tau)
-                soft_target_net_update(q, q_target, tau)
+                q_loss_value, q_mean = train_step(batch, gamma)
+                actor_loss_value = update_actor(batch.observation)
+                update_policy_target(tau)
+                update_q_target(tau)
 
                 if logger is not None:
                     stats = {

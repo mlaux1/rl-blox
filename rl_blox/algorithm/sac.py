@@ -245,9 +245,7 @@ def _sample_action(policy, obs, action_key):
     return policy.sample_and_log_prob(obs, action_key)[0]
 
 
-_sac_train_step = nnx.jit(
-    partial(train_step_with_loss, sac_loss), static_argnames=("gamma",)
-)
+_sac_train_step = nnx.jit(partial(train_step_with_loss, sac_loss))
 
 
 def train_sac(
