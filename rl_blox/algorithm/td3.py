@@ -89,7 +89,7 @@ def sample_target_actions(
     return jnp.clip(action + clipped_eps, action_low, action_high)
 
 
-_jit_sample_target_actions = nnx.jit(sample_target_actions)
+_sample_target_actions = nnx.jit(sample_target_actions)
 
 
 def make_sample_target_actions(
@@ -97,11 +97,30 @@ def make_sample_target_actions(
     exploration_noise: float,
     noise_clip: float,
 ) -> Callable[[nnx.Module, jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+    """Create a function that samples target actions.
+
+    Parameters
+    ----------
+    action_space : gym.spaces.Box
+        Action space that defines the bounds of actions.
+
+    exploration_noise : float
+        Scaling factor for exploration noise.
+
+    noise_clip : float
+        Scaling factor for noise clipping.
+
+    Returns
+    -------
+    sample_target_actions : callable
+        :func:`sample_target_actions` for the given action space, noise, and
+        clipping. Takes a policy, an observation, and a key for PRNG.
+    """
     # Bounds and noise are arguments of one module-level jitted function, so
     # that new values do not cause a recompilation
     action_scale = jnp.asarray(0.5 * (action_space.high - action_space.low))
     return partial(
-        _jit_sample_target_actions,
+        _sample_target_actions,
         jnp.asarray(action_space.low),
         jnp.asarray(action_space.high),
         action_scale,
@@ -411,10 +430,10 @@ def train_td3(
         q_target = nnx.clone(q)
 
     # Traverse the module graphs once per call instead of once per step
-    _sample_actions = nnx.cached_partial(
+    sample_action = nnx.cached_partial(
         make_sample_actions(env.action_space, exploration_noise), policy
     )
-    _sample_target_actions = nnx.cached_partial(
+    sample_next_actions = nnx.cached_partial(
         make_sample_target_actions(
             env.action_space, exploration_noise, noise_clip
         ),
@@ -439,7 +458,7 @@ def train_td3(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(_sample_actions(jnp.asarray(obs), action_key))
+            action = np.asarray(sample_action(jnp.asarray(obs), action_key))
 
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
@@ -459,7 +478,7 @@ def train_td3(
 
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
-                next_actions = _sample_target_actions(
+                next_actions = sample_next_actions(
                     batch.next_observation, sampling_key
                 )
                 q_loss_value, q_mean = train_step(next_actions, batch, gamma)

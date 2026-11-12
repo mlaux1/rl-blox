@@ -221,10 +221,10 @@ def train_td3_lap(
         q_target = nnx.clone(q)
 
     # Traverse the module graphs once per call instead of once per step
-    _sample_actions = nnx.cached_partial(
+    sample_action = nnx.cached_partial(
         make_sample_actions(env.action_space, exploration_noise), policy
     )
-    _sample_target_actions = nnx.cached_partial(
+    sample_next_actions = nnx.cached_partial(
         make_sample_target_actions(
             env.action_space, target_policy_noise, noise_clip
         ),
@@ -251,7 +251,7 @@ def train_td3_lap(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(_sample_actions(jnp.asarray(obs), action_key))
+            action = np.asarray(sample_action(jnp.asarray(obs), action_key))
 
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
@@ -270,7 +270,7 @@ def train_td3_lap(
 
                 # policy smoothing: sample next actions from target policy
                 key, sampling_key = jax.random.split(key, 2)
-                next_actions = _sample_target_actions(
+                next_actions = sample_next_actions(
                     batch.next_observation, sampling_key
                 )
                 q_loss_value, (q_mean, max_abs_td_error) = train_step(
