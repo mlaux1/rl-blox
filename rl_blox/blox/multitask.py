@@ -1,5 +1,7 @@
 import inspect
+import math
 import warnings
+from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
 
@@ -7,10 +9,13 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-from gymnasium.wrappers import TransformObservation
+from flax import nnx
+from gymnasium.vector import SyncVectorEnv
+from gymnasium.wrappers import TimeLimit, TransformObservation
 from numpy.typing import ArrayLike
 
 from ..blox.mapb import DUCB
+from ..logging.logger import LoggerBase
 
 
 class TaskSelectionMixin:
@@ -77,6 +82,95 @@ def warn_if_state_not_bound(train_st: Callable) -> None:
             "functools.partial to share them across tasks.",
             stacklevel=3,
         )
+
+
+@nnx.jit
+def act(policy: nnx.Module, observation: jnp.ndarray) -> jnp.ndarray:
+    """Compute the deterministic action of a policy.
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Policy. If it returns a tuple, e.g., the mean and standard deviation
+        of a Gaussian policy, the first element is the action.
+
+    observation : array
+        Observation.
+
+    Returns
+    -------
+    action : array
+        Action.
+    """
+    out = policy(observation)
+    return out[0] if isinstance(out, tuple) else out
+
+
+def get_task_env(
+    task_set: "DiscreteTaskSet | SyncVectorEnv", task_id: int
+) -> gym.Env:
+    """Get the environment of a task.
+
+    Parameters
+    ----------
+    task_set : DiscreteTaskSet or SyncVectorEnv
+        Set of tasks.
+
+    task_id : int
+        Index of the task.
+
+    Returns
+    -------
+    env : gym.Env
+        Environment of the task.
+    """
+    if isinstance(task_set, SyncVectorEnv):
+        return task_set.envs[task_id]
+    else:
+        return task_set.get_task(task_id)
+
+
+def get_n_tasks(task_set: "DiscreteTaskSet | SyncVectorEnv") -> int:
+    """Get the number of tasks.
+
+    Parameters
+    ----------
+    task_set : DiscreteTaskSet or SyncVectorEnv
+        Set of tasks.
+
+    Returns
+    -------
+    n_tasks : int
+        Number of tasks.
+    """
+    if isinstance(task_set, SyncVectorEnv):
+        return task_set.num_envs
+    else:
+        return len(task_set)
+
+
+def max_episode_steps(env: gym.Env) -> int | None:
+    """Infer the maximum episode length of an environment.
+
+    Parameters
+    ----------
+    env : gym.Env
+        Environment.
+
+    Returns
+    -------
+    max_episode_steps : int or None
+        Maximum episode length from the ``TimeLimit`` wrapper or the spec of
+        the environment or any environment that it wraps. None if it cannot
+        be inferred.
+    """
+    while env is not None:
+        if isinstance(env, TimeLimit):
+            return env._max_episode_steps
+        if env.spec is not None and env.spec.max_episode_steps is not None:
+            return env.spec.max_episode_steps
+        env = getattr(env, "env", None)
+    return None
 
 
 class DiscreteTaskSet:
@@ -227,3 +321,131 @@ class RoundRobinSelector(TaskSelector):
 
     def feedback(self, reward: float):
         super().feedback(reward)
+
+
+SchedulerResult = namedtuple(
+    "SchedulerResult", ["result", "training_steps", "eval_steps"]
+)
+"""Result of a task scheduler: the result of the last call to ``train_st``,
+the number of environment steps used to train on each task, and the number of
+environment steps used for evaluations."""
+
+
+def train_task(
+    train_st: Callable,
+    env: gym.Env,
+    task_id: int,
+    n_episodes: int,
+    total_timesteps: int,
+    global_step: int,
+    seed: int,
+    task_selectables: list[TaskSelectionMixin] | None = None,
+    logger: LoggerBase | None = None,
+) -> tuple:
+    """Train the backbone on one task for one scheduling interval.
+
+    Parameters
+    ----------
+    train_st : callable
+        Training function of the backbone with its state bound, see
+        :func:`warn_if_state_not_bound`. It is called with the keyword
+        arguments ``env``, ``seed``, ``total_timesteps``, ``total_episodes``,
+        ``global_step``, ``logger``, and ``progress_bar``.
+
+    env : gym.Env
+        Environment of the task, e.g., from :func:`get_task_env`.
+
+    task_id : int
+        Index of the task.
+
+    n_episodes : int
+        Number of episodes to train for.
+
+    total_timesteps : int
+        Total budget of the scheduler. Training stops when it runs out.
+
+    global_step : int
+        Number of environment steps used so far.
+
+    seed : int
+        Random seed of the scheduler. ``train_st`` is called with
+        ``seed + global_step``.
+
+    task_selectables : list, optional
+        Objects that are informed about the task before training.
+
+    logger : LoggerBase, optional
+        Experiment logger.
+
+    Returns
+    -------
+    result : namedtuple
+        Result of ``train_st``.
+
+    steps : int
+        Number of environment steps of the interval. If the total budget ran
+        out during the interval, the remaining budget.
+
+    returns : array, shape (n_episodes,)
+        Returns of the completed episodes. Fewer than ``n_episodes`` if the
+        total budget ran out.
+
+    Notes
+    -----
+    Logging
+
+    * ``task_id`` - task scheduled for training
+    """
+    if logger is not None:
+        logger.record_stat("task_id", task_id, step=global_step)
+    if task_selectables is not None:
+        for ts in task_selectables:
+            ts.select_task(task_id)
+
+    # Count steps independently of the global_step returned by train_st
+    env = gym.wrappers.RecordEpisodeStatistics(
+        env, buffer_length=n_episodes, stats_key="scheduler_episode"
+    )
+    result = train_st(
+        env=env,
+        seed=seed + global_step,
+        total_timesteps=total_timesteps,
+        total_episodes=n_episodes,
+        global_step=global_step,
+        logger=logger,
+        progress_bar=False,
+    )
+
+    returns = np.asarray(env.return_queue, dtype=float)
+    if len(returns) < n_episodes:
+        steps = total_timesteps - global_step
+    else:
+        steps = int(np.sum(env.length_queue))
+    return result, steps, returns
+
+
+def n_warmup_selections(
+    n_tasks: int, warmup_episodes: int, episodes_per_task: int
+) -> int:
+    """Number of task selections of a round-robin warm-up.
+
+    The warm-up consists of whole rounds over all tasks, so that each task is
+    trained for at least ``warmup_episodes`` episodes.
+
+    Parameters
+    ----------
+    n_tasks : int
+        Number of tasks.
+
+    warmup_episodes : int
+        Minimum number of warm-up episodes per task.
+
+    episodes_per_task : int
+        Number of episodes per task selection.
+
+    Returns
+    -------
+    n_selections : int
+        Number of task selections of the warm-up.
+    """
+    return n_tasks * math.ceil(warmup_episodes / episodes_per_task)
