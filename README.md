@@ -104,6 +104,7 @@ We currently provide implementations of the following algorithms:
 | MR.Q |[link](https://arxiv.org/abs/2501.16142) |
 | Active Task Scheduling | [link](https://jmlr.org/papers/volume15/fabisch14a/fabisch14a.pdf) |
 | SMT | [link](https://raw.githubusercontent.com/mlresearch/v235/main/assets/cho24d/cho24d.pdf) |
+| PLR | [link](https://arxiv.org/abs/2010.03934) |
 
 ## Getting Started
 
