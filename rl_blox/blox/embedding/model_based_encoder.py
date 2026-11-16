@@ -228,6 +228,45 @@ class DeterministicPolicyWithEncoder(nnx.Module):
         return self.policy(self.encoder.encode_zs(observation))
 
 
+@nnx.jit
+def policy_with_encoder_value(
+    q: nnx.Module,
+    policy_with_encoder: DeterministicPolicyWithEncoder,
+    observation: jnp.ndarray,
+) -> jnp.ndarray:
+    r"""State value of a policy with encoder according to a Q-function.
+
+    .. math::
+
+        V(s) = Q(z_{sa}(z_s, \pi(z_s))), \quad z_s = z_s(s)
+
+    where :math:`z_s` and :math:`z_{sa}` are the latent state and state-action
+    representations of the encoder.
+
+    Parameters
+    ----------
+    q : nnx.Module
+        Q-function that takes the latent state-action representation as input,
+        e.g., the critic of MR.Q.
+
+    policy_with_encoder : DeterministicPolicyWithEncoder
+        Encoder and policy.
+
+    observation : array, shape (n_samples, n_state_features)
+        Observations.
+
+    Returns
+    -------
+    value : array, shape (n_samples,)
+        State values. The critic of MR.Q predicts values divided by the reward
+        scale of its replay buffer.
+    """
+    encoder = policy_with_encoder.encoder
+    zs = encoder.encode_zs(observation)
+    zsa = encoder.encode_zsa(zs, policy_with_encoder.policy(zs))
+    return q(zsa).squeeze(-1)
+
+
 def create_model_based_encoder_and_policy(
     n_state_features: int,
     n_action_features: int,
