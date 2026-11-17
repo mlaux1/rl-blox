@@ -27,7 +27,7 @@ contexts = np.linspace(0, 0.3, 11)[:, np.newaxis]
 train_set = DiscreteTaskSet(base_env, set_context, contexts, context_aware=True)
 seed = 2
 verbose = 2
-# Backbone algorithm to use for SMT: "DDQN", "NDQN"
+# Backbone algorithm to use for AMT: "DDQN", "NDQN"
 backbone = "DDQN"
 
 if verbose:
@@ -38,7 +38,7 @@ if verbose:
 logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,
-    algorithm_name=f"SMT-{backbone}",
+    algorithm_name=f"AMT-{backbone}",
     hparams={},
 )
 
@@ -72,24 +72,25 @@ elif backbone == "NDQN":
     )
 else:
     raise NotImplementedError(f"Unknown backbone '{backbone}'")
+# The backbone starts training immediately
+train_st = partial(train_st, learning_starts=0)
 
 result = train_active_mt(
     train_set,
     train_st,
-    replay_buffer,
-    task_selector="Monotonic Progress",
     r_max=200,
+    task_selector="Monotonic Progress",
     ducb_gamma=0.95,
     xi=1e-5,
-    learning_starts=0,
-    scheduling_interval=5,
+    episodes_per_task=5,
+    replay_buffer=replay_buffer,
     total_timesteps=200_000,
     logger=logger,
     seed=seed,
 )
 
 # Evaluation
-result_st = result[0]
+result_st = result.result
 q_net = result_st.q_net
 
 
