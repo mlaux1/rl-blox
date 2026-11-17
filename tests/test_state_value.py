@@ -14,6 +14,9 @@ from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.state_value import greedy_value, policy_value
 
 N_SAMPLES = 5
+# Jitted and eager float32 computations round differently, which matters
+# for values close to 0
+ATOL = 1e-5
 
 
 def make_observations(n_features):
@@ -27,7 +30,9 @@ def test_greedy_value_is_maximum_q_value():
     value = greedy_value(q_net, observation)
 
     assert value.shape == (N_SAMPLES,)
-    assert_allclose(value, jnp.max(q_net(observation), axis=-1), rtol=1e-5)
+    assert_allclose(
+        value, jnp.max(q_net(observation), axis=-1), rtol=1e-5, atol=ATOL
+    )
 
 
 def test_policy_value_of_deterministic_policy():
@@ -40,7 +45,7 @@ def test_policy_value_of_deterministic_policy():
     action = state.policy(observation)
     expected = state.q(jnp.concatenate((observation, action), axis=-1))
     assert value.shape == (N_SAMPLES,)
-    assert_allclose(value, expected[:, 0], rtol=1e-5)
+    assert_allclose(value, expected[:, 0], rtol=1e-5, atol=ATOL)
 
 
 def test_policy_value_uses_mean_action_of_gaussian_policy():
@@ -53,7 +58,7 @@ def test_policy_value_uses_mean_action_of_gaussian_policy():
     mean_action, _ = state.policy(observation)
     expected = state.q(jnp.concatenate((observation, mean_action), axis=-1))
     assert value.shape == (N_SAMPLES,)
-    assert_allclose(value, expected[:, 0], rtol=1e-5)
+    assert_allclose(value, expected[:, 0], rtol=1e-5, atol=ATOL)
 
 
 def test_policy_with_encoder_value():
@@ -77,4 +82,4 @@ def test_policy_with_encoder_value():
     zs = encoder.encode_zs(observation)
     zsa = encoder.encode_zsa(zs, state.policy_with_encoder.policy(zs))
     assert value.shape == (N_SAMPLES,)
-    assert_allclose(value, state.q(zsa)[:, 0], rtol=1e-5)
+    assert_allclose(value, state.q(zsa)[:, 0], rtol=1e-5, atol=ATOL)
