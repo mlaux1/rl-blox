@@ -34,6 +34,7 @@ Algorithm Interface
    sac.train_sac
    pets.train_pets
    cmaes.train_cmaes
+   uniform_task_sampling.train_uts
    smt.train_smt
    active_mt.train_active_mt
    plr.train_plr
