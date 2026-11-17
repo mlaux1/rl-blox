@@ -35,7 +35,9 @@ hparams_algorithm = dict(
     episodes_per_task=1,
     warmup_episodes=1,
     beta=0.1,
-    rho=0.1,
+    # The paper's value for MiniGrid; with only 5 tasks it trained all of
+    # them more reliably than the default 0.1 from Procgen
+    rho=0.3,
     gamma=gamma,
     gae_lambda=0.95,
     seed=seed,
