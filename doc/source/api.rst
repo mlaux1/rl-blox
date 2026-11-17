@@ -36,6 +36,7 @@ Algorithm Interface
    cmaes.train_cmaes
    smt.train_smt
    active_mt.train_active_mt
+   plr.train_plr
 
 Functional Blox
 ---------------
@@ -55,6 +56,7 @@ Functional Blox
    td7.deterministic_policy_gradient_loss_sale
    td7.td7_update_critic
    mrq.update_critic_and_policy
+   mrq.mrq_value
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor
@@ -64,6 +66,8 @@ Functional Blox
    pets.update_dynamics_model
    cmaes.flat_params
    cmaes.set_params
+   plr.plr_score
+   plr.plr_replay_distribution
 
 Data Blox
 ---------
@@ -94,6 +98,7 @@ Functional Blox
    embedding.sale.update_sale
    embedding.model_based_encoder.update_model_based_encoder
    embedding.model_based_encoder.model_based_encoder_loss
+   embedding.model_based_encoder.policy_with_encoder_value
    checkpointing.assess_performance_and_checkpoint
    target_net.soft_target_net_update
    target_net.hard_target_net_update
@@ -126,6 +131,12 @@ Functional Blox
    replay_buffer.lap_priority
    replay_buffer.per_priority
    return_estimates.discounted_n_step_return
+   gae.compute_gae
+   rollout.pad_transitions
+   state_value.greedy_value
+   state_value.policy_value
+   multitask.train_task
+   multitask.n_warmup_selections
 
 Data Blox
 ---------
@@ -154,6 +165,9 @@ Data Blox
    double_qnet.ContinuousClippedDoubleQNet
    probabilistic_ensemble.GaussianMLPEnsemble
    probabilistic_ensemble.EnsembleTrainState
+   rollout.Transitions
+   rollout.RecordTransitions
+   multitask.SchedulerResult
 
 
 :mod:`rl_blox.logging`
