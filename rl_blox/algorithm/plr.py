@@ -86,7 +86,7 @@ def plr_replay_distribution(
         Selection count at which each task was selected last.
 
     n_selections : int
-        Current selection count. Must be greater than all entries of
+        Number of selections so far. Must not be smaller than the entries of
         ``last_selections`` that belong to seen tasks.
 
     seen : array, shape (n_tasks,)
@@ -114,8 +114,10 @@ def plr_replay_distribution(
 
     where :math:`h(S_i) = 1 / \operatorname{rank}(S_i)` is the reciprocal
     rank of the score :math:`S_i` in descending order, :math:`c` is the
-    current selection count, and :math:`C_i` is the selection count at which
-    task :math:`i` was selected last.
+    number of selections so far, and :math:`C_i` is the number of selections
+    up to and including the last selection of task :math:`i`. Hence, the task
+    selected last has staleness 0, as in the official implementation. If it
+    is the only seen task, it has probability 1.
 
     References
     ----------
@@ -133,7 +135,10 @@ def plr_replay_distribution(
     score_probabilities /= np.sum(score_probabilities)
 
     staleness = n_selections - last_selections[seen_ids]
-    staleness_probabilities = staleness / np.sum(staleness)
+    if np.any(staleness > 0):
+        staleness_probabilities = staleness / np.sum(staleness)
+    else:  # only the task selected last was seen
+        staleness_probabilities = score_probabilities
 
     probabilities = np.zeros(len(scores))
     probabilities[seen_ids] = (
@@ -236,17 +241,23 @@ def train_plr(
 
     Notes
     -----
-    Each task selection increases the selection count :math:`c`. While some
-    tasks were not seen, an unseen task is selected uniformly with
-    probability :math:`1 - n_{seen} / n_{tasks}`. Otherwise, a seen task is
-    sampled from the replay distribution, see
-    :func:`plr_replay_distribution`. After training on task :math:`i`, its
-    score :math:`S_i` is set to the mean absolute generalized advantage
-    estimate of the transitions, see :func:`plr_score`, and its timestamp
-    :math:`C_i` to :math:`c`.
+    While some tasks were not seen, an unseen task is selected uniformly
+    with probability :math:`1 - n_{seen} / n_{tasks}`. Otherwise, a seen task
+    is sampled from the replay distribution, see
+    :func:`plr_replay_distribution`. Each selection increases the selection
+    count :math:`c`. After training on task :math:`i`, its score :math:`S_i`
+    is set to the mean absolute generalized advantage estimate of the
+    transitions, see :func:`plr_score`, and its timestamp :math:`C_i` to
+    :math:`c`.
 
     The paper counts episodes instead of selections, which is the same if
-    each selection has the same number of episodes.
+    each selection has the same number of episodes. The official
+    implementation [2]_ replays only after all tasks were seen, which
+    ``warmup_episodes=1`` reproduces, except that the first round visits the
+    tasks in order. It scores trajectories with the values that were
+    predicted while collecting them. Here, the value function is evaluated
+    after ``train_st`` trained on the transitions, because off-policy
+    backbones update it during the episode.
 
     Logging
 
@@ -258,6 +269,8 @@ def train_plr(
     .. [1] Jiang, M., Grefenstette, E., Rocktäschel, T. (2021). Prioritized
        Level Replay. In Proceedings of the 38th International Conference on
        Machine Learning, PMLR 139. https://arxiv.org/abs/2010.03934
+
+    .. [2] https://github.com/facebookresearch/level-replay
     """
     if beta <= 0.0:
         raise ValueError("beta must be positive")
@@ -279,9 +292,8 @@ def train_plr(
     result = None
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
     while global_step < total_timesteps:
-        n_selections += 1
-        if n_selections <= n_warmup:
-            task_id = (n_selections - 1) % n_tasks
+        if n_selections < n_warmup:
+            task_id = n_selections % n_tasks
         elif rng.random() < np.mean(seen):
             probabilities = plr_replay_distribution(
                 scores, last_selections, n_selections, seen, beta, rho
@@ -289,6 +301,7 @@ def train_plr(
             task_id = int(rng.choice(n_tasks, p=probabilities))
         else:
             task_id = int(rng.choice(np.flatnonzero(~seen)))
+        n_selections += 1
 
         env = RecordTransitions(get_task_env(task_set, task_id))
         result, steps, _ = train_task(

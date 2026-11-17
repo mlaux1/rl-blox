@@ -67,14 +67,28 @@ def test_plr_replay_distribution_mixes_rank_and_staleness():
     seen = np.array([True, True, True, False])
 
     probabilities = plr_replay_distribution(
-        scores, last_selections, 4, seen, beta=1.0, rho=0.5
+        scores, last_selections, 3, seen, beta=1.0, rho=0.5
     )
 
     score_probabilities = np.array([1.0, 1.0 / 3.0, 1.0 / 2.0]) / (11.0 / 6.0)
-    staleness_probabilities = np.array([3.0, 2.0, 1.0]) / 6.0
+    # The task selected last has staleness 0
+    staleness_probabilities = np.array([2.0, 1.0, 0.0]) / 3.0
     expected = 0.5 * score_probabilities + 0.5 * staleness_probabilities
     assert_allclose(probabilities[:3], expected)
     assert probabilities[3] == 0.0
+
+
+def test_plr_replay_distribution_with_one_seen_task():
+    probabilities = plr_replay_distribution(
+        np.array([0.0, 2.0]),
+        np.array([0, 1]),
+        1,
+        np.array([False, True]),
+        beta=0.1,
+        rho=0.1,
+    )
+
+    assert_allclose(probabilities, np.array([0.0, 1.0]))
 
 
 def test_plr_replay_distribution_temperature_sharpens_ranks():
