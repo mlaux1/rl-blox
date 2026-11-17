@@ -679,6 +679,11 @@ def is_stochastic(policy: nnx.Module) -> bool:
     return hasattr(policy, "sample_and_log_prob")
 
 
+@nnx.jit
+def _sample_and_log_prob(policy, observation, key):
+    return policy.sample_and_log_prob(observation, key)
+
+
 def max_evaluation_steps(
     eval_set: DiscreteTaskSet | SyncVectorEnv,
     n_eval_episodes: int,
@@ -796,8 +801,8 @@ def evaluate_tasks(
             while not done:
                 if stochastic:
                     key, sampling_key = jax.random.split(key)
-                    action, log_prob = policy.sample_and_log_prob(
-                        obs, sampling_key
+                    action, log_prob = _sample_and_log_prob(
+                        policy, obs, sampling_key
                     )
                     entropy -= float(log_prob)
                 else:
