@@ -423,7 +423,6 @@ def smt_stage1(
             env_with_stats = gym.wrappers.RecordEpisodeStatistics(
                 env, buffer_length=scheduling_interval
             )
-            replay_buffer.select_task(task_id)
             if task_selectables is not None:
                 for ts in task_selectables:
                     ts.select_task(task_id)
@@ -433,7 +432,7 @@ def smt_stage1(
                 learning_starts=learning_starts,
                 total_timesteps=b1,
                 total_episodes=scheduling_interval,
-                replay_buffer=replay_buffer,
+                replay_buffer=replay_buffer.task(task_id),
                 seed=seed + global_step,
                 logger=logger,
                 global_step=global_step,
@@ -611,7 +610,6 @@ def smt_stage2(
     while global_step < b_total:
         for task_id in scheduled_tasks:
             env = get_task_env(task_set, task_id)
-            replay_buffer.select_task(task_id)
             if task_selectables is not None:
                 for ts in task_selectables:
                     ts.select_task(task_id)
@@ -625,7 +623,7 @@ def smt_stage2(
                 learning_starts=learning_starts,
                 total_timesteps=b_total,
                 total_episodes=scheduling_interval,
-                replay_buffer=replay_buffer,
+                replay_buffer=replay_buffer.task(task_id),
                 seed=seed + global_step,
                 logger=logger,
                 global_step=global_step,

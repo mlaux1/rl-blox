@@ -186,7 +186,6 @@ def train_active_mt(
             buffer_length=scheduling_interval,
             stats_key="amt_episode",
         )
-        replay_buffer.select_task(task_id)
         if task_selectables is not None:
             for ts in task_selectables:
                 ts.select_task(task_id)
@@ -196,7 +195,7 @@ def train_active_mt(
             learning_starts=learning_starts,
             total_timesteps=total_timesteps,
             total_episodes=scheduling_interval,
-            replay_buffer=replay_buffer,
+            replay_buffer=replay_buffer.task(task_id),
             seed=seed + global_step,
             logger=logger,
             global_step=global_step,
