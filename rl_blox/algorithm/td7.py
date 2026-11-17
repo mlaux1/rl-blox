@@ -685,11 +685,6 @@ def train_td7(
     if replay_buffer is None:
         replay_buffer = LAP(buffer_size)
 
-    _sample_actions = make_sample_actions(env.action_space, exploration_noise)
-    _sample_target_actions = make_sample_target_actions(
-        env.action_space, target_policy_noise, noise_clip
-    )
-
     epoch = max(0, global_step - learning_starts)
 
     episode_idx = 0
@@ -712,6 +707,32 @@ def train_td7(
         fixed_embedding_target, actor_target
     )
 
+    # Traverse the module graphs once per call instead of once per step
+    sample_action = nnx.cached_partial(
+        make_sample_actions(env.action_space, exploration_noise), policy
+    )
+    sample_next_actions = nnx.cached_partial(
+        make_sample_target_actions(
+            env.action_space, target_policy_noise, noise_clip
+        ),
+        policy_target,
+    )
+    update_embedding = nnx.cached_partial(
+        update_sale, embedding, embedding_optimizer
+    )
+    update_critic = nnx.cached_partial(
+        td7_update_critic,
+        policy.embedding,
+        policy_target.embedding,
+        critic,
+        critic_target,
+        critic_optimizer,
+        gamma,
+    )
+    update_actor = nnx.cached_partial(
+        td7_update_actor, policy, actor_optimizer, critic
+    )
+
     if use_checkpoints:
         actor_checkpoint = nnx.clone(actor)
         fixed_embedding_checkpoint = nnx.clone(embedding)
@@ -732,9 +753,7 @@ def train_td7(
             action = env.action_space.sample()
         else:
             key, action_key = jax.random.split(key, 2)
-            action = np.asarray(
-                _sample_actions(policy, jnp.asarray(obs), action_key)
-            )
+            action = np.asarray(sample_action(jnp.asarray(obs), action_key))
 
         next_obs, reward, termination, truncated, info = env.step(action)
         steps_per_episode += 1
@@ -785,21 +804,20 @@ def train_td7(
                 epoch += 1
                 key, sampling_key = jax.random.split(key, 2)
                 metrics, epochs = _train_step(
-                    _sample_target_actions,
+                    sample_next_actions,
+                    update_embedding,
+                    update_critic,
+                    update_actor,
                     embedding,
-                    embedding_optimizer,
                     critic,
                     critic_target,
-                    critic_optimizer,
                     policy,
                     policy_target,
-                    actor_optimizer,
                     value_clipping_state,
                     replay_buffer,
                     epoch,
                     sampling_key,
                     rng,
-                    gamma,
                     batch_size,
                     policy_delay,
                     target_delay,
@@ -869,21 +887,20 @@ def train_td7(
 
 
 def _train_step(
-    _sample_target_actions,
+    sample_next_actions,
+    update_embedding,
+    update_critic,
+    update_actor,
     embedding,
-    embedding_optimizer,
     critic,
     critic_target,
-    critic_optimizer,
     policy,
     policy_target,
-    actor_optimizer,
     value_clipping_state,
     replay_buffer,
     epoch,
     sampling_key,
     rng,
-    gamma,
     batch_size,
     policy_delay,
     target_delay,
@@ -901,28 +918,16 @@ def _train_step(
         terminations,
     ) = replay_buffer.sample_batch(batch_size, rng)
 
-    embedding_loss_value = update_sale(
-        embedding,
-        embedding_optimizer,
-        observations,
-        actions,
-        next_observations,
+    embedding_loss_value = update_embedding(
+        observations, actions, next_observations
     )
 
     metrics["embedding loss"] = embedding_loss_value
     epochs["embedding"] = embedding
 
     # policy smoothing: sample next actions from target policy
-    next_actions = _sample_target_actions(
-        policy_target, next_observations, sampling_key
-    )
-    q_loss_value, max_abs_td_error, q_target = td7_update_critic(
-        policy.embedding,
-        policy_target.embedding,
-        critic,
-        critic_target,
-        critic_optimizer,
-        gamma,
+    next_actions = sample_next_actions(next_observations, sampling_key)
+    q_loss_value, max_abs_td_error, q_target = update_critic(
         observations,
         actions,
         next_observations,
@@ -945,9 +950,7 @@ def _train_step(
     )
 
     if epoch % policy_delay == 0:
-        actor_loss_value = td7_update_actor(
-            policy, actor_optimizer, critic, observations
-        )
+        actor_loss_value = update_actor(observations)
 
         metrics["policy loss"] = actor_loss_value
         epochs["policy"] = policy.actor
