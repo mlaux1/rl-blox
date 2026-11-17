@@ -184,8 +184,10 @@ def train_plr(
         in the units of the rewards, e.g.,
         ``partial(greedy_value, q_net)`` with
         :func:`~rl_blox.blox.state_value.greedy_value` or
-        :func:`~rl_blox.blox.state_value.policy_value`. It must use the
-        networks that ``train_st`` updates.
+        :func:`~rl_blox.blox.state_value.policy_value`. For MR.Q, use
+        ``partial(mrq_value, q, policy_with_encoder, replay_buffer)`` with
+        :func:`~rl_blox.algorithm.mrq.mrq_value`. It must use the networks
+        that ``train_st`` updates.
 
     total_timesteps : int
         Total number of environment steps.

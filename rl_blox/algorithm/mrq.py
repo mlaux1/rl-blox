@@ -14,6 +14,7 @@ from ..blox.embedding.model_based_encoder import (
     DeterministicPolicyWithEncoder,
     ModelBasedEncoder,
     create_model_based_encoder_and_policy,
+    policy_with_encoder_value,
     update_model_based_encoder,
 )
 from ..blox.function_approximator.layer_norm_mlp import LayerNormMLP
@@ -751,4 +752,46 @@ def train_mrq(
         q_optimizer,
         replay_buffer,
         step,
+    )
+
+
+def mrq_value(
+    q: nnx.Module,
+    policy_with_encoder: DeterministicPolicyWithEncoder,
+    replay_buffer: SubtrajectoryReplayBufferPER,
+    observation: jnp.ndarray,
+) -> jnp.ndarray:
+    """State value of MR.Q in the units of the rewards.
+
+    The critic of MR.Q predicts values divided by the reward scale of its
+    replay buffer, which changes during training. This function multiplies
+    them by the current reward scale of the buffer, which MR.Q adopts with
+    each target network update. Use it where values must match the rewards,
+    e.g., in :func:`~rl_blox.algorithm.plr.train_plr`.
+
+    Parameters
+    ----------
+    q : nnx.Module
+        Critic of MR.Q.
+
+    policy_with_encoder : DeterministicPolicyWithEncoder
+        Encoder and policy of MR.Q.
+
+    replay_buffer : SubtrajectoryReplayBufferPER
+        Replay buffer that MR.Q trains with. If it is empty, the reward scale
+        is 1, as in :func:`train_mrq`.
+
+    observation : array, shape (n_samples, n_state_features)
+        Observations.
+
+    Returns
+    -------
+    value : array, shape (n_samples,)
+        State values.
+    """
+    reward_scale = 1.0
+    if len(replay_buffer) > 0:
+        reward_scale = float(replay_buffer.reward_scale())
+    return reward_scale * policy_with_encoder_value(
+        q, policy_with_encoder, observation
     )

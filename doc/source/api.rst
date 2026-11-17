@@ -56,6 +56,7 @@ Functional Blox
    td7.deterministic_policy_gradient_loss_sale
    td7.td7_update_critic
    mrq.update_critic_and_policy
+   mrq.mrq_value
    sac.sac_actor_loss
    sac.sac_exploration_loss
    sac.sac_update_actor

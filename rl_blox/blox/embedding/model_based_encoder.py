@@ -259,7 +259,8 @@ def policy_with_encoder_value(
     -------
     value : array, shape (n_samples,)
         State values. The critic of MR.Q predicts values divided by the reward
-        scale of its replay buffer.
+        scale of its replay buffer. :func:`~rl_blox.algorithm.mrq.mrq_value`
+        gives values in the units of the rewards.
     """
     encoder = policy_with_encoder.encoder
     zs = encoder.encode_zs(observation)
