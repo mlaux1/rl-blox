@@ -34,6 +34,8 @@ Algorithm Interface
    sac.train_sac
    pets.train_pets
    cmaes.train_cmaes
+   uniform_task_sampling.train_uts
+   t3s_sampling.train_t3s
    smt.train_smt
    active_mt.train_active_mt
    plr.train_plr
@@ -137,6 +139,10 @@ Functional Blox
    state_value.policy_value
    multitask.train_task
    multitask.n_warmup_selections
+   multitask.warn_if_state_not_bound
+   multitask.evaluate_tasks
+   multitask.max_evaluation_steps
+   multitask.next_evaluation_step
 
 Data Blox
 ---------
@@ -154,6 +160,7 @@ Data Blox
    replay_buffer.ReplayBuffer
    replay_buffer.LAP
    replay_buffer.PrioritizedReplayBuffer
+   replay_buffer.MultiTaskReplayBuffer
    function_approximator.mlp.MLP
    function_approximator.layer_norm_mlp.LayerNormMLP
    function_approximator.gaussian_mlp.GaussianMLP
@@ -168,6 +175,7 @@ Data Blox
    rollout.Transitions
    rollout.RecordTransitions
    multitask.SchedulerResult
+   multitask.EvalEpisode
 
 
 :mod:`rl_blox.logging`

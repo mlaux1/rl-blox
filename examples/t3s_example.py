@@ -7,8 +7,9 @@ from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
-from rl_blox.algorithm.t3s_sampling import act, train_t3s
-from rl_blox.blox.replay_buffer import ReplayBuffer
+from rl_blox.algorithm.t3s_sampling import train_t3s
+from rl_blox.blox.multitask import act
+from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 from rl_blox.logging.checkpointer import OrbaxCheckpointer
 from rl_blox.logging.logger import AIMLogger, LoggerList
 
@@ -41,23 +42,24 @@ hparams_models = dict(
     policy_hidden_nodes=[256, 256],
     seed=seed,
 )
+# The other hyperparameters of T3S default to the values from the authors'
+# code. With a MultiTaskReplayBuffer, T3S also weights the replay batches by
+# its task probabilities, as the authors' code does.
 hparams_algorithm = dict(
     total_timesteps=1_000_000,
-    exploring_starts=1_280,
     episodes_per_task=1,
-    n_eval_episodes=3,
     eval_freq=50_000,
-    tau=0.5,
-    learning_speed_weight=0.5,
-    progress_weight=0.5,
-    tasks_per_iteration=3,
+    seed=seed,
 )
+learning_starts = 1_280
 
 logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
 logger.define_experiment(
     env_name=env_name,
     algorithm_name=f"T3S-{backbone_algorithm}",
-    hparams=hparams_models | hparams_algorithm,
+    hparams=hparams_models
+    | hparams_algorithm
+    | {"learning_starts": learning_starts},
 )
 logger.define_checkpoint_frequency("policy", 250_000)
 logger.define_checkpoint_frequency("q", 250_000)
@@ -69,7 +71,9 @@ match backbone_algorithm:
         sac_state = create_sac_state(env, **hparams_models)
 
         q_target = nnx.clone(sac_state.q)
-        replay_buffer = ReplayBuffer(buffer_size=1_000_000)
+        replay_buffer = MultiTaskReplayBuffer(
+            ReplayBuffer(buffer_size=100_000), train_set.num_envs
+        )
         entropy_control = EntropyControl(env, 0.2, True, 3e-4)
 
         train_st = partial(
@@ -80,14 +84,16 @@ match backbone_algorithm:
             q_target=q_target,
             q_optimizer=sac_state.q_optimizer,
             entropy_control=entropy_control,
-            replay_buffer=replay_buffer,
             batch_size=1280,
+            learning_starts=learning_starts,
         )
     case "DDPG":
         state = create_ddpg_state(env, seed=seed)
         policy_target = nnx.clone(state.policy)
         q_target = nnx.clone(state.q)
-        replay_buffer = ReplayBuffer(buffer_size=100_000)
+        replay_buffer = MultiTaskReplayBuffer(
+            ReplayBuffer(buffer_size=10_000), train_set.num_envs
+        )
 
         train_st = partial(
             train_ddpg,
@@ -97,7 +103,7 @@ match backbone_algorithm:
             q=state.q,
             q_optimizer=state.q_optimizer,
             q_target=q_target,
-            replay_buffer=replay_buffer,
+            learning_starts=learning_starts,
         )
     case _:
         raise ValueError(
@@ -110,10 +116,11 @@ t3s_result = train_t3s(
     eval_set,
     train_st,
     **hparams_algorithm,
+    replay_buffer=replay_buffer,
     logger=logger,
 )
 
-policy = t3s_result.policy
+policy = t3s_result.result.policy
 
 
 task_success_rates = []

@@ -477,6 +477,32 @@ def test_multitask_rejects_unknown_task_weighting():
         )
 
 
+def test_multitask_task_weights_set_shares_of_tasks_with_data():
+    replay_buffer = multitask_buffer([5, 5, 0], task_weighting=[1.0, 3.0, 4.0])
+
+    batch = replay_buffer.sample_batch(8, np.random.default_rng(0))
+
+    # Task 2 has no data, so its weight is ignored
+    assert np.bincount(sampled_tasks(batch), minlength=3).tolist() == [2, 6, 0]
+
+    replay_buffer.set_task_weights([3.0, 1.0, 0.0])
+    batch = replay_buffer.sample_batch(8, np.random.default_rng(0))
+    assert np.bincount(sampled_tasks(batch), minlength=3).tolist() == [6, 2, 0]
+
+
+@pytest.mark.parametrize("weights", [[1.0, 1.0, 1.0], [1.0, -1.0]])
+def test_multitask_rejects_invalid_task_weights(weights):
+    replay_buffer = multitask_buffer([5, 5])
+    with pytest.raises(ValueError):
+        replay_buffer.set_task_weights(weights)
+
+
+def test_multitask_rejects_zero_weights_of_all_tasks_with_data():
+    replay_buffer = multitask_buffer([5, 0], task_weighting=[0.0, 1.0])
+    with pytest.raises(ValueError):
+        replay_buffer.sample_batch(4, np.random.default_rng(0))
+
+
 def test_multitask_samples_only_tasks_with_data():
     replay_buffer = multitask_buffer([0, 5, 0])
 

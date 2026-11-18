@@ -4,6 +4,7 @@ import warnings
 from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
+from typing import TYPE_CHECKING
 
 import gymnasium as gym
 import jax
@@ -16,6 +17,9 @@ from numpy.typing import ArrayLike
 
 from ..blox.mapb import DUCB
 from ..logging.logger import LoggerBase
+
+if TYPE_CHECKING:
+    from .replay_buffer import MultiTaskReplayBuffer
 
 
 class TaskSelectionMixin:
@@ -39,13 +43,19 @@ class TaskSelectionMixin:
 BACKBONE_STATE = (
     "replay_buffer",
     "q_target",
+    "q_target_net",
     "policy_target",
+    "actor_target",
+    "critic_target",
+    "policy_with_encoder_target",
     "entropy_control",
 )
 """Arguments of backbone algorithms that are created anew if not passed."""
 
 
-def warn_if_state_not_bound(train_st: Callable) -> None:
+def warn_if_state_not_bound(
+    train_st: Callable, replay_buffer_passed: bool = False
+) -> None:
     """Warn if the backbone's state is not bound to its training function.
 
     Task schedulers call ``train_st`` once per scheduled task. Backbone
@@ -60,6 +70,10 @@ def warn_if_state_not_bound(train_st: Callable) -> None:
         :class:`functools.partial` can be checked, other callables are
         ignored.
 
+    replay_buffer_passed : bool, optional
+        The scheduler passes the replay buffer to ``train_st`` itself, so it
+        does not have to be bound.
+
     Warns
     -----
     UserWarning
@@ -73,7 +87,9 @@ def warn_if_state_not_bound(train_st: Callable) -> None:
     unbound = [
         name
         for name in BACKBONE_STATE
-        if name in accepted and train_st.keywords.get(name) is None
+        if name in accepted
+        and train_st.keywords.get(name) is None
+        and not (name == "replay_buffer" and replay_buffer_passed)
     ]
     if unbound:
         warnings.warn(
@@ -316,8 +332,9 @@ class RoundRobinSelector(TaskSelector):
 
     def select(self) -> int:
         super().select()
+        task = self.tasks[self.i % len(self.tasks)]
         self.i += 1
-        return self.tasks[self.i % len(self.tasks)]
+        return task
 
     def feedback(self, reward: float):
         super().feedback(reward)
@@ -341,6 +358,7 @@ def train_task(
     seed: int,
     task_selectables: list[TaskSelectionMixin] | None = None,
     logger: LoggerBase | None = None,
+    replay_buffer: "MultiTaskReplayBuffer | None" = None,
 ) -> tuple:
     """Train the backbone on one task for one scheduling interval.
 
@@ -350,7 +368,8 @@ def train_task(
         Training function of the backbone with its state bound, see
         :func:`warn_if_state_not_bound`. It is called with the keyword
         arguments ``env``, ``seed``, ``total_timesteps``, ``total_episodes``,
-        ``global_step``, ``logger``, and ``progress_bar``.
+        ``global_step``, ``logger``, and ``progress_bar``, and with
+        ``replay_buffer`` if one is given.
 
     env : gym.Env
         Environment of the task, e.g., from :func:`get_task_env`.
@@ -376,6 +395,10 @@ def train_task(
 
     logger : LoggerBase, optional
         Experiment logger.
+
+    replay_buffer : MultiTaskReplayBuffer, optional
+        Replay buffer of all tasks. ``train_st`` gets the view of the task,
+        see :meth:`~rl_blox.blox.replay_buffer.MultiTaskReplayBuffer.task`.
 
     Returns
     -------
@@ -406,6 +429,9 @@ def train_task(
     env = gym.wrappers.RecordEpisodeStatistics(
         env, buffer_length=n_episodes, stats_key="scheduler_episode"
     )
+    kwargs = {}
+    if replay_buffer is not None:
+        kwargs["replay_buffer"] = replay_buffer.task(task_id)
     result = train_st(
         env=env,
         seed=seed + global_step,
@@ -414,6 +440,7 @@ def train_task(
         global_step=global_step,
         logger=logger,
         progress_bar=False,
+        **kwargs,
     )
 
     returns = np.asarray(env.return_queue, dtype=float)
@@ -449,3 +476,183 @@ def n_warmup_selections(
         Number of task selections of the warm-up.
     """
     return n_tasks * math.ceil(warmup_episodes / episodes_per_task)
+
+
+EvalEpisode = namedtuple(
+    "EvalEpisode",
+    ["task_id", "rewards", "infos", "log_probs"],
+    defaults=(None,),
+)
+"""Episode of an evaluation by a task scheduler: index of the task, reward
+and info dictionary of each step, and log probability of each action if
+actions were sampled, otherwise None."""
+
+
+def is_stochastic(policy: nnx.Module) -> bool:
+    """Check if a policy can sample actions with their log probabilities.
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Policy.
+
+    Returns
+    -------
+    stochastic : bool
+        True if the policy has a method ``sample_and_log_prob``.
+    """
+    return hasattr(policy, "sample_and_log_prob")
+
+
+@nnx.jit
+def _sample_and_log_prob(policy, observation, key):
+    return policy.sample_and_log_prob(observation, key)
+
+
+def max_evaluation_steps(
+    eval_set: DiscreteTaskSet | SyncVectorEnv,
+    n_eval_episodes: int,
+    max_eval_episode_steps: int | None,
+) -> int | None:
+    """Upper bound on the number of steps of an evaluation of all tasks.
+
+    Parameters
+    ----------
+    eval_set : DiscreteTaskSet or SyncVectorEnv
+        Set of tasks used for evaluation.
+
+    n_eval_episodes : int
+        Number of evaluation episodes per task.
+
+    max_eval_episode_steps : int or None
+        Maximum length of an evaluation episode. Inferred from the evaluation
+        environments if None, see :func:`max_episode_steps`.
+
+    Returns
+    -------
+    max_steps : int or None
+        Upper bound on the number of steps. None if the episode length of an
+        evaluation environment cannot be inferred.
+    """
+    n_tasks = get_n_tasks(eval_set)
+    if max_eval_episode_steps is not None:
+        episode_limits = [max_eval_episode_steps] * n_tasks
+    else:
+        episode_limits = [
+            max_episode_steps(get_task_env(eval_set, i)) for i in range(n_tasks)
+        ]
+    if None in episode_limits:
+        return None
+    return n_eval_episodes * sum(episode_limits)
+
+
+def evaluate_tasks(
+    policy: nnx.Module,
+    eval_set: DiscreteTaskSet | SyncVectorEnv,
+    n_eval_episodes: int,
+    key: jax.Array | None = None,
+    task_selectables: list[TaskSelectionMixin] | None = None,
+) -> tuple[list[list[EvalEpisode]], int, jax.Array | None]:
+    """Run evaluation episodes on all tasks.
+
+    Parameters
+    ----------
+    policy : nnx.Module
+        Policy that maps an observation to an action.
+
+    eval_set : DiscreteTaskSet or SyncVectorEnv
+        Set of tasks used for evaluation.
+
+    n_eval_episodes : int
+        Number of evaluation episodes per task.
+
+    key : jax.Array, optional
+        Key for sampling actions. If it is given and the policy is stochastic
+        (see :func:`is_stochastic`), actions are sampled. Otherwise, the
+        deterministic action is taken, see :func:`act`.
+
+    task_selectables : list, optional
+        Objects that are informed about the evaluated task.
+
+    Returns
+    -------
+    episodes : list of list of EvalEpisode
+        Evaluation episodes of each task.
+
+    n_steps : int
+        Number of environment steps of the evaluation.
+
+    key : jax.Array or None
+        Updated key.
+    """
+    sample = key is not None and is_stochastic(policy)
+
+    episodes = []
+    n_steps = 0
+    for task_id in range(get_n_tasks(eval_set)):
+        if task_selectables is not None:
+            for ts in task_selectables:
+                ts.select_task(task_id)
+        env = get_task_env(eval_set, task_id)
+
+        task_episodes = []
+        for _ in range(n_eval_episodes):
+            obs, _ = env.reset()
+            rewards, infos, log_probs = [], [], []
+            done = False
+            while not done:
+                if sample:
+                    key, sampling_key = jax.random.split(key)
+                    action, log_prob = _sample_and_log_prob(
+                        policy, obs, sampling_key
+                    )
+                    log_probs.append(float(log_prob))
+                else:
+                    action = act(policy, obs)
+                obs, reward, terminated, truncated, info = env.step(
+                    np.asarray(action)
+                )
+                rewards.append(float(reward))
+                infos.append(info)
+                done = terminated or truncated
+            n_steps += len(rewards)
+            task_episodes.append(
+                EvalEpisode(
+                    task_id,
+                    np.asarray(rewards),
+                    infos,
+                    np.asarray(log_probs) if sample else None,
+                )
+            )
+        episodes.append(task_episodes)
+
+    return episodes, n_steps, key
+
+
+def next_evaluation_step(
+    next_eval_step: int, eval_freq: int, global_step: int
+) -> int:
+    """Step at which the next evaluation is due.
+
+    Evaluations are due every ``eval_freq`` steps. Due steps that already
+    passed, e.g., during a long evaluation, are skipped, so that delays do
+    not shift later evaluations.
+
+    Parameters
+    ----------
+    next_eval_step : int
+        Step at which the last evaluation was due.
+
+    eval_freq : int
+        Number of environment steps between evaluations.
+
+    global_step : int
+        Number of environment steps used so far.
+
+    Returns
+    -------
+    next_eval_step : int
+        First due step after ``global_step``.
+    """
+    n_passed = max(global_step - next_eval_step, 0) // eval_freq
+    return next_eval_step + (n_passed + 1) * eval_freq

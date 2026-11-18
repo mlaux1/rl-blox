@@ -37,15 +37,18 @@ hparams_models = dict(
 )
 hparams_algorithm = dict(
     total_timesteps=11_000,
-    exploring_starts=5_000,
     episodes_per_task=1,
+    seed=seed,
 )
+learning_starts = 5_000
 
 logger = LoggerList([AIMLogger(), OrbaxCheckpointer()])
 logger.define_experiment(
     env_name=env_name,
     algorithm_name=f"UTS-{backbone_algorithm}",
-    hparams=hparams_models | hparams_algorithm,
+    hparams=hparams_models
+    | hparams_algorithm
+    | {"learning_starts": learning_starts},
 )
 
 env = train_set.get_task(0)
@@ -67,6 +70,7 @@ match backbone_algorithm:
             q_optimizer=sac_state.q_optimizer,
             entropy_control=entropy_control,
             replay_buffer=replay_buffer,
+            learning_starts=learning_starts,
         )
     case "DDPG":
         state = create_ddpg_state(env, seed=seed)
@@ -83,6 +87,7 @@ match backbone_algorithm:
             q_optimizer=state.q_optimizer,
             q_target=q_target,
             replay_buffer=replay_buffer,
+            learning_starts=learning_starts,
         )
     case _:
         raise ValueError(
@@ -97,7 +102,7 @@ uts_result = train_uts(
     logger=logger,
 )
 
-policy = uts_result.policy
+policy = uts_result.result.policy
 
 base_env = gym.make(env_name, render_mode="human")
 contexts = np.linspace(0, 20, 21)[:, np.newaxis]

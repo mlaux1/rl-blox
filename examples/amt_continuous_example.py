@@ -147,23 +147,25 @@ else:
         entropy_control=entroy_control,
     )
 
+# Random actions in the first 11 episodes
+train_st = partial(train_st, learning_starts=11 * 200)
+
 result = train_active_mt(
     train_set,
     train_st,
-    replay_buffer,
-    task_selector="1-step Progress",
     r_max=2_000,
+    task_selector="1-step Progress",
     ducb_gamma=0.95,
     xi=0.002,
-    learning_starts=11 * 200,
-    scheduling_interval=1,
+    episodes_per_task=1,
+    replay_buffer=replay_buffer,
     total_timesteps=50_000,
     logger=logger,
     seed=seed,
 )
 
 # Evaluation
-result_st = result[0]
+result_st = result.result
 if backbone == "MR.Q":
     policy = result_st.policy_with_encoder
 elif backbone == "TD7":

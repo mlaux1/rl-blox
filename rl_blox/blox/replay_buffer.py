@@ -1199,6 +1199,17 @@ def per_priority(
 #     return None
 
 
+def _check_task_weights(weights: npt.ArrayLike, n_tasks: int) -> np.ndarray:
+    weights = np.asarray(weights, dtype=float)
+    if weights.shape != (n_tasks,):
+        raise ValueError(
+            f"Expected {n_tasks} task weights, got shape {weights.shape}"
+        )
+    if np.any(weights < 0.0):
+        raise ValueError("Task weights must not be negative")
+    return weights
+
+
 class MultiTaskReplayBuffer:
     """Replay buffer for discrete set of tasks.
 
@@ -1214,14 +1225,16 @@ class MultiTaskReplayBuffer:
     n_tasks : int
         Number of tasks.
 
-    task_weighting : str, optional
+    task_weighting : str or array, shape (n_tasks,), optional
         Share of each task in a batch. 'uniform': equal shares. 'proportional':
-        shares proportional to the number of samples of the task.
+        shares proportional to the number of samples of the task. An array
+        gives shares proportional to its non-negative weights, see
+        :meth:`set_task_weights`.
 
     Raises
     ------
     ValueError
-        If ``task_weighting`` is unknown or ``replay_buffer`` is a
+        If ``task_weighting`` is invalid or ``replay_buffer`` is a
         :class:`PrioritizedReplayBuffer` with ``on_device``.
 
     Notes
@@ -1231,10 +1244,16 @@ class MultiTaskReplayBuffer:
     """
 
     def __init__(
-        self, replay_buffer, n_tasks: int, task_weighting: str = "uniform"
+        self,
+        replay_buffer,
+        n_tasks: int,
+        task_weighting: str | npt.ArrayLike = "uniform",
     ):
-        if task_weighting not in ("uniform", "proportional"):
-            raise ValueError(f"Unknown task weighting: {task_weighting}")
+        if isinstance(task_weighting, str):
+            if task_weighting not in ("uniform", "proportional"):
+                raise ValueError(f"Unknown task weighting: {task_weighting}")
+        else:
+            task_weighting = _check_task_weights(task_weighting, n_tasks)
         if replay_buffer.on_device and isinstance(
             replay_buffer, PrioritizedReplayBuffer
         ):
@@ -1250,6 +1269,23 @@ class MultiTaskReplayBuffer:
         self.sampleable_tasks = set()
         self.sampled_counts = {}
         self.device_copy = None
+
+    def set_task_weights(self, weights: npt.ArrayLike) -> None:
+        """Set the share of each task in a batch.
+
+        Parameters
+        ----------
+        weights : array, shape (n_tasks,)
+            Non-negative weights. Each batch takes about
+            ``batch_size * weights[i] / sum(weights)`` samples from task i,
+            where the sum is over the tasks that have data.
+
+        Raises
+        ------
+        ValueError
+            If the weights have the wrong shape or are negative.
+        """
+        self.task_weighting = _check_task_weights(weights, len(self.buffers))
 
     def task(self, task_id: int) -> "TaskReplayBuffer":
         """View of this replay buffer that adds samples to one task.
@@ -1381,7 +1417,14 @@ class MultiTaskReplayBuffer:
             rng = next(a for a in args if isinstance(a, np.random.Generator))
 
         tasks = sorted(self.sampleable_tasks)
-        if self.task_weighting == "uniform":
+        if isinstance(self.task_weighting, np.ndarray):
+            weights = self.task_weighting[tasks]
+            if weights.sum() <= 0.0:
+                raise ValueError("All tasks with data have weight 0")
+            shares = weights / weights.sum()
+            counts = np.floor(batch_size * shares).astype(int)
+            counts += rng.multinomial(batch_size - counts.sum(), shares)
+        elif self.task_weighting == "uniform":
             counts = np.full(len(tasks), batch_size // len(tasks))
             remainder = batch_size % len(tasks)
             counts[rng.choice(len(tasks), remainder, replace=False)] += 1

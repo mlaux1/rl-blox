@@ -98,6 +98,7 @@ if backbone == "DDPG":
         q_optimizer=state.q_optimizer,
         policy_target=policy_target,
         q_target=q_target,
+        learning_starts=1_000,
     )
     reset_st = make_reset(
         create_ddpg_state,
@@ -121,6 +122,7 @@ elif backbone == "TD3":
         q_optimizer=state.q_optimizer,
         q_target=q_target,
         policy_target=policy_target,
+        learning_starts=1_000,
     )
     reset_st = make_reset(
         create_td3_state,
@@ -146,6 +148,7 @@ elif backbone == "TD7":
         critic_optimizer=state.critic_optimizer,
         critic_target=critic_target,
         actor_target=actor_target,
+        learning_starts=1_000,
     )
     get_policy = td7_policy
     reset_st = make_reset(
@@ -172,6 +175,7 @@ elif backbone == "MR.Q":
         the_bins=state.the_bins,
         q_target=q_target,
         policy_with_encoder_target=policy_with_encoder_target,
+        learning_starts=1_000,
     )
     get_policy = attrgetter("policy_with_encoder")
     reset_st = make_reset(
@@ -200,6 +204,7 @@ else:
         q_optimizer=state.q_optimizer,
         q_target=q_target,
         entropy_control=entroy_control,
+        learning_starts=1_000,
     )
     reset_networks = make_reset(create_sac_state, state, [(q_target, "q")])
 
@@ -214,25 +219,23 @@ result = train_smt(
     train_set,
     eval_set,
     train_st,
-    replay_buffer,
+    total_timesteps=20_000,
+    b1_fraction=0.55,
     solved_threshold=-100.0,
     unsolvable_threshold=-1000.0,
-    b1=11_000,
-    b2=10_000,
-    learning_starts=1_000,
-    scheduling_interval=1,
     # One evaluation (21 tasks x 200 steps) after 3000 steps, so that the
     # remaining refills are based on it
     eval_freq=3_000,
     n_eval_episodes=1,
     get_policy=get_policy,
     reset_st=reset_st,
+    replay_buffer=replay_buffer,
     logger=logger,
     seed=seed,
 )
 
 # Evaluation
-result_st = result[0]
+result_st = result.result
 if backbone == "MR.Q":
     policy = result_st.policy_with_encoder
 elif backbone == "TD7":
