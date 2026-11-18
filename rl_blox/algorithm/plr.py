@@ -16,6 +16,7 @@ from ..blox.multitask import (
     train_task,
     warn_if_state_not_bound,
 )
+from ..blox.replay_buffer import MultiTaskReplayBuffer
 from ..blox.rollout import RecordTransitions, Transitions, pad_transitions
 from ..logging.logger import LoggerBase
 
@@ -159,6 +160,7 @@ def train_plr(
     rho: float = 0.1,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
+    replay_buffer: MultiTaskReplayBuffer | None = None,
     task_selectables: list[TaskSelectionMixin] | None = None,
     seed: int = 0,
     logger: LoggerBase | None = None,
@@ -186,8 +188,9 @@ def train_plr(
         :func:`~rl_blox.blox.state_value.greedy_value` or
         :func:`~rl_blox.blox.state_value.policy_value`. For MR.Q, use
         ``partial(mrq_value, q, policy_with_encoder, replay_buffer)`` with
-        :func:`~rl_blox.algorithm.mrq.mrq_value`. It must use the networks
-        that ``train_st`` updates.
+        :func:`~rl_blox.algorithm.mrq.mrq_value` and the same replay buffer
+        as MR.Q, i.e., the ``replay_buffer`` of this function if it is
+        given. It must use the networks that ``train_st`` updates.
 
     total_timesteps : int
         Total number of environment steps.
@@ -213,6 +216,11 @@ def train_plr(
         Smoothing factor of the advantage estimates. 0 scores tasks by their
         absolute one-step TD errors.
 
+    replay_buffer : MultiTaskReplayBuffer, optional
+        Replay buffer of all tasks. If given, ``train_st`` gets the view of
+        the selected task. Otherwise, the replay buffer bound to ``train_st``
+        is used.
+
     task_selectables : list, optional
         Objects that are informed about the selected task.
 
@@ -234,7 +242,8 @@ def train_plr(
     Raises
     ------
     ValueError
-        If ``beta`` is not positive or ``rho`` is not in [0, 1].
+        If ``total_timesteps``, ``episodes_per_task`` or ``beta`` is not
+        positive, or ``rho`` is not in [0, 1].
 
     Warns
     -----
@@ -274,11 +283,15 @@ def train_plr(
 
     .. [2] https://github.com/facebookresearch/level-replay
     """
+    if total_timesteps <= 0:
+        raise ValueError("total_timesteps must be positive")
+    if episodes_per_task <= 0:
+        raise ValueError("episodes_per_task must be positive")
     if beta <= 0.0:
         raise ValueError("beta must be positive")
     if not 0.0 <= rho <= 1.0:
         raise ValueError("rho must be in [0, 1]")
-    warn_if_state_not_bound(train_st)
+    warn_if_state_not_bound(train_st, replay_buffer is not None)
 
     n_tasks = get_n_tasks(task_set)
     n_warmup = n_warmup_selections(n_tasks, warmup_episodes, episodes_per_task)
@@ -316,6 +329,7 @@ def train_plr(
             seed,
             task_selectables,
             logger,
+            replay_buffer,
         )
         global_step += steps
         training_steps[task_id] += steps

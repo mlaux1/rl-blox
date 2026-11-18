@@ -1,3 +1,4 @@
+import warnings
 from functools import partial
 
 import gymnasium as gym
@@ -15,7 +16,7 @@ from rl_blox.algorithm.plr import (
 )
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.multitask import DiscreteTaskSet, SchedulerResult
-from rl_blox.blox.replay_buffer import ReplayBuffer
+from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 from rl_blox.blox.rollout import Transitions
 from rl_blox.blox.state_value import greedy_value
 from rl_blox.logging.logger import MemoryLogger
@@ -137,14 +138,52 @@ def test_train_plr():
         assert np.all(np.asarray(logger.stats[f"task_score_{task_id}"]) >= 0)
 
 
-@pytest.mark.parametrize("kwargs", [{"beta": 0.0}, {"rho": 1.5}])
+def test_train_plr_passes_views_of_multitask_replay_buffer():
+    task_set = make_task_set()
+    q_net = MLP(5, 2, [16], "relu", rngs=nnx.Rngs(0))
+    train_st = partial(
+        train_ddqn,
+        q_net=q_net,
+        optimizer=nnx.Optimizer(q_net, optax.adam(1e-3), wrt=nnx.Param),
+        q_target_net=nnx.clone(q_net),
+        batch_size=32,
+    )
+    replay_buffer = MultiTaskReplayBuffer(
+        ReplayBuffer(buffer_size=1_000, discrete_actions=True), 3
+    )
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*not bound")
+        result = train_plr(
+            task_set,
+            train_st,
+            partial(greedy_value, q_net),
+            total_timesteps=300,
+            warmup_episodes=1,
+            replay_buffer=replay_buffer,
+            progress_bar=False,
+        )
+
+    assert [
+        len(buffer) for buffer in replay_buffer.buffers
+    ] == result.training_steps.tolist()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"beta": 0.0},
+        {"rho": 1.5},
+        {"total_timesteps": 0},
+        {"episodes_per_task": 0},
+    ],
+)
 def test_train_plr_rejects_invalid_hyperparameters(kwargs):
     with pytest.raises(ValueError):
         train_plr(
             make_task_set(),
             None,
             None,
-            total_timesteps=100,
+            **({"total_timesteps": 100} | kwargs),
             progress_bar=False,
-            **kwargs,
         )
