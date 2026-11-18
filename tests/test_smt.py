@@ -2,15 +2,14 @@ import copy
 from functools import partial
 
 import gymnasium as gym
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from flax import nnx
 
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
-from rl_blox.algorithm.smt import evaluate_tasks, train_smt
-from rl_blox.blox.multitask import DiscreteTaskSet
+from rl_blox.algorithm.smt import train_smt
+from rl_blox.blox.multitask import DiscreteTaskSet, SchedulerResult
 from rl_blox.blox.replay_buffer import MultiTaskReplayBuffer, ReplayBuffer
 from rl_blox.logging.logger import MemoryLogger
 
@@ -49,24 +48,24 @@ def test_smt():
         q_optimizer=state.q_optimizer,
         policy_target=policy_target,
         q_target=q_target,
+        learning_starts=50,
     )
 
-    _, training_steps, training_performances, eval_steps = train_smt(
+    result = train_smt(
         train_set,
         eval_set,
         train_st,
-        replay_buffer,
-        b1=200,
-        b2=200,
-        learning_starts=50,
-        scheduling_interval=1,
+        total_timesteps=400,
+        b1_fraction=0.5,
+        replay_buffer=replay_buffer,
         seed=seed,
+        progress_bar=False,
     )
 
-    assert training_steps.shape == (len(train_set),)
-    assert training_steps.sum() == 400
-    assert eval_steps == 0
-    assert training_performances.shape == (len(train_set),)
+    assert isinstance(result, SchedulerResult)
+    assert result.training_steps.shape == (len(train_set),)
+    assert result.training_steps.sum() == 400
+    assert result.eval_steps == 0
     assert len(replay_buffer) == 400
 
 
@@ -100,9 +99,8 @@ def test_smt_budget_counts_from_entering_training_pool():
         task_set,
         copy.deepcopy(task_set),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
-        b1=8_000,
-        b2=200,
+        total_timesteps=10_000,
+        b1_fraction=0.8,
         solved_threshold=np.inf,  # no task is ever solved
         unsolvable_threshold=-np.inf,  # no task is ever unsolvable
         kappa=0.5,
@@ -163,19 +161,18 @@ def test_smt_stage2_trains_tasks_left_in_training_pool():
     # stage 1 ends, while the main pool and the unsolvable pool are empty.
     task_set = constant_reward_task_set([1.0, 1.0, 0.0])
 
-    _, training_steps, _, _ = train_smt(
+    training_steps = train_smt(
         task_set,
         copy.deepcopy(task_set),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
-        b1=1_000,
-        b2=1_000,
+        total_timesteps=2_000,
+        b1_fraction=0.5,
         solved_threshold=5.0,
         unsolvable_threshold=-np.inf,
         kappa=0.9,
         K=2,
         progress_bar=False,
-    )
+    ).training_steps
 
     assert training_steps.sum() == 2_000
     assert training_steps[2] == 2_000 - training_steps[:2].sum()
@@ -189,9 +186,8 @@ def test_smt_warns_if_all_tasks_are_in_training_pool():
             task_set,
             copy.deepcopy(task_set),
             random_actions_st,
-            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
-            b1=100,
-            b2=100,
+            total_timesteps=200,
+            b1_fraction=0.5,
             K=2,
             progress_bar=False,
         )
@@ -240,13 +236,12 @@ def test_smt_stage2_trains_unsolvable_tasks_until_budget_is_used_up():
     )
     recorder = TaskRecorder()
 
-    _, training_steps, _, _ = train_smt(
+    training_steps = train_smt(
         task_set,
         copy.deepcopy(task_set),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
-        b1=200,
-        b2=1_000,
+        total_timesteps=1_000,
+        b1_fraction=0.2,
         solved_threshold=5.0,
         unsolvable_threshold=0.5,
         kappa=0.1,
@@ -254,30 +249,29 @@ def test_smt_stage2_trains_unsolvable_tasks_until_budget_is_used_up():
         n_average=3,
         task_selectables=[recorder],
         progress_bar=False,
-    )
+    ).training_steps
 
     # Stage 1 ends after 3 episodes. Task 0 then trains alone for the
-    # remaining 117 episodes, although it is solved after 32 episodes.
-    assert training_steps.tolist() == [1_190, 10]
+    # remaining 97 episodes, although it is solved after 32 episodes.
+    assert training_steps.tolist() == [990, 10]
     stage2_tasks = recorder.selected_tasks[3:]
-    assert stage2_tasks == [0] * 117
+    assert stage2_tasks == [0] * 97
 
 
 def test_smt_round_robin_if_all_tasks_solved_in_stage1():
     task_set = constant_reward_task_set([1.0, 1.0])
 
     with pytest.warns(UserWarning, match="round robin"):
-        _, training_steps, _, _ = train_smt(
+        training_steps = train_smt(
             task_set,
             copy.deepcopy(task_set),
             random_actions_st,
-            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
-            b1=100,
-            b2=100,
+            total_timesteps=200,
+            b1_fraction=0.5,
             solved_threshold=5.0,
             K=1,
             progress_bar=False,
-        )
+        ).training_steps
 
     # Each task is solved in its first episode in stage 1, then the
     # remaining 180 steps are split evenly between both tasks.
@@ -287,18 +281,17 @@ def test_smt_round_robin_if_all_tasks_solved_in_stage1():
 def test_smt_without_stage2_budget():
     task_set = constant_reward_task_set([0.0, 0.0])
 
-    _, training_steps, _, _ = train_smt(
+    training_steps = train_smt(
         task_set,
         copy.deepcopy(task_set),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
-        b1=100,
-        b2=0,
+        total_timesteps=100,
+        b1_fraction=1.0,
         solved_threshold=np.inf,  # no task is ever solved
         unsolvable_threshold=-np.inf,  # no task is ever unsolvable
         K=1,
         progress_bar=False,
-    )
+    ).training_steps
 
     assert training_steps.sum() == 100
 
@@ -313,9 +306,8 @@ def test_smt_picks_tasks_at_random_before_first_evaluation():
             constant_reward_task_set([0.0] * 6),
             constant_reward_task_set([0.0] * 6),
             random_actions_st,
-            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 6),
-            b1=60,
-            b2=10,
+            total_timesteps=120,
+            b1_fraction=0.5,
             solved_threshold=np.inf,  # no task is ever solved
             unsolvable_threshold=-np.inf,  # no task is ever unsolvable
             kappa=0.1,
@@ -343,9 +335,7 @@ def test_smt_budget_shares_stage1_budget_among_training_pool():
         constant_reward_task_set([0.0] * 10),
         constant_reward_task_set([0.0] * 10),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 10),
-        b1=17_000,
-        b2=3_000,
+        total_timesteps=20_000,
         solved_threshold=np.inf,  # no task is ever solved
         unsolvable_threshold=-np.inf,  # no task is ever unsolvable
         kappa=0.8,
@@ -368,9 +358,8 @@ def test_smt_thresholds_are_strict():
         constant_reward_task_set([1.0, 1.0]),
         constant_reward_task_set([1.0, 1.0]),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2),
-        b1=100,
-        b2=0,
+        total_timesteps=100,
+        b1_fraction=1.0,
         solved_threshold=10.0,
         unsolvable_threshold=10.0,
         kappa=0.1,
@@ -392,12 +381,16 @@ def test_smt_thresholds_are_strict():
         {"K": 3},
         {"kappa": 0.0},
         {"kappa": 1.5},
-        {"b1": 0},
-        {"b2": -1},
+        {"total_timesteps": 0},
+        {"b1_fraction": 0.0},
+        {"b1_fraction": 1.5},
+        {"total_timesteps": 4, "b1_fraction": 0.1},  # B_1 = 0
+        {"n_average": 0},
+        {"episodes_per_task": 0},
     ],
 )
 def test_smt_rejects_invalid_arguments(kwargs):
-    arguments = {"b1": 100, "b2": 100, "K": 1, "progress_bar": False}
+    arguments = {"total_timesteps": 200, "K": 1, "progress_bar": False}
     arguments.update(kwargs)
     task_set = constant_reward_task_set([0.0, 0.0])
 
@@ -406,7 +399,6 @@ def test_smt_rejects_invalid_arguments(kwargs):
             task_set,
             copy.deepcopy(task_set),
             random_actions_st,
-            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), len(task_set)),
             **arguments,
         )
 
@@ -417,9 +409,8 @@ def test_smt_rejects_eval_set_with_other_number_of_tasks():
             constant_reward_task_set([0.0, 0.0]),
             constant_reward_task_set([0.0, 0.0, 0.0]),
             random_actions_st,
-            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2),
-            b1=100,
-            b2=100,
+            total_timesteps=200,
+            b1_fraction=0.5,
             K=1,
             progress_bar=False,
         )
@@ -432,9 +423,8 @@ def test_smt_rejects_invalid_evaluation_arguments(kwargs):
             constant_reward_task_set([0.0, 0.0]),
             constant_reward_task_set([0.0, 0.0]),
             random_actions_st,
-            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2),
-            b1=100,
-            b2=100,
+            total_timesteps=200,
+            b1_fraction=0.5,
             K=1,
             progress_bar=False,
             **kwargs,
@@ -464,13 +454,12 @@ def test_smt_refills_training_pool_with_worst_evaluated_task():
     # evaluation, so every refill picks task 1.
     logger = MemoryLogger()
 
-    _, training_steps, _, eval_steps = train_smt(
+    _, training_steps, eval_steps = train_smt(
         constant_reward_task_set([0.0, 0.0, 0.0]),
         constant_reward_task_set([0.0, -1.0, 1.0]),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 3),
-        b1=400,
-        b2=0,
+        total_timesteps=400,
+        b1_fraction=1.0,
         solved_threshold=np.inf,  # no task is ever solved
         unsolvable_threshold=-np.inf,  # no task is ever unsolvable
         kappa=0.1,
@@ -486,49 +475,156 @@ def test_smt_refills_training_pool_with_worst_evaluated_task():
     _, refilled_tasks = logger.get_stat("worst task", x_key="step")
     assert len(refilled_tasks) > 0
     assert set(refilled_tasks.tolist()) == {1}
-    # Evaluation steps count towards b1
+    # Evaluation steps count towards B_1 and are logged as a running total
     _, logged_eval_steps = logger.get_stat("eval_steps", x_key="step")
-    assert eval_steps == logged_eval_steps.sum() > 0
+    assert eval_steps == logged_eval_steps[-1] > 0
     assert training_steps.sum() + eval_steps == 400
 
 
-def test_smt_evaluation_metric_adds_entropy_to_discounted_return():
-    performances, _, n_steps, _ = evaluate_tasks(
-        FixedStochasticPolicy(log_prob=-2.0),
-        constant_reward_task_set([1.0]),
+def evaluation_performance(policy, **kwargs):
+    """Performance of task 0 at the first evaluation of SMT."""
+    logger = MemoryLogger()
+    # One training episode, then one evaluation of both tasks
+    train_smt(
+        constant_reward_task_set([0.0, 0.0]),
+        constant_reward_task_set([1.0, 1.0]),
+        random_actions_st,
+        total_timesteps=50,
+        b1_fraction=1.0,
+        K=1,
+        eval_freq=10,
         n_eval_episodes=2,
+        max_eval_episode_steps=10,
         gamma=0.5,
-        key=jax.random.key(0),
+        get_policy=lambda result: policy,
+        logger=logger,
+        progress_bar=False,
+        **kwargs,
     )
+    _, performances = logger.get_stat("eval_performance_0", x_key="step")
+    return performances[0]
+
+
+def test_smt_evaluation_metric_adds_entropy_to_discounted_return():
+    performance = evaluation_performance(FixedStochasticPolicy(log_prob=-2.0))
 
     discounted_return = (1.0 - 0.5**10) / (1.0 - 0.5)
     entropy = 10 * 2.0
-    assert performances[0] == pytest.approx(discounted_return + entropy)
-    assert n_steps == 20
+    assert performance == pytest.approx(discounted_return + entropy)
 
 
 def test_smt_evaluation_of_deterministic_policy_omits_entropy():
-    performances, _, _, _ = evaluate_tasks(
-        ZeroPolicy(),
-        constant_reward_task_set([1.0]),
+    with pytest.warns(UserWarning, match="entropy term"):
+        performance = evaluation_performance(ZeroPolicy())
+
+    assert performance == pytest.approx((1.0 - 0.5**10) / (1.0 - 0.5))
+
+
+def test_smt_keeps_solved_task_if_undiscounted_evaluation_return_is_high():
+    # Both tasks are solved in their first episode (return 10). Their
+    # undiscounted evaluation return (10) is above the threshold, their
+    # discounted return (< 2) is not, so they stay solved and the training
+    # pool is only refilled once, with the other task.
+    logger = MemoryLogger()
+
+    with pytest.warns(UserWarning, match="round robin"):
+        train_smt(
+            constant_reward_task_set([1.0, 1.0]),
+            constant_reward_task_set([1.0, 1.0]),
+            random_actions_st,
+            total_timesteps=100,
+            b1_fraction=1.0,
+            solved_threshold=5.0,
+            K=1,
+            eval_freq=1,
+            n_eval_episodes=1,
+            max_eval_episode_steps=10,
+            gamma=0.5,
+            get_policy=lambda result: FixedStochasticPolicy(log_prob=0.0),
+            logger=logger,
+            progress_bar=False,
+        )
+
+    _, refilled_tasks = logger.get_stat("worst task", x_key="step")
+    assert len(refilled_tasks) == 1
+
+
+def test_smt_evaluations_do_not_drift():
+    # Episodes and evaluations take 10 and 20 steps. The evaluation due at
+    # step 15 ends at step 40, so the one due at step 30 is skipped, but the
+    # following ones are still due at steps 45 and 75.
+    logger = MemoryLogger()
+
+    train_smt(
+        constant_reward_task_set([0.0, 0.0]),
+        constant_reward_task_set([0.0, 0.0]),
+        random_actions_st,
+        total_timesteps=100,
+        b1_fraction=1.0,
+        solved_threshold=np.inf,  # no task is ever solved
+        unsolvable_threshold=-np.inf,  # no task is ever unsolvable
+        K=1,
+        eval_freq=15,
         n_eval_episodes=1,
-        gamma=0.5,
-        key=jax.random.key(0),
+        max_eval_episode_steps=10,
+        get_policy=lambda result: FixedStochasticPolicy(log_prob=0.0),
+        logger=logger,
+        progress_bar=False,
     )
 
-    assert performances[0] == pytest.approx((1.0 - 0.5**10) / (1.0 - 0.5))
+    eval_ends, _ = logger.get_stat("eval_steps", x_key="step")
+    assert eval_ends.tolist() == [40, 70, 100]
 
 
-def test_smt_evaluation_returns_undiscounted_return():
-    _, returns, _, _ = evaluate_tasks(
-        FixedStochasticPolicy(log_prob=-2.0),
-        constant_reward_task_set([1.0]),
-        n_eval_episodes=2,
-        gamma=0.5,
-        key=jax.random.key(0),
-    )
+def test_smt_warmup_trains_tasks_round_robin():
+    # Task 0 is solved in its warm-up episode, so it starts in the solved
+    # pool and is not trained again. The other tasks are never solved or
+    # unsolvable, so the second stage trains them.
+    recorder = TaskRecorder()
 
-    assert returns[0] == pytest.approx(10.0)
+    training_steps = train_smt(
+        constant_reward_task_set([1.0, 0.0, 0.0]),
+        constant_reward_task_set([1.0, 0.0, 0.0]),
+        random_actions_st,
+        total_timesteps=200,
+        b1_fraction=0.5,
+        solved_threshold=5.0,
+        unsolvable_threshold=-np.inf,
+        K=1,
+        warmup_episodes=1,
+        task_selectables=[recorder],
+        progress_bar=False,
+    ).training_steps
+
+    assert recorder.selected_tasks[:3] == [0, 1, 2]
+    assert training_steps[0] == 10
+    assert training_steps.sum() == 200
+
+
+def test_smt_passes_views_of_multitask_replay_buffer():
+    task_set = constant_reward_task_set([0.0, 0.0])
+    replay_buffer = MultiTaskReplayBuffer(ReplayBuffer(buffer_size=100), 2)
+    received_buffers = []
+
+    def record_buffer_st(replay_buffer, **kwargs):
+        received_buffers.append(replay_buffer)
+        return random_actions_st(**kwargs)
+
+    training_steps = train_smt(
+        task_set,
+        copy.deepcopy(task_set),
+        record_buffer_st,
+        total_timesteps=40,
+        b1_fraction=0.5,
+        unsolvable_threshold=-np.inf,
+        K=1,
+        replay_buffer=replay_buffer,
+        progress_bar=False,
+    ).training_steps
+
+    assert training_steps.sum() == 40
+    assert len(received_buffers) == 4
+    assert {buffer.task_id for buffer in received_buffers} == {0, 1}
 
 
 class DecliningRewardEnv(ConstantRewardEnv):
@@ -562,9 +658,8 @@ def test_smt_solved_task_returns_if_evaluation_return_drops():
             ),
             constant_reward_task_set([0.0]),
             random_actions_st,
-            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 1),
-            b1=200,
-            b2=0,
+            total_timesteps=200,
+            b1_fraction=1.0,
             solved_threshold=1.0,
             unsolvable_threshold=-np.inf,  # the task is never unsolvable
             K=1,
@@ -587,9 +682,8 @@ def test_smt_warns_if_evaluated_policy_is_deterministic():
             constant_reward_task_set([0.0, 0.0]),
             constant_reward_task_set([0.0, 0.0]),
             random_actions_st,
-            MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2),
-            b1=100,
-            b2=0,
+            total_timesteps=100,
+            b1_fraction=1.0,
             K=1,
             eval_freq=1,
             n_eval_episodes=1,
@@ -607,9 +701,8 @@ def test_smt_resets_networks_after_each_evaluation_in_stage1():
         constant_reward_task_set([0.0, -1.0, 1.0]),
         constant_reward_task_set([0.0, -1.0, 1.0]),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 3),
-        b1=400,
-        b2=200,
+        total_timesteps=600,
+        b1_fraction=400 / 600,
         solved_threshold=np.inf,  # no task is ever solved
         unsolvable_threshold=-np.inf,  # no task is ever unsolvable
         kappa=0.1,
@@ -639,9 +732,8 @@ def test_smt_does_not_reset_without_reset_function():
         constant_reward_task_set([0.0, 0.0]),
         constant_reward_task_set([0.0, 0.0]),
         random_actions_st,
-        MultiTaskReplayBuffer(ReplayBuffer(buffer_size=10), 2),
-        b1=100,
-        b2=0,
+        total_timesteps=100,
+        b1_fraction=1.0,
         K=1,
         eval_freq=1,
         n_eval_episodes=1,

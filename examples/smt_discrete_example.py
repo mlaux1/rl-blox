@@ -128,26 +128,24 @@ result = train_smt(
     train_set,
     eval_set,
     train_st,
-    replay_buffer,
+    total_timesteps=200_000,
     solved_threshold=-110.0,
     unsolvable_threshold=-200.0,
     task_selectables=None if context_in_observation else [q_net],
-    b1=170_000,
-    b2=30_000,
-    learning_starts=0,
-    scheduling_interval=20,
-    # Up to 11 tasks x 200 steps per evaluation. Evaluations happen between
-    # scheduling iterations (3 tasks x 20 episodes), at least 20000 apart
+    episodes_per_task=20,
+    # Up to 11 tasks x 200 steps per evaluation, due every 20000 steps, but
+    # only performed between scheduling iterations (3 tasks x 20 episodes)
     eval_freq=20_000,
     n_eval_episodes=1,
     get_policy=lambda result: GreedyPolicy(result.q_net),
     reset_st=reset_st,
+    replay_buffer=replay_buffer,
     logger=logger,
     seed=seed,
 )
 
 # Evaluation
-result_st = result[0]
+result_st = result.result
 q_net = result_st.q_net
 
 

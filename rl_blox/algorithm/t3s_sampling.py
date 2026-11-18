@@ -286,7 +286,8 @@ def train_t3s(
     Logging
 
     * ``task_id`` - task selected for training
-    * ``eval_steps`` - number of environment steps used for evaluation
+    * ``eval_steps`` - number of environment steps used for evaluation so
+      far
     * ``task_performance_{i}`` - performance of task i at the last evaluation
     * ``task_progress_{i}`` - task progress metric of task i
     * ``task_learning_speed_{i}`` - learning speed metric of task i
