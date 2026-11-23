@@ -1,6 +1,7 @@
 import warnings
 from collections import deque
 from collections.abc import Callable
+from functools import partial
 from operator import attrgetter
 
 import jax
@@ -18,9 +19,10 @@ from ..blox.multitask import (
     get_n_tasks,
     get_task_env,
     is_stochastic,
-    max_evaluation_steps,
+    mean_task_scores,
     n_warmup_selections,
     next_evaluation_step,
+    prepare_evaluation,
     train_task,
     warn_if_state_not_bound,
 )
@@ -275,17 +277,8 @@ def train_smt(
         raise ValueError("kappa must be in (0, 1]")
     if n_average < 1:
         raise ValueError("n_average must be positive")
-    if eval_freq <= 0:
-        raise ValueError("eval_freq must be positive")
-    if n_eval_episodes < 1:
-        raise ValueError("n_eval_episodes must be positive")
     if episodes_per_task <= 0:
         raise ValueError("episodes_per_task must be positive")
-    if get_n_tasks(eval_set) != n_tasks:
-        raise ValueError(
-            f"eval_set has {get_n_tasks(eval_set)} tasks, task_set has "
-            f"{n_tasks}"
-        )
     warn_if_state_not_bound(train_st, replay_buffer is not None)
     if K == n_tasks:
         warnings.warn(
@@ -293,22 +286,15 @@ def train_smt(
             "trained at the same time, so there is no task scheduling.",
             stacklevel=2,
         )
-
-    # Seed evaluation environments for reproducible evaluations
-    for i in range(n_tasks):
-        get_task_env(eval_set, i).reset(seed=seed + i)
-    max_eval_steps = max_evaluation_steps(
-        eval_set, n_eval_episodes, max_eval_episode_steps
+    max_eval_steps = prepare_evaluation(
+        eval_set,
+        n_tasks,
+        eval_freq,
+        n_eval_episodes,
+        max_eval_episode_steps,
+        b1,
+        seed,
     )
-    if max_eval_steps is None:
-        if eval_freq < b1:
-            warnings.warn(
-                "Could not infer the episode length of all evaluation "
-                "environments, evaluations may exceed b1. Set "
-                "max_eval_episode_steps to avoid this.",
-                stacklevel=2,
-            )
-        max_eval_steps = 0
 
     rng = np.random.default_rng(seed)
     key = jax.random.key(seed)
@@ -425,17 +411,11 @@ def train_smt(
                 next_eval_step, eval_freq, global_step
             )
 
-            eval_performances = np.array(
-                [
-                    np.mean([_evaluation_metric(e, gamma) for e in task_eps])
-                    for task_eps in episodes
-                ]
+            eval_performances = mean_task_scores(
+                episodes, partial(_evaluation_metric, gamma=gamma)
             )
-            eval_returns = np.array(
-                [
-                    np.mean([np.sum(e.rewards) for e in task_eps])
-                    for task_eps in episodes
-                ]
+            eval_returns = mean_task_scores(
+                episodes, lambda episode: np.sum(episode.rewards)
             )
             if logger is not None:
                 logger.record_stat("eval_steps", eval_steps, step=global_step)

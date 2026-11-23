@@ -143,8 +143,11 @@ Functional Blox
    multitask.train_task
    multitask.n_warmup_selections
    multitask.warn_if_state_not_bound
+   multitask.select_task
    multitask.evaluate_tasks
    multitask.max_evaluation_steps
+   multitask.prepare_evaluation
+   multitask.mean_task_scores
    multitask.next_evaluation_step
 
 Data Blox

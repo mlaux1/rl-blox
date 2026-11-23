@@ -8,18 +8,23 @@ import numpy as np
 import optax
 import pytest
 from flax import nnx
+from gymnasium.envs.classic_control.pendulum import PendulumEnv
 from gymnasium.vector import SyncVectorEnv
 
 from rl_blox.algorithm.ddqn import train_ddqn
 from rl_blox.algorithm.sac import EntropyControl, create_sac_state, train_sac
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.multitask import (
+    EvalEpisode,
     RoundRobinSelector,
     TaskSelectionMixin,
     evaluate_tasks,
     max_evaluation_steps,
+    mean_task_scores,
     n_warmup_selections,
     next_evaluation_step,
+    prepare_evaluation,
+    select_task,
     train_task,
     warn_if_state_not_bound,
 )
@@ -213,6 +218,73 @@ def test_evaluate_tasks_samples_stochastic_policy():
 def test_max_evaluation_steps():
     assert max_evaluation_steps(make_eval_set(), 3, None) == 2 * 3 * 5
     assert max_evaluation_steps(make_eval_set(), 3, 7) == 2 * 3 * 7
+
+
+def test_select_task_informs_all_task_selectables():
+    selectables = [TaskSelectionMixin(), TaskSelectionMixin()]
+
+    select_task(selectables, 2)
+    select_task(None, 3)
+
+    assert [ts.task_id for ts in selectables] == [2, 2]
+
+
+def test_prepare_evaluation_seeds_tasks_and_returns_bound():
+    eval_sets = [make_eval_set() for _ in range(3)]
+
+    max_eval_steps = [
+        prepare_evaluation(eval_set, 2, 10, 3, None, 100, seed)
+        for eval_set, seed in zip(eval_sets, [4, 4, 5], strict=True)
+    ]
+
+    assert max_eval_steps == [2 * 3 * 5] * 3
+    observations = [
+        [eval_set.envs[i].reset()[0] for i in range(2)]
+        for eval_set in eval_sets
+    ]
+    assert np.array_equal(observations[0], observations[1])
+    assert not np.array_equal(observations[0], observations[2])
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        (2, 0, 3),  # eval_freq
+        (2, 10, 0),  # n_eval_episodes
+        (3, 10, 3),  # number of tasks
+    ],
+)
+def test_prepare_evaluation_rejects_invalid_arguments(args):
+    n_tasks, eval_freq, n_eval_episodes = args
+    with pytest.raises(ValueError):
+        prepare_evaluation(
+            make_eval_set(), n_tasks, eval_freq, n_eval_episodes, None, 100, 0
+        )
+
+
+def test_prepare_evaluation_warns_if_bound_is_unknown():
+    eval_set = SyncVectorEnv([PendulumEnv, PendulumEnv])
+
+    with pytest.warns(UserWarning, match="infer the episode length"):
+        assert prepare_evaluation(eval_set, 2, 10, 3, None, 100, 0) == 0
+
+    # No evaluation takes place within the budget
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert prepare_evaluation(eval_set, 2, 100, 3, None, 100, 0) == 0
+    # The episode length is given
+    assert prepare_evaluation(eval_set, 2, 10, 3, 7, 100, 0) == 2 * 3 * 7
+
+
+def test_mean_task_scores():
+    episodes = [
+        [EvalEpisode(0, np.ones(2), [{}, {}]), EvalEpisode(0, np.ones(4), [])],
+        [EvalEpisode(1, np.zeros(3), [])],
+    ]
+
+    scores = mean_task_scores(episodes, lambda e: np.sum(e.rewards))
+
+    assert scores.tolist() == [3.0, 0.0]
 
 
 def test_next_evaluation_step_skips_due_steps_that_passed():

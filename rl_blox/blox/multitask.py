@@ -53,6 +53,24 @@ BACKBONE_STATE = (
 """Arguments of backbone algorithms that are created anew if not passed."""
 
 
+def select_task(
+    task_selectables: list[TaskSelectionMixin] | None, task_id: int
+) -> None:
+    """Inform task selectables about the current task.
+
+    Parameters
+    ----------
+    task_selectables : list or None
+        Objects that are informed about the task.
+
+    task_id : int
+        Index of the task.
+    """
+    if task_selectables is not None:
+        for ts in task_selectables:
+            ts.select_task(task_id)
+
+
 def warn_if_state_not_bound(
     train_st: Callable, replay_buffer_passed: bool = False
 ) -> None:
@@ -421,9 +439,7 @@ def train_task(
     """
     if logger is not None:
         logger.record_stat("task_id", task_id, step=global_step)
-    if task_selectables is not None:
-        for ts in task_selectables:
-            ts.select_task(task_id)
+    select_task(task_selectables, task_id)
 
     # Count steps independently of the global_step returned by train_st
     env = gym.wrappers.RecordEpisodeStatistics(
@@ -546,6 +562,87 @@ def max_evaluation_steps(
     return n_eval_episodes * sum(episode_limits)
 
 
+def prepare_evaluation(
+    eval_set: DiscreteTaskSet | SyncVectorEnv,
+    n_tasks: int,
+    eval_freq: int,
+    n_eval_episodes: int,
+    max_eval_episode_steps: int | None,
+    budget: int,
+    seed: int,
+) -> int:
+    """Check and seed the evaluation tasks of a task scheduler.
+
+    Parameters
+    ----------
+    eval_set : DiscreteTaskSet or SyncVectorEnv
+        Set of tasks used for evaluation.
+
+    n_tasks : int
+        Number of training tasks.
+
+    eval_freq : int
+        Number of environment steps between evaluations.
+
+    n_eval_episodes : int
+        Number of evaluation episodes per task.
+
+    max_eval_episode_steps : int or None
+        Maximum length of an evaluation episode, see
+        :func:`max_evaluation_steps`.
+
+    budget : int
+        Number of environment steps in which evaluations take place.
+
+    seed : int
+        Random seed. The evaluation environment of task i is reset with
+        ``seed + i``, so that evaluations are reproducible.
+
+    Returns
+    -------
+    max_eval_steps : int
+        Upper bound on the number of steps of an evaluation, see
+        :func:`max_evaluation_steps`. 0 if it cannot be inferred.
+
+    Raises
+    ------
+    ValueError
+        If ``eval_freq`` or ``n_eval_episodes`` is not positive, or the
+        number of evaluation tasks differs from ``n_tasks``.
+
+    Warns
+    -----
+    UserWarning
+        If the upper bound cannot be inferred and evaluations take place
+        before ``budget``, so that they may exceed it.
+    """
+    if eval_freq <= 0:
+        raise ValueError("eval_freq must be positive")
+    if n_eval_episodes < 1:
+        raise ValueError("n_eval_episodes must be positive")
+    if get_n_tasks(eval_set) != n_tasks:
+        raise ValueError(
+            f"eval_set has {get_n_tasks(eval_set)} tasks, task_set has "
+            f"{n_tasks}"
+        )
+
+    for i in range(n_tasks):
+        get_task_env(eval_set, i).reset(seed=seed + i)
+    max_eval_steps = max_evaluation_steps(
+        eval_set, n_eval_episodes, max_eval_episode_steps
+    )
+    if max_eval_steps is None:
+        if eval_freq < budget:
+            warnings.warn(
+                "Could not infer the episode length of all evaluation "
+                "environments, evaluations may exceed the budget. Set "
+                "max_eval_episode_steps to avoid this.",
+                stacklevel=3,
+            )
+        max_eval_steps = 0
+    return max_eval_steps
+
+
 def evaluate_tasks(
     policy: nnx.Module,
     eval_set: DiscreteTaskSet | SyncVectorEnv,
@@ -590,9 +687,7 @@ def evaluate_tasks(
     episodes = []
     n_steps = 0
     for task_id in range(get_n_tasks(eval_set)):
-        if task_selectables is not None:
-            for ts in task_selectables:
-                ts.select_task(task_id)
+        select_task(task_selectables, task_id)
         env = get_task_env(eval_set, task_id)
 
         task_episodes = []
@@ -627,6 +722,29 @@ def evaluate_tasks(
         episodes.append(task_episodes)
 
     return episodes, n_steps, key
+
+
+def mean_task_scores(
+    episodes: list[list[EvalEpisode]], score: Callable[[EvalEpisode], float]
+) -> np.ndarray:
+    """Mean score of the evaluation episodes of each task.
+
+    Parameters
+    ----------
+    episodes : list of list of EvalEpisode
+        Evaluation episodes of each task, see :func:`evaluate_tasks`.
+
+    score : callable
+        Maps an episode to its score.
+
+    Returns
+    -------
+    scores : array, shape (n_tasks,)
+        Mean score of each task.
+    """
+    return np.array(
+        [np.mean([score(episode) for episode in task]) for task in episodes]
+    )
 
 
 def next_evaluation_step(

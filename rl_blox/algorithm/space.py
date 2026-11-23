@@ -12,6 +12,7 @@ from ..blox.multitask import (
     get_n_tasks,
     get_task_env,
     n_warmup_selections,
+    select_task,
     train_task,
     warn_if_state_not_bound,
 )
@@ -309,9 +310,7 @@ def train_space(
 def _start_values(value_function, start_observations, task_selectables):
     values = np.empty(len(start_observations))
     for task_id, observation in enumerate(start_observations):
-        if task_selectables is not None:
-            for ts in task_selectables:
-                ts.select_task(task_id)
+        select_task(task_selectables, task_id)
         values[task_id] = float(
             value_function(jnp.asarray(observation)[jnp.newaxis])[0]
         )

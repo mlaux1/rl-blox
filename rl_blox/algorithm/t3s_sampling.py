@@ -1,5 +1,5 @@
-import warnings
 from collections.abc import Callable
+from functools import partial
 from operator import attrgetter
 
 import numpy as np
@@ -16,9 +16,10 @@ from ..blox.multitask import (
     evaluate_tasks,
     get_n_tasks,
     get_task_env,
-    max_evaluation_steps,
+    mean_task_scores,
     n_warmup_selections,
     next_evaluation_step,
+    prepare_evaluation,
     train_task,
     warn_if_state_not_bound,
 )
@@ -319,34 +320,18 @@ def train_t3s(
             "tasks_per_iteration cannot exceed number of tasks when sampling "
             "without replacement"
         )
-    if eval_freq <= 0:
-        raise ValueError("eval_freq must be positive")
-    if n_eval_episodes < 1:
-        raise ValueError("n_eval_episodes must be positive")
     if episodes_per_task <= 0:
         raise ValueError("episodes_per_task must be positive")
-    if get_n_tasks(eval_set) != n_tasks:
-        raise ValueError(
-            f"eval_set has {get_n_tasks(eval_set)} tasks, task_set has "
-            f"{n_tasks}"
-        )
     warn_if_state_not_bound(train_st, replay_buffer is not None)
-
-    # Seed evaluation environments for reproducible evaluations
-    for i in range(n_tasks):
-        get_task_env(eval_set, i).reset(seed=seed + i)
-    max_eval_steps = max_evaluation_steps(
-        eval_set, n_eval_episodes, max_eval_episode_steps
+    max_eval_steps = prepare_evaluation(
+        eval_set,
+        n_tasks,
+        eval_freq,
+        n_eval_episodes,
+        max_eval_episode_steps,
+        total_timesteps,
+        seed,
     )
-    if max_eval_steps is None:
-        if eval_freq < total_timesteps:
-            warnings.warn(
-                "Could not infer the episode length of all evaluation "
-                "environments, evaluations may exceed total_timesteps. Set "
-                "max_eval_episode_steps to avoid this.",
-                stacklevel=2,
-            )
-        max_eval_steps = 0
 
     # The authors' code weights replay batches uniformly if all tasks are
     # trained in each iteration
@@ -423,12 +408,7 @@ def train_t3s(
             )
 
             performances.append(
-                np.array(
-                    [
-                        np.mean([_score(episode_score, e) for e in task_eps])
-                        for task_eps in episodes
-                    ]
-                )
+                mean_task_scores(episodes, partial(_score, episode_score))
             )
             progress_metric = 1.0 - np.mean(performances[-n_average:], axis=0)
             if len(performances) < 2:
