@@ -106,6 +106,7 @@ We currently provide implementations of the following algorithms:
 | SMT | [link](https://raw.githubusercontent.com/mlresearch/v235/main/assets/cho24d/cho24d.pdf) |
 | PLR | [link](https://arxiv.org/abs/2010.03934) |
 | SPaCE | [link](https://arxiv.org/abs/2106.05110) |
+| DRATS | [link](https://arxiv.org/abs/2605.14350) |
 
 ## Getting Started
 
