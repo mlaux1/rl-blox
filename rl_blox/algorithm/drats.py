@@ -399,7 +399,7 @@ def train_drats(
 
         batch_returns[task_id].extend(returns)
         if success_threshold is not None:
-            batch_successes[task_id].extend(env.successes()[: len(returns)])
+            batch_successes[task_id].extend(env.successes())
         if len(returns) > 0:
             max_returns[task_id] = max(max_returns[task_id], np.max(returns))
         n_batch_episodes += len(returns)
