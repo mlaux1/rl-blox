@@ -29,6 +29,7 @@ def train_td3_lap(
     q_optimizer: nnx.Optimizer,
     seed: int = 1,
     total_timesteps: int = 1_000_000,
+    total_episodes: int | None = None,
     buffer_size: int = 1_000_000,
     gamma: float = 0.99,
     tau: float = 0.005,
@@ -82,6 +83,11 @@ def train_td3_lap(
 
     total_timesteps : int, optional
         Number of steps to execute in the environment.
+
+    total_episodes : int, optional
+        Number of episodes after which training stops, unless
+        ``total_timesteps`` is reached first. If None, training only stops
+        after ``total_timesteps``.
 
     buffer_size : int, optional
         Size of the replay buffer.
@@ -214,6 +220,7 @@ def train_td3_lap(
         logger.start_new_episode()
     obs, _ = env.reset(seed=seed)
     steps_per_episode = 0
+    episode = 1
 
     if policy_target is None:
         policy_target = nnx.clone(policy)
@@ -320,11 +327,14 @@ def train_td3_lap(
 
             obs, _ = env.reset()
             steps_per_episode = 0
+            episode += 1
         else:
             obs = next_obs
 
         bar.update()
         step += 1
+        if total_episodes is not None and episode > total_episodes:
+            break
 
     return namedtuple(
         "TD3LAPResult",
