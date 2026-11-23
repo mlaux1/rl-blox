@@ -40,6 +40,7 @@ Algorithm Interface
    active_mt.train_active_mt
    plr.train_plr
    space.train_space
+   drats.train_drats
 
 Functional Blox
 ---------------
@@ -73,6 +74,9 @@ Functional Blox
    plr.plr_replay_distribution
    space.space_grow
    space.space_instance_set
+   drats.drats_return_gaps
+   drats.drats_mirror_ascent
+   drats.project_min_probability
 
 Data Blox
 ---------
@@ -180,6 +184,7 @@ Data Blox
    probabilistic_ensemble.EnsembleTrainState
    rollout.Transitions
    rollout.RecordTransitions
+   rollout.RecordSuccess
    multitask.SchedulerResult
    multitask.EvalEpisode
 
