@@ -69,6 +69,48 @@ class RecordTransitions(gym.Wrapper):
         )
 
 
+class RecordSuccess(gym.Wrapper):
+    """Record whether the completed episodes of an environment succeeded.
+
+    An episode succeeded if ``info["success"]`` was set at any of its steps.
+    Use this wrapper when another function interacts with the environment,
+    e.g., the training function of a backbone algorithm.
+
+    Parameters
+    ----------
+    env : gym.Env
+        Environment that reports ``info["success"]`` at every step.
+    """
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self._success = False
+        self._successes = []
+
+    def reset(self, *, seed=None, options=None):
+        self._success = False
+        return self.env.reset(seed=seed, options=options)
+
+    def step(self, action):
+        observation, reward, terminated, truncated, info = self.env.step(action)
+        if "success" not in info:
+            raise KeyError("The environment does not report info['success'].")
+        self._success = self._success or bool(info["success"])
+        if terminated or truncated:
+            self._successes.append(self._success)
+        return observation, reward, terminated, truncated, info
+
+    def successes(self) -> np.ndarray:
+        """Return the success flags of the completed episodes.
+
+        Returns
+        -------
+        successes : array, shape (n_episodes,)
+            True for each completed episode that succeeded.
+        """
+        return np.asarray(self._successes, dtype=bool)
+
+
 def pad_transitions(
     transitions: Transitions, size: int | None = None
 ) -> tuple[Transitions, np.ndarray]:

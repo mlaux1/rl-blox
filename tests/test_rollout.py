@@ -4,6 +4,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 from rl_blox.blox.rollout import (
+    RecordSuccess,
     RecordTransitions,
     Transitions,
     pad_transitions,
@@ -49,6 +50,51 @@ def test_record_transitions_keeps_order_and_episode_ends():
     assert not np.array_equal(
         transitions.next_observation[2], transitions.observation[3]
     )
+
+
+class SuccessAtStep(gym.Env):
+    """Episodes of 3 steps that report success at the given step."""
+
+    observation_space = gym.spaces.Discrete(1)
+    action_space = gym.spaces.Discrete(1)
+
+    def __init__(self, success_steps):
+        self.success_steps = success_steps
+        self.episode = -1
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.episode += 1
+        self.t = 0
+        return 0, {}
+
+    def step(self, action):
+        self.t += 1
+        success = self.t == self.success_steps[self.episode]
+        return 0, 0.0, False, self.t >= 3, {"success": success}
+
+
+def test_record_success_flags_completed_episodes():
+    env = RecordSuccess(SuccessAtStep([2, 0, 3, 1]))
+
+    for _ in range(3):
+        env.reset()
+        done = False
+        while not done:
+            _, _, terminated, truncated, _ = env.step(0)
+            done = terminated or truncated
+    env.reset()
+    env.step(0)  # success in an episode that is not completed
+
+    assert_array_equal(env.successes(), [True, False, True])
+
+
+def test_record_success_needs_success_info():
+    env = RecordSuccess(gym.make("CartPole-v1"))
+    env.reset(seed=0)
+
+    with pytest.raises(KeyError, match="success"):
+        env.step(0)
 
 
 def test_pad_transitions_pads_to_next_power_of_two():
