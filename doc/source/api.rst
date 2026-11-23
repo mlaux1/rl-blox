@@ -39,6 +39,7 @@ Algorithm Interface
    smt.train_smt
    active_mt.train_active_mt
    plr.train_plr
+   space.train_space
 
 Functional Blox
 ---------------
@@ -70,6 +71,8 @@ Functional Blox
    cmaes.set_params
    plr.plr_score
    plr.plr_replay_distribution
+   space.space_grow
+   space.space_instance_set
 
 Data Blox
 ---------
