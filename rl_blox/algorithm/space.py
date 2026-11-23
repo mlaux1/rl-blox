@@ -117,8 +117,10 @@ def train_space(
         e.g., ``partial(greedy_value, q_net)`` with
         :func:`~rl_blox.blox.state_value.greedy_value` or
         :func:`~rl_blox.blox.state_value.policy_value`. For MR.Q, use
-        :func:`~rl_blox.algorithm.mrq.mrq_value`. It must use the networks
-        that ``train_st`` updates.
+        ``partial(mrq_value, q, policy_with_encoder, replay_buffer)`` with
+        :func:`~rl_blox.algorithm.mrq.mrq_value` and the same replay buffer
+        as MR.Q, i.e., the ``replay_buffer`` of this function if it is
+        given. It must use the networks that ``train_st`` updates.
 
     total_timesteps : int
         Total number of environment steps.
@@ -242,12 +244,48 @@ def train_space(
         for task_id in range(n_tasks)
     ]
 
+    n_warmup = n_warmup_selections(n_tasks, warmup_episodes, episodes_per_task)
+    pending = [i % n_tasks for i in range(n_warmup)]
+    values = None
     global_step = 0
     result = None
     progress = tqdm(total=total_timesteps, disable=not progress_bar)
+    while global_step < total_timesteps:
+        if not pending and values is None:  # after the warm-up
+            values = _start_values(
+                value_function, start_observations, task_selectables
+            )
+            mean_value = 0.0
+            instance_set = [int(rng.integers(n_tasks))]
+            pending = list(instance_set)
+        elif not pending:  # after an iteration
+            last_values, last_mean_value = values, mean_value
+            values = _start_values(
+                value_function, start_observations, task_selectables
+            )
+            mean_value = float(np.mean(np.abs(values[instance_set])))
+            size = len(instance_set)
+            if space_grow(mean_value, last_mean_value, eta):
+                size = min(size + kappa, n_tasks)
+            instance_set = [
+                int(i) for i in space_instance_set(values, last_values, size)
+            ]
+            pending = list(instance_set)
 
-    def train(task_id):
-        nonlocal global_step, result
+            if logger is not None:
+                logger.record_stat("instance_set_size", size, step=global_step)
+                logger.record_stat("mean_value", mean_value, step=global_step)
+                for i in range(n_tasks):
+                    logger.record_stat(
+                        f"task_value_{i}", values[i], step=global_step
+                    )
+                    logger.record_stat(
+                        f"task_pic_{i}",
+                        values[i] - last_values[i],
+                        step=global_step,
+                    )
+
+        task_id = pending.pop(0)
         result, steps, _ = train_task(
             train_st,
             get_task_env(task_set, task_id),
@@ -263,48 +301,6 @@ def train_space(
         global_step += steps
         training_steps[task_id] += steps
         progress.update(steps)
-
-    n_warmup = n_warmup_selections(n_tasks, warmup_episodes, episodes_per_task)
-    for i in range(n_warmup):
-        if global_step >= total_timesteps:
-            break
-        train(i % n_tasks)
-
-    values = _start_values(value_function, start_observations, task_selectables)
-    mean_value = 0.0
-    instance_set = [int(rng.integers(n_tasks))]
-    while global_step < total_timesteps:
-        for task_id in instance_set:
-            if global_step >= total_timesteps:
-                break
-            train(task_id)
-        if global_step >= total_timesteps:
-            break
-
-        last_values, last_mean_value = values, mean_value
-        values = _start_values(
-            value_function, start_observations, task_selectables
-        )
-        mean_value = float(np.mean(np.abs(values[instance_set])))
-        size = len(instance_set)
-        if space_grow(mean_value, last_mean_value, eta):
-            size = min(size + kappa, n_tasks)
-        instance_set = [
-            int(i) for i in space_instance_set(values, last_values, size)
-        ]
-
-        if logger is not None:
-            logger.record_stat("instance_set_size", size, step=global_step)
-            logger.record_stat("mean_value", mean_value, step=global_step)
-            for i in range(n_tasks):
-                logger.record_stat(
-                    f"task_value_{i}", values[i], step=global_step
-                )
-                logger.record_stat(
-                    f"task_pic_{i}",
-                    values[i] - last_values[i],
-                    step=global_step,
-                )
 
     progress.close()
     return SchedulerResult(result, training_steps, 0)
