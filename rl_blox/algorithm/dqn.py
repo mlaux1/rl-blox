@@ -57,6 +57,7 @@ def train_dqn(
     optimizer: nnx.Optimizer,
     batch_size: int = 64,
     total_timesteps: int = 1e4,
+    total_episodes: int | None = None,
     gamma: float = 0.99,
     seed: int = 1,
     logger: LoggerBase | None = None,
@@ -93,6 +94,11 @@ def train_dqn(
         Batch size for updates.
     total_timesteps : int
         The number of environment sets to train for.
+    total_episodes : int, optional
+        Total episodes for training. This is an alternative termination
+        criterion for training. Set it to None to use ``total_timesteps`` or
+        set it to a positive integer to stop after that many episodes, unless
+        ``total_timesteps`` is reached first.
     gamma : float
         The discount factor.
     seed : int
@@ -200,7 +206,9 @@ def train_dqn(
 
         progress.update()
         step += 1
+        if total_episodes is not None and episode > total_episodes:
+            break
 
     return namedtuple(
         "DQNResult", ["q_net", "optimizer", "replay_buffer", "global_step"]
-    )(q_net, optimizer, replay_buffer, step + 1)
+    )(q_net, optimizer, replay_buffer, step)
