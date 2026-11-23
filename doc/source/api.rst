@@ -39,6 +39,7 @@ Algorithm Interface
    smt.train_smt
    active_mt.train_active_mt
    plr.train_plr
+   space.train_space
 
 Functional Blox
 ---------------
@@ -70,6 +71,8 @@ Functional Blox
    cmaes.set_params
    plr.plr_score
    plr.plr_replay_distribution
+   space.space_grow
+   space.space_instance_set
 
 Data Blox
 ---------
@@ -140,8 +143,11 @@ Functional Blox
    multitask.train_task
    multitask.n_warmup_selections
    multitask.warn_if_state_not_bound
+   multitask.select_task
    multitask.evaluate_tasks
    multitask.max_evaluation_steps
+   multitask.prepare_evaluation
+   multitask.mean_task_scores
    multitask.next_evaluation_step
 
 Data Blox
