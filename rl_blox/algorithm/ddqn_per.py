@@ -26,7 +26,7 @@ def train_ddqn_per(
     per_alpha: float = 0.6,
     per_beta: float = 0.4,
     batch_size: int = 64,
-    total_timesteps: int = 1e4,
+    total_timesteps: int = 10_000,
     total_episodes: int | None = None,
     gamma: float = 0.99,
     update_frequency: int = 4,
@@ -40,19 +40,19 @@ def train_ddqn_per(
 ) -> tuple[MLP, MLP, nnx.Optimizer]:
     r"""Prioritized Experience Replay
 
-    Prioritized experience replay (PER) has two variants of priority, i.e., 
-    proportional and rank-based prioritization. This implementation uses 
+    Prioritized experience replay (PER) has two variants of priority, i.e.,
+    proportional and rank-based prioritization. This implementation uses
     the more common proportional variant as described in Schaul et al.(2016)
     [1]_.
 
     Transitions are sampled based on their priority, which is computed from
-    their TD‑error. Those with larger errors are replayed more frequently, 
+    their TD‑error. Those with larger errors are replayed more frequently,
     in contrast to uniform sampling used in double DQN. New transitions, whose
     TD‑error is not yet known, are initialized with the maximum priority to
     ensure they are experienced at least once. When a transition is replayed,
     its TD‑error is updated accordingly. To correct for the bias introduced by
     this non‑uniform sampling, importance‑sampling weights are applied to the
-    loss.    
+    loss.
 
     This implementation aims to be as close as possible to the original algorithm
     described in the paper while remaining not overly engineered towards a
@@ -73,11 +73,11 @@ def train_ddqn_per(
         The optimiser for the Q-Network.
     per_alpha: float
         Initial value of prioritization exponent :math:`\alpha`.
-        In proportional variant, :math:`\alpha` is a contant. In rank-based 
+        In proportional variant, :math:`\alpha` is a contant. In rank-based
         variant, :math:`\alpha` decreases to 0.
     per_beta: float
         Initial value of importance-sampling correction exponent :math:`\beta`.
-        In proportional variant, :math:`\alpha` anneal to 1. In rank-based 
+        In proportional variant, :math:`\alpha` anneal to 1. In rank-based
         variant, :math:`\alpha` is constant 0.
     update_frequency : int, optional
         The number of time steps after which the Q-net is updated.
@@ -169,7 +169,7 @@ def train_ddqn_per(
             termination=terminated,
         )
 
-        if step > batch_size:
+        if step >= learning_starts and len(replay_buffer) >= batch_size:
             if step % update_frequency == 0:
                 beta = linear_schedule_value(
                     step, total_timesteps, start=per_beta, end=1.0, fraction=1.0
@@ -183,10 +183,16 @@ def train_ddqn_per(
                 )
                 if logger is not None:
                     logger.record_stat(
-                        "weighted loss", weighted_loss, step=step + 1, episode=episode
+                        "weighted loss",
+                        weighted_loss,
+                        step=step + 1,
+                        episode=episode,
                     )
                     logger.record_stat(
-                        "abs td error", abs_td_error, step=step + 1, episode=episode
+                        "abs td error",
+                        abs_td_error,
+                        step=step + 1,
+                        episode=episode,
                     )
                     logger.record_stat(
                         "q mean", q_mean, step=step + 1, episode=episode

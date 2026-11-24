@@ -23,7 +23,7 @@ Algorithm Interface
    dqn.train_dqn
    ddqn.train_ddqn
    nature_dqn.train_nature_dqn
-   per.train_ddqn_per
+   ddqn_per.train_ddqn_per
    reinforce.train_reinforce
    actor_critic.train_ac
    ddpg.train_ddpg

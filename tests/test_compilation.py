@@ -10,10 +10,10 @@ from rl_blox.algorithm.actor_critic import train_ac
 from rl_blox.algorithm.cmaes import train_cmaes
 from rl_blox.algorithm.ddpg import create_ddpg_state, train_ddpg
 from rl_blox.algorithm.ddqn import train_ddqn
+from rl_blox.algorithm.ddqn_per import train_ddqn_per
 from rl_blox.algorithm.dqn import train_dqn
 from rl_blox.algorithm.mrq import create_mrq_state, train_mrq
 from rl_blox.algorithm.nature_dqn import train_nature_dqn
-from rl_blox.algorithm.per import train_ddqn_per
 from rl_blox.algorithm.reinforce import (
     create_policy_gradient_continuous_state,
     train_reinforce,
