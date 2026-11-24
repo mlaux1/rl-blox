@@ -62,7 +62,7 @@ td3_result = train_td3_lap(
     **hparams_algorithm,
 )
 env.close()
-policy, _, _, q, _, _, _ = td3_result
+policy, q = td3_result.policy, td3_result.q
 
 # Evaluation
 env = gym.make(env_name, render_mode="human")

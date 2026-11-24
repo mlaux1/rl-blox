@@ -260,10 +260,10 @@ def ts_inf(
     >>> import jax
     >>> import chex
     >>> model = GaussianMLPEnsemble(
-    ...     5, False, 4, 3, [500, 500, 500], nnx.Rngs(0))
-    >>> n_samples = 400
-    >>> n_particles = 20
-    >>> plan_horizon = 100
+    ...     5, False, 4, 3, [16, 16], "swish", nnx.Rngs(0))
+    >>> n_samples = 8
+    >>> n_particles = 4
+    >>> plan_horizon = 5
     >>> key = jax.random.key(0)
     >>> key, samp_key, model_key, act_key, obs_key = jax.random.split(key, 5)
     >>> sampling_keys = jax.random.split(samp_key, (n_samples, n_particles))

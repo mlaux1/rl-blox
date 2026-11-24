@@ -19,6 +19,9 @@ class Counter:
     reward_history: list[list[list[list[float]]]]
     """Maps o,a,o' to list of rewards."""
 
+    termination_counter: list[list[list[int]]]
+    """Maps o,a,o' to the number of terminations."""
+
 
 def counter_update(
     counter: Counter,
@@ -26,9 +29,11 @@ def counter_update(
     act: int,
     reward: float,
     next_obs: int,
+    terminated: bool,
 ) -> Counter:
     counter.transition_counter[obs][act][next_obs] += 1
     counter.reward_history[obs][act][next_obs].append(reward)
+    counter.termination_counter[obs][act][next_obs] += int(terminated)
     return counter
 
 
@@ -39,6 +44,9 @@ class ForwardModel:
 
     reward: jnp.ndarray
     """Average reward for transition o,a,o'."""
+
+    termination: jnp.ndarray
+    """Probability that transition o,a,o' terminates the episode."""
 
 
 def model_update(
@@ -55,12 +63,17 @@ def model_update(
     model.reward = model.reward.at[obs, act, next_obs].set(
         np.mean(counter.reward_history[obs][act][next_obs])
     )
+    model.termination = model.termination.at[obs, act, next_obs].set(
+        counter.termination_counter[obs][act][next_obs]
+        / counter.transition_counter[obs][act][next_obs]
+    )
     return model
 
 
 def planning(
     model_transition: jnp.ndarray,
     model_reward: jnp.ndarray,
+    model_termination: jnp.ndarray,
     obs_buffer: jnp.ndarray,
     act_buffer: jnp.ndarray,
     n_planning_steps: int,
@@ -79,11 +92,13 @@ def planning(
         # we could also sample instead of taking argmax
         next_obs = jnp.argmax(model_transition[obs, act])
         reward = model_reward[obs, act, next_obs]
+        termination = model_termination[obs, act, next_obs]
         q_table = q_learning_update(
             obs,
             act,
             reward,
             next_obs,
+            termination,
             gamma,
             learning_rate,
             q_table,
@@ -97,12 +112,14 @@ def q_learning_update(
     act: int,
     reward: float,
     next_obs: int,
+    terminated: float,
     gamma: float,
     learning_rate: float,
     q_table: jnp.ndarray,
 ) -> jnp.ndarray:
     next_act = greedy_policy(q_table, next_obs)
-    q_target = reward + gamma * q_table[next_obs, next_act] - q_table[obs, act]
+    next_value = (1.0 - terminated) * q_table[next_obs, next_act]
+    q_target = reward + gamma * next_value - q_table[obs, act]
     return q_table.at[obs, act].set(
         q_table[obs, act] + learning_rate * q_target
     )
@@ -168,7 +185,7 @@ def train_dynaq(
     Returns
     -------
     q_table : array
-        Tabular action-value function of the optimal policy.
+        Tabular action-value function.
 
     References
     ----------
@@ -189,10 +206,15 @@ def train_dynaq(
             [[[] for _ in range(n_states)] for _ in range(n_actions)]
             for _ in range(n_states)
         ],
+        termination_counter=[
+            [[0 for _ in range(n_states)] for _ in range(n_actions)]
+            for _ in range(n_states)
+        ],
     )
     model = ForwardModel(
         transition=jnp.zeros((n_states, n_actions, n_states)),
         reward=jnp.zeros((n_states, n_actions, n_states)),
+        termination=jnp.zeros((n_states, n_actions, n_states)),
     )
     obs_buffer = deque(maxlen=buffer_size)
     act_buffer = deque(maxlen=buffer_size)
@@ -216,15 +238,25 @@ def train_dynaq(
 
         # direct RL
         q_table = q_learning_update(
-            obs, act, reward, next_obs, gamma, learning_rate, q_table
+            obs,
+            act,
+            reward,
+            next_obs,
+            float(terminated),
+            gamma,
+            learning_rate,
+            q_table,
         )
 
-        counter = counter_update(counter, obs, act, reward, next_obs)
+        counter = counter_update(
+            counter, obs, act, reward, next_obs, terminated
+        )
         model = model_update(model, counter, obs, act, next_obs)
         key, sampling_key = jax.random.split(key, 2)
         q_table = planning(
             model.transition,
             model.reward,
+            model.termination,
             jnp.asarray(obs_buffer, dtype=int),
             jnp.asarray(act_buffer, dtype=int),
             n_planning_steps,

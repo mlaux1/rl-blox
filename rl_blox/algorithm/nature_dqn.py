@@ -24,7 +24,7 @@ def train_nature_dqn(
     replay_buffer: ReplayBuffer,
     optimizer: nnx.Optimizer,
     batch_size: int = 64,
-    total_timesteps: int = 1e4,
+    total_timesteps: int = 10_000,
     total_episodes: int | None = None,
     gamma: float = 0.99,
     update_frequency: int = 4,
@@ -36,7 +36,7 @@ def train_nature_dqn(
     global_step: int = 0,
     progress_bar: bool = True,
     bar: tqdm = None,
-) -> tuple[MLP, MLP, nnx.Optimizer]:
+) -> tuple[MLP, MLP, nnx.Optimizer, ReplayBuffer, int]:
     """Deep Q Learning with Experience Replay
 
     Implements the most common version of DQN with experience replay as described
@@ -97,10 +97,10 @@ def train_nature_dqn(
     -------
     q_net : MLP
         The trained Q-network.
-    optimizer : nnx.Optimizer
-        The Q-net optimiser.
     q_target_net : MLP
         The current target Q-network (required for continuing training).
+    optimizer : nnx.Optimizer
+        The Q-net optimiser.
     replay_buffer : ReplayBuffer
         The replay buffer.
     global_step : int
@@ -161,7 +161,7 @@ def train_nature_dqn(
             termination=terminated,
         )
 
-        if step > batch_size:
+        if step >= learning_starts and len(replay_buffer) >= batch_size:
             if step % update_frequency == 0:
                 transition_batch = replay_buffer.sample_batch(batch_size, rng)
                 q_loss, q_mean = train_step(transition_batch, gamma)

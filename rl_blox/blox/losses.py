@@ -843,10 +843,7 @@ def ddqn_loss(
 
     target = jnp.array(reward) + (1 - terminated) * gamma * next_vals
 
-    pred = q(obs)
-    pred = pred[jnp.arange(len(pred)), action]
-
-    return optax.squared_error(pred, target).mean(), pred.mean()
+    return mse_discrete_action_value_loss(obs, action, target, q)
 
 
 def ddqn_per_loss(
@@ -895,11 +892,11 @@ def ddqn_per_loss(
     -------
     loss : float
         The mean weighted TD‑error squared over the batch.
-    metrics : tuple (float, float)
+    metrics : tuple (float, array)
         - q_mean : float
             Mean of the predicted action values.
-        - td_err_mean: float
-            Mean absolute TD‑error.
+        - abs_td_error : array, shape (n_samples,)
+            Absolute TD‑error of each transition, used to update its priority.
 
     References
     ----------
@@ -918,7 +915,7 @@ def ddqn_per_loss(
     target = jnp.array(reward) + (1 - terminated) * gamma * next_vals
 
     pred = q(obs)
-    pred = pred[jnp.arange(len(pred)), action]
+    pred = pred[jnp.arange(len(pred)), action.astype(int)]
 
     td_error = jnp.abs(pred - target)
 
@@ -928,6 +925,6 @@ def ddqn_per_loss(
         weighted_loss.mean(),
         (
             pred.mean(),
-            td_error.mean(),
+            td_error,
         ),
     )

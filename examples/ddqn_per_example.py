@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
-from rl_blox.algorithm.per import train_ddqn_per
+from rl_blox.algorithm.ddqn_per import train_ddqn_per
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.replay_buffer import PrioritizedReplayBuffer
 from rl_blox.logging.logger import AIMLogger

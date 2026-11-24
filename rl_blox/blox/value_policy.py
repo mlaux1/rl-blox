@@ -23,6 +23,7 @@ def make_q_table(env: gymnasium.Env) -> Array:
 def greedy_policy(
     q_table: ArrayLike,
     observation: ArrayLike,
+    key: Array | None = None,
 ) -> jnp.ndarray:
     """Greedy policy for tabular Q-functions.
 
@@ -34,13 +35,19 @@ def greedy_policy(
         The tabular Q-function.
     observation : ArrayLike
         The observation.
+    key : array, optional
+        Random key to break ties between actions with the maximum value
+        uniformly at random. Without a key, ties go to the first action.
 
     Returns
     -------
     action : jnp.ndarray
         The greedy action.
     """
-    return jnp.argmax(q_table[observation])
+    q = q_table[observation]
+    if key is None:
+        return jnp.argmax(q)
+    return random.categorical(key, jnp.where(q == q.max(), 0.0, -jnp.inf))
 
 
 def epsilon_greedy_policy(
@@ -51,7 +58,9 @@ def epsilon_greedy_policy(
 ) -> jnp.ndarray:
     """Epsilon-greedy policy for tabular Q-functions.
 
-    Returns the greedy action for the given observation and tabular Q-function.
+    Returns a uniformly random action with probability epsilon and the greedy
+    action otherwise. Ties between greedy actions are broken uniformly at
+    random.
 
     Parameters
     ----------
@@ -61,17 +70,16 @@ def epsilon_greedy_policy(
         The observation.
     epsilon : float
         The probability of selecting a random action uniformly.
-    key : int
+    key : array
         The random key.
 
     Returns
     -------
     action : jnp.ndarray
-        The greedy action.
+        The selected action.
     """
-    key, subkey = random.split(key)
-    roll = random.uniform(subkey)
-    if roll < epsilon:
-        return random.choice(subkey, jnp.arange(len(q_table[observation])))
-    else:
-        return greedy_policy(q_table, observation)
+    explore_key, action_key = random.split(key)
+    if random.uniform(explore_key) < epsilon:
+        n_actions = q_table[observation].shape[-1]
+        return random.randint(action_key, (), 0, n_actions)
+    return greedy_policy(q_table, observation, action_key)

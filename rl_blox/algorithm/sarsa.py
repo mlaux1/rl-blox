@@ -69,17 +69,17 @@ def train_sarsa(
 
     key = jax.random.key(seed)
 
-    observation, _ = env.reset()
+    observation, _ = env.reset(seed=seed)
 
     if logger is not None:
         logger.start_new_episode()
 
     steps_per_episode = 0
 
+    key, subkey = jax.random.split(key)
+    action = epsilon_greedy_policy(q_table, observation, epsilon, subkey)
+
     for i in trange(total_timesteps, disable=not progress_bar):
-        # get action from policy and perform environment step
-        key, subkey = jax.random.split(key)
-        action = epsilon_greedy_policy(q_table, observation, epsilon, subkey)
         steps_per_episode += 1
         next_observation, reward, terminated, truncated, info = env.step(
             int(action)
@@ -110,8 +110,13 @@ def train_sarsa(
                 logger.start_new_episode()
             steps_per_episode = 0
             observation, _ = env.reset()
+            key, subkey = jax.random.split(key)
+            action = epsilon_greedy_policy(
+                q_table, observation, epsilon, subkey
+            )
         else:
             observation = next_observation
+            action = next_action
 
     return q_table
 

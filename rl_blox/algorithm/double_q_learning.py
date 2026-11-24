@@ -70,7 +70,7 @@ def train_double_q_learning(
         2613–2621.
     """
     key = jax.random.key(seed)
-    observation, _ = env.reset()
+    observation, _ = env.reset(seed=seed)
     steps_per_episode = 0
 
     for i in trange(total_timesteps, disable=not progress_bar):
@@ -139,7 +139,7 @@ def _dql_update(
     learning_rate,
     terminated,
 ):
-    next_action = greedy_policy(q_table1, observation)
+    next_action = greedy_policy(q_table1, next_observation)
     val = q_table1[observation, action]
     next_val = (1 - terminated) * q_table2[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)

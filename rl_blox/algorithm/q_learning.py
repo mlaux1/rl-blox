@@ -64,7 +64,7 @@ def train_q_learning(
     if logger is not None:
         logger.start_new_episode()
 
-    observation, _ = env.reset()
+    observation, _ = env.reset(seed=seed)
     steps_per_episode = 0
 
     for i in trange(total_timesteps, disable=not progress_bar):

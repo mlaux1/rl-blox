@@ -62,7 +62,7 @@ def train_monte_carlo(
     if logger is not None:
         logger.start_new_episode()
 
-    observation, _ = env.reset()
+    observation, _ = env.reset(seed=seed)
 
     if n_visits is None:
         n_visits = jnp.zeros_like(q_table)
