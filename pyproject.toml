@@ -35,6 +35,8 @@ dependencies = [
     "chex",
     "tqdm",
     "flax>=0.12",
+    "orbax-checkpoint",
+    "scipy",
 ]
 
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -51,7 +53,6 @@ dev = [
 ]
 logging = [
     "aim",
-    "orbax-checkpoint",
     "mlflow",
 ]
 examples = [
@@ -74,7 +75,7 @@ Issues = "https://github.com/mlaux1/rl-blox/issues"
 [tool.pytest.ini_options]
 minversion = "6.0"
 doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
-testpaths = ["tests"]
+testpaths = ["tests", "rl_blox"]
 addopts = [
     "--cov-config=pyproject.toml",
     "--cov=rl_blox",
