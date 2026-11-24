@@ -895,11 +895,11 @@ def ddqn_per_loss(
     -------
     loss : float
         The mean weighted TD‑error squared over the batch.
-    metrics : tuple (float, float)
+    metrics : tuple (float, array)
         - q_mean : float
             Mean of the predicted action values.
-        - td_err_mean: float
-            Mean absolute TD‑error.
+        - abs_td_error : array, shape (n_samples,)
+            Absolute TD‑error of each transition, used to update its priority.
 
     References
     ----------
@@ -928,6 +928,6 @@ def ddqn_per_loss(
         weighted_loss.mean(),
         (
             pred.mean(),
-            td_error.mean(),
+            td_error,
         ),
     )

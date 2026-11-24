@@ -821,8 +821,8 @@ class LAP(ReplayBuffer):
 
         p(i)
         =
-        \frac{|\delta_i|^{\alpha} + \epsilon}
-        {\sum_j |\delta_j|^{\alpha} + \epsilon},
+        \frac{(|\delta_i| + \epsilon)^{\alpha}}
+        {\sum_j (|\delta_j| + \epsilon)^{\alpha}},
 
     where a small constant :math:`\epsilon` is added to ensure each transition
     is sampled with non-zero probability. This is necessary as often the
@@ -834,8 +834,8 @@ class LAP(ReplayBuffer):
 
         p(i)
         =
-        \frac{\max(|\delta_i|^{\alpha}, 1)}
-        {\sum_j \max(|\delta_j|^{\alpha}, 1)},
+        \frac{\max(|\delta_i|, 1)^{\alpha}}
+        {\sum_j \max(|\delta_j|, 1)^{\alpha}},
 
     which leads to uniform sampling of transitions with a TD error smaller than
     1 to avoid the bias introduced from using MSE and prioritization. A LAP
@@ -1106,8 +1106,8 @@ def lap_priority(
 
         p(i)
         =
-        \frac{\max(|\delta_i|^{\alpha}, p_{\min})}
-        {\sum_j \max(|\delta_j|^{\alpha}, p_{\min})},
+        \frac{\max(|\delta_i|, p_{\min})^{\alpha}}
+        {\sum_j \max(|\delta_j|, p_{\min})^{\alpha}},
 
     which leads to uniform sampling of transitions with a TD error smaller than
     :math:`p_{\min}` (usually 1) to avoid the bias introduced from using MSE
@@ -1147,19 +1147,21 @@ def lap_priority(
 
 @partial(jax.jit, static_argnames=["alpha"])
 def per_priority(
-    abs_td_error: jnp.ndarray, alpha: float, epsion: float
+    abs_td_error: jnp.ndarray, alpha: float, epsilon: float
 ) -> jnp.ndarray:
     r"""Compute sample priority for PER.
 
-    Prioritized experience replay (PER) [2]_ has two variants of priority, i.e., proportional
-    and rank-based prioritization. This implementation uses the more common proportional variant
-    as defined in [1]_:
+    Prioritized experience replay (PER) [1]_ has two variants of priority,
+    i.e., proportional and rank-based prioritization. This implementation uses
+    the more common proportional variant:
 
     .. math::
 
         p(i)
         =
-        |\delta_i|^{\alpha} + \epsilon.
+        (|\delta_i| + \epsilon)^{\alpha}.
+
+    A transition is sampled with probability :math:`p(i) / \sum_j p(j)`.
 
     Parameters
     ----------
@@ -1179,16 +1181,11 @@ def per_priority(
 
     References
     ----------
-    .. [1] Fujimoto, S., Meger, D., Precup, D. (2020). An Equivalence between
-       Loss Functions and Non-Uniform Sampling in Experience Replay. In
-       Advances in Neural Information Processing Systems 33.
-       https://papers.nips.cc/paper/2020/hash/a3bf6e4db673b6449c2f7d13ee6ec9c0-Abstract.html
-
-    .. [2] Schaul, T., Quan, J., Antonoglou, I., Silver, D. (2016). Prioritized
+    .. [1] Schaul, T., Quan, J., Antonoglou, I., Silver, D. (2016). Prioritized
        Experience Replay. In International Conference on Learning
        Representations. https://arxiv.org/abs/1511.05952
     """
-    return abs_td_error**alpha + epsion
+    return (abs_td_error + epsilon) ** alpha
 
 
 # TODO: rank-based prioritization

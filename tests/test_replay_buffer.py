@@ -19,6 +19,7 @@ from rl_blox.blox.replay_buffer import (
     SubtrajectoryReplayBufferPER,
     SumTree,
     dilate_right,
+    per_priority,
 )
 
 
@@ -859,3 +860,8 @@ def test_on_device_multitask_buffer_can_be_restored(restore):
 def test_on_device_multitask_rejects_prioritized_replay_buffer():
     with pytest.raises(ValueError, match="on_device"):
         MultiTaskReplayBuffer(PrioritizedReplayBuffer(50, on_device=True), 2)
+
+
+def test_per_priority():
+    priority = per_priority(jnp.array([0.0, 1.0, 3.0]), alpha=0.5, epsilon=1.0)
+    assert_array_almost_equal(priority, [1.0, np.sqrt(2.0), 2.0])

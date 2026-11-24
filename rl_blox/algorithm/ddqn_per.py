@@ -71,14 +71,12 @@ def train_ddqn_per(
         The replay buffer used for storing collected transitions and it's corresponding priority.
     optimizer : nnx.Optimizer
         The optimiser for the Q-Network.
-    per_alpha: float
-        Initial value of prioritization exponent :math:`\alpha`.
-        In proportional variant, :math:`\alpha` is a contant. In rank-based
-        variant, :math:`\alpha` decreases to 0.
-    per_beta: float
-        Initial value of importance-sampling correction exponent :math:`\beta`.
-        In proportional variant, :math:`\alpha` anneal to 1. In rank-based
-        variant, :math:`\alpha` is constant 0.
+    per_alpha : float
+        Prioritization exponent :math:`\alpha`, see
+        :func:`~rl_blox.blox.replay_buffer.per_priority`.
+    per_beta : float
+        Initial value of the importance-sampling correction exponent
+        :math:`\beta`. It is annealed linearly to 1 over ``total_timesteps``.
     update_frequency : int, optional
         The number of time steps after which the Q-net is updated.
     target_update_frequency : int, optional
@@ -111,10 +109,10 @@ def train_ddqn_per(
     -------
     q_net : MLP
         The trained Q-network.
-    optimizer : nnx.Optimizer
-        The Q-net optimiser.
     q_target_net : MLP
         The current target Q-network (required for continuing training).
+    optimizer : nnx.Optimizer
+        The Q-net optimiser.
 
     References
     ----------
@@ -190,7 +188,7 @@ def train_ddqn_per(
                     )
                     logger.record_stat(
                         "abs td error",
-                        abs_td_error,
+                        abs_td_error.mean(),
                         step=step + 1,
                         episode=episode,
                     )
@@ -201,7 +199,7 @@ def train_ddqn_per(
                         "q", q_net, step=step + 1, episode=episode
                     )
                 priority = per_priority(
-                    abs_td_error, alpha=per_alpha, epsion=1e-6
+                    abs_td_error, alpha=per_alpha, epsilon=1e-6
                 )
                 replay_buffer.update_priority(priority)
 
