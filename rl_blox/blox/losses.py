@@ -843,10 +843,7 @@ def ddqn_loss(
 
     target = jnp.array(reward) + (1 - terminated) * gamma * next_vals
 
-    pred = q(obs)
-    pred = pred[jnp.arange(len(pred)), action]
-
-    return optax.squared_error(pred, target).mean(), pred.mean()
+    return mse_discrete_action_value_loss(obs, action, target, q)
 
 
 def ddqn_per_loss(
@@ -918,7 +915,7 @@ def ddqn_per_loss(
     target = jnp.array(reward) + (1 - terminated) * gamma * next_vals
 
     pred = q(obs)
-    pred = pred[jnp.arange(len(pred)), action]
+    pred = pred[jnp.arange(len(pred)), action.astype(int)]
 
     td_error = jnp.abs(pred - target)
 

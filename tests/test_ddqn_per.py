@@ -114,3 +114,17 @@ def test_ddqn_per_updates_priority_per_sample(cart_pole_env):
     for priority in priorities:
         assert priority.shape == (8,)
         assert len(jnp.unique(priority)) > 1
+
+
+def test_ddqn_per_trains_with_float_actions(cart_pole_env):
+    q_net = MLP(4, 2, [10], "relu", nnx.Rngs(0))
+    optimizer = nnx.Optimizer(q_net, optax.adam(1e-3), wrt=nnx.Param)
+    train_ddqn_per(
+        q_net,
+        cart_pole_env,
+        PrioritizedReplayBuffer(100),
+        optimizer,
+        batch_size=8,
+        total_timesteps=20,
+        progress_bar=False,
+    )

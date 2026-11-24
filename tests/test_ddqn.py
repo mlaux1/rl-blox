@@ -88,3 +88,17 @@ def test_ddqn_default_total_timesteps_is_int():
         inspect.signature(train_ddqn).parameters["total_timesteps"].default
     )
     assert isinstance(default, int)
+
+
+def test_ddqn_trains_with_float_actions(cart_pole_env):
+    q_net = MLP(4, 2, [10], "relu", nnx.Rngs(0))
+    optimizer = nnx.Optimizer(q_net, optax.adam(1e-3), wrt=nnx.Param)
+    train_ddqn(
+        q_net,
+        cart_pole_env,
+        ReplayBuffer(100),
+        optimizer,
+        batch_size=8,
+        total_timesteps=20,
+        progress_bar=False,
+    )
