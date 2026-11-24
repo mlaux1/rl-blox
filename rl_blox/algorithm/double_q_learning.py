@@ -139,7 +139,7 @@ def _dql_update(
     learning_rate,
     terminated,
 ):
-    next_action = greedy_policy(q_table1, observation)
+    next_action = greedy_policy(q_table1, next_observation)
     val = q_table1[observation, action]
     next_val = (1 - terminated) * q_table2[next_observation, next_action]
     error = td_error(reward, gamma, val, next_val)
