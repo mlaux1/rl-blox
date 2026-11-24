@@ -64,7 +64,7 @@ def train_dqn(
     global_step: int = 0,
     progress_bar: bool = True,
     bar: tqdm = None,
-) -> tuple[MLP, nnx.Optimizer]:
+) -> tuple[MLP, nnx.Optimizer, ReplayBuffer, int]:
     """Deep Q Learning with Experience Replay
 
     Implements the most basic version of DQN with experience replay as described

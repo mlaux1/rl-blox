@@ -36,7 +36,7 @@ def train_ddqn(
     global_step: int = 0,
     progress_bar: bool = True,
     bar: tqdm = None,
-) -> tuple[MLP, MLP, nnx.Optimizer]:
+) -> tuple[MLP, MLP, nnx.Optimizer, ReplayBuffer, int]:
     """Deep Q Learning with Experience Replay
 
     Implements double DQN as originally described in van Hasselt et al. (2016)
@@ -98,10 +98,10 @@ def train_ddqn(
     -------
     q_net : MLP
         The trained Q-network.
-    optimizer : nnx.Optimizer
-        The Q-net optimiser.
     q_target_net : MLP
         The current target Q-network (required for continuing training).
+    optimizer : nnx.Optimizer
+        The Q-net optimiser.
     replay_buffer : ReplayBuffer
         The replay buffer.
     global_step : int
