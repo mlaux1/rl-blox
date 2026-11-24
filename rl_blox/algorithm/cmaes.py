@@ -91,8 +91,9 @@ class CMAESConfig:
         cc = (4 + mueff / n_params) / (n_params + 4 + 2 * mueff / n_params)
         cs = (mueff + 2) / (n_params + mueff + 5)
         c1 = 2 / ((n_params + 1.3) ** 2 + mueff)
-        cmu = min(1 - c1, 2 * mueff - 2 + 1.0 / mueff) / (
-            (n_params + 2) ** 2 + mueff
+        cmu = min(
+            1 - c1,
+            2 * (mueff - 2 + 1.0 / mueff) / ((n_params + 2) ** 2 + mueff),
         )
         damps = (
             1 + 2 * max(0.0, math.sqrt((mueff - 1) / (n_params + 1)) - 1) + cs
