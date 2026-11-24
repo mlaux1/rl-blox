@@ -81,7 +81,7 @@ class LayerNormMLP(nnx.Module):
             n_in,
             n_outputs,
             rngs=rngs,
-            kernel_init=default_init,
+            kernel_init=kernel_init,
         )
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
