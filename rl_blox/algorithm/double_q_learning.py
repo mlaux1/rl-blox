@@ -70,7 +70,7 @@ def train_double_q_learning(
         2613–2621.
     """
     key = jax.random.key(seed)
-    observation, _ = env.reset()
+    observation, _ = env.reset(seed=seed)
     steps_per_episode = 0
 
     for i in trange(total_timesteps, disable=not progress_bar):

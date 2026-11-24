@@ -69,7 +69,7 @@ def train_sarsa(
 
     key = jax.random.key(seed)
 
-    observation, _ = env.reset()
+    observation, _ = env.reset(seed=seed)
 
     if logger is not None:
         logger.start_new_episode()

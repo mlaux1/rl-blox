@@ -1,5 +1,8 @@
+import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import numpy as np
+from numpy.testing import assert_array_equal
 
 from rl_blox.algorithm.double_q_learning import (
     _dql_update,
@@ -39,3 +42,22 @@ def test_double_q_learning_selects_next_action_at_next_observation():
     )
 
     assert q_table1[0, 0] == 10.0
+
+
+def test_double_q_learning_same_seed_gives_same_result():
+    def train():
+        env = gym.make("FrozenLake-v1", is_slippery=True)
+        result = train_double_q_learning(
+            env,
+            make_q_table(env),
+            make_q_table(env),
+            epsilon=0.5,
+            total_timesteps=3000,
+            seed=3,
+            progress_bar=False,
+        )
+        return np.asarray(result.q_table1 + result.q_table2)
+
+    q1, q2 = train(), train()
+    assert np.any(q1 != 0)
+    assert_array_equal(q1, q2)

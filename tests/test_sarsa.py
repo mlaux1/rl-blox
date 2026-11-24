@@ -1,4 +1,6 @@
 import gymnasium as gym
+import numpy as np
+from numpy.testing import assert_array_equal
 
 import rl_blox.algorithm.sarsa as sarsa
 from rl_blox.algorithm.sarsa import train_sarsa
@@ -56,3 +58,21 @@ def test_sarsa_takes_the_next_action_of_its_target(monkeypatch):
     ]
     assert len(pairs) > 100
     assert all(target == taken for target, taken in pairs)
+
+
+def test_sarsa_same_seed_gives_same_result():
+    def train():
+        env = gym.make("FrozenLake-v1", is_slippery=True)
+        result = train_sarsa(
+            env,
+            make_q_table(env),
+            epsilon=0.5,
+            total_timesteps=3000,
+            seed=3,
+            progress_bar=False,
+        )
+        return np.asarray(result)
+
+    q1, q2 = train(), train()
+    assert np.any(q1 != 0)
+    assert_array_equal(q1, q2)
