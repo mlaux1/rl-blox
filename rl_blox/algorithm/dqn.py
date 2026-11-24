@@ -56,7 +56,7 @@ def train_dqn(
     replay_buffer: ReplayBuffer,
     optimizer: nnx.Optimizer,
     batch_size: int = 64,
-    total_timesteps: int = 1e4,
+    total_timesteps: int = 10_000,
     total_episodes: int | None = None,
     gamma: float = 0.99,
     seed: int = 1,

@@ -1,3 +1,4 @@
+import inspect
 from functools import partial
 
 import gymnasium as gym
@@ -124,3 +125,8 @@ def test_dqn_with_task_scheduler():
     )
 
     assert np.sum(result.training_steps) == 300
+
+
+def test_dqn_default_total_timesteps_is_int():
+    default = inspect.signature(train_dqn).parameters["total_timesteps"].default
+    assert isinstance(default, int)

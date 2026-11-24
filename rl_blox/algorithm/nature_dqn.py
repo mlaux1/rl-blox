@@ -24,7 +24,7 @@ def train_nature_dqn(
     replay_buffer: ReplayBuffer,
     optimizer: nnx.Optimizer,
     batch_size: int = 64,
-    total_timesteps: int = 1e4,
+    total_timesteps: int = 10_000,
     total_episodes: int | None = None,
     gamma: float = 0.99,
     update_frequency: int = 4,
@@ -161,7 +161,7 @@ def train_nature_dqn(
             termination=terminated,
         )
 
-        if step > batch_size:
+        if step >= learning_starts and len(replay_buffer) >= batch_size:
             if step % update_frequency == 0:
                 transition_batch = replay_buffer.sample_batch(batch_size, rng)
                 q_loss, q_mean = train_step(transition_batch, gamma)
